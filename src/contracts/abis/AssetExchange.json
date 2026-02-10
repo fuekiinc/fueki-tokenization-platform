@@ -1,0 +1,419 @@
+[
+  {
+    "inputs": [],
+    "name": "FillAmountTooLarge",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotOrderMaker",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "OrderAlreadyCancelled",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "OrderDoesNotExist",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "OrderFullyFilled",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ReentrancyDetected",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "SameToken",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TransferFailed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ZeroAddress",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ZeroAmount",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "orderId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "maker",
+        "type": "address"
+      }
+    ],
+    "name": "OrderCancelled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "orderId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "maker",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "tokenSell",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "tokenBuy",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amountSell",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amountBuy",
+        "type": "uint256"
+      }
+    ],
+    "name": "OrderCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "orderId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "taker",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "fillAmountSell",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "fillAmountBuy",
+        "type": "uint256"
+      }
+    ],
+    "name": "OrderFilled",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "orderId",
+        "type": "uint256"
+      }
+    ],
+    "name": "cancelOrder",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "tokenSell",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "tokenBuy",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amountSell",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amountBuy",
+        "type": "uint256"
+      }
+    ],
+    "name": "createOrder",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "orderId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "orderId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "fillAmountBuy",
+        "type": "uint256"
+      }
+    ],
+    "name": "fillOrder",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "orderId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getOrder",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "maker",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "tokenSell",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "tokenBuy",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "amountSell",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "amountBuy",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "filledSell",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "filledBuy",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "cancelled",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct AssetExchange.Order",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "tokenSell",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "tokenBuy",
+        "type": "address"
+      }
+    ],
+    "name": "getOrders",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "maker",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "tokenSell",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "tokenBuy",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "amountSell",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "amountBuy",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "filledSell",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "filledBuy",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "cancelled",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct AssetExchange.Order[]",
+        "name": "activeOrders",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "nextOrderId",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "orders",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "maker",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "tokenSell",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "tokenBuy",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amountSell",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amountBuy",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "filledSell",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "filledBuy",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "cancelled",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
