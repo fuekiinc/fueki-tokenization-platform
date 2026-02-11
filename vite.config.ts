@@ -16,6 +16,11 @@ export default defineConfig({
     target: 'es2020',
     sourcemap: true,
   },
+  preview: {
+    host: '0.0.0.0',
+    port: Number(process.env.PORT) || 4173,
+    allowedHosts: ['all'],
+  },
   optimizeDeps: {
     esbuildOptions: {
       target: 'es2020',
