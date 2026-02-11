@@ -294,7 +294,7 @@ export default function ExchangePage() {
 
   if (!isConnected) {
     return (
-      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+      <div className="relative mx-auto max-w-7xl py-20 sm:py-28">
         {/* Background glow effects */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute left-1/2 top-0 h-[600px] w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-600/[0.07] blur-[140px]" />
@@ -302,7 +302,7 @@ export default function ExchangePage() {
         </div>
 
         <div className="relative">
-          <GlassCard className="mx-auto max-w-2xl px-8 sm:px-12 py-20 sm:py-24 text-center">
+          <GlassCard className="mx-auto max-w-2xl px-10 sm:px-14 py-20 sm:py-28 text-center">
             {/* Icon with animated ring */}
             <div className="mx-auto mb-10 flex h-24 w-24 items-center justify-center">
               <div className="absolute h-24 w-24 animate-ping rounded-2xl bg-indigo-500/10" />
@@ -314,13 +314,13 @@ export default function ExchangePage() {
             <h2 className="mb-4 text-3xl sm:text-4xl font-bold tracking-tight text-white">
               Decentralized Asset Exchange
             </h2>
-            <p className="mx-auto mb-14 max-w-lg text-base sm:text-lg leading-relaxed text-gray-400">
+            <p className="mx-auto mb-16 max-w-lg text-base sm:text-lg leading-relaxed text-gray-400">
               Trade tokenized real-world assets peer-to-peer with on-chain limit
               orders. Zero intermediaries, full transparency.
             </p>
 
             {/* Feature bullets */}
-            <div className="mx-auto grid max-w-md grid-cols-1 gap-6 sm:grid-cols-3 sm:gap-8">
+            <div className="mx-auto grid max-w-lg grid-cols-1 gap-6 sm:grid-cols-3 sm:gap-8">
               {[
                 { icon: Zap, label: 'Instant Settlement' },
                 { icon: Shield, label: 'Non-Custodial' },
@@ -328,7 +328,7 @@ export default function ExchangePage() {
               ].map(({ icon: Icon, label }) => (
                 <div
                   key={label}
-                  className="flex flex-col items-center gap-4 rounded-xl bg-white/[0.03] p-6 ring-1 ring-white/[0.05]"
+                  className="flex flex-col items-center gap-4 rounded-xl bg-white/[0.03] p-7 ring-1 ring-white/[0.05]"
                 >
                   <Icon className="h-5 w-5 text-indigo-400/80" />
                   <span className="text-xs font-medium tracking-wide text-gray-300">
@@ -377,14 +377,14 @@ export default function ExchangePage() {
 
   if (!isNetworkReady) {
     return (
-      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+      <div className="relative mx-auto max-w-7xl py-20 sm:py-28">
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute left-1/2 top-1/4 h-[500px] w-[700px] -translate-x-1/2 rounded-full bg-amber-600/[0.06] blur-[140px]" />
         </div>
 
         <div className="relative mx-auto max-w-xl">
           <GlassCard
-            className="px-8 sm:px-12 py-16 sm:py-20 text-center"
+            className="px-10 sm:px-14 py-20 sm:py-24 text-center"
             gradientFrom="from-amber-500"
             gradientTo="to-orange-500"
           >
@@ -420,7 +420,7 @@ export default function ExchangePage() {
   // =========================================================================
 
   return (
-    <div className="relative mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+    <div className="relative w-full">
       {/* Subtle background glow */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 left-1/2 h-[600px] w-[1000px] -translate-x-1/2 rounded-full bg-indigo-600/[0.04] blur-[140px]" />
@@ -431,7 +431,7 @@ export default function ExchangePage() {
         {/* ================================================================= */}
         {/* Page header                                                       */}
         {/* ================================================================= */}
-        <div className="mb-8 sm:mb-10 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mb-10 sm:mb-14 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           {/* Left: Title + subtitle */}
           <div className="flex flex-col gap-2.5">
             <h1 className="flex items-center gap-3.5 text-2xl sm:text-3xl font-bold tracking-tight text-white">
@@ -581,7 +581,7 @@ export default function ExchangePage() {
         {/* Three-column desktop / tabbed mobile layout                       */}
         {/* ================================================================= */}
         {assets.length > 0 && (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-8">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:gap-8">
             {/* ---- Left: Order Book ---------------------------------------- */}
             <div
               className={clsx(
@@ -594,7 +594,7 @@ export default function ExchangePage() {
                 gradientTo="to-indigo-500"
               >
                 {/* Card header */}
-                <div className="flex items-center justify-between border-b border-white/[0.04] p-6">
+                <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
                   <div className="flex items-center gap-3.5">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-500/10 ring-1 ring-rose-500/20">
                       <BookOpen className="h-4 w-4 text-rose-400" />
@@ -613,7 +613,7 @@ export default function ExchangePage() {
                   <Activity className="h-4 w-4 text-gray-600" />
                 </div>
                 {/* Card body */}
-                <div className="p-6">
+                <div className="p-7">
                   <OrderBook
                     key={`orderbook-${refreshKey}`}
                     tokenSell={selectedSellToken ?? ''}
@@ -637,7 +637,7 @@ export default function ExchangePage() {
                 gradientTo="to-cyan-500"
               >
                 {/* Card header */}
-                <div className="flex items-center justify-between border-b border-white/[0.04] p-6">
+                <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
                   <div className="flex items-center gap-3.5">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/10 ring-1 ring-indigo-500/20">
                       <TrendingUp className="h-4 w-4 text-indigo-400" />
@@ -654,7 +654,7 @@ export default function ExchangePage() {
                   <BarChart3 className="h-4 w-4 text-gray-600" />
                 </div>
                 {/* Card body -- extra padding for the trade form */}
-                <div className="p-6 sm:p-8">
+                <div className="p-7 sm:p-9">
                   <TradeForm
                     assets={assets}
                     contractService={contractService}
@@ -676,7 +676,7 @@ export default function ExchangePage() {
                 gradientTo="to-emerald-500"
               >
                 {/* Card header */}
-                <div className="flex items-center justify-between border-b border-white/[0.04] p-6">
+                <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
                   <div className="flex items-center gap-3.5">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/10 ring-1 ring-cyan-500/20">
                       <Clock className="h-4 w-4 text-cyan-400" />
@@ -693,7 +693,7 @@ export default function ExchangePage() {
                   <Wallet className="h-4 w-4 text-gray-600" />
                 </div>
                 {/* Card body */}
-                <div className="p-6">
+                <div className="p-7">
                   <UserOrders
                     key={`userorders-${refreshKey}`}
                     contractService={contractService}
@@ -712,7 +712,7 @@ export default function ExchangePage() {
         {networkConfig && (
           <div
             className={clsx(
-              'mt-10 sm:mt-12 flex flex-wrap items-center justify-center gap-x-10 gap-y-3 rounded-2xl px-8 py-5',
+              'mt-12 sm:mt-16 flex flex-wrap items-center justify-center gap-x-10 gap-y-3 rounded-2xl px-8 py-6',
               'bg-[#0D0F14]/80 backdrop-blur-xl',
               'border border-white/[0.06]',
             )}

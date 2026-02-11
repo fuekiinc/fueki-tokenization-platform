@@ -673,9 +673,6 @@ export default function MintForm({ document }: MintFormProps) {
               {tokenSymbol.length}/11
             </span>
           </div>
-          <p className="mt-2 text-xs text-gray-600">
-            Auto-generated from name. You can edit it manually.
-          </p>
         </div>
       </div>
 

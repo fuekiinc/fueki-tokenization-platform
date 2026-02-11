@@ -116,7 +116,7 @@ function computeUniqueDocTypes(assets: WrappedAsset[]): number {
 
 function SkeletonCard() {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-6 sm:p-8">
+    <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-7 sm:p-9">
       <div className="flex items-start gap-4">
         <div className="shimmer h-12 w-12 rounded-full" />
         <div className="flex-1 space-y-3">
@@ -146,7 +146,7 @@ function SkeletonCard() {
 
 function SkeletonStatCard() {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-6 sm:p-8">
+    <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-7 sm:p-9">
       <div className="flex items-center gap-3">
         <div className="shimmer h-10 w-10 rounded-xl" />
         <div className="shimmer h-3 w-20 rounded" />
@@ -539,18 +539,18 @@ export default function PortfolioPage() {
   const uniqueDocTypes = computeUniqueDocTypes(wrappedAssets);
 
   return (
-    <div className="space-y-0">
+    <div className="w-full">
       {/* ================================================================== */}
       {/* Page Header                                                        */}
       {/* ================================================================== */}
-      <div className="mb-10 sm:mb-14">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+      <div className="mb-12 sm:mb-16">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           {/* Left: Title and subtitle */}
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
               Portfolio
             </h1>
-            <p className="mt-2 text-base text-gray-500">
+            <p className="mt-3 text-base leading-relaxed text-gray-500">
               Manage your tokenized assets and track performance
             </p>
           </div>
@@ -596,22 +596,22 @@ export default function PortfolioPage() {
       {/* ================================================================== */}
       {/* Summary Stats Row                                                  */}
       {/* ================================================================== */}
-      <div className="mb-10 sm:mb-14">
+      <div className="mb-12 sm:mb-16">
         {isLoadingAssets ? (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4 lg:gap-8">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8 lg:grid-cols-4 lg:gap-8">
             {Array.from({ length: 4 }).map((_, i) => (
               <SkeletonStatCard key={i} />
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4 lg:gap-8">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8 lg:grid-cols-4 lg:gap-8">
             {/* Portfolio Value */}
             <div
               className={clsx(
                 'relative overflow-hidden rounded-2xl',
                 'bg-[#0D0F14]/80 backdrop-blur-xl',
                 'border border-white/[0.06]',
-                'p-6 sm:p-8',
+                'p-7 sm:p-9',
                 'transition-all duration-300 ease-out',
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
@@ -625,7 +625,7 @@ export default function PortfolioPage() {
                   Portfolio Value
                 </p>
               </div>
-              <p className="mt-5 text-3xl font-bold tracking-tight text-white">
+              <p className="mt-6 text-3xl font-bold tracking-tight text-white">
                 ${portfolioValue}
               </p>
             </div>
@@ -636,7 +636,7 @@ export default function PortfolioPage() {
                 'relative overflow-hidden rounded-2xl',
                 'bg-[#0D0F14]/80 backdrop-blur-xl',
                 'border border-white/[0.06]',
-                'p-6 sm:p-8',
+                'p-7 sm:p-9',
                 'transition-all duration-300 ease-out',
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
@@ -649,7 +649,7 @@ export default function PortfolioPage() {
                   Total Assets
                 </p>
               </div>
-              <p className="mt-5 text-3xl font-bold tracking-tight text-white">
+              <p className="mt-6 text-3xl font-bold tracking-tight text-white">
                 {wrappedAssets.length}
               </p>
             </div>
@@ -660,7 +660,7 @@ export default function PortfolioPage() {
                 'relative overflow-hidden rounded-2xl',
                 'bg-[#0D0F14]/80 backdrop-blur-xl',
                 'border border-white/[0.06]',
-                'p-6 sm:p-8',
+                'p-7 sm:p-9',
                 'transition-all duration-300 ease-out',
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
@@ -673,7 +673,7 @@ export default function PortfolioPage() {
                   Total Locked
                 </p>
               </div>
-              <p className="mt-5 text-3xl font-bold tracking-tight text-white">
+              <p className="mt-6 text-3xl font-bold tracking-tight text-white">
                 {totalLocked}
               </p>
             </div>
@@ -684,7 +684,7 @@ export default function PortfolioPage() {
                 'relative overflow-hidden rounded-2xl',
                 'bg-[#0D0F14]/80 backdrop-blur-xl',
                 'border border-white/[0.06]',
-                'p-6 sm:p-8',
+                'p-7 sm:p-9',
                 'transition-all duration-300 ease-out',
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
@@ -697,7 +697,7 @@ export default function PortfolioPage() {
                   Document Types
                 </p>
               </div>
-              <p className="mt-5 text-3xl font-bold tracking-tight text-white">
+              <p className="mt-6 text-3xl font-bold tracking-tight text-white">
                 {uniqueDocTypes}
               </p>
             </div>
@@ -708,11 +708,11 @@ export default function PortfolioPage() {
       {/* ================================================================== */}
       {/* Search / Filter / Sort Bar                                         */}
       {/* ================================================================== */}
-      <div className="mb-10 sm:mb-14">
+      <div className="mb-12 sm:mb-16">
         <div
           className={clsx(
             'rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 backdrop-blur-xl',
-            'p-6 sm:p-8',
+            'p-7 sm:p-9',
           )}
         >
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
@@ -801,7 +801,7 @@ export default function PortfolioPage() {
         <div
           className={clsx(
             'grid',
-            'gap-5 sm:gap-6 lg:gap-8',
+            'gap-6 sm:gap-8 lg:gap-8',
             viewMode === 'grid'
               ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
               : 'grid-cols-1',
@@ -845,7 +845,7 @@ export default function PortfolioPage() {
         <div
           className={clsx(
             'grid',
-            'gap-5 sm:gap-6 lg:gap-8',
+            'gap-6 sm:gap-8 lg:gap-8',
             viewMode === 'grid'
               ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
               : 'grid-cols-1',
@@ -881,7 +881,7 @@ export default function PortfolioPage() {
                 {/* Top gradient hover line */}
                 <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
 
-                <div className="p-6 sm:p-8">
+                <div className="p-7 sm:p-9">
                   {/* Header row */}
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-4">
@@ -920,7 +920,7 @@ export default function PortfolioPage() {
                   </div>
 
                   {/* Balance / Value rows */}
-                  <div className="mt-8 space-y-4">
+                  <div className="mt-9 space-y-5">
                     <div className="flex items-baseline justify-between">
                       <span className="text-sm text-gray-500">Balance</span>
                       <span className="text-base font-semibold text-white">
@@ -939,7 +939,7 @@ export default function PortfolioPage() {
 
                   {/* Document hash preview */}
                   {asset.documentHash && (
-                    <div className="mt-6 rounded-xl border border-white/[0.04] bg-white/[0.02] px-4 py-3">
+                    <div className="mt-7 rounded-xl border border-white/[0.04] bg-white/[0.02] px-5 py-4">
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-gray-600">Doc Hash</span>
                         <button
@@ -959,7 +959,7 @@ export default function PortfolioPage() {
                   )}
 
                   {/* Action buttons */}
-                  <div className="mt-6 flex gap-3">
+                  <div className="mt-8 flex gap-3">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

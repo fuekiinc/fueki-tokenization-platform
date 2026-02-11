@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Sparkles,
   FileText,
+  Image,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { parseFile } from '../../lib/parsers';
@@ -30,6 +31,8 @@ const ACCEPTED_TYPES: Record<string, string[]> = {
   'text/xml': ['.xml'],
   'application/xml': ['.xml'],
   'application/pdf': ['.pdf'],
+  'image/png': ['.png'],
+  'image/jpeg': ['.jpg', '.jpeg'],
 };
 
 const FORMAT_BADGES: { label: string; color: string }[] = [
@@ -37,6 +40,8 @@ const FORMAT_BADGES: { label: string; color: string }[] = [
   { label: 'CSV', color: 'text-emerald-400 border-emerald-400/30 bg-emerald-400/5' },
   { label: 'XML', color: 'text-sky-400 border-sky-400/30 bg-sky-400/5' },
   { label: 'PDF', color: 'text-rose-400 border-rose-400/30 bg-rose-400/5' },
+  { label: 'PNG', color: 'text-purple-400 border-purple-400/30 bg-purple-400/5' },
+  { label: 'JPG', color: 'text-orange-400 border-orange-400/30 bg-orange-400/5' },
 ];
 
 function fileTypeIcon(name: string, size: string = 'h-8 w-8') {
@@ -50,6 +55,11 @@ function fileTypeIcon(name: string, size: string = 'h-8 w-8') {
       return <FileCode className={`${size} text-sky-400`} />;
     case 'pdf':
       return <FileText className={`${size} text-rose-400`} />;
+    case 'png':
+      return <Image className={`${size} text-purple-400`} />;
+    case 'jpg':
+    case 'jpeg':
+      return <Image className={`${size} text-orange-400`} />;
     default:
       return <FileIcon className={`${size} text-gray-400`} />;
   }
@@ -66,6 +76,11 @@ function fileTypeBadgeColor(name: string): string {
       return 'text-sky-400 border-sky-400/30 bg-sky-400/10';
     case 'pdf':
       return 'text-rose-400 border-rose-400/30 bg-rose-400/10';
+    case 'png':
+      return 'text-purple-400 border-purple-400/30 bg-purple-400/10';
+    case 'jpg':
+    case 'jpeg':
+      return 'text-orange-400 border-orange-400/30 bg-orange-400/10';
     default:
       return 'text-gray-400 border-gray-400/30 bg-gray-400/10';
   }
@@ -73,7 +88,8 @@ function fileTypeBadgeColor(name: string): string {
 
 function friendlyType(name: string): SupportedFileType | string {
   const ext = name.split('.').pop()?.toLowerCase();
-  if (ext === 'json' || ext === 'csv' || ext === 'xml' || ext === 'pdf') return ext.toUpperCase();
+  if (ext === 'json' || ext === 'csv' || ext === 'xml' || ext === 'pdf' || ext === 'png') return ext.toUpperCase();
+  if (ext === 'jpg' || ext === 'jpeg') return 'JPG';
   return ext ?? 'Unknown';
 }
 
@@ -133,7 +149,7 @@ export default function FileUploader() {
       if (errorCode === 'file-too-large') {
         msg = 'File exceeds the 10 MB size limit. Please upload a smaller file.';
       } else if (errorCode === 'file-invalid-type') {
-        msg = 'Unsupported file type. Please upload a JSON, CSV, XML, or PDF file.';
+        msg = 'Unsupported file type. Please upload a JSON, CSV, XML, PDF, PNG, or JPG file.';
       }
       setSelectedFile(null);
       setParsedDoc(null);
@@ -272,7 +288,7 @@ export default function FileUploader() {
       {/* ------------------------------------------------------------------ */}
       {!selectedFile && !parsedDoc && (
         <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-3">
+          <div className="hidden flex items-center gap-3">
             {FORMAT_BADGES.map((fmt) => (
               <span
                 key={fmt.label}
@@ -282,7 +298,7 @@ export default function FileUploader() {
               </span>
             ))}
           </div>
-          <span className="text-xs text-gray-600">
+          <span className="text-xs text-white-600">
             Max 10 MB
           </span>
         </div>

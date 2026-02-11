@@ -32,9 +32,9 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 
 const paddingStyles: Record<CardPadding, string> = {
   none: '',
-  sm: 'p-4 sm:p-5',
-  md: 'p-6 sm:p-8',
-  lg: 'p-8 sm:p-10',
+  sm: 'p-5 sm:p-6',
+  md: 'p-7 sm:p-9',
+  lg: 'p-9 sm:p-12',
 };
 
 // ---------------------------------------------------------------------------
@@ -107,13 +107,13 @@ export default function Card({
             'flex items-start justify-between gap-4',
             // Top padding accounts for gradient border
             gradientBorder
-              ? 'pt-9'
+              ? 'pt-10'
               : compact
-                ? 'pt-4'
-                : 'pt-6 sm:pt-8',
+                ? 'pt-5'
+                : 'pt-7 sm:pt-9',
             compact
-              ? 'px-4 pb-4 mb-4'
-              : 'px-6 sm:px-8 pb-5 sm:pb-6 mb-5 sm:mb-6',
+              ? 'px-5 pb-5 mb-5'
+              : 'px-7 sm:px-9 pb-6 sm:pb-7 mb-6 sm:mb-7',
             // Subtle separator
             'border-b border-white/[0.04]',
           )}

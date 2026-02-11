@@ -172,7 +172,7 @@ export default function ValueChart({ tradeHistory }: ValueChartProps) {
   }, [dataPoints]);
 
   return (
-    <div className="relative bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl p-8 sm:p-10 overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.2)]">
+    <div className="relative bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl p-8 sm:p-11 overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.2)]">
       {/* Subtle gradient accent at top */}
       <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
 

@@ -22,10 +22,10 @@ function PageTransition({ children }: { children: React.ReactNode }) {
 
 export default function Layout() {
   return (
-    <div className="gradient-bg-subtle min-h-screen flex flex-col text-white">
+    <div className="gradient-bg-subtle min-h-screen flex flex-col text-white overflow-x-hidden">
       <Navbar />
 
-      <main className="flex-1 mx-auto w-full max-w-[1400px] px-6 sm:px-10 lg:px-16 py-10 sm:py-14">
+      <main className="flex-1 w-full max-w-[1280px] mx-auto px-8 sm:px-12 lg:px-20 py-12 sm:py-16 lg:py-20 overflow-hidden box-border">
         <PageTransition>
           <Outlet />
         </PageTransition>

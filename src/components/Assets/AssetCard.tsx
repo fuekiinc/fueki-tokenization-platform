@@ -90,7 +90,7 @@ export default function AssetCard({
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
 
       {/* Card body */}
-      <div className="p-6 sm:p-8">
+      <div className="p-7 sm:p-9">
         {/* ---- Token avatar ---- */}
         <div className="flex flex-col items-center text-center">
           <div

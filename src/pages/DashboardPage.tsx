@@ -63,7 +63,7 @@ function StatCard({
     <div
       className={clsx(
         GLASS,
-        'group relative overflow-hidden p-6 sm:p-8',
+        'group relative overflow-hidden p-7 sm:p-9',
         'hover:border-white/[0.12] hover:shadow-lg hover:shadow-black/20',
         'transition-all duration-300',
       )}
@@ -158,7 +158,7 @@ function FeatureCard({
       className={clsx(
         GLASS,
         GLASS_HOVER,
-        'group relative overflow-hidden p-8 text-center',
+        'group relative overflow-hidden p-10 text-center',
       )}
     >
       {/* Background glow */}
@@ -209,7 +209,7 @@ function QuickAction({
       onClick={onClick}
       className={clsx(
         GLASS,
-        'group relative flex w-full items-center gap-4 overflow-hidden p-5 text-left sm:p-6',
+        'group relative flex w-full items-center gap-5 overflow-hidden p-5 text-left sm:p-7',
         'hover:border-white/[0.12] hover:shadow-lg hover:shadow-black/20',
         'hover:-translate-y-0.5',
         'transition-all duration-300',
@@ -473,7 +473,7 @@ export default function DashboardPage() {
             decentralized exchange. Every action is transparent and on-chain.
           </p>
 
-          <div className="mx-auto mt-20 grid w-full max-w-4xl grid-cols-1 gap-8 sm:grid-cols-3">
+          <div className="mx-auto mt-24 grid w-full max-w-4xl grid-cols-1 gap-8 sm:grid-cols-3 sm:gap-10">
             <FeatureCard
               icon={FileText}
               title="Tokenize Assets"
@@ -528,18 +528,18 @@ export default function DashboardPage() {
   const networkName = getNetworkName(chainId);
 
   return (
-    <div className="mx-auto w-full max-w-[1440px] px-4 py-8 sm:px-6 sm:py-10 lg:px-8 lg:py-12">
+    <div className="w-full">
       {/* ================================================================== */}
       {/* Page Header -- Vercel / Linear style: title left, wallet right    */}
       {/* ================================================================== */}
-      <div className="mb-10 sm:mb-14">
+      <div className="mb-12 sm:mb-16">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           {/* Left: title + subtitle */}
           <div className="min-w-0">
             <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
               Dashboard
             </h1>
-            <p className="mt-2 text-base text-gray-400">
+            <p className="mt-3 text-base leading-relaxed text-gray-400">
               Overview of your tokenized assets and platform activity.
             </p>
           </div>
@@ -598,13 +598,13 @@ export default function DashboardPage() {
         </div>
 
         {/* Separator line */}
-        <div className="mt-8 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
+        <div className="mt-10 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
       </div>
 
       {/* ================================================================== */}
       {/* Stats Row -- 4 cards in a spacious grid                           */}
       {/* ================================================================== */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 sm:gap-8 overflow-hidden">
         <StatCard
           title="Total Assets"
           value={String(totalAssets)}
@@ -638,7 +638,7 @@ export default function DashboardPage() {
       {/* ================================================================== */}
       {/* Charts Row -- two columns with generous spacing                   */}
       {/* ================================================================== */}
-      <div className="mt-10 grid grid-cols-1 gap-6 sm:mt-14 sm:gap-8 lg:grid-cols-2">
+      <div className="mt-12 grid grid-cols-1 gap-8 sm:mt-16 sm:gap-10 lg:grid-cols-2">
         <PortfolioChart assets={wrappedAssets} />
         <ValueChart tradeHistory={tradeHistory} />
       </div>
@@ -646,15 +646,15 @@ export default function DashboardPage() {
       {/* ================================================================== */}
       {/* Activity + Quick Actions                                          */}
       {/* ================================================================== */}
-      <div className="mt-10 grid grid-cols-1 gap-6 sm:mt-14 sm:gap-8 lg:grid-cols-3">
+      <div className="mt-12 grid grid-cols-1 gap-8 sm:mt-16 sm:gap-10 lg:grid-cols-3">
         {/* Activity feed -- takes 2/3 width on large screens */}
         <div className="lg:col-span-2">
           <ActivityFeed trades={tradeHistory} />
         </div>
 
         {/* Quick actions sidebar */}
-        <div className={clsx(GLASS, 'p-6 sm:p-8')}>
-          <div className="mb-8 flex items-center gap-3">
+        <div className={clsx(GLASS, 'p-7 sm:p-9')}>
+          <div className="mb-10 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10">
               <Zap className="h-5 w-5 text-amber-400" />
             </div>
@@ -668,7 +668,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-5">
             <QuickAction
               icon={ArrowUpRight}
               title="Upload & Mint"

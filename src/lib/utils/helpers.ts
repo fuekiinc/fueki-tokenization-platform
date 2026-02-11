@@ -85,19 +85,28 @@ export function formatBalance(
 
 export function formatCurrency(amount: number, currency: string = 'USD'): string {
   const safeCurrency = (currency || 'USD').toUpperCase().trim();
+
+  // Use compact notation for very large values to prevent layout overflow
+  const abs = Math.abs(amount);
+  const useCompact = abs >= 1_000_000;
+
   try {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: safeCurrency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      notation: useCompact ? 'compact' : 'standard',
+      compactDisplay: 'short',
+      minimumFractionDigits: useCompact ? 1 : 2,
+      maximumFractionDigits: useCompact ? 1 : 2,
     }).format(amount);
   } catch {
     // Fallback for non-ISO-4217 codes (e.g. crypto tickers like ETH, BTC).
     // Format as a plain number with the code appended.
     return `${new Intl.NumberFormat('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      notation: useCompact ? 'compact' : 'standard',
+      compactDisplay: 'short',
+      minimumFractionDigits: useCompact ? 1 : 2,
+      maximumFractionDigits: useCompact ? 1 : 2,
     }).format(amount)} ${safeCurrency}`;
   }
 }

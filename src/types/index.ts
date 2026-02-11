@@ -29,7 +29,7 @@ export interface NetworkInfo {
 // Document Parsing
 // ---------------------------------------------------------------------------
 
-export type SupportedFileType = 'json' | 'csv' | 'xml' | 'pdf';
+export type SupportedFileType = 'json' | 'csv' | 'xml' | 'pdf' | 'png' | 'jpg';
 
 export interface ParsedTransaction {
   id: string;
@@ -42,6 +42,10 @@ export interface ParsedTransaction {
   to?: string;
   reference?: string;
   metadata?: Record<string, unknown>;
+  /** Confidence that this amount is a meaningful stated value (0-1). PDF only. */
+  confidence?: number;
+  /** True when this transaction represents the primary stated value of the document. */
+  isPrimaryValue?: boolean;
 }
 
 export interface ParsedDocument {
@@ -53,6 +57,12 @@ export interface ParsedDocument {
   /** ISO-8601 string -- stored as a string so the Zustand store stays serializable. */
   parsedAt: string;
   documentHash: string;
+  /** Semantic document type detected by the intelligence module (e.g. "appraisal", "invoice"). */
+  documentClassification?: string;
+  /** How the primary value was determined (e.g. "keyword_match", "largest_amount_fallback"). */
+  valueExtractionMethod?: string;
+  /** Confidence in the extracted totalValue (0-1). */
+  valueConfidence?: number;
 }
 
 // ---------------------------------------------------------------------------

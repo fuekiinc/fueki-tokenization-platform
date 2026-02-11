@@ -3,6 +3,7 @@ import { parseJsonFile } from './jsonParser';
 import { parseCsvFile } from './csvParser';
 import { parseXmlFile } from './xmlParser';
 import { parsePdfFile } from './pdfParser';
+import { parseImageFile } from './imageParser';
 
 /** Maximum file size we allow the browser to parse (10 MB). */
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -25,6 +26,8 @@ export function detectFileType(fileName: string): SupportedFileType | null {
   if (ext === 'csv') return 'csv';
   if (ext === 'xml') return 'xml';
   if (ext === 'pdf') return 'pdf';
+  if (ext === 'png') return 'png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'jpg';
   return null;
 }
 
@@ -54,7 +57,7 @@ export async function parseFile(file: File): Promise<ParsedDocument> {
 
   if (!fileType) {
     throw new Error(
-      `Unsupported file type: "${file.name.split('.').pop()}". Supported types: .json, .csv, .xml, .pdf`,
+      `Unsupported file type: "${file.name.split('.').pop()}". Supported types: .json, .csv, .xml, .pdf, .png, .jpg`,
     );
   }
 
@@ -69,6 +72,9 @@ export async function parseFile(file: File): Promise<ParsedDocument> {
         return await parseXmlFile(file);
       case 'pdf':
         return await parsePdfFile(file);
+      case 'png':
+      case 'jpg':
+        return await parseImageFile(file, fileType);
     }
   } catch (err) {
     // Re-throw errors that already carry a user-friendly message from
@@ -76,11 +82,6 @@ export async function parseFile(file: File): Promise<ParsedDocument> {
     // instances with descriptive messages, so we propagate them as-is
     // and only wrap truly unexpected / third-party errors.
     if (err instanceof Error) {
-      // Parser errors are identified by checking whether they originate
-      // from our own parser modules.  We maintain a list of known
-      // user-facing error message prefixes used in our parsers.  This is
-      // more robust than checking arbitrary string prefixes because we
-      // match against the full set of messages our parsers actually emit.
       const msg = err.message;
       const parserErrorPrefixes = [
         'The JSON file is empty',
@@ -98,6 +99,9 @@ export async function parseFile(file: File): Promise<ParsedDocument> {
         'The PDF file is empty',
         'The file does not contain a valid PDF',
         'The PDF file contains no extractable text',
+        'The image file is empty',
+        'OCR failed on the image file',
+        'No text could be extracted from the image',
       ];
       const isParserError = parserErrorPrefixes.some((prefix) =>
         msg.startsWith(prefix),
@@ -112,6 +116,6 @@ export async function parseFile(file: File): Promise<ParsedDocument> {
   }
 }
 
-// NOTE: Individual parsers (parseJsonFile, parseCsvFile, parseXmlFile) are
-// intentionally NOT re-exported.  All external consumers must use parseFile()
-// so that file-size and file-type validation cannot be bypassed.
+// NOTE: Individual parsers are intentionally NOT re-exported.  All external
+// consumers must use parseFile() so that file-size and file-type validation
+// cannot be bypassed.

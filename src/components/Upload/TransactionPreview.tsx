@@ -259,7 +259,7 @@ export default function TransactionPreview() {
       {/* ------------------------------------------------------------------ */}
       {/* Summary row                                                        */}
       {/* ------------------------------------------------------------------ */}
-      <div className="rounded-2xl bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] p-6">
+      <div className="rounded-2xl bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] p-7">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-8">
             {/* Total Transactions */}

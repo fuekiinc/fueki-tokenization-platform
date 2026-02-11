@@ -125,12 +125,12 @@ export default function ActivityFeed({ trades, maxItems = 8 }: ActivityFeedProps
     .slice(0, maxItems);
 
   return (
-    <div className="relative bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl p-8 sm:p-10 overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.2)]">
+    <div className="relative bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl p-8 sm:p-11 overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.2)]">
       {/* Subtle gradient accent at top */}
       <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-10">
         <div className="flex items-center gap-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/[0.08]">
             <Activity className="h-[18px] w-[18px] text-indigo-400" />
@@ -176,7 +176,7 @@ export default function ActivityFeed({ trades, maxItems = 8 }: ActivityFeedProps
                 <li
                   key={trade.id}
                   className={clsx(
-                    'flex items-center gap-4 py-4 transition-all duration-150',
+                    'flex items-center gap-4 py-5 transition-all duration-150',
                     'hover:bg-white/[0.02] -mx-3 px-3 rounded-xl',
                     !isLast && 'border-b border-white/[0.04]',
                   )}

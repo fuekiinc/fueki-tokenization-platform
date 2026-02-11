@@ -79,7 +79,7 @@ export default function StatCard({
         'bg-[#0D0F14]/80 backdrop-blur-xl',
         'border border-white/[0.06]',
         // Spacious padding
-        'p-6 sm:p-8',
+        'p-7 sm:p-9',
         // Hover lift
         'transition-all duration-300 ease-out',
         'hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/20',
@@ -109,7 +109,7 @@ export default function StatCard({
       </div>
 
       {/* Value */}
-      <p className="mt-4 min-w-0 truncate text-2xl sm:text-3xl font-bold tracking-tight text-white">
+      <p className="mt-5 min-w-0 truncate text-2xl sm:text-3xl font-bold tracking-tight text-white">
         {value}
       </p>
 

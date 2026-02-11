@@ -431,7 +431,7 @@ export default function TradeForm({
       </div>
 
       {/* ---- Sell section -------------------------------------------------- */}
-      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-6 sm:p-7">
+      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-7 sm:p-8">
         <TokenSelector
           assets={assets}
           selectedToken={sellToken}
@@ -526,7 +526,7 @@ export default function TradeForm({
       </div>
 
       {/* ---- Buy section --------------------------------------------------- */}
-      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-6 sm:p-7">
+      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-7 sm:p-8">
         <TokenSelector
           assets={assets}
           selectedToken={buyToken}
@@ -581,7 +581,7 @@ export default function TradeForm({
 
       {/* ---- Order summary / Price display --------------------------------- */}
       {price !== null && sellAsset && buyAsset && (
-        <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-6 sm:p-7">
+        <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-7 sm:p-8">
           <div className="space-y-0 divide-y divide-white/[0.06]">
             <div className="flex items-center justify-between py-3 first:pt-0">
               <span className="flex items-center gap-2 text-sm text-gray-500">

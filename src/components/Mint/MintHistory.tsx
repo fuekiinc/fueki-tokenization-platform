@@ -116,14 +116,14 @@ export default function MintHistory() {
   // ---- List ---------------------------------------------------------------
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {mintTrades.map((trade) => {
         const status = statusConfig[trade.status] ?? statusConfig.pending;
 
         return (
           <div
             key={trade.id}
-            className="group rounded-2xl bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] p-6 transition-all duration-200 hover:bg-[#0D0F14] hover:border-white/[0.1]"
+            className="group rounded-2xl bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] p-7 transition-all duration-200 hover:bg-[#0D0F14] hover:border-white/[0.1]"
           >
             {/* Top row: Name + Symbol + Status */}
             <div className="flex items-start justify-between gap-4">

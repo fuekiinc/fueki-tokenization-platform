@@ -92,11 +92,11 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
 
 function CenterLabel({ total }: { total: number }) {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none leading-tight">
+    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none leading-tight px-4">
       <span className="text-[11px] font-medium tracking-widest uppercase text-gray-500 leading-tight">
         Total Value
       </span>
-      <span className="text-2xl font-bold mt-1 leading-tight gradient-text">
+      <span className="max-w-full truncate text-xl font-bold mt-1 leading-tight gradient-text sm:text-2xl">
         {formatCurrency(total)}
       </span>
     </div>
@@ -187,7 +187,7 @@ export default function PortfolioChart({ assets }: PortfolioChartProps) {
   );
 
   return (
-    <div className="relative bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl p-8 sm:p-10 overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.2)]">
+    <div className="relative bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl p-8 sm:p-11 overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.2)]">
       {/* Subtle gradient accent at top */}
       <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
 

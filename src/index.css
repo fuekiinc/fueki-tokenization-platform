@@ -106,6 +106,7 @@ html {
   scroll-behavior: smooth;
   text-size-adjust: 100%;
   -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -1007,9 +1008,9 @@ hr,
    26. SPACING UTILITIES
    -------------------------------------------------------------------------- */
 .section-gap {
-  margin-bottom: 2.5rem; /* 40px -- between page sections */
+  margin-bottom: 3.5rem; /* 56px -- between page sections */
 }
 
 .card-gap {
-  margin-bottom: 1.5rem; /* 24px -- between cards */
+  margin-bottom: 2rem; /* 32px -- between cards */
 }

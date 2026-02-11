@@ -5,19 +5,12 @@ import "./SecurityTokenDeployer.sol";
 
 /**
  * @title SecurityTokenFactory
- * @notice Factory contract for deploying ERC-1404 compliant security tokens
- *         with built-in transfer restrictions, lockup schedules, dividends,
- *         and atomic swap capabilities.
- *
- *         Uses an external SecurityTokenDeployer to create child contracts
- *         from bytecodes passed as calldata, keeping this contract under
- *         the EIP-170 size limit.
  *
  * @dev Each deployment creates:
  *      1. A TransferRules contract (compliance engine)
  *      2. A RestrictedSwap token (full security token with lockups, dividends, swaps)
  *
- *      The caller becomes both CONTRACT_ADMIN and RESERVE_ADMIN on the token.
+ *      The deployer becomes both CONTRACT_ADMIN and RESERVE_ADMIN on the token.
  */
 contract SecurityTokenFactory {
 
@@ -39,9 +32,6 @@ contract SecurityTokenFactory {
         uint256 originalValue;
         uint256 createdAt;
     }
-
-    /// @notice The external deployer contract used to create child contracts.
-    SecurityTokenDeployer public immutable deployer;
 
     /// @notice Ordered list of every security token ever created.
     SecurityToken[] private _allTokens;
@@ -82,42 +72,27 @@ contract SecurityTokenFactory {
     error MaxSupplyTooLow();
 
     // ---------------------------------------------------------------
-    //  Constructor
-    // ---------------------------------------------------------------
-
-    /**
-     * @param _deployer Address of the SecurityTokenDeployer contract.
-     */
-    constructor(address _deployer) {
-        deployer = SecurityTokenDeployer(_deployer);
-    }
-
-    // ---------------------------------------------------------------
     //  External functions
     // ---------------------------------------------------------------
 
     /**
      * @notice Deploy a new ERC-1404 security token with full compliance features.
      *
-     * @param _rulesBytecode     Creation bytecode for TransferRules
-     * @param _swapBytecode      Creation bytecode for RestrictedSwap (without constructor args)
-     * @param _name              Token name
-     * @param _symbol            Token symbol (max 11 chars for MetaMask compat)
-     * @param _decimals          Token decimals (typically 18)
-     * @param _totalSupply       Initial supply to mint to the caller
-     * @param _maxTotalSupply    Hard cap on total supply (must be >= _totalSupply)
-     * @param _documentHash      Keccak-256 hash of the backing document
-     * @param _documentType      Human-readable document category
-     * @param _originalValue     Nominal value of the underlying asset
+     * @param _name            Token name
+     * @param _symbol          Token symbol (max 11 chars for MetaMask compat)
+     * @param _decimals        Token decimals (typically 18)
+     * @param _totalSupply     Initial supply to mint to the caller
+     * @param _maxTotalSupply  Hard cap on total supply (must be >= _totalSupply)
+     * @param _documentHash    Keccak-256 hash of the backing document
+     * @param _documentType    Human-readable document category
+     * @param _originalValue   Nominal value of the underlying asset
      * @param _minTimelockAmount Minimum tokens required to create a timelock
-     * @param _maxReleaseDelay   Maximum delay in seconds for the first release
+     * @param _maxReleaseDelay Maximum delay in seconds for the first release
      *
      * @return tokenAddress The address of the newly deployed security token.
      * @return rulesAddress The address of the deployed TransferRules contract.
      */
     function createSecurityToken(
-        bytes   calldata _rulesBytecode,
-        bytes   calldata _swapBytecode,
         string  calldata _name,
         string  calldata _symbol,
         uint8   _decimals,
@@ -138,28 +113,24 @@ contract SecurityTokenFactory {
         uint256 minTimelock = _minTimelockAmount > 0 ? _minTimelockAmount : 1;
         uint256 maxDelay = _maxReleaseDelay > 0 ? _maxReleaseDelay : 346896000; // ~11 years
 
-        // 1. Deploy TransferRules (compliance engine)
-        rulesAddress = deployer.deploy(_rulesBytecode);
+        // 1. Deploy TransferRules (compliance engine) via library
+        rulesAddress = SecurityTokenDeployer.deployTransferRules();
 
-        // 2. Deploy RestrictedSwap token (the full security token)
+        // 2. Deploy RestrictedSwap token (the full security token) via library
         //    - msg.sender becomes CONTRACT_ADMIN
         //    - msg.sender becomes RESERVE_ADMIN (receives initial supply)
-        bytes memory swapInitCode = abi.encodePacked(
-            _swapBytecode,
-            abi.encode(
-                rulesAddress,
-                msg.sender,
-                msg.sender,
-                _symbol,
-                _name,
-                _decimals,
-                _totalSupply,
-                _maxTotalSupply,
-                minTimelock,
-                maxDelay
-            )
+        tokenAddress = SecurityTokenDeployer.deployRestrictedSwap(
+            rulesAddress,           // transferRules
+            msg.sender,             // contractAdmin
+            msg.sender,             // tokenReserveAdmin (gets initial supply)
+            _symbol,
+            _name,
+            _decimals,
+            _totalSupply,
+            _maxTotalSupply,
+            minTimelock,
+            maxDelay
         );
-        tokenAddress = deployer.deploy(swapInitCode);
 
         // 3. Register in factory
         uint256 index = _allTokens.length;
