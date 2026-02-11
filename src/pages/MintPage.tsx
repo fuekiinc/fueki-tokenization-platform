@@ -5,7 +5,6 @@ import {
   FileText,
   Coins,
   History,
-  Info,
   CheckCircle2,
   Sparkles,
 } from 'lucide-react';

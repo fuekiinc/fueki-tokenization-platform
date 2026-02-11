@@ -826,7 +826,7 @@ export default function MintForm({ document }: MintFormProps) {
       <button
         type="button"
         onClick={() => { void handleMint(); }}
-        disabled={txState === 'pending' || !canSubmit}
+        disabled={!canSubmit}
         className="group relative flex w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 px-6 py-4 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-all duration-200 hover:shadow-indigo-500/30 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:shadow-none disabled:hover:brightness-100 disabled:active:scale-100"
       >
         {/* Button shimmer effect */}

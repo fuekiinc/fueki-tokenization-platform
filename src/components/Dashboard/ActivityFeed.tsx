@@ -63,6 +63,27 @@ const TYPE_CONFIG: Record<TradeHistory['type'], TypeConfigEntry> = {
     borderColor: 'border-emerald-500/20',
     Icon: Repeat,
   },
+  'security-mint': {
+    label: 'Security Mint',
+    color: 'text-amber-400',
+    bgColor: 'bg-amber-500/10',
+    borderColor: 'border-amber-500/20',
+    Icon: ArrowUpRight,
+  },
+  'swap-eth': {
+    label: 'Swap ETH',
+    color: 'text-cyan-400',
+    bgColor: 'bg-cyan-500/10',
+    borderColor: 'border-cyan-500/20',
+    Icon: Repeat,
+  },
+  'swap-erc20': {
+    label: 'Swap ERC-20',
+    color: 'text-teal-400',
+    bgColor: 'bg-teal-500/10',
+    borderColor: 'border-teal-500/20',
+    Icon: Repeat,
+  },
 };
 
 const FALLBACK_CONFIG: TypeConfigEntry = {

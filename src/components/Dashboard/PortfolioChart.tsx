@@ -126,8 +126,8 @@ function CustomLegend({
               className="h-3 w-3 rounded-full shrink-0 ring-2 ring-offset-1"
               style={{
                 backgroundColor: CHART_COLORS[index % CHART_COLORS.length],
-                ringColor: `${CHART_COLORS[index % CHART_COLORS.length]}33`,
-                ringOffsetColor: 'transparent',
+                ['--tw-ring-color' as string]: `${CHART_COLORS[index % CHART_COLORS.length]}33`,
+                ['--tw-ring-offset-color' as string]: 'transparent',
               }}
             />
             <div className="flex flex-1 items-center justify-between min-w-0">

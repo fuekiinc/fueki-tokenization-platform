@@ -24,9 +24,12 @@ async function getPdfJs() {
 
 interface TextItem {
   str: string;
+  dir: string;
   transform: number[];  // [scaleX, skewX, skewY, scaleY, x, y]
   width: number;
   height: number;
+  fontName: string;
+  hasEOL: boolean;
 }
 
 /**
