@@ -1,14 +1,12 @@
 [variables]
-NODE_ENV = "development"
-
-[phases.setup]
-nixPkgs = ["nodejs_20", "npm-9_x"]
+NODE_ENV = "production"
+NIXPACKS_NX_CACHE_DIR = "/tmp/.cache"
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["npm ci --include=dev --ignore-scripts"]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["npm run build:railway"]
 
 [start]
-cmd = "NODE_ENV=production npx vite preview"
+cmd = "npx vite preview"
