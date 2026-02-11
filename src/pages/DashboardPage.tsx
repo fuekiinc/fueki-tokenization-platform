@@ -532,7 +532,7 @@ export default function DashboardPage() {
       {/* ================================================================== */}
       {/* Page Header -- Vercel / Linear style: title left, wallet right    */}
       {/* ================================================================== */}
-      <div className="mb-12 sm:mb-16">
+      <div className="mb-12 sm:mb-10">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           {/* Left: title + subtitle */}
           <div className="min-w-0">
@@ -604,7 +604,7 @@ export default function DashboardPage() {
       {/* ================================================================== */}
       {/* Stats Row -- 4 cards in a spacious grid                           */}
       {/* ================================================================== */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 sm:gap-8 overflow-hidden">
+      <div className="grid grid-cols-1 gap-6 pl-4 sm:grid-cols-2 lg:grid-cols-4 sm:gap-12 overflow-hidden">
         <StatCard
           title="Total Assets"
           value={String(totalAssets)}

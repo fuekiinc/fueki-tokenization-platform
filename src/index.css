@@ -96,8 +96,8 @@
 *,
 *::before,
 *::after {
-  margin: 0;
-  padding: 0;
+  margin: 100px;
+  padding: 30px;
   box-sizing: border-box;
 }
 
