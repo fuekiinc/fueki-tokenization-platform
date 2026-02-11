@@ -650,7 +650,7 @@ export default function Navbar() {
           'border-b border-white/[0.04]',
         )}
       >
-        <div className="mx-auto max-w-[1280px] px-8 sm:px-12 lg:px-20">
+        <div className="mx-auto max-w-[1920px] px-8 sm:px-12 lg:px-20 xl:px-32">
           <div className="flex h-20 items-center justify-between">
 
             {/* ---- Left: Logo + Nav Links ---- */}
