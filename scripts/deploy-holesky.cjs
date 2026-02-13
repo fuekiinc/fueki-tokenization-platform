@@ -21,7 +21,7 @@ async function main() {
   // ---------------------------------------------------------------
   //  1. Deploy WrappedAssetFactory
   // ---------------------------------------------------------------
-  console.log("[1/5] Deploying WrappedAssetFactory...");
+  console.log("[1/6] Deploying WrappedAssetFactory...");
   const WrappedAssetFactory = await hre.ethers.getContractFactory("WrappedAssetFactory");
   const wrappedAssetFactory = await WrappedAssetFactory.deploy();
   await wrappedAssetFactory.waitForDeployment();
@@ -31,7 +31,7 @@ async function main() {
   // ---------------------------------------------------------------
   //  2. Deploy AssetExchange
   // ---------------------------------------------------------------
-  console.log("[2/5] Deploying AssetExchange...");
+  console.log("[2/6] Deploying AssetExchange...");
   const AssetExchange = await hre.ethers.getContractFactory("AssetExchange");
   const assetExchange = await AssetExchange.deploy();
   await assetExchange.waitForDeployment();
@@ -41,7 +41,7 @@ async function main() {
   // ---------------------------------------------------------------
   //  3. Deploy SecurityTokenDeployer (helper for SecurityTokenFactory)
   // ---------------------------------------------------------------
-  console.log("[3/5] Deploying SecurityTokenDeployer...");
+  console.log("[3/6] Deploying SecurityTokenDeployer...");
   const SecurityTokenDeployer = await hre.ethers.getContractFactory("SecurityTokenDeployer");
   const securityTokenDeployer = await SecurityTokenDeployer.deploy();
   await securityTokenDeployer.waitForDeployment();
@@ -51,7 +51,7 @@ async function main() {
   // ---------------------------------------------------------------
   //  4. Deploy SecurityTokenFactory (with deployer address)
   // ---------------------------------------------------------------
-  console.log("[4/5] Deploying SecurityTokenFactory...");
+  console.log("[4/6] Deploying SecurityTokenFactory...");
   const SecurityTokenFactory = await hre.ethers.getContractFactory("SecurityTokenFactory");
   const securityTokenFactory = await SecurityTokenFactory.deploy(securityTokenDeployerAddress);
   await securityTokenFactory.waitForDeployment();
@@ -61,12 +61,22 @@ async function main() {
   // ---------------------------------------------------------------
   //  5. Deploy AssetBackedExchange
   // ---------------------------------------------------------------
-  console.log("[5/5] Deploying AssetBackedExchange...");
+  console.log("[5/6] Deploying AssetBackedExchange...");
   const AssetBackedExchange = await hre.ethers.getContractFactory("AssetBackedExchange");
   const assetBackedExchange = await AssetBackedExchange.deploy();
   await assetBackedExchange.waitForDeployment();
   const assetBackedExchangeAddress = await assetBackedExchange.getAddress();
   console.log("  AssetBackedExchange deployed to:", assetBackedExchangeAddress);
+
+  // ---------------------------------------------------------------
+  //  6. Deploy LiquidityPoolAMM
+  // ---------------------------------------------------------------
+  console.log("[6/6] Deploying LiquidityPoolAMM...");
+  const LiquidityPoolAMM = await hre.ethers.getContractFactory("LiquidityPoolAMM");
+  const liquidityPoolAMM = await LiquidityPoolAMM.deploy();
+  await liquidityPoolAMM.waitForDeployment();
+  const liquidityPoolAMMAddress = await liquidityPoolAMM.getAddress();
+  console.log("  LiquidityPoolAMM deployed to:", liquidityPoolAMMAddress);
 
   // ---------------------------------------------------------------
   //  Summary
@@ -80,6 +90,7 @@ async function main() {
   console.log("SecurityTokenDeployer:    ", securityTokenDeployerAddress);
   console.log("SecurityTokenFactory:     ", securityTokenFactoryAddress);
   console.log("AssetBackedExchange:      ", assetBackedExchangeAddress);
+  console.log("LiquidityPoolAMM:         ", liquidityPoolAMMAddress);
   console.log("=".repeat(60));
 
   const finalBalance = await hre.ethers.provider.getBalance(deployer.address);

@@ -3,6 +3,10 @@
 /* eslint-disable */
 import type * as assetBackedExchangeSol from "./AssetBackedExchange.sol";
 export type { assetBackedExchangeSol };
+import type * as liquidityPoolAmmSol from "./LiquidityPoolAMM.sol";
+export type { liquidityPoolAmmSol };
+import type * as orbital from "./orbital";
+export type { orbital };
 import type * as securityToken from "./security-token";
 export type { securityToken };
 export type { AssetExchange } from "./AssetExchange";

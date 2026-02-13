@@ -24,6 +24,8 @@ import OrderBook from '../components/Exchange/OrderBook';
 import TradeForm from '../components/Exchange/TradeForm';
 import UserOrders from '../components/Exchange/UserOrders';
 import TokenSelector from '../components/Exchange/TokenSelector';
+import LiquidityPanel from '../components/Exchange/LiquidityPanel';
+import PoolInfo from '../components/Exchange/PoolInfo';
 import {
   ArrowLeftRight,
   TrendingUp,
@@ -38,6 +40,7 @@ import {
   Wallet,
   Activity,
   BarChart3,
+  Droplets,
 } from 'lucide-react';
 import type { WrappedAsset } from '../types';
 
@@ -707,6 +710,92 @@ export default function ExchangePage() {
         )}
 
         {/* ================================================================= */}
+        {/* Liquidity Pools section                                          */}
+        {/* ================================================================= */}
+        {assets.length > 0 && (
+          <div className="mt-10 sm:mt-14">
+            {/* Section header */}
+            <div className="mb-8 flex flex-col gap-2">
+              <h2 className="flex items-center gap-3 text-xl sm:text-2xl font-bold tracking-tight text-white">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-purple-600/20 to-teal-600/20 ring-1 ring-white/[0.08]">
+                  <Droplets className="h-4.5 w-4.5 text-purple-400" />
+                </span>
+                Liquidity Pools
+              </h2>
+              <p className="text-sm text-gray-500 pl-0.5">
+                Provide liquidity to earn trading fees
+              </p>
+            </div>
+
+            {/* Two-column layout: LiquidityPanel | PoolInfo */}
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+              {/* Left: LiquidityPanel */}
+              <GlassCard
+                gradientFrom="from-purple-500"
+                gradientTo="to-teal-500"
+              >
+                <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
+                  <div className="flex items-center gap-3.5">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-500/10 ring-1 ring-purple-500/20">
+                      <Droplets className="h-4 w-4 text-purple-400" />
+                    </span>
+                    <div className="flex flex-col gap-1">
+                      <h3 className="text-sm font-semibold text-gray-100">
+                        Manage Liquidity
+                      </h3>
+                      <p className="text-[11px] text-gray-500">
+                        Add or remove from AMM pools
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-7">
+                  <LiquidityPanel
+                    assets={assets}
+                    contractService={contractService}
+                    userAddress={address ?? ''}
+                    ethBalance={ethBalance}
+                    onLiquidityChanged={handleRefresh}
+                  />
+                </div>
+              </GlassCard>
+
+              {/* Right: PoolInfo */}
+              <GlassCard
+                gradientFrom="from-teal-500"
+                gradientTo="to-purple-500"
+              >
+                <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
+                  <div className="flex items-center gap-3.5">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-500/10 ring-1 ring-teal-500/20">
+                      <BarChart3 className="h-4 w-4 text-teal-400" />
+                    </span>
+                    <div className="flex flex-col gap-1">
+                      <h3 className="text-sm font-semibold text-gray-100">
+                        Pool Statistics
+                      </h3>
+                      <p className="text-[11px] text-gray-500">
+                        Current pool data for selected pair
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-7">
+                  <PoolInfo
+                    tokenA={selectedSellToken}
+                    tokenB={selectedBuyToken}
+                    contractService={contractService}
+                    userAddress={address ?? ''}
+                    assets={assets}
+                    refreshKey={refreshKey}
+                  />
+                </div>
+              </GlassCard>
+            </div>
+          </div>
+        )}
+
+        {/* ================================================================= */}
         {/* Footer stats bar                                                  */}
         {/* ================================================================= */}
         {networkConfig && (
@@ -753,6 +842,19 @@ export default function ExchangePage() {
 
             {/* Separator */}
             <span className="hidden sm:block h-3.5 w-px bg-white/[0.06]" />
+
+            {/* AMM address */}
+            {networkConfig.ammAddress && (
+              <>
+                <span className="text-[11px] text-gray-600">
+                  AMM{' '}
+                  <span className="font-mono text-gray-500">
+                    {formatAddress(networkConfig.ammAddress)}
+                  </span>
+                </span>
+                <span className="hidden sm:block h-3.5 w-px bg-white/[0.06]" />
+              </>
+            )}
 
             {/* Asset count */}
             <span className="text-[11px] text-gray-600">

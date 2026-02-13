@@ -609,10 +609,10 @@ export default function MintForm({ document }: MintFormProps) {
               <div className="mt-4 flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => void switchNetwork(17000)}
+                  onClick={() => void switchNetwork(1)}
                   className="rounded-xl bg-indigo-500/15 border border-indigo-500/25 px-4 py-2 text-xs font-semibold text-indigo-300 transition-all hover:bg-indigo-500/25 hover:text-indigo-200"
                 >
-                  Switch to Holesky
+                  Switch to Ethereum
                 </button>
                 <button
                   type="button"

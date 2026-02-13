@@ -28,6 +28,18 @@ export type { AssetBackedExchange } from "./contracts/AssetBackedExchange.sol/As
 export { AssetBackedExchange__factory } from "./factories/contracts/AssetBackedExchange.sol/AssetBackedExchange__factory";
 export type { AssetExchange } from "./contracts/AssetExchange";
 export { AssetExchange__factory } from "./factories/contracts/AssetExchange__factory";
+export type { LiquidityPoolAMM } from "./contracts/LiquidityPoolAMM.sol/LiquidityPoolAMM";
+export { LiquidityPoolAMM__factory } from "./factories/contracts/LiquidityPoolAMM.sol/LiquidityPoolAMM__factory";
+export type { OrbitalFactory } from "./contracts/orbital/OrbitalFactory";
+export { OrbitalFactory__factory } from "./factories/contracts/orbital/OrbitalFactory__factory";
+export type { OrbitalMath } from "./contracts/orbital/OrbitalMath";
+export { OrbitalMath__factory } from "./factories/contracts/orbital/OrbitalMath__factory";
+export type { OrbitalPool } from "./contracts/orbital/OrbitalPool.sol/OrbitalPool";
+export { OrbitalPool__factory } from "./factories/contracts/orbital/OrbitalPool.sol/OrbitalPool__factory";
+export type { IERC20Router } from "./contracts/orbital/OrbitalRouter.sol/IERC20Router";
+export { IERC20Router__factory } from "./factories/contracts/orbital/OrbitalRouter.sol/IERC20Router__factory";
+export type { OrbitalRouter } from "./contracts/orbital/OrbitalRouter.sol/OrbitalRouter";
+export { OrbitalRouter__factory } from "./factories/contracts/orbital/OrbitalRouter.sol/OrbitalRouter__factory";
 export type { Dividends } from "./contracts/security-token/Dividends";
 export { Dividends__factory } from "./factories/contracts/security-token/Dividends__factory";
 export type { EasyAccessControl } from "./contracts/security-token/EasyAccessControl";

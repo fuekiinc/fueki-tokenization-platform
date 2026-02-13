@@ -1,0 +1,31 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "OrbitalMath",
+  "sourceName": "contracts/orbital/OrbitalMath.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "InvalidPower",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvariantViolation",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "MathOverflow",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ZeroInput",
+      "type": "error"
+    }
+  ],
+  "bytecode": "0x60808060405234601757603a9081601d823930815050f35b600080fdfe600080fdfea26469706673582212200dd97bbd239e00a180474b0e7cacda51e3ddb41851e11181a83ada191487789064736f6c63430008140033",
+  "deployedBytecode": "0x600080fdfea26469706673582212200dd97bbd239e00a180474b0e7cacda51e3ddb41851e11181a83ada191487789064736f6c63430008140033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

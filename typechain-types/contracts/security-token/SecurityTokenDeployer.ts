@@ -3,10 +3,12 @@
 /* eslint-disable */
 import type {
   BaseContract,
+  BigNumberish,
   BytesLike,
   FunctionFragment,
   Result,
   Interface,
+  AddressLike,
   ContractRunner,
   ContractMethod,
   Listener,
@@ -20,11 +22,38 @@ import type {
 } from "../../common";
 
 export interface SecurityTokenDeployerInterface extends Interface {
-  getFunction(nameOrSignature: "deploy"): FunctionFragment;
+  getFunction(
+    nameOrSignature: "deployRestrictedSwap" | "deployTransferRules"
+  ): FunctionFragment;
 
-  encodeFunctionData(functionFragment: "deploy", values: [BytesLike]): string;
+  encodeFunctionData(
+    functionFragment: "deployRestrictedSwap",
+    values: [
+      AddressLike,
+      AddressLike,
+      AddressLike,
+      string,
+      string,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish
+    ]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "deployTransferRules",
+    values?: undefined
+  ): string;
 
-  decodeFunctionResult(functionFragment: "deploy", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "deployRestrictedSwap",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "deployTransferRules",
+    data: BytesLike
+  ): Result;
 }
 
 export interface SecurityTokenDeployer extends BaseContract {
@@ -70,15 +99,50 @@ export interface SecurityTokenDeployer extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
-  deploy: TypedContractMethod<[bytecode: BytesLike], [string], "nonpayable">;
+  deployRestrictedSwap: TypedContractMethod<
+    [
+      transferRules_: AddressLike,
+      contractAdmin_: AddressLike,
+      tokenReserveAdmin_: AddressLike,
+      symbol_: string,
+      name_: string,
+      decimals_: BigNumberish,
+      totalSupply_: BigNumberish,
+      maxTotalSupply_: BigNumberish,
+      minTimelockAmount_: BigNumberish,
+      maxReleaseDelay_: BigNumberish
+    ],
+    [string],
+    "nonpayable"
+  >;
+
+  deployTransferRules: TypedContractMethod<[], [string], "nonpayable">;
 
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
   ): T;
 
   getFunction(
-    nameOrSignature: "deploy"
-  ): TypedContractMethod<[bytecode: BytesLike], [string], "nonpayable">;
+    nameOrSignature: "deployRestrictedSwap"
+  ): TypedContractMethod<
+    [
+      transferRules_: AddressLike,
+      contractAdmin_: AddressLike,
+      tokenReserveAdmin_: AddressLike,
+      symbol_: string,
+      name_: string,
+      decimals_: BigNumberish,
+      totalSupply_: BigNumberish,
+      maxTotalSupply_: BigNumberish,
+      minTimelockAmount_: BigNumberish,
+      maxReleaseDelay_: BigNumberish
+    ],
+    [string],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "deployTransferRules"
+  ): TypedContractMethod<[], [string], "nonpayable">;
 
   filters: {};
 }

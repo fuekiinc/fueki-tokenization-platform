@@ -26,6 +26,12 @@ export interface NetworkConfig {
   wethAddress: string;
   /** WBTC contract address for BTC-pegged trading. */
   wbtcAddress: string;
+  /** LiquidityPoolAMM contract address for constant-product AMM swaps. */
+  ammAddress: string;
+  /** Orbital AMM Factory (superellipse invariant) contract address. */
+  orbitalFactoryAddress: string;
+  /** Orbital AMM Router contract address. */
+  orbitalRouterAddress: string;
   nativeCurrency: {
     name: string;
     symbol: string;
@@ -37,14 +43,17 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   1: {
     chainId: 1,
     name: 'Ethereum Mainnet',
-    rpcUrl: 'https://eth.llamarpc.com',
+    rpcUrl: 'https://ethereum-rpc.publicnode.com',
     blockExplorer: 'https://etherscan.io',
-    factoryAddress: '',
-    exchangeAddress: '',
+    factoryAddress: '0xf7d3fC3b395b4Add020fF46B7ceA9E4c404ab4dB',
+    exchangeAddress: '0xcC54Dd0Af5AAeDfAC3bfD55dAd3884Dc4533130C',
     securityTokenFactoryAddress: '',
-    assetBackedExchangeAddress: '',
+    assetBackedExchangeAddress: '0xc722789416B8F22138f93C226Ab8a8497A3deCDa',
     wethAddress: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
     wbtcAddress: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
+    ammAddress: '0x4b34D01CdBB82136A593D0a96434e69a1cFbDCF2',
+    orbitalFactoryAddress: '',
+    orbitalRouterAddress: '',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   },
   11155111: {
@@ -58,6 +67,9 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     assetBackedExchangeAddress: '',
     wethAddress: '',
     wbtcAddress: '',
+    ammAddress: '',
+    orbitalFactoryAddress: '',
+    orbitalRouterAddress: '',
     nativeCurrency: { name: 'SepoliaETH', symbol: 'ETH', decimals: 18 },
   },
   137: {
@@ -71,6 +83,9 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     assetBackedExchangeAddress: '',
     wethAddress: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619',
     wbtcAddress: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6',
+    ammAddress: '',
+    orbitalFactoryAddress: '',
+    orbitalRouterAddress: '',
     nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
   },
   42161: {
@@ -84,6 +99,25 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     assetBackedExchangeAddress: '',
     wethAddress: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
     wbtcAddress: '0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f',
+    ammAddress: '',
+    orbitalFactoryAddress: '',
+    orbitalRouterAddress: '',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  },
+  421614: {
+    chainId: 421614,
+    name: 'Arbitrum Sepolia',
+    rpcUrl: 'https://sepolia-rollup.arbitrum.io/rpc',
+    blockExplorer: 'https://sepolia.arbiscan.io',
+    factoryAddress: '',
+    exchangeAddress: '',
+    securityTokenFactoryAddress: '',
+    assetBackedExchangeAddress: '',
+    wethAddress: '',
+    wbtcAddress: '',
+    ammAddress: '',
+    orbitalFactoryAddress: '',
+    orbitalRouterAddress: '',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   },
   8453: {
@@ -97,6 +131,9 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     assetBackedExchangeAddress: '',
     wethAddress: '0x4200000000000000000000000000000000000006',
     wbtcAddress: '',
+    ammAddress: '',
+    orbitalFactoryAddress: '',
+    orbitalRouterAddress: '',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   },
   17000: {
@@ -110,6 +147,9 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     assetBackedExchangeAddress: '0x6C9217850317e61544a3d5bFD3b3C6CA3ADE6660',
     wethAddress: '',
     wbtcAddress: '',
+    ammAddress: '',
+    orbitalFactoryAddress: '0xd951A80Efd159B35A7c66f830ca77980476D9305',
+    orbitalRouterAddress: '0xE5A362047CAB14a2A64Bda26a83719Ac33A22087',
     nativeCurrency: { name: 'Holesky ETH', symbol: 'ETH', decimals: 18 },
   },
   31337: {
@@ -123,12 +163,15 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     assetBackedExchangeAddress: '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9',
     wethAddress: '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9',
     wbtcAddress: '0x5FC8d32690cc91D4c39d9d3abcBD16989F875707',
+    ammAddress: '',
+    orbitalFactoryAddress: '',
+    orbitalRouterAddress: '',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   },
 };
 
 /** Default chain ID used when no network preference is specified. */
-export const DEFAULT_CHAIN_ID = 17000;
+export const DEFAULT_CHAIN_ID = 1;
 
 /**
  * Retrieve network metadata (RPC, explorer, currency) for a given chain ID,

@@ -19,6 +19,7 @@ import {
   Globe,
   Layers,
 } from 'lucide-react';
+import { ethers } from 'ethers';
 import { useAppStore, getProvider } from '../store/useAppStore';
 import { useWallet } from '../hooks/useWallet';
 import { ContractService } from '../lib/blockchain/contracts';
@@ -270,16 +271,22 @@ export default function DashboardPage() {
   const userOrders = useAppStore((s) => s.userOrders);
   const setAssets = useAppStore((s) => s.setAssets);
   const setUserOrders = useAppStore((s) => s.setUserOrders);
+  const setTrades = useAppStore((s) => s.setTrades);
   const setLoadingAssets = useAppStore((s) => s.setLoadingAssets);
   const chainId = useAppStore((s) => s.wallet.chainId);
 
   // ---- Data fetching -------------------------------------------------------
 
-  // Use a ref for wrappedAssets to avoid dependency cycles in fetchData.
+  // Use refs to avoid dependency cycles in fetchData.
   const wrappedAssetsRef = useRef(wrappedAssets);
   useEffect(() => {
     wrappedAssetsRef.current = wrappedAssets;
   }, [wrappedAssets]);
+
+  const tradeHistoryRef = useRef(tradeHistory);
+  useEffect(() => {
+    tradeHistoryRef.current = tradeHistory;
+  }, [tradeHistory]);
 
   const fetchData = useCallback(async () => {
     if (!isConnected || !address || !chainId) return;
@@ -344,13 +351,27 @@ export default function DashboardPage() {
       setLoadingAssets(false);
     }
 
-    // Fetch user orders -- getUserOrders returns order IDs (bigint[]),
-    // so we must fetch each order's details and map to ExchangeOrder.
+    // Fetch user orders from AssetBackedExchange (maker + taker)
     try {
-      const orderIds = await service.getUserOrders(address);
-      if (orderIds.length > 0) {
+      const [makerIds, takerIds] = await Promise.all([
+        service.getExchangeUserOrders(address),
+        service.getExchangeFilledOrderIds(address),
+      ]);
+
+      // Merge and deduplicate order IDs
+      const seen = new Set<string>();
+      const allIds: bigint[] = [];
+      for (const id of [...makerIds, ...takerIds]) {
+        const key = id.toString();
+        if (!seen.has(key)) {
+          seen.add(key);
+          allIds.push(id);
+        }
+      }
+
+      if (allIds.length > 0) {
         const orderDetails = await Promise.all(
-          orderIds.map((id) => service.getOrder(id).catch(() => null)),
+          allIds.map((id) => service.getExchangeOrder(id).catch(() => null)),
         );
         const exchangeOrders: import('../types').ExchangeOrder[] = orderDetails
           .filter((o): o is NonNullable<typeof o> => o !== null)
@@ -372,7 +393,77 @@ export default function DashboardPage() {
     } catch {
       // non-critical
     }
-  }, [isConnected, address, chainId, setAssets, setLoadingAssets, setUserOrders]);
+
+    // Fetch trade history from on-chain events (user-scoped filters)
+    try {
+      const exchange = service.getAssetBackedExchangeContract();
+      const addr = address.toLowerCase();
+
+      // Get OrderFilled events where user is the taker
+      const takerFilter = exchange.filters.OrderFilled(null, address);
+      const takerFillEvents = await exchange.queryFilter(takerFilter);
+
+      // Get OrderCreated events where user is the maker (to detect their filled orders)
+      const makerFilter = exchange.filters.OrderCreated(null, address);
+      const makerEvents = await exchange.queryFilter(makerFilter);
+      const makerOrderIds = new Set(
+        makerEvents.map((e) => ((e as ethers.EventLog).args[0] as bigint).toString()),
+      );
+
+      // Get OrderFilled events for the user's maker orders
+      const allFillEvents = makerOrderIds.size > 0
+        ? await exchange.queryFilter(exchange.filters.OrderFilled())
+        : [];
+      const makerFillEvents = allFillEvents.filter((e) =>
+        makerOrderIds.has(((e as ethers.EventLog).args[0] as bigint).toString()),
+      );
+
+      // Deduplicate and build trades
+      const trades: import('../types').TradeHistory[] = [];
+      const seenTx = new Set<string>();
+
+      for (const evt of [...takerFillEvents, ...makerFillEvents]) {
+        const log = evt as ethers.EventLog;
+        const txKey = `${log.transactionHash}-${log.index}`;
+        if (seenTx.has(txKey)) continue;
+        seenTx.add(txKey);
+
+        const orderId = log.args[0] as bigint;
+        const taker = (log.args[1] as string).toLowerCase();
+        const fillSell = log.args[2] as bigint;
+        const fillBuy = log.args[3] as bigint;
+        const isTaker = taker === addr;
+
+        const block = await log.getBlock();
+        // Use milliseconds to match Date.now() convention in the rest of the app
+        const timestampMs = block ? block.timestamp * 1000 : Date.now();
+        trades.push({
+          id: `fill-${txKey}`,
+          type: 'exchange',
+          asset: `Order #${orderId.toString()}`,
+          assetSymbol: isTaker ? 'FILL' : 'SOLD',
+          amount: ethers.formatUnits(isTaker ? fillBuy : fillSell, 18),
+          txHash: log.transactionHash,
+          timestamp: timestampMs,
+          from: isTaker ? taker : addr,
+          to: isTaker ? addr : taker,
+          status: 'confirmed',
+        });
+      }
+
+      // Merge with existing trade history (mints, burns, etc.) via ref to avoid dep cycle
+      const existing = tradeHistoryRef.current;
+      const existingIds = new Set(existing.map((t) => t.id));
+      const merged = [...existing];
+      for (const t of trades) {
+        if (!existingIds.has(t.id)) merged.push(t);
+      }
+      merged.sort((a, b) => b.timestamp - a.timestamp);
+      setTrades(merged);
+    } catch {
+      // non-critical -- trade history just won't include exchange fills
+    }
+  }, [isConnected, address, chainId, setAssets, setLoadingAssets, setUserOrders, setTrades]);
 
   useEffect(() => {
     void fetchData();

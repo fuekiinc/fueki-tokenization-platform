@@ -62,6 +62,38 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.AssetExchange__factory>;
     getContractFactory(
+      name: "IERC20",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IERC20__factory>;
+    getContractFactory(
+      name: "LiquidityPoolAMM",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.LiquidityPoolAMM__factory>;
+    getContractFactory(
+      name: "OrbitalFactory",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.OrbitalFactory__factory>;
+    getContractFactory(
+      name: "OrbitalMath",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.OrbitalMath__factory>;
+    getContractFactory(
+      name: "IERC20",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IERC20__factory>;
+    getContractFactory(
+      name: "OrbitalPool",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.OrbitalPool__factory>;
+    getContractFactory(
+      name: "IERC20Router",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IERC20Router__factory>;
+    getContractFactory(
+      name: "OrbitalRouter",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.OrbitalRouter__factory>;
+    getContractFactory(
       name: "Dividends",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.Dividends__factory>;
@@ -179,6 +211,46 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.AssetExchange>;
     getContractAt(
+      name: "IERC20",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IERC20>;
+    getContractAt(
+      name: "LiquidityPoolAMM",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.LiquidityPoolAMM>;
+    getContractAt(
+      name: "OrbitalFactory",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.OrbitalFactory>;
+    getContractAt(
+      name: "OrbitalMath",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.OrbitalMath>;
+    getContractAt(
+      name: "IERC20",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IERC20>;
+    getContractAt(
+      name: "OrbitalPool",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.OrbitalPool>;
+    getContractAt(
+      name: "IERC20Router",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IERC20Router>;
+    getContractAt(
+      name: "OrbitalRouter",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.OrbitalRouter>;
+    getContractAt(
       name: "Dividends",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -298,6 +370,38 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.AssetExchange>;
     deployContract(
+      name: "IERC20",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IERC20>;
+    deployContract(
+      name: "LiquidityPoolAMM",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.LiquidityPoolAMM>;
+    deployContract(
+      name: "OrbitalFactory",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.OrbitalFactory>;
+    deployContract(
+      name: "OrbitalMath",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.OrbitalMath>;
+    deployContract(
+      name: "IERC20",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IERC20>;
+    deployContract(
+      name: "OrbitalPool",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.OrbitalPool>;
+    deployContract(
+      name: "IERC20Router",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IERC20Router>;
+    deployContract(
+      name: "OrbitalRouter",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.OrbitalRouter>;
+    deployContract(
       name: "Dividends",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Dividends>;
@@ -414,6 +518,46 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.AssetExchange>;
+    deployContract(
+      name: "IERC20",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IERC20>;
+    deployContract(
+      name: "LiquidityPoolAMM",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.LiquidityPoolAMM>;
+    deployContract(
+      name: "OrbitalFactory",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.OrbitalFactory>;
+    deployContract(
+      name: "OrbitalMath",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.OrbitalMath>;
+    deployContract(
+      name: "IERC20",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IERC20>;
+    deployContract(
+      name: "OrbitalPool",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.OrbitalPool>;
+    deployContract(
+      name: "IERC20Router",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IERC20Router>;
+    deployContract(
+      name: "OrbitalRouter",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.OrbitalRouter>;
     deployContract(
       name: "Dividends",
       args: any[],

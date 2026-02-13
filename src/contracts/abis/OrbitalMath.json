@@ -1,0 +1,22 @@
+[
+  {
+    "inputs": [],
+    "name": "InvalidPower",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvariantViolation",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "MathOverflow",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ZeroInput",
+    "type": "error"
+  }
+]

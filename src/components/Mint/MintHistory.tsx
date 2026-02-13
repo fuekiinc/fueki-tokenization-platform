@@ -166,24 +166,25 @@ export default function MintHistory() {
 
             {/* Bottom row: Tx hash with copy + explorer link */}
             <div className="mt-4 flex items-center gap-3 pt-4 border-t border-white/[0.04]">
-              <span className="font-mono text-xs text-gray-500 truncate">
-                {formatAddress(trade.txHash)}
-              </span>
+              {blockExplorer ? (
+                <a
+                  href={`${blockExplorer}/tx/${trade.txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group inline-flex items-center gap-2 font-mono text-xs text-indigo-400 transition-colors hover:text-indigo-300 truncate"
+                  title={trade.txHash}
+                >
+                  {formatAddress(trade.txHash)}
+                  <ExternalLink className="h-3 w-3 shrink-0 transition-transform group-hover:translate-x-0.5" />
+                </a>
+              ) : (
+                <span className="font-mono text-xs text-gray-500 truncate" title={trade.txHash}>
+                  {formatAddress(trade.txHash)}
+                </span>
+              )}
 
               <div className="flex items-center gap-2 ml-auto shrink-0">
                 <CopyButton text={trade.txHash} />
-
-                {blockExplorer && (
-                  <a
-                    href={`${blockExplorer}/tx/${trade.txHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.04] border border-white/[0.06] text-gray-500 transition-all hover:bg-indigo-500/10 hover:border-indigo-500/20 hover:text-indigo-400"
-                    title="View on explorer"
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
               </div>
             </div>
           </div>

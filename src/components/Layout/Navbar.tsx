@@ -54,6 +54,13 @@ const NETWORKS: NetworkOption[] = [
     color: '#28A0F0',
   },
   {
+    chainId: 421614,
+    name: 'Arbitrum Sepolia',
+    shortName: 'Arb Sepolia',
+    explorerUrl: 'https://sepolia.arbiscan.io',
+    color: '#28A0F0',
+  },
+  {
     chainId: 8453,
     name: 'Base',
     shortName: 'Base',
@@ -83,6 +90,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Mint', to: '/mint' },
   { label: 'Portfolio', to: '/portfolio' },
   { label: 'Exchange', to: '/exchange' },
+  { label: 'Orbital AMM', to: '/advanced' },
 ];
 
 // ---------------------------------------------------------------------------

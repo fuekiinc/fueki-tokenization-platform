@@ -31,8 +31,12 @@ import {
   AlertCircle,
   ArrowRightLeft,
   Fuel,
+  Zap,
+  BookOpen,
+  Settings2,
 } from 'lucide-react';
 import type { WrappedAsset } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
 import { ContractService, ETH_SENTINEL, isETH } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
@@ -44,6 +48,7 @@ import TokenSelector from './TokenSelector';
 
 type TxStatus = 'idle' | 'approving' | 'approved' | 'creating' | 'confirmed';
 type TradeSide = 'buy' | 'sell';
+type TradeMode = 'limit' | 'amm';
 
 interface TradeFormProps {
   assets: WrappedAsset[];
@@ -60,8 +65,11 @@ export default function TradeForm({
   contractService,
   onOrderCreated,
 }: TradeFormProps) {
+  const addTrade = useAppStore((s) => s.addTrade);
+
   // ---- Local state --------------------------------------------------------
 
+  const [tradeMode, setTradeMode] = useState<TradeMode>('limit');
   const [side, setSide] = useState<TradeSide>('buy');
   const [sellToken, setSellToken] = useState<string | null>(null);
   const [buyToken, setBuyToken] = useState<string | null>(null);
@@ -73,6 +81,12 @@ export default function TradeForm({
   const [allowance, setAllowance] = useState<bigint>(0n);
   const [chainId, setChainId] = useState<number | null>(null);
   const [ethBalance, setEthBalance] = useState<bigint>(0n);
+
+  // AMM-specific state
+  const [ammQuote, setAmmQuote] = useState<bigint>(0n);
+  const [ammQuoteLoading, setAmmQuoteLoading] = useState(false);
+  const [slippage, setSlippage] = useState(1); // percentage
+  const [showSlippageSettings, setShowSlippageSettings] = useState(false);
 
   // ---- Derived ------------------------------------------------------------
 
@@ -369,6 +383,22 @@ export default function TradeForm({
       setTxStatus('confirmed');
       toast.success('Order created successfully!', { id: 'create-order' });
 
+      // Record trade in store so dashboard updates immediately
+      const sellSym = sellIsETH ? 'ETH' : (assets.find((a) => a.address === sellToken)?.symbol ?? formatAddress(sellToken!));
+      const buySym = buyIsETH ? 'ETH' : (assets.find((a) => a.address === buyToken)?.symbol ?? formatAddress(buyToken!));
+      addTrade({
+        id: `order-${tx.hash}`,
+        type: 'exchange',
+        asset: `${sellSym} → ${buySym}`,
+        assetSymbol: sellSym,
+        amount: sellAmount,
+        txHash: tx.hash,
+        timestamp: Date.now(),
+        from: sellToken!,
+        to: buyToken!,
+        status: 'confirmed',
+      });
+
       // Reset form after short delay
       setTimeout(() => {
         setSellAmount('');
@@ -395,14 +425,183 @@ export default function TradeForm({
     sameTokenError,
     txStatus,
     sellIsETH,
+    buyIsETH,
     onOrderCreated,
+    addTrade,
+    assets,
+    sellAmount,
   ]);
+
+  // ---- AMM: fetch quote when sell amount changes ---------------------------
+
+  useEffect(() => {
+    if (tradeMode !== 'amm') return;
+
+    let cancelled = false;
+
+    async function fetchQuote() {
+      if (!contractService || !sellToken || !buyToken || parsedSellAmount === 0n) {
+        setAmmQuote(0n);
+        return;
+      }
+      if (sellToken.toLowerCase() === buyToken.toLowerCase()) {
+        setAmmQuote(0n);
+        return;
+      }
+
+      setAmmQuoteLoading(true);
+      try {
+        const q = await contractService.getAMMQuote(sellToken, buyToken, parsedSellAmount);
+        if (!cancelled) setAmmQuote(q);
+      } catch {
+        if (!cancelled) setAmmQuote(0n);
+      } finally {
+        if (!cancelled) setAmmQuoteLoading(false);
+      }
+    }
+
+    const timer = setTimeout(() => void fetchQuote(), 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [tradeMode, contractService, sellToken, buyToken, parsedSellAmount]);
+
+  // AMM price impact
+  const ammPriceImpact = useMemo(() => {
+    if (tradeMode !== 'amm' || ammQuote === 0n || parsedSellAmount === 0n) return null;
+    // Get the spot rate without fee from reserves
+    // Impact = 1 - (actualOutput / spotOutput)
+    // We approximate: spotOutput = (amountIn * reserveOut / reserveIn)
+    // For now just show the effective rate vs the quote
+    const effectiveRate = Number(ethers.formatUnits(ammQuote, 18)) / Number(ethers.formatUnits(parsedSellAmount, 18));
+    // We can't easily get reserves here, so show effective rate info
+    return effectiveRate;
+  }, [tradeMode, ammQuote, parsedSellAmount]);
+
+  // AMM swap handler
+  const handleAMMSwap = useCallback(async () => {
+    if (!contractService || !sellToken || !buyToken || parsedSellAmount === 0n || ammQuote === 0n) return;
+    if (txStatus !== 'idle' && txStatus !== 'approved') return;
+
+    // Check approval for non-ETH tokens
+    if (!sellIsETH) {
+      const currentChainId = chainId ?? 31337;
+      const config = getNetworkConfig(currentChainId);
+      const ammAddress = config?.ammAddress;
+
+      if (ammAddress) {
+        const signer = await contractService.getSigner();
+        const userAddr = await signer.getAddress();
+        const currentAllowance = await contractService.getAssetAllowance(sellToken, userAddr, ammAddress);
+
+        if (currentAllowance < parsedSellAmount) {
+          setTxStatus('approving');
+          setTxHash(null);
+          try {
+            const approveTx = await contractService.approveAMM(sellToken, parsedSellAmount);
+            setTxHash(approveTx.hash);
+            toast.loading('Approving token for AMM...', { id: 'amm-approve' });
+            await contractService.waitForTransaction(approveTx);
+            toast.success('Token approved for AMM', { id: 'amm-approve' });
+            setTxStatus('approved');
+          } catch (err: unknown) {
+            toast.error(err instanceof Error ? err.message : 'Approval failed', { id: 'amm-approve' });
+            setTxStatus('idle');
+            return;
+          }
+        }
+      }
+    }
+
+    setTxStatus('creating');
+    setTxHash(null);
+
+    // Calculate min output with slippage
+    const minOut = ammQuote - (ammQuote * BigInt(Math.round(slippage * 10)) / 1000n);
+
+    try {
+      let tx: ethers.ContractTransactionResponse;
+
+      if (sellIsETH) {
+        tx = await contractService.swapETHForToken(buyToken, minOut, parsedSellAmount);
+      } else if (buyIsETH) {
+        tx = await contractService.swapTokenForETH(sellToken, parsedSellAmount, minOut);
+      } else {
+        tx = await contractService.swapAMM(sellToken, buyToken, parsedSellAmount, minOut);
+      }
+
+      setTxHash(tx.hash);
+      toast.loading('Swapping via AMM...', { id: 'amm-swap' });
+      await contractService.waitForTransaction(tx);
+      setTxStatus('confirmed');
+      toast.success('Swap completed!', { id: 'amm-swap' });
+
+      // Record AMM swap in store so dashboard updates immediately
+      const swapSellSym = sellIsETH ? 'ETH' : (assets.find((a) => a.address === sellToken)?.symbol ?? formatAddress(sellToken!));
+      const swapBuySym = buyIsETH ? 'ETH' : (assets.find((a) => a.address === buyToken)?.symbol ?? formatAddress(buyToken!));
+      addTrade({
+        id: `swap-${tx.hash}`,
+        type: sellIsETH ? 'swap-eth' : buyIsETH ? 'swap-eth' : 'swap-erc20',
+        asset: `${swapSellSym} → ${swapBuySym}`,
+        assetSymbol: swapSellSym,
+        amount: sellAmount,
+        txHash: tx.hash,
+        timestamp: Date.now(),
+        from: sellToken!,
+        to: buyToken!,
+        status: 'confirmed',
+      });
+
+      setTimeout(() => {
+        setSellAmount('');
+        setAmmQuote(0n);
+        setTxStatus('idle');
+        setTxHash(null);
+        onOrderCreated();
+      }, 2000);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Swap failed', { id: 'amm-swap' });
+      setTxStatus('idle');
+    }
+  }, [contractService, sellToken, buyToken, parsedSellAmount, ammQuote, slippage, txStatus, sellIsETH, buyIsETH, chainId, onOrderCreated, addTrade, assets, sellAmount]);
 
   // ---- Render -------------------------------------------------------------
 
   return (
     <div className="space-y-6">
-      {/* ---- Buy/Sell segmented control ----------------------------------- */}
+      {/* ---- Mode toggle: Limit Order vs Instant Swap (AMM) --------------- */}
+      <div className="flex gap-1 rounded-xl bg-[#0D0F14] p-1 border border-white/[0.06]">
+        <button
+          type="button"
+          onClick={() => { setTradeMode('limit'); setTxStatus('idle'); setTxHash(null); }}
+          className={clsx(
+            'flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold transition-all duration-200',
+            tradeMode === 'limit'
+              ? 'bg-indigo-500/15 text-indigo-400 shadow-[inset_0_1px_0_rgba(99,102,241,0.2)]'
+              : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03]',
+          )}
+        >
+          <BookOpen className="h-3.5 w-3.5" />
+          Limit Order
+        </button>
+        <button
+          type="button"
+          onClick={() => { setTradeMode('amm'); setTxStatus('idle'); setTxHash(null); }}
+          className={clsx(
+            'flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold transition-all duration-200',
+            tradeMode === 'amm'
+              ? 'bg-purple-500/15 text-purple-400 shadow-[inset_0_1px_0_rgba(168,85,247,0.2)]'
+              : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03]',
+          )}
+        >
+          <Zap className="h-3.5 w-3.5" />
+          Instant Swap (AMM)
+        </button>
+      </div>
+
+      {/* ---- Buy/Sell segmented control (Limit mode only) ---------------- */}
+      {tradeMode === 'limit' && (
       <div className="flex gap-1 rounded-xl bg-[#0D0F14] p-1.5 border border-white/[0.06]">
         <button
           type="button"
@@ -429,7 +628,13 @@ export default function TradeForm({
           Sell
         </button>
       </div>
+      )}
 
+      {/* ================================================================= */}
+      {/* LIMIT ORDER MODE                                                 */}
+      {/* ================================================================= */}
+      {tradeMode === 'limit' && (
+      <>
       {/* ---- Sell section -------------------------------------------------- */}
       <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-7 sm:p-8">
         <TokenSelector
@@ -514,15 +719,25 @@ export default function TradeForm({
 
       {/* ---- Arrow separator ------------------------------------------------ */}
       <div className="flex justify-center -my-3 relative z-10">
-        <div
+        <button
+          type="button"
+          onClick={() => {
+            const tmpToken = sellToken;
+            const tmpAmount = sellAmount;
+            setSellToken(buyToken);
+            setBuyToken(tmpToken);
+            setSellAmount(buyAmount);
+            setBuyAmount(tmpAmount);
+          }}
           className={clsx(
-            'flex h-10 w-10 items-center justify-center rounded-xl transition-colors',
+            'flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-200',
             'bg-[#0D0F14] border border-white/[0.06]',
-            'hover:border-white/[0.12] shadow-lg shadow-black/20',
+            'hover:border-indigo-500/30 hover:bg-indigo-500/5 hover:rotate-180 shadow-lg shadow-black/20',
           )}
+          title="Swap tokens"
         >
           <ArrowDown className="h-4 w-4 text-gray-400" />
-        </div>
+        </button>
       </div>
 
       {/* ---- Buy section --------------------------------------------------- */}
@@ -738,8 +953,261 @@ export default function TradeForm({
           </button>
         );
       })()}
+      </>
+      )}
 
-      {/* ---- Transaction hash link ------------------------------------------ */}
+      {/* ================================================================= */}
+      {/* AMM INSTANT SWAP MODE                                            */}
+      {/* ================================================================= */}
+      {tradeMode === 'amm' && (
+      <>
+      {/* ---- Sell token + amount ------------------------------------------- */}
+      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-7 sm:p-8">
+        <TokenSelector
+          assets={assets}
+          selectedToken={sellToken}
+          onSelect={setSellToken}
+          label="You Sell"
+          includeETH
+          ethBalance={ethBalance.toString()}
+        />
+        <div className="mt-5">
+          <div className="relative">
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder="0.0"
+              value={sellAmount}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (/^[0-9]*\.?[0-9]*$/.test(val)) setSellAmount(val);
+              }}
+              className={clsx(
+                'w-full rounded-xl px-5 py-4 pr-28 text-xl font-semibold text-white',
+                'bg-[#0D0F14] border border-white/[0.06]',
+                'placeholder:text-gray-600',
+                'focus:border-white/[0.12] focus:outline-none focus:ring-1 focus:ring-white/[0.08]',
+                'font-mono transition-all',
+              )}
+            />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              {sellAsset && (
+                <span className="rounded-lg bg-white/[0.06] px-2.5 py-1.5 text-xs font-semibold text-gray-300 border border-white/[0.04]">
+                  {sellAsset.symbol}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleMaxSell}
+                disabled={sellBalance === 0n}
+                className="rounded-lg px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-all bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                Max
+              </button>
+            </div>
+          </div>
+          {sellAsset && (
+            <div className="mt-3 flex items-center justify-between text-xs">
+              <span className="text-gray-500">
+                Balance:{' '}
+                <span className="font-mono text-gray-400">
+                  {formatBalance(sellBalance, 18, 6)}
+                </span>{' '}
+                {sellAsset.symbol}
+              </span>
+              {insufficientBalance && parsedSellAmount > 0n && (
+                <span className="flex items-center gap-1 text-red-400">
+                  <AlertCircle className="h-3 w-3" />
+                  Insufficient balance
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ---- Arrow separator ------------------------------------------------ */}
+      <div className="flex justify-center -my-3 relative z-10">
+        <button
+          type="button"
+          onClick={() => {
+            const tmpToken = sellToken;
+            setSellToken(buyToken);
+            setBuyToken(tmpToken);
+            setSellAmount('');
+            setAmmQuote(0n);
+          }}
+          className={clsx(
+            'flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-200',
+            'bg-[#0D0F14] border border-white/[0.06]',
+            'hover:border-purple-500/30 hover:bg-purple-500/5 hover:rotate-180 shadow-lg shadow-black/20',
+          )}
+          title="Swap tokens"
+        >
+          <Zap className="h-4 w-4 text-purple-400" />
+        </button>
+      </div>
+
+      {/* ---- Buy token + auto-calculated output ----------------------------- */}
+      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-7 sm:p-8">
+        <TokenSelector
+          assets={assets}
+          selectedToken={buyToken}
+          onSelect={setBuyToken}
+          label="You Receive"
+          includeETH
+          ethBalance={ethBalance.toString()}
+        />
+        <div className="mt-5">
+          <div className="relative">
+            <div
+              className={clsx(
+                'w-full rounded-xl px-5 py-4 pr-20 text-xl font-semibold font-mono',
+                'bg-[#0D0F14] border border-white/[0.06]',
+                'min-h-[60px] flex items-center',
+                ammQuote > 0n ? 'text-white' : 'text-gray-600',
+              )}
+            >
+              {ammQuoteLoading ? (
+                <Loader2 className="h-5 w-5 animate-spin text-purple-400/60" />
+              ) : ammQuote > 0n ? (
+                Number(ethers.formatUnits(ammQuote, 18)).toFixed(6)
+              ) : (
+                '0.0'
+              )}
+            </div>
+            {buyAsset && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg bg-white/[0.06] px-2.5 py-1.5 text-xs font-semibold text-gray-300 border border-white/[0.04]">
+                {buyAsset.symbol}
+              </span>
+            )}
+          </div>
+          {buyAsset && (
+            <div className="mt-3 text-xs text-gray-500">
+              {isETH(buyAsset.address) ? 'Native ETH' : (
+                <>Token: <span className="font-mono text-gray-400">{formatAddress(buyAsset.address)}</span></>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ---- AMM Quote details ---------------------------------------------- */}
+      {ammQuote > 0n && sellAsset && buyAsset && parsedSellAmount > 0n && (
+        <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-5 sm:p-6">
+          <div className="space-y-0 divide-y divide-white/[0.06]">
+            <div className="flex items-center justify-between py-2.5 first:pt-0">
+              <span className="flex items-center gap-2 text-xs text-gray-500">
+                <ArrowRightLeft className="h-3 w-3" />
+                Rate
+              </span>
+              <span className="font-mono text-xs font-medium text-white">
+                1 {sellAsset.symbol} ={' '}
+                {(Number(ethers.formatUnits(ammQuote, 18)) / Number(ethers.formatUnits(parsedSellAmount, 18))).toFixed(6)}{' '}
+                {buyAsset.symbol}
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-2.5">
+              <span className="text-xs text-gray-500">Min. received</span>
+              <span className="font-mono text-xs text-gray-400">
+                {Number(ethers.formatUnits(ammQuote - (ammQuote * BigInt(Math.round(slippage * 10)) / 1000n), 18)).toFixed(6)}{' '}
+                {buyAsset.symbol}
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-2.5">
+              <span className="text-xs text-gray-500">Fee</span>
+              <span className="font-mono text-xs text-gray-400">0.3%</span>
+            </div>
+            <div className="flex items-center justify-between py-2.5 last:pb-0">
+              <button
+                type="button"
+                onClick={() => setShowSlippageSettings(!showSlippageSettings)}
+                className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                <Settings2 className="h-3 w-3" />
+                Slippage Tolerance
+              </button>
+              <span className="font-mono text-xs text-purple-400">{slippage}%</span>
+            </div>
+          </div>
+
+          {/* Slippage settings */}
+          {showSlippageSettings && (
+            <div className="mt-3 flex gap-2 pt-3 border-t border-white/[0.04]">
+              {[0.5, 1, 2, 5].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => { setSlippage(pct); setShowSlippageSettings(false); }}
+                  className={clsx(
+                    'flex-1 rounded-lg py-2 text-xs font-semibold transition-all',
+                    slippage === pct
+                      ? 'bg-purple-500/20 text-purple-400 ring-1 ring-purple-500/30'
+                      : 'bg-white/[0.04] text-gray-500 hover:text-gray-300',
+                  )}
+                >
+                  {pct}%
+                </button>
+              ))}
+            </div>
+          )}
+
+          {sellIsETH && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg bg-blue-500/5 border border-blue-500/10 px-4 py-2.5 text-[11px] text-blue-400/70">
+              <Fuel className="h-3 w-3 shrink-0" />
+              ETH sent with the transaction (no approval needed)
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ---- Same-token warning --------------------------------------------- */}
+      {sameTokenError && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/5 px-5 py-4 text-sm text-amber-400">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          Sell and buy tokens must be different.
+        </div>
+      )}
+
+      {/* ---- Swap button ---------------------------------------------------- */}
+      {(() => {
+        const status = txStatus as TxStatus;
+        const canSwap = contractService &&
+          sellToken && buyToken && !sameTokenError &&
+          parsedSellAmount > 0n && ammQuote > 0n &&
+          !insufficientBalance &&
+          (status === 'idle' || status === 'approved');
+        return (
+          <button
+            type="button"
+            onClick={handleAMMSwap}
+            disabled={!canSwap || status === 'creating' || status === 'confirmed'}
+            className={clsx(
+              'flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-semibold transition-all',
+              status === 'creating' || status === 'approving'
+                ? 'cursor-not-allowed opacity-70 bg-gradient-to-r from-purple-600/50 to-purple-500/50 text-purple-300'
+                : status === 'confirmed'
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : 'bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-[0_0_20px_rgba(168,85,247,0.15)] hover:shadow-[0_0_30px_rgba(168,85,247,0.25)]',
+              'disabled:cursor-not-allowed disabled:opacity-40',
+            )}
+          >
+            {status === 'approving' ? (
+              <><Loader2 className="h-4 w-4 animate-spin" /> Approving...</>
+            ) : status === 'creating' ? (
+              <><Loader2 className="h-4 w-4 animate-spin" /> Swapping...</>
+            ) : status === 'confirmed' ? (
+              <><Check className="h-4 w-4" /> Swap Complete!</>
+            ) : (
+              <><Zap className="h-4 w-4" /> Swap via AMM</>
+            )}
+          </button>
+        );
+      })()}
+      </>
+      )}
+
+      {/* ---- Transaction hash link (shared) --------------------------------- */}
       {txHash && (
         <div className="flex items-center justify-center gap-2 pt-2 text-xs text-gray-500">
           <span className="font-mono">{formatAddress(txHash)}</span>

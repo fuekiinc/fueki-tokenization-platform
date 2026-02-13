@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   PieChart,
   Pie,
@@ -6,9 +6,11 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { Package, PieChart as PieChartIcon } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { Package, PieChart as PieChartIcon, Copy, Check } from 'lucide-react';
+import clsx from 'clsx';
 import type { WrappedAsset } from '../../types/index';
-import { formatCurrency } from '../../lib/utils/helpers';
+import { formatCurrency, formatAddress, copyToClipboard } from '../../lib/utils/helpers';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -21,6 +23,7 @@ interface PortfolioChartProps {
 interface ChartDatum {
   name: string;
   symbol: string;
+  address: string;
   value: number;
   percentage: number;
 }
@@ -107,6 +110,43 @@ function CenterLabel({ total }: { total: number }) {
 // Custom legend
 // ---------------------------------------------------------------------------
 
+function CopyAddressButton({ address }: { address: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    void copyToClipboard(address).then(() => {
+      setCopied(true);
+      toast.success('Contract address copied!');
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className={clsx(
+        'inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-mono transition-all duration-200',
+        copied
+          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+          : 'bg-white/[0.03] text-gray-500 border border-white/[0.06] hover:bg-white/[0.06] hover:text-gray-300 hover:border-white/[0.12]',
+      )}
+      title={address}
+    >
+      {copied ? (
+        <>
+          <Check className="h-2.5 w-2.5" />
+          Copied
+        </>
+      ) : (
+        <>
+          {formatAddress(address)}
+          <Copy className="h-2.5 w-2.5" />
+        </>
+      )}
+    </button>
+  );
+}
+
 function CustomLegend({
   data,
 }: {
@@ -116,7 +156,7 @@ function CustomLegend({
 
   return (
     <div className="mt-10 pt-6 border-t border-white/[0.04]">
-      <div className="grid grid-cols-2 gap-x-8 gap-y-1 px-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1 px-2">
         {data.map((entry, index) => (
           <div
             key={entry.symbol}
@@ -130,20 +170,21 @@ function CustomLegend({
                 ['--tw-ring-offset-color' as string]: 'transparent',
               }}
             />
-            <div className="flex flex-1 items-center justify-between min-w-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-xs font-medium text-gray-300 truncate group-hover:text-white transition-colors">
-                  {entry.name}
-                </span>
-                <span className="text-[10px] text-gray-600">
-                  {entry.symbol}
-                </span>
-              </div>
-              <div className="flex items-center gap-3 shrink-0 ml-3">
-                <span className="text-[11px] tabular-nums font-medium text-gray-400">
+            <div className="flex flex-1 flex-col gap-1.5 min-w-0">
+              <div className="flex items-center justify-between min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-medium text-gray-300 truncate group-hover:text-white transition-colors">
+                    {entry.name}
+                  </span>
+                  <span className="text-[10px] text-gray-600">
+                    {entry.symbol}
+                  </span>
+                </div>
+                <span className="text-[11px] tabular-nums font-medium text-gray-400 shrink-0 ml-3">
                   {entry.percentage.toFixed(1)}%
                 </span>
               </div>
+              <CopyAddressButton address={entry.address} />
             </div>
           </div>
         ))}
@@ -174,6 +215,7 @@ export default function PortfolioChart({ assets }: PortfolioChartProps) {
         return {
           name: asset.name ?? 'Unknown',
           symbol: asset.symbol ?? '???',
+          address: asset.address,
           value: safeValue,
           percentage: (safeValue / total) * 100,
         };

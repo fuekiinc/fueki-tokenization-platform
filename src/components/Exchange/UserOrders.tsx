@@ -86,6 +86,11 @@ interface UserOrdersProps {
   onOrderCancelled: () => void;
 }
 
+/** Check if the connected user is the maker of this order. */
+function isMaker(order: Order, userAddress: string): boolean {
+  return order.maker.toLowerCase() === userAddress.toLowerCase();
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -143,17 +148,31 @@ export default function UserOrders({
     try {
       setLoading(true);
 
-      // Get all order IDs belonging to this user from AssetBackedExchange
-      const orderIds = await contractService.getExchangeUserOrders(userAddress);
+      // Get order IDs where user is the maker AND where user is a taker
+      const [makerIds, takerIds] = await Promise.all([
+        contractService.getExchangeUserOrders(userAddress),
+        contractService.getExchangeFilledOrderIds(userAddress),
+      ]);
 
-      if (orderIds.length === 0) {
+      // Merge and deduplicate order IDs
+      const seen = new Set<string>();
+      const allIds: bigint[] = [];
+      for (const id of [...makerIds, ...takerIds]) {
+        const key = id.toString();
+        if (!seen.has(key)) {
+          seen.add(key);
+          allIds.push(id);
+        }
+      }
+
+      if (allIds.length === 0) {
         setOrders([]);
         return;
       }
 
       // Fetch full details for each order from AssetBackedExchange
       const orderDetails = await Promise.all(
-        orderIds.map((id) =>
+        allIds.map((id) =>
           contractService.getExchangeOrder(id).catch(() => null),
         ),
       );
@@ -444,6 +463,7 @@ export default function UserOrders({
           const open = isOrderOpenDerived(order);
           const status = deriveOrderStatus(order);
           const pct = fillPercentage(order);
+          const maker = isMaker(order, userAddress);
           const sellFormatted = Number(
             ethers.formatUnits(order.amountSell, 18),
           ).toFixed(4);
@@ -469,14 +489,16 @@ export default function UserOrders({
                     #{order.id.toString()}
                   </span>
 
-                  {/* Side badge */}
+                  {/* Role badge */}
                   <span
                     className={clsx(
                       'rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
-                      'bg-red-500/10 text-red-400',
+                      maker
+                        ? 'bg-red-500/10 text-red-400'
+                        : 'bg-indigo-500/10 text-indigo-400',
                     )}
                   >
-                    Sell
+                    {maker ? 'Maker' : 'Taker'}
                   </span>
 
                   {/* Pair: tokenSell -> tokenBuy (with ETH awareness) */}
@@ -542,8 +564,8 @@ export default function UserOrders({
                 </div>
               )}
 
-              {/* Row 4: Cancel button for open orders */}
-              {open && (
+              {/* Row 4: Cancel button for open orders (maker only) */}
+              {open && maker && (
                 <button
                   type="button"
                   onClick={() => handleCancelOrder(order.id)}

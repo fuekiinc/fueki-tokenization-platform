@@ -1,23 +1,54 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
+import "./TransferRules.sol";
+import "./RestrictedSwap.sol";
+
 /**
  * @title SecurityTokenDeployer
- * @notice Generic contract deployer that creates contracts from bytecode
- *         passed as calldata. This keeps the factory contract under the
- *         EIP-170 size limit since the child contract bytecodes are not
- *         embedded in any runtime code.
+ * @notice External deployer contract that creates the child contracts needed by
+ *         SecurityTokenFactory. Separating deployment into its own contract keeps
+ *         the factory under the EIP-170 bytecode size limit, since the child
+ *         bytecodes live here instead of in the factory.
  */
 contract SecurityTokenDeployer {
     /**
-     * @notice Deploy a contract from raw bytecode
-     * @param bytecode The creation bytecode (constructor code + args)
-     * @return addr The address of the newly deployed contract
+     * @notice Deploy a new TransferRules contract (compliance engine).
+     * @return addr The address of the newly deployed TransferRules contract.
      */
-    function deploy(bytes memory bytecode) external returns (address addr) {
-        assembly {
-            addr := create(0, add(bytecode, 0x20), mload(bytecode))
-        }
-        require(addr != address(0), "Deploy failed");
+    function deployTransferRules() external returns (address addr) {
+        TransferRules rules = new TransferRules();
+        addr = address(rules);
+    }
+
+    /**
+     * @notice Deploy a new RestrictedSwap token (full ERC-1404 security token).
+     * @return addr The address of the newly deployed RestrictedSwap token.
+     */
+    function deployRestrictedSwap(
+        address transferRules_,
+        address contractAdmin_,
+        address tokenReserveAdmin_,
+        string memory symbol_,
+        string memory name_,
+        uint8 decimals_,
+        uint256 totalSupply_,
+        uint256 maxTotalSupply_,
+        uint256 minTimelockAmount_,
+        uint256 maxReleaseDelay_
+    ) external returns (address addr) {
+        RestrictedSwap token = new RestrictedSwap(
+            transferRules_,
+            contractAdmin_,
+            tokenReserveAdmin_,
+            symbol_,
+            name_,
+            decimals_,
+            totalSupply_,
+            maxTotalSupply_,
+            minTimelockAmount_,
+            maxReleaseDelay_
+        );
+        addr = address(token);
     }
 }

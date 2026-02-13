@@ -1,10 +1,12 @@
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
+import "dotenv/config";
 
+const MAINNET_RPC_URL =
+  process.env.MAINNET_RPC_URL || "https://ethereum-rpc.publicnode.com";
 const HOLESKY_RPC_URL =
-  "https://holesky.drpc.org";
-const PRIVATE_KEY =
-  "0c068df4a4470cb73e6704d87c61a0c2718e72381c7b1e971514e5f9c4486f93";
+  process.env.HOLESKY_RPC_URL || "https://holesky.drpc.org";
+const PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || "";
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -118,10 +120,17 @@ const config: HardhatUserConfig = {
     sources: "./contracts",
   },
   networks: {
+    mainnet: {
+      url: MAINNET_RPC_URL,
+      chainId: 1,
+      accounts: PRIVATE_KEY ? [`0x${PRIVATE_KEY}`] : [],
+      gas: 5000000,
+      gasPrice: "auto",
+    },
     holesky: {
       url: HOLESKY_RPC_URL,
       chainId: 17000,
-      accounts: [`0x${PRIVATE_KEY}`],
+      accounts: PRIVATE_KEY ? [`0x${PRIVATE_KEY}`] : [],
     },
   },
 };

@@ -72,7 +72,6 @@ export interface SecurityTokenFactoryInterface extends Interface {
   getFunction(
     nameOrSignature:
       | "createSecurityToken"
-      | "deployer"
       | "getTokenAtIndex"
       | "getTokenDetails"
       | "getTotalTokens"
@@ -85,8 +84,6 @@ export interface SecurityTokenFactoryInterface extends Interface {
   encodeFunctionData(
     functionFragment: "createSecurityToken",
     values: [
-      BytesLike,
-      BytesLike,
       string,
       string,
       BigNumberish,
@@ -99,7 +96,6 @@ export interface SecurityTokenFactoryInterface extends Interface {
       BigNumberish
     ]
   ): string;
-  encodeFunctionData(functionFragment: "deployer", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "getTokenAtIndex",
     values: [BigNumberish]
@@ -125,7 +121,6 @@ export interface SecurityTokenFactoryInterface extends Interface {
     functionFragment: "createSecurityToken",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "deployer", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "getTokenAtIndex",
     data: BytesLike
@@ -236,8 +231,6 @@ export interface SecurityTokenFactory extends BaseContract {
 
   createSecurityToken: TypedContractMethod<
     [
-      _rulesBytecode: BytesLike,
-      _swapBytecode: BytesLike,
       _name: string,
       _symbol: string,
       _decimals: BigNumberish,
@@ -252,8 +245,6 @@ export interface SecurityTokenFactory extends BaseContract {
     [[string, string] & { tokenAddress: string; rulesAddress: string }],
     "nonpayable"
   >;
-
-  deployer: TypedContractMethod<[], [string], "view">;
 
   getTokenAtIndex: TypedContractMethod<
     [index: BigNumberish],
@@ -285,8 +276,6 @@ export interface SecurityTokenFactory extends BaseContract {
     nameOrSignature: "createSecurityToken"
   ): TypedContractMethod<
     [
-      _rulesBytecode: BytesLike,
-      _swapBytecode: BytesLike,
       _name: string,
       _symbol: string,
       _decimals: BigNumberish,
@@ -301,9 +290,6 @@ export interface SecurityTokenFactory extends BaseContract {
     [[string, string] & { tokenAddress: string; rulesAddress: string }],
     "nonpayable"
   >;
-  getFunction(
-    nameOrSignature: "deployer"
-  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "getTokenAtIndex"
   ): TypedContractMethod<

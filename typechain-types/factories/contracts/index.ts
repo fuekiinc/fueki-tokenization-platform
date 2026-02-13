@@ -2,6 +2,8 @@
 /* tslint:disable */
 /* eslint-disable */
 export * as assetBackedExchangeSol from "./AssetBackedExchange.sol";
+export * as liquidityPoolAmmSol from "./LiquidityPoolAMM.sol";
+export * as orbital from "./orbital";
 export * as securityToken from "./security-token";
 export { AssetExchange__factory } from "./AssetExchange__factory";
 export { WrappedAsset__factory } from "./WrappedAsset__factory";

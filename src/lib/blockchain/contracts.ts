@@ -14,6 +14,7 @@ import AssetExchangeABI from '../../contracts/abis/AssetExchange.json';
 import SecurityTokenFactoryABI from '../../contracts/abis/SecurityTokenFactory.json';
 import SecurityTokenABI from '../../contracts/abis/SecurityToken.json';
 import AssetBackedExchangeABI from '../../contracts/abis/AssetBackedExchange.json';
+import LiquidityPoolAMMABI from '../../contracts/abis/LiquidityPoolAMM.json';
 import { getNetworkConfig } from '../../contracts/addresses';
 
 // ---------------------------------------------------------------------------
@@ -81,6 +82,16 @@ export interface SecurityTokenDetails {
   documentType: string;
   originalValue: bigint;
   createdAt: bigint;
+}
+
+/** On-chain representation of an AMM liquidity pool. */
+export interface Pool {
+  token0: string;
+  token1: string;
+  reserve0: bigint;
+  reserve1: bigint;
+  totalLiquidity: bigint;
+  kLast: bigint;
 }
 
 /** Sentinel address representing native ETH in AssetBackedExchange orders. */
@@ -844,11 +855,254 @@ export class ContractService {
     return raw.map((r: Record<string, unknown>) => this.parseOrder(r));
   }
 
+  /** Get order IDs that a user filled as a taker (via OrderFilled events). */
+  async getExchangeFilledOrderIds(userAddress: string): Promise<bigint[]> {
+    this.validateAddress(userAddress, 'user');
+    const exchange = this.getAssetBackedExchangeContract();
+    try {
+      const filter = exchange.filters.OrderFilled(null, userAddress);
+      const events = await exchange.queryFilter(filter);
+      // Deduplicate order IDs (a user can fill the same order multiple times via partial fills)
+      const seen = new Set<string>();
+      const ids: bigint[] = [];
+      for (const e of events) {
+        const orderId = (e as ethers.EventLog).args[0] as bigint;
+        const key = orderId.toString();
+        if (!seen.has(key)) {
+          seen.add(key);
+          ids.push(orderId);
+        }
+      }
+      return ids;
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch filled orders for user ${userAddress}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   /** Get the ETH balance available for withdrawal from the exchange. */
   async getExchangeEthBalance(userAddress: string): Promise<bigint> {
     this.validateAddress(userAddress, 'user');
     const exchange = this.getAssetBackedExchangeContract();
     return await exchange.ethBalances(userAddress);
+  }
+
+  // -----------------------------------------------------------------------
+  // AMM contract accessor
+  // -----------------------------------------------------------------------
+
+  /**
+   * Return an ethers Contract instance bound to the deployed
+   * LiquidityPoolAMM on the current chain.
+   */
+  getAMMContract(
+    signerOrProvider?: ethers.Signer | ethers.Provider,
+  ): ethers.Contract {
+    const config = getNetworkConfig(this.chainId);
+    if (!config || !config.ammAddress) {
+      throw new Error(`LiquidityPoolAMM not deployed on chain ${this.chainId}`);
+    }
+    return new ethers.Contract(
+      config.ammAddress,
+      LiquidityPoolAMMABI,
+      signerOrProvider || this.provider,
+    );
+  }
+
+  // -----------------------------------------------------------------------
+  // AMM write operations
+  // -----------------------------------------------------------------------
+
+  /** Create a new liquidity pool for a token pair. */
+  async createPool(
+    tokenA: string,
+    tokenB: string,
+  ): Promise<ethers.ContractTransactionResponse> {
+    this.validateAddress(tokenA, 'tokenA');
+    this.validateAddress(tokenB, 'tokenB');
+    const signer = await this.getSigner();
+    const amm = this.getAMMContract(signer);
+    return this.executeWrite(amm, 'createPool', [tokenA, tokenB]);
+  }
+
+  /** Add liquidity to an ERC-20 / ERC-20 pool. */
+  async addLiquidity(
+    tokenA: string,
+    tokenB: string,
+    amountA: bigint,
+    amountB: bigint,
+    minLiquidity: bigint,
+  ): Promise<ethers.ContractTransactionResponse> {
+    this.validateAddress(tokenA, 'tokenA');
+    this.validateAddress(tokenB, 'tokenB');
+    const signer = await this.getSigner();
+    const amm = this.getAMMContract(signer);
+    return this.executeWrite(amm, 'addLiquidity', [
+      tokenA, tokenB, amountA, amountB, minLiquidity,
+    ]);
+  }
+
+  /** Add liquidity to an ETH / ERC-20 pool. */
+  async addLiquidityETH(
+    token: string,
+    amountToken: bigint,
+    minLiquidity: bigint,
+    ethAmount: bigint,
+  ): Promise<ethers.ContractTransactionResponse> {
+    this.validateAddress(token, 'token');
+    const signer = await this.getSigner();
+    const amm = this.getAMMContract(signer);
+    return this.executeWrite(amm, 'addLiquidityETH', [
+      token, amountToken, minLiquidity,
+    ], { value: ethAmount });
+  }
+
+  /** Remove liquidity from an ERC-20 / ERC-20 pool. */
+  async removeLiquidity(
+    tokenA: string,
+    tokenB: string,
+    liquidity: bigint,
+    minA: bigint,
+    minB: bigint,
+  ): Promise<ethers.ContractTransactionResponse> {
+    this.validateAddress(tokenA, 'tokenA');
+    this.validateAddress(tokenB, 'tokenB');
+    const signer = await this.getSigner();
+    const amm = this.getAMMContract(signer);
+    return this.executeWrite(amm, 'removeLiquidity', [
+      tokenA, tokenB, liquidity, minA, minB,
+    ]);
+  }
+
+  /** Remove liquidity from an ETH / ERC-20 pool. */
+  async removeLiquidityETH(
+    token: string,
+    liquidity: bigint,
+    minToken: bigint,
+    minETH: bigint,
+  ): Promise<ethers.ContractTransactionResponse> {
+    this.validateAddress(token, 'token');
+    const signer = await this.getSigner();
+    const amm = this.getAMMContract(signer);
+    return this.executeWrite(amm, 'removeLiquidityETH', [
+      token, liquidity, minToken, minETH,
+    ]);
+  }
+
+  /** Swap ERC-20 for ERC-20 through the AMM. */
+  async swapAMM(
+    tokenIn: string,
+    tokenOut: string,
+    amountIn: bigint,
+    minAmountOut: bigint,
+  ): Promise<ethers.ContractTransactionResponse> {
+    this.validateAddress(tokenIn, 'tokenIn');
+    this.validateAddress(tokenOut, 'tokenOut');
+    const signer = await this.getSigner();
+    const amm = this.getAMMContract(signer);
+    return this.executeWrite(amm, 'swap', [
+      tokenIn, tokenOut, amountIn, minAmountOut,
+    ]);
+  }
+
+  /** Swap native ETH for an ERC-20 token via the AMM. */
+  async swapETHForToken(
+    token: string,
+    minAmountOut: bigint,
+    ethAmount: bigint,
+  ): Promise<ethers.ContractTransactionResponse> {
+    this.validateAddress(token, 'token');
+    const signer = await this.getSigner();
+    const amm = this.getAMMContract(signer);
+    return this.executeWrite(amm, 'swapETHForToken', [
+      token, minAmountOut,
+    ], { value: ethAmount });
+  }
+
+  /** Swap an ERC-20 token for native ETH via the AMM. */
+  async swapTokenForETH(
+    token: string,
+    amountIn: bigint,
+    minETH: bigint,
+  ): Promise<ethers.ContractTransactionResponse> {
+    this.validateAddress(token, 'token');
+    const signer = await this.getSigner();
+    const amm = this.getAMMContract(signer);
+    return this.executeWrite(amm, 'swapTokenForETH', [
+      token, amountIn, minETH,
+    ]);
+  }
+
+  /** Approve the AMM contract to spend a token. */
+  async approveAMM(
+    assetAddress: string,
+    amount: bigint,
+  ): Promise<ethers.ContractTransactionResponse> {
+    const config = getNetworkConfig(this.chainId);
+    if (!config || !config.ammAddress) {
+      throw new Error(`LiquidityPoolAMM not deployed on chain ${this.chainId}`);
+    }
+    return this.approveAsset(assetAddress, config.ammAddress, amount);
+  }
+
+  /** Withdraw credited ETH from the AMM contract. */
+  async withdrawAMMEth(): Promise<ethers.ContractTransactionResponse> {
+    const signer = await this.getSigner();
+    const amm = this.getAMMContract(signer);
+    return this.executeWrite(amm, 'withdrawEth', []);
+  }
+
+  // -----------------------------------------------------------------------
+  // AMM read operations
+  // -----------------------------------------------------------------------
+
+  /** Get pool data for a token pair from the AMM. */
+  async getAMMPool(tokenA: string, tokenB: string): Promise<Pool> {
+    this.validateAddress(tokenA, 'tokenA');
+    this.validateAddress(tokenB, 'tokenB');
+    const amm = this.getAMMContract();
+    const raw = await amm.getPool(tokenA, tokenB);
+    return {
+      token0: raw.token0,
+      token1: raw.token1,
+      reserve0: BigInt(raw.reserve0),
+      reserve1: BigInt(raw.reserve1),
+      totalLiquidity: BigInt(raw.totalLiquidity),
+      kLast: BigInt(raw.kLast),
+    };
+  }
+
+  /** Get LP balance for a user in a specific AMM pool. */
+  async getAMMLiquidityBalance(
+    tokenA: string,
+    tokenB: string,
+    provider: string,
+  ): Promise<bigint> {
+    this.validateAddress(tokenA, 'tokenA');
+    this.validateAddress(tokenB, 'tokenB');
+    this.validateAddress(provider, 'provider');
+    const amm = this.getAMMContract();
+    return await amm.getLiquidityBalance(tokenA, tokenB, provider);
+  }
+
+  /** Get expected output for a swap via the AMM. */
+  async getAMMQuote(
+    tokenIn: string,
+    tokenOut: string,
+    amountIn: bigint,
+  ): Promise<bigint> {
+    this.validateAddress(tokenIn, 'tokenIn');
+    this.validateAddress(tokenOut, 'tokenOut');
+    const amm = this.getAMMContract();
+    return await amm.quote(tokenIn, tokenOut, amountIn);
+  }
+
+  /** Get withdrawable ETH balance from the AMM contract. */
+  async getAMMEthBalance(userAddress: string): Promise<bigint> {
+    this.validateAddress(userAddress, 'user');
+    const amm = this.getAMMContract();
+    return await amm.ethBalances(userAddress);
   }
 
   // -----------------------------------------------------------------------

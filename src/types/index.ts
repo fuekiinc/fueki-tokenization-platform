@@ -140,6 +140,30 @@ export interface ExchangeOrder {
 }
 
 // ---------------------------------------------------------------------------
+// Liquidity Pools (AMM)
+// ---------------------------------------------------------------------------
+
+/** Serializable representation of an AMM liquidity pool. */
+export interface LiquidityPool {
+  poolId: string;
+  token0: string;
+  token1: string;
+  reserve0: string;
+  reserve1: string;
+  totalLiquidity: string;
+  kLast: string;
+}
+
+/** A user's LP position in a specific pool. */
+export interface LiquidityPosition {
+  poolId: string;
+  token0: string;
+  token1: string;
+  liquidity: string;
+  share: number;
+}
+
+// ---------------------------------------------------------------------------
 // Trade History
 // ---------------------------------------------------------------------------
 

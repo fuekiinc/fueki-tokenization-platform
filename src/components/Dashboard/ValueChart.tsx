@@ -71,7 +71,7 @@ function buildDataPoints(
     const rawAmount = parseFloat(trade.amount);
     const amount = Number.isNaN(rawAmount) ? 0 : Math.abs(rawAmount);
 
-    if (trade.type === 'mint' || trade.type === 'exchange') {
+    if (trade.type === 'mint' || trade.type === 'exchange' || trade.type === 'swap-eth' || trade.type === 'swap-erc20') {
       runningValue += amount;
     } else if (trade.type === 'burn') {
       runningValue = Math.max(0, runningValue - amount);

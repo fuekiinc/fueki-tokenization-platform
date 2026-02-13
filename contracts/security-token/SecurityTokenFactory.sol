@@ -11,6 +11,8 @@ import "./SecurityTokenDeployer.sol";
  *      2. A RestrictedSwap token (full security token with lockups, dividends, swaps)
  *
  *      The deployer becomes both CONTRACT_ADMIN and RESERVE_ADMIN on the token.
+ *      Child contract bytecodes live in the SecurityTokenDeployer contract so
+ *      this factory stays under the EIP-170 24 KB size limit.
  */
 contract SecurityTokenFactory {
 
@@ -32,6 +34,9 @@ contract SecurityTokenFactory {
         uint256 originalValue;
         uint256 createdAt;
     }
+
+    /// @notice The external deployer contract that creates child contracts.
+    SecurityTokenDeployer private immutable _deployer;
 
     /// @notice Ordered list of every security token ever created.
     SecurityToken[] private _allTokens;
@@ -70,6 +75,14 @@ contract SecurityTokenFactory {
     error EmptyName();
     error EmptySymbol();
     error MaxSupplyTooLow();
+
+    // ---------------------------------------------------------------
+    //  Constructor
+    // ---------------------------------------------------------------
+
+    constructor(address deployerAddress) {
+        _deployer = SecurityTokenDeployer(deployerAddress);
+    }
 
     // ---------------------------------------------------------------
     //  External functions
@@ -113,13 +126,13 @@ contract SecurityTokenFactory {
         uint256 minTimelock = _minTimelockAmount > 0 ? _minTimelockAmount : 1;
         uint256 maxDelay = _maxReleaseDelay > 0 ? _maxReleaseDelay : 346896000; // ~11 years
 
-        // 1. Deploy TransferRules (compliance engine) via library
-        rulesAddress = SecurityTokenDeployer.deployTransferRules();
+        // 1. Deploy TransferRules (compliance engine) via external deployer
+        rulesAddress = _deployer.deployTransferRules();
 
-        // 2. Deploy RestrictedSwap token (the full security token) via library
+        // 2. Deploy RestrictedSwap token (the full security token) via external deployer
         //    - msg.sender becomes CONTRACT_ADMIN
         //    - msg.sender becomes RESERVE_ADMIN (receives initial supply)
-        tokenAddress = SecurityTokenDeployer.deployRestrictedSwap(
+        tokenAddress = _deployer.deployRestrictedSwap(
             rulesAddress,           // transferRules
             msg.sender,             // contractAdmin
             msg.sender,             // tokenReserveAdmin (gets initial supply)
