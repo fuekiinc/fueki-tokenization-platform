@@ -181,6 +181,19 @@
       },
       "createdAt": "2026-02-13T08:35:25.422Z",
       "domain": "hive-mind"
+    },
+    "hive-worker-1771121846652-1bi3": {
+      "agentId": "hive-worker-1771121846652-1bi3",
+      "agentType": "worker",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "role": "worker",
+        "hiveRole": "worker"
+      },
+      "createdAt": "2026-02-15T02:17:26.652Z",
+      "domain": "hive-mind"
     }
   }
 }

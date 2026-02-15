@@ -109,6 +109,10 @@ html {
   overflow-x: hidden;
 }
 
+html[data-theme="light"] {
+  color-scheme: light;
+}
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
@@ -1013,4 +1017,536 @@ hr,
 
 .card-gap {
   margin-bottom: 2rem; /* 32px -- between cards */
+}
+
+/* ==========================================================================
+   27. THEME TRANSITION
+   Smooth cross-fade between light and dark modes.
+   ========================================================================== */
+
+html.theme-transitioning,
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition: background-color 0.35s ease, color 0.35s ease,
+    border-color 0.35s ease, box-shadow 0.35s ease, fill 0.35s ease,
+    stroke 0.35s ease !important;
+}
+
+/* ==========================================================================
+   28. LIGHT MODE -- DESIGN TOKENS
+   Professional light theme inspired by Linear, Vercel, and Stripe.
+   Maintains the indigo / violet accent family for brand consistency.
+   ========================================================================== */
+
+[data-theme="light"] {
+  /* ---- Backgrounds ---- */
+  --bg-primary: #F8FAFC;
+  --bg-secondary: #FFFFFF;
+  --bg-tertiary: #F1F5F9;
+  --bg-hover: #E2E8F0;
+  --bg-input: #FFFFFF;
+  --bg-tooltip: #FFFFFF;
+
+  /* ---- Borders ---- */
+  --border-primary: rgba(15, 23, 42, 0.08);
+  --border-hover: rgba(15, 23, 42, 0.16);
+  --border-focus: rgba(79, 70, 229, 0.5);
+  --border-accent: rgba(79, 70, 229, 0.25);
+
+  /* ---- Accents (slightly deeper for contrast on white) ---- */
+  --accent-primary: #4F46E5;
+  --accent-secondary: #7C3AED;
+  --accent-tertiary: #6D28D9;
+  --accent-gradient: linear-gradient(135deg, #4F46E5 0%, #7C3AED 50%, #6D28D9 100%);
+  --accent-gradient-hover: linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #7C3AED 100%);
+
+  /* ---- Semantic (slightly deeper for readability on white) ---- */
+  --success: #059669;
+  --success-soft: rgba(5, 150, 105, 0.08);
+  --warning: #D97706;
+  --warning-soft: rgba(217, 119, 6, 0.08);
+  --danger: #DC2626;
+  --danger-soft: rgba(220, 38, 38, 0.08);
+  --info: #2563EB;
+  --info-soft: rgba(37, 99, 235, 0.08);
+
+  /* ---- Text ---- */
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #64748B;
+  --text-disabled: #94A3B8;
+  --text-inverse: #FFFFFF;
+
+  /* ---- Shadows (softer for light surfaces) ---- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.06), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+}
+
+/* --------------------------------------------------------------------------
+   28a. LIGHT MODE -- BASE & BODY
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* --------------------------------------------------------------------------
+   28b. LIGHT MODE -- SCROLLBAR
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.12);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.22);
+}
+
+[data-theme="light"] * {
+  scrollbar-color: rgba(15, 23, 42, 0.12) transparent;
+}
+
+/* --------------------------------------------------------------------------
+   28c. LIGHT MODE -- GLASS MORPHISM
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] .glass {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-color: rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(15, 23, 42, 0.04);
+}
+
+[data-theme="light"] .glass-hover {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-color: rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .glass-hover:hover {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(15, 23, 42, 0.14);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.06),
+    0 0 0 1px rgba(79, 70, 229, 0.06);
+}
+
+[data-theme="light"] .glass-navbar {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+/* --------------------------------------------------------------------------
+   28d. LIGHT MODE -- GRADIENT BACKGROUNDS
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] .gradient-bg {
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(79, 70, 229, 0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 80% 10%, rgba(124, 58, 237, 0.04) 0%, transparent 50%),
+    var(--bg-primary);
+}
+
+[data-theme="light"] .gradient-bg-subtle {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(79, 70, 229, 0.04), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 50%, rgba(124, 58, 237, 0.025), transparent),
+    radial-gradient(ellipse 50% 50% at 20% 80%, rgba(37, 99, 235, 0.02), transparent),
+    var(--bg-primary);
+}
+
+/* --------------------------------------------------------------------------
+   28e. LIGHT MODE -- CARD SHINE & SHIMMER
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] .card-shine::after {
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(79, 70, 229, 0.03) 45%,
+    rgba(79, 70, 229, 0.05) 50%,
+    rgba(79, 70, 229, 0.03) 55%,
+    transparent 60%
+  );
+}
+
+[data-theme="light"] .shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 0%,
+    rgba(0, 0, 0, 0.03) 40%,
+    rgba(0, 0, 0, 0.05) 50%,
+    rgba(0, 0, 0, 0.03) 60%,
+    var(--bg-tertiary) 100%
+  );
+  background-size: 200% 100%;
+}
+
+/* --------------------------------------------------------------------------
+   28f. LIGHT MODE -- GLOW EFFECTS (subtler on light)
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] .glow-sm {
+  box-shadow: 0 0 8px rgba(79, 70, 229, 0.1);
+}
+
+[data-theme="light"] .glow-md {
+  box-shadow: 0 0 16px rgba(79, 70, 229, 0.12), 0 0 32px rgba(79, 70, 229, 0.04);
+}
+
+[data-theme="light"] .glow-lg {
+  box-shadow: 0 0 24px rgba(79, 70, 229, 0.15), 0 0 48px rgba(79, 70, 229, 0.06);
+}
+
+[data-theme="light"] .hover-lift:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .hover-glow:hover {
+  box-shadow: 0 0 16px rgba(79, 70, 229, 0.1), 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+/* --------------------------------------------------------------------------
+   28g. LIGHT MODE -- TOOLTIP
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] [data-tooltip]::after {
+  background: var(--bg-tooltip);
+  color: var(--text-primary);
+  border-color: var(--border-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* --------------------------------------------------------------------------
+   28h. LIGHT MODE -- DIALOG / MODAL
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] dialog::backdrop,
+[data-theme="light"] .sidebar-overlay {
+  background: rgba(15, 23, 42, 0.3);
+}
+
+/* --------------------------------------------------------------------------
+   28i. LIGHT MODE -- SELECTION
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] ::selection {
+  background: rgba(79, 70, 229, 0.2);
+  color: #0F172A;
+}
+
+/* --------------------------------------------------------------------------
+   28j. LIGHT MODE -- NOISE TEXTURE (lighter)
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] .noise::before {
+  opacity: 0.15;
+}
+
+/* ==========================================================================
+   29. LIGHT MODE -- COMPONENT & TAILWIND CLASS OVERRIDES
+   These override the hardcoded Tailwind dark-mode classes used in components.
+   Using [data-theme="light"] adds enough specificity to win the cascade.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   29a. Surface backgrounds: bg-[#0D0F14]/* and bg-[#0a0b0f]/*
+   Used on Card, dropdowns, mobile slide-over, stat cards, etc.
+   -------------------------------------------------------------------------- */
+
+/* Main card/panel surfaces */
+[data-theme="light"] [class*="bg-\["][class*="0D0F14"] {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+}
+
+[data-theme="light"] [class*="bg-\["][class*="0a0b0f"] {
+  background-color: rgba(248, 250, 252, 0.98) !important;
+}
+
+/* --------------------------------------------------------------------------
+   29b. Subtle white-on-dark overlays → dark-on-light overlays
+   bg-white/[0.0x] patterns used for subtle surfaces & hover states
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] [class*="bg-white\/\[0\.03\]"] {
+  background-color: rgba(15, 23, 42, 0.03) !important;
+}
+
+[data-theme="light"] [class*="bg-white\/\[0\.04\]"] {
+  background-color: rgba(15, 23, 42, 0.04) !important;
+}
+
+[data-theme="light"] [class*="bg-white\/\[0\.06\]"] {
+  background-color: rgba(15, 23, 42, 0.05) !important;
+}
+
+[data-theme="light"] [class*="bg-white\/\[0\.08\]"] {
+  background-color: rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Hover states */
+[data-theme="light"] [class*="hover\:bg-white\/\[0\.04\]"]:hover {
+  background-color: rgba(15, 23, 42, 0.04) !important;
+}
+
+[data-theme="light"] [class*="hover\:bg-white\/\[0\.05\]"]:hover {
+  background-color: rgba(15, 23, 42, 0.05) !important;
+}
+
+[data-theme="light"] [class*="hover\:bg-white\/\[0\.06\]"]:hover {
+  background-color: rgba(15, 23, 42, 0.06) !important;
+}
+
+/* --------------------------------------------------------------------------
+   29c. Border overrides: border-white/* → border-dark/*
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] [class*="border-white\/\[0\.04\]"] {
+  border-color: rgba(15, 23, 42, 0.06) !important;
+}
+
+[data-theme="light"] [class*="border-white\/\[0\.06\]"] {
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+[data-theme="light"] [class*="border-white\/\[0\.10\]"],
+[data-theme="light"] [class*="border-white\/\[0\.12\]"] {
+  border-color: rgba(15, 23, 42, 0.14) !important;
+}
+
+/* Hover borders */
+[data-theme="light"] [class*="hover\:border-white\/\[0\.1\]"]:hover {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+[data-theme="light"] [class*="hover\:border-white\/\[0\.12\]"]:hover {
+  border-color: rgba(15, 23, 42, 0.16) !important;
+}
+
+/* --------------------------------------------------------------------------
+   29d. Text color overrides
+   -------------------------------------------------------------------------- */
+
+/* Primary text: white → dark navy */
+[data-theme="light"] .text-white {
+  color: #0F172A !important;
+}
+
+/* Secondary grays */
+[data-theme="light"] .text-gray-200 {
+  color: #334155 !important;
+}
+
+[data-theme="light"] .text-gray-300 {
+  color: #475569 !important;
+}
+
+[data-theme="light"] .text-gray-400 {
+  color: #64748B !important;
+}
+
+[data-theme="light"] .text-gray-500 {
+  color: #94A3B8 !important;
+}
+
+[data-theme="light"] .text-gray-600 {
+  color: #94A3B8 !important;
+}
+
+/* Hover text: hover:text-white → hover:text-dark */
+[data-theme="light"] [class*="hover\:text-white"]:hover {
+  color: #0F172A !important;
+}
+
+[data-theme="light"] [class*="hover\:text-gray-300"]:hover {
+  color: #334155 !important;
+}
+
+/* --------------------------------------------------------------------------
+   29e. Shadow overrides: shadow-black/* → softer shadows
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] [class*="shadow-black\/"] {
+  --tw-shadow-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+[data-theme="light"] [class*="hover\:shadow-black\/"]:hover {
+  --tw-shadow-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+/* --------------------------------------------------------------------------
+   29f. Preserve white text on gradient / accent backgrounds
+   Buttons with gradient backgrounds, badges, etc. should keep white text.
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] .connect-btn-gradient,
+[data-theme="light"] .connect-btn-gradient span {
+  color: #FFFFFF !important;
+}
+
+[data-theme="light"] .gradient-text {
+  -webkit-text-fill-color: transparent !important;
+}
+
+/* Badge text colors should remain as-is (green, red, amber on soft bg) */
+[data-theme="light"] .badge-success { color: var(--success) !important; }
+[data-theme="light"] .badge-warning { color: var(--warning) !important; }
+[data-theme="light"] .badge-danger { color: var(--danger) !important; }
+[data-theme="light"] .badge-info { color: var(--info) !important; }
+[data-theme="light"] .badge-accent { color: var(--accent-primary) !important; }
+
+/* Emerald / red status colors stay the same */
+[data-theme="light"] .text-emerald-400 { color: #059669 !important; }
+[data-theme="light"] .text-red-400 { color: #DC2626 !important; }
+[data-theme="light"] .text-indigo-400 { color: #4F46E5 !important; }
+[data-theme="light"] .text-amber-400 { color: #D97706 !important; }
+
+/* --------------------------------------------------------------------------
+   29g. Layout-specific overrides
+   -------------------------------------------------------------------------- */
+
+/* Main layout container text override */
+[data-theme="light"] .min-h-screen.text-white {
+  color: #0F172A !important;
+}
+
+/* Toaster override (inline styles are hardcoded, these need !important) */
+[data-theme="light"] [data-sonner-toaster] [data-sonner-toast],
+[data-theme="light"] .go4109123758 {
+  background: rgba(255, 255, 255, 0.95) !important;
+  color: #0F172A !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+/* Gradient separator lines */
+[data-theme="light"] [class*="via-white\/"] {
+  --tw-gradient-via: rgba(15, 23, 42, 0.06) !important;
+}
+
+/* --------------------------------------------------------------------------
+   29h. Form overrides for light mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2394A3B8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border-color: var(--border-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] input:hover,
+[data-theme="light"] select:hover,
+[data-theme="light"] textarea:hover {
+  border-color: var(--border-hover);
+}
+
+[data-theme="light"] input:focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] textarea:focus {
+  border-color: var(--accent-primary);
+  box-shadow:
+    0 0 0 3px rgba(79, 70, 229, 0.08),
+    0 0 0 1px rgba(79, 70, 229, 0.2);
+}
+
+/* --------------------------------------------------------------------------
+   29i. Hero / landing page (disconnected state) overrides
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] [style*="radial-gradient(ellipse at 50% 50%, transparent 0%, #0D0F14"] {
+  background: radial-gradient(ellipse at 50% 50%, transparent 0%, #F8FAFC 80%) !important;
+}
+
+/* Grid overlay on hero -- darker lines on light bg */
+[data-theme="light"] [style*="linear-gradient(rgba(255,255,255,0.1)"] {
+  opacity: 0.06 !important;
+}
+
+/* --------------------------------------------------------------------------
+   29j. Recharts / chart overrides
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] .recharts-cartesian-grid line {
+  stroke: rgba(15, 23, 42, 0.06);
+}
+
+[data-theme="light"] .recharts-text {
+  fill: #64748B;
+}
+
+[data-theme="light"] .recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: #FFFFFF !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* --------------------------------------------------------------------------
+   29k. Gradient border bottom for light mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] .gradient-border-bottom {
+  border-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(79, 70, 229, 0.15) 25%,
+    rgba(124, 58, 237, 0.15) 50%,
+    rgba(79, 70, 229, 0.15) 75%,
+    transparent 100%
+  ) 1;
+}
+
+/* --------------------------------------------------------------------------
+   29l. Code blocks in light mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] code {
+  background: var(--bg-tertiary);
+  color: var(--accent-primary);
+}
+
+/* --------------------------------------------------------------------------
+   29m. Navbar-specific light mode refinements
+   -------------------------------------------------------------------------- */
+
+[data-theme="light"] nav {
+  border-bottom-color: rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Active nav link pill */
+[data-theme="light"] nav a[aria-current="page"],
+[data-theme="light"] nav .bg-white\/\[0\.08\] {
+  background-color: rgba(79, 70, 229, 0.08) !important;
+  color: #4F46E5 !important;
+}
+
+/* --------------------------------------------------------------------------
+   29n. Pulse glow animation -- lighter for light mode
+   -------------------------------------------------------------------------- */
+
+@keyframes pulseGlowLight {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(79, 70, 229, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(79, 70, 229, 0.3), 0 0 32px rgba(79, 70, 229, 0.08);
+  }
+}
+
+[data-theme="light"] .animate-pulse-glow {
+  animation: pulseGlowLight 2.5s ease-in-out infinite;
 }

@@ -148,10 +148,12 @@ export default function UserOrders({
     try {
       setLoading(true);
 
-      // Get order IDs where user is the maker AND where user is a taker
+      // Get order IDs where user is the maker AND where user is a taker.
+      // The filled-order query scans historical events and may fail on public
+      // RPCs with log-range limits, so treat it as non-critical.
       const [makerIds, takerIds] = await Promise.all([
         contractService.getExchangeUserOrders(userAddress),
-        contractService.getExchangeFilledOrderIds(userAddress),
+        contractService.getExchangeFilledOrderIds(userAddress).catch(() => [] as bigint[]),
       ]);
 
       // Merge and deduplicate order IDs

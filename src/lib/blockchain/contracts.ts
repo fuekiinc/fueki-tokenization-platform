@@ -861,7 +861,23 @@ export class ContractService {
     const exchange = this.getAssetBackedExchangeContract();
     try {
       const filter = exchange.filters.OrderFilled(null, userAddress);
-      const events = await exchange.queryFilter(filter);
+
+      // Public RPCs limit eth_getLogs range. Query the latest ~50 000 blocks
+      // (roughly 1 week on mainnet) to stay within typical provider limits.
+      const provider = exchange.runner && 'provider' in exchange.runner
+        ? (exchange.runner as { provider: ethers.Provider }).provider
+        : null;
+      let fromBlock: number | string = 0;
+      if (provider) {
+        try {
+          const latest = await provider.getBlockNumber();
+          fromBlock = Math.max(0, latest - 50_000);
+        } catch {
+          // Fall back to scanning all blocks if we can't get the block number
+        }
+      }
+
+      const events = await exchange.queryFilter(filter, fromBlock);
       // Deduplicate order IDs (a user can fill the same order multiple times via partial fills)
       const seen = new Set<string>();
       const ids: bigint[] = [];

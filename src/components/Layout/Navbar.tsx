@@ -4,6 +4,7 @@ import { Menu, X, ChevronDown, ExternalLink, Copy, LogOut, Check } from 'lucide-
 import clsx from 'clsx';
 import { useWallet } from '../../hooks/useWallet';
 import { useAppStore } from '../../store/useAppStore';
+import ThemeToggle from './ThemeToggle';
 
 // ---------------------------------------------------------------------------
 // Supported networks
@@ -630,6 +631,17 @@ function MobileSlideOver({
             <NetworkSelector compact />
             <WalletButton compact />
           </div>
+
+          {/* Separator */}
+          <div className="my-6 border-t border-white/[0.04]" />
+
+          {/* Theme toggle (mobile) */}
+          <div className="flex items-center justify-between px-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-600">
+              Theme
+            </p>
+            <ThemeToggle />
+          </div>
         </div>
 
         {/* Footer */}
@@ -703,9 +715,12 @@ export default function Navbar() {
               </div>
             </div>
 
-            {/* ---- Right: Network Badge + Wallet + Hamburger ---- */}
+            {/* ---- Right: Network Badge + Theme + Wallet + Hamburger ---- */}
             <div className="flex items-center gap-3">
               <NetworkBadge />
+
+              {/* Theme toggle */}
+              <ThemeToggle />
 
               {/* Desktop wallet */}
               <div className="hidden sm:block">
