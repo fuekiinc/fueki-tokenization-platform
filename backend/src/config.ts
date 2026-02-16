@@ -49,6 +49,18 @@ export const config = {
     keyFile: process.env.GCS_KEY_FILE || '', // empty = use Application Default Credentials
   },
 
+  // SMTP settings for transactional emails (password reset, etc.)
+  smtp: {
+    host: process.env.SMTP_HOST || 'localhost',
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.SMTP_FROM || 'noreply@fueki.io',
+  },
+
+  // Frontend URL (used for building links in emails)
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+
   // Local upload fallback (dev only, not used on Cloud Run)
   upload: {
     dir: process.env.UPLOAD_DIR || './uploads',

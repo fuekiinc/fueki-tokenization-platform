@@ -23,6 +23,9 @@ import {
 } from 'lucide-react';
 import { OrbitalContractService } from '../../lib/blockchain/orbitalContracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
+import { formatCompact, formatPercent, formatTokenAmount } from '../../lib/formatters';
+import { InfoTooltip } from '../Common/Tooltip';
+import { TOOLTIPS } from '../../lib/tooltipContent';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -62,7 +65,7 @@ const CONCENTRATION_LABELS: Record<number, string> = {
 };
 
 function formatFeeBps(bps: number): string {
-  return `${(bps / 100).toFixed(2)}%`;
+  return formatPercent(bps / 100);
 }
 
 function estimateTVL(reserves: bigint[]): string {
@@ -71,9 +74,7 @@ function estimateTVL(reserves: bigint[]): string {
     total += r;
   }
   const tvl = Number(total) / Number(WAD);
-  if (tvl >= 1_000_000) return `${(tvl / 1_000_000).toFixed(2)}M`;
-  if (tvl >= 1_000) return `${(tvl / 1_000).toFixed(2)}K`;
-  return tvl.toFixed(2);
+  return formatCompact(tvl);
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +325,7 @@ export default function PoolList({
                 <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-wider">
                   <TrendingUp className="h-3 w-3" />
                   Reserves
+                  <InfoTooltip content={TOOLTIPS.tvl} />
                 </div>
                 <div className="mt-1 text-sm font-semibold font-mono text-gray-200">
                   {estimateTVL(pool.reserves)}
@@ -375,7 +377,7 @@ export default function PoolList({
                 <span key={i} className="text-[11px] text-gray-500">
                   {sym}:{' '}
                   <span className="font-mono text-gray-400">
-                    {formatBalance(pool.reserves[i], 18, 4)}
+                    {formatTokenAmount(formatBalance(pool.reserves[i], 18, 4))}
                   </span>
                 </span>
               ))}

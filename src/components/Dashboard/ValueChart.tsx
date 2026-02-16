@@ -12,6 +12,7 @@ import clsx from 'clsx';
 import { TrendingUp, BarChart3 } from 'lucide-react';
 import type { TradeHistory } from '../../types/index';
 import { formatCurrency } from '../../lib/utils/helpers';
+import { formatCompact, formatPercent } from '../../lib/formatters';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,9 +95,7 @@ function buildDataPoints(
 
 function formatYAxis(value: number): string {
   if (!Number.isFinite(value)) return '0';
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-  return `$${value.toFixed(0)}`;
+  return `$${formatCompact(value)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +196,7 @@ export default function ValueChart({ tradeHistory }: ValueChartProps) {
                   )}
                 >
                   {periodChange >= 0 ? '+' : ''}
-                  {periodChange.toFixed(1)}%
+                  {formatPercent(periodChange)}
                 </span>
               )}
             </div>

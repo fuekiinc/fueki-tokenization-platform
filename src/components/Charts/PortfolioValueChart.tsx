@@ -11,6 +11,7 @@ import {
 import clsx from 'clsx';
 import { TrendingUp } from 'lucide-react';
 import type { WrappedAsset } from '../../types/index';
+import { formatCurrency, formatCompact } from '../../lib/formatters';
 import ChartSkeleton from '../DataViz/ChartSkeleton';
 
 // ---------------------------------------------------------------------------
@@ -56,7 +57,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
     >
       <p className="text-xs text-gray-500 mb-1">{label}</p>
       <p className="text-sm font-semibold text-white">
-        ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        {formatCurrency(value)}
       </p>
     </div>
   );
@@ -99,7 +100,7 @@ export default function PortfolioValueChart({
 
   return (
     <div
-      aria-label={`Portfolio value chart showing total value of $${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across ${assets.length} assets`}
+      aria-label={`Portfolio value chart showing total value of ${formatCurrency(totalValue)} across ${assets.length} assets`}
       className={clsx(
         'relative overflow-hidden rounded-2xl',
         'bg-[#0D0F14]/80 backdrop-blur-xl',
@@ -127,15 +128,14 @@ export default function PortfolioValueChart({
         </div>
         {totalValue > 0 && (
           <span className="text-lg font-bold text-white tabular-nums">
-            ${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {formatCurrency(totalValue)}
           </span>
         )}
       </div>
 
       {/* Screen-reader summary */}
       <div className="sr-only">
-        Portfolio total value: $
-        {totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        Portfolio total value: {formatCurrency(totalValue)}
         , comprised of {assets.length} asset{assets.length !== 1 ? 's' : ''}.
       </div>
 
@@ -177,7 +177,7 @@ export default function PortfolioValueChart({
                 axisLine={false}
                 tickLine={false}
                 tickFormatter={(v: number) =>
-                  v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v}`
+                  `$${formatCompact(v)}`
                 }
                 width={60}
               />

@@ -83,3 +83,28 @@ export async function getKYCStatus(): Promise<KYCStatusResponse> {
   const response = await apiClient.get<KYCStatusResponse>('/api/kyc/status');
   return response.data;
 }
+
+// ---------------------------------------------------------------------------
+// Password Reset
+// ---------------------------------------------------------------------------
+
+export async function forgotPassword(
+  email: string,
+): Promise<{ success: boolean; message: string }> {
+  const response = await apiClient.post<{ success: boolean; message: string }>(
+    '/api/auth/forgot-password',
+    { email },
+  );
+  return response.data;
+}
+
+export async function resetPassword(
+  token: string,
+  newPassword: string,
+): Promise<{ success: boolean }> {
+  const response = await apiClient.post<{ success: boolean }>(
+    '/api/auth/reset-password',
+    { token, newPassword },
+  );
+  return response.data;
+}

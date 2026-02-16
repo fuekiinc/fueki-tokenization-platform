@@ -1,7 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
-import { useAppStore, getProvider as getStoreProvider } from '../store/useAppStore';
+import { useWalletStore, getProvider as getStoreProvider } from '../store/walletStore.ts';
+import { useAssetStore } from '../store/assetStore.ts';
+import { useTradeStore } from '../store/tradeStore.ts';
+import { useExchangeStore } from '../store/exchangeStore.ts';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
 
 interface EthereumProvider {
@@ -128,13 +131,11 @@ function parseWalletError(err: unknown): string {
 }
 
 export function useWallet() {
-  const {
-    wallet,
-    setWallet,
-    setProvider,
-    setSigner,
-    resetWallet,
-  } = useAppStore();
+  const wallet = useWalletStore((s) => s.wallet);
+  const setWallet = useWalletStore((s) => s.setWallet);
+  const setProvider = useWalletStore((s) => s.setProvider);
+  const setSigner = useWalletStore((s) => s.setSigner);
+  const resetWallet = useWalletStore((s) => s.resetWallet);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -322,6 +323,12 @@ export function useWallet() {
 
   const disconnectWallet = useCallback(() => {
     resetWallet();
+    // Clear data from other domain stores so a fresh connect starts clean.
+    useAssetStore.getState().setAssets([]);
+    useAssetStore.getState().setSecurityTokens([]);
+    useTradeStore.getState().setTrades([]);
+    useExchangeStore.getState().setOrders([]);
+    useExchangeStore.getState().setUserOrders([]);
     setError(null);
   }, [resetWallet]);
 
@@ -411,6 +418,7 @@ export function useWallet() {
       setWallet({ balance: ethers.formatEther(balance) });
     } catch (err) {
       console.error('Failed to refresh balance:', err);
+      toast.error('Failed to refresh wallet balance');
     }
   }, [wallet.address, wallet.isConnected, setWallet, getEthereumProvider]);
 
@@ -451,7 +459,12 @@ export function useWallet() {
     const handleAccountsChanged = async (accounts: string[]) => {
       if (accounts.length === 0) {
         // User locked wallet or disconnected all accounts.
-        useAppStore.getState().resetWallet();
+        useWalletStore.getState().resetWallet();
+        useAssetStore.getState().setAssets([]);
+        useAssetStore.getState().setSecurityTokens([]);
+        useTradeStore.getState().setTrades([]);
+        useExchangeStore.getState().setOrders([]);
+        useExchangeStore.getState().setUserOrders([]);
         return;
       }
 
@@ -464,22 +477,23 @@ export function useWallet() {
           const signer = await provider.getSigner();
           const balance = await provider.getBalance(checksumAddress);
 
-          useAppStore.getState().setProvider(provider);
-          useAppStore.getState().setSigner(signer);
-          useAppStore.getState().setWallet({
+          useWalletStore.getState().setProvider(provider);
+          useWalletStore.getState().setSigner(signer);
+          useWalletStore.getState().setWallet({
             address: checksumAddress,
             balance: ethers.formatEther(balance),
             isConnected: true,
           });
         } catch (err) {
           console.error('Failed to handle account change:', err);
+          toast.error('Failed to update wallet after account change');
         }
       }
     };
 
     const handleChainChanged = (chainIdHex: string) => {
       const newChainId = parseInt(chainIdHex, 16);
-      useAppStore.getState().setChainId(newChainId);
+      useWalletStore.getState().setChainId(newChainId);
 
       // Re-initialise provider & signer for the new chain
       if (walletRef.current.isConnected) {
@@ -492,7 +506,12 @@ export function useWallet() {
     // the dApp's permission from the wallet UI.
     const handleDisconnect = (error: { code: number; message: string }) => {
       console.warn('Wallet disconnect event:', error);
-      useAppStore.getState().resetWallet();
+      useWalletStore.getState().resetWallet();
+      useAssetStore.getState().setAssets([]);
+      useAssetStore.getState().setSecurityTokens([]);
+      useTradeStore.getState().setTrades([]);
+      useExchangeStore.getState().setOrders([]);
+      useExchangeStore.getState().setUserOrders([]);
     };
 
     walletProvider.on(

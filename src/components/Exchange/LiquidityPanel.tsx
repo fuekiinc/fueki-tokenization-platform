@@ -26,6 +26,7 @@ import { ContractService, ETH_SENTINEL, isETH } from '../../lib/blockchain/contr
 import type { Pool } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
+import { formatPercent, formatPrice } from '../../lib/formatters';
 import TokenSelector from './TokenSelector';
 
 // ---------------------------------------------------------------------------
@@ -425,7 +426,7 @@ export default function LiquidityPanel({
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-gray-500">Your Pool Share</span>
                   <span className="font-mono text-purple-400">
-                    {(Number(lpBalance) / Number(pool.totalLiquidity) * 100).toFixed(2)}%
+                    {formatPercent(Number(lpBalance) / Number(pool.totalLiquidity) * 100)}
                   </span>
                 </div>
               )}
@@ -495,7 +496,7 @@ export default function LiquidityPanel({
           {sharePreview !== null && (
             <div className="flex items-center justify-between rounded-lg bg-purple-500/5 border border-purple-500/10 px-3 py-2 sm:px-4 sm:py-2.5 text-xs">
               <span className="text-gray-400">Estimated Pool Share</span>
-              <span className="font-mono font-medium text-purple-400">{sharePreview.toFixed(2)}%</span>
+              <span className="font-mono font-medium text-purple-400">{formatPercent(sharePreview)}</span>
             </div>
           )}
 
@@ -602,13 +603,13 @@ export default function LiquidityPanel({
               <div className="flex items-center justify-between gap-2">
                 <span className="text-gray-400 shrink-0 text-[11px] sm:text-xs">Receive ({tokenLabel(pool?.token0 ?? tokenA)})</span>
                 <span className="font-mono text-teal-400 truncate">
-                  {Number(ethers.formatUnits(removePreview.amount0, 18)).toFixed(6)}
+                  {formatPrice(Number(ethers.formatUnits(removePreview.amount0, 18)))}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-gray-400 shrink-0 text-[11px] sm:text-xs">Receive ({tokenLabel(pool?.token1 ?? tokenB)})</span>
                 <span className="font-mono text-teal-400 truncate">
-                  {Number(ethers.formatUnits(removePreview.amount1, 18)).toFixed(6)}
+                  {formatPrice(Number(ethers.formatUnits(removePreview.amount1, 18)))}
                 </span>
               </div>
             </div>

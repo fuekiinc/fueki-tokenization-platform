@@ -12,6 +12,7 @@ export interface User {
   lastName?: string;
   walletAddress: string | null;
   kycStatus: KYCStatus;
+  role?: string;
   createdAt: string;
   updatedAt: string;
 }

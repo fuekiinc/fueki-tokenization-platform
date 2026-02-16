@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { parseFile } from '../../lib/parsers';
-import { useAppStore } from '../../store/useAppStore';
+import { useDocumentStore } from '../../store/documentStore.ts';
 import { formatCurrency } from '../../lib/utils/helpers';
 import type { ParsedDocument, SupportedFileType } from '../../types';
 
@@ -105,7 +105,8 @@ function formatBytes(bytes: number): string {
 // ---------------------------------------------------------------------------
 
 export default function FileUploader() {
-  const { setCurrentDocument, addDocument } = useAppStore();
+  const setCurrentDocument = useDocumentStore((s) => s.setCurrentDocument);
+  const addDocument = useDocumentStore((s) => s.addDocument);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isParsing, setIsParsing] = useState(false);

@@ -1,8 +1,9 @@
 node_modules
-dist
-uploads
-.env
-*.enc
 .git
-.gitignore
-README.md
+.github
+*.md
+.env*
+dist
+coverage
+tests
+uploads

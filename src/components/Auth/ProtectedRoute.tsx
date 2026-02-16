@@ -110,6 +110,28 @@ export function AuthRedirect({ children }: { children: React.ReactNode }) {
 }
 
 // ---------------------------------------------------------------------------
+// AdminRoute -- guards routes that require admin or super_admin role
+// ---------------------------------------------------------------------------
+
+export function AdminRoute() {
+  const { isAuthenticated, isInitialized, user } = useAuthStore();
+
+  if (!isInitialized) {
+    return <FullScreenLoader />;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user?.role !== 'admin' && user?.role !== 'super_admin') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <Outlet />;
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 

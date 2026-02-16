@@ -9,7 +9,11 @@ import {
   Layers,
 } from 'lucide-react';
 import { ethers } from 'ethers';
-import { useAppStore, getProvider } from '../store/useAppStore';
+import { showError } from '../lib/errorUtils';
+import { useWalletStore, getProvider } from '../store/walletStore.ts';
+import { useAssetStore } from '../store/assetStore.ts';
+import { useTradeStore } from '../store/tradeStore.ts';
+import { useExchangeStore } from '../store/exchangeStore.ts';
 import { useWallet } from '../hooks/useWallet';
 import { ContractService } from '../lib/blockchain/contracts';
 import { formatAddress, copyToClipboard } from '../lib/utils/helpers';
@@ -98,14 +102,14 @@ function getNetworkName(chainId: number | null): string {
 
 export default function DashboardPage() {
   const { isConnected, address } = useWallet();
-  const wrappedAssets = useAppStore((s) => s.wrappedAssets);
-  const tradeHistory = useAppStore((s) => s.tradeHistory);
-  const userOrders = useAppStore((s) => s.userOrders);
-  const setAssets = useAppStore((s) => s.setAssets);
-  const setUserOrders = useAppStore((s) => s.setUserOrders);
-  const setTrades = useAppStore((s) => s.setTrades);
-  const setLoadingAssets = useAppStore((s) => s.setLoadingAssets);
-  const chainId = useAppStore((s) => s.wallet.chainId);
+  const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
+  const tradeHistory = useTradeStore((s) => s.tradeHistory);
+  const userOrders = useExchangeStore((s) => s.userOrders);
+  const setAssets = useAssetStore((s) => s.setAssets);
+  const setUserOrders = useExchangeStore((s) => s.setUserOrders);
+  const setTrades = useTradeStore((s) => s.setTrades);
+  const setLoadingAssets = useAssetStore((s) => s.setLoadingAssets);
+  const chainId = useWalletStore((s) => s.wallet.chainId);
 
   // Track whether the initial data fetch is still in progress
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -138,7 +142,8 @@ export default function DashboardPage() {
     let service: ContractService;
     try {
       service = new ContractService(provider, chainId);
-    } catch {
+    } catch (error) {
+      showError(error, 'Failed to initialize contracts');
       setIsInitialLoading(false);
       return;
     }
@@ -153,8 +158,8 @@ export default function DashboardPage() {
         let userAssetAddresses: string[] = [];
         try {
           userAssetAddresses = await service.getUserAssets(address);
-        } catch {
-          // proceed with whatever we already know
+        } catch (error) {
+          showError(error, 'Failed to fetch your assets');
         }
 
         const knownAddresses = new Set<string>([
@@ -180,15 +185,15 @@ export default function DashboardPage() {
                 documentType: details.documentType,
                 originalValue: details.originalValue.toString(),
               });
-            } catch {
-              // skip assets that fail to load
+            } catch (error) {
+              console.warn(`Skipping asset ${addr}:`, error);
             }
           }),
         );
         setAssets(assetList);
       }
-    } catch {
-      // silently fail -- dashboard still renders with empty data
+    } catch (error) {
+      showError(error, 'Failed to load assets');
     } finally {
       setLoadingAssets(false);
     }
@@ -232,8 +237,8 @@ export default function DashboardPage() {
       } else {
         setUserOrders([]);
       }
-    } catch {
-      // non-critical
+    } catch (error) {
+      showError(error, 'Failed to load orders');
     }
 
     // Fetch trade history from on-chain events (user-scoped filters)
@@ -302,8 +307,8 @@ export default function DashboardPage() {
       }
       merged.sort((a, b) => b.timestamp - a.timestamp);
       setTrades(merged);
-    } catch {
-      // non-critical -- trade history just won't include exchange fills
+    } catch (error) {
+      showError(error, 'Failed to load trade history');
     }
 
     setIsInitialLoading(false);

@@ -10,14 +10,17 @@
  * it to each child component.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useWallet } from '../hooks/useWallet';
-import { useAppStore, getProvider } from '../store/useAppStore';
+import { useWalletStore, getProvider } from '../store/walletStore.ts';
+import { useAssetStore } from '../store/assetStore.ts';
 import { OrbitalContractService } from '../lib/blockchain/orbitalContracts';
 import { getNetworkConfig } from '../contracts/addresses';
 import { formatAddress } from '../lib/utils/helpers';
+import { InfoTooltip } from '../components/Common/Tooltip';
+import { TOOLTIPS } from '../lib/tooltipContent';
 
 import PoolList from '../components/OrbitalAMM/PoolList';
 import SwapInterface from '../components/OrbitalAMM/SwapInterface';
@@ -107,7 +110,8 @@ export default function OrbitalAMMPage() {
     connectWallet,
     isConnecting,
   } = useWallet();
-  const { wallet, wrappedAssets } = useAppStore();
+  const wallet = useWalletStore((s) => s.wallet);
+  const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
 
   // ---- Local state ----------------------------------------------------------
 
@@ -117,6 +121,18 @@ export default function OrbitalAMMPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [tokenAddresses, setTokenAddresses] = useState<string[]>([]);
+
+  // ---- Timer refs for cleanup -----------------------------------------------
+
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const tabTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(refreshTimerRef.current);
+      clearTimeout(tabTimerRef.current);
+    };
+  }, []);
 
   // ---- Derived state --------------------------------------------------------
 
@@ -144,6 +160,7 @@ export default function OrbitalAMMPage() {
       setContractService(service);
     } catch (err) {
       console.error('Failed to initialize OrbitalContractService:', err);
+      toast.error('Failed to initialize AMM contracts');
       setContractService(null);
     }
   }, [isConnected, wallet.chainId]);
@@ -167,7 +184,8 @@ export default function OrbitalAMMPage() {
   const handleRefresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
     setIsRefreshing(true);
-    setTimeout(() => setIsRefreshing(false), 600);
+    clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => setIsRefreshing(false), 600);
   }, []);
 
   // ---- Pool created handler -------------------------------------------------
@@ -175,7 +193,8 @@ export default function OrbitalAMMPage() {
   const handlePoolCreated = useCallback(() => {
     handleRefresh();
     // Navigate to pools list to see the new pool
-    setTimeout(() => setActiveTab('pools'), 1000);
+    clearTimeout(tabTimerRef.current);
+    tabTimerRef.current = setTimeout(() => setActiveTab('pools'), 1000);
   }, [handleRefresh]);
 
   // =========================================================================
@@ -328,8 +347,9 @@ export default function OrbitalAMMPage() {
                 </span>
               </span>
             </h1>
-            <p className="text-sm text-gray-500 pl-0.5">
+            <p className="flex items-center gap-1.5 text-sm text-gray-500 pl-0.5">
               Concentrated multi-token liquidity pools with power-mean invariants
+              <InfoTooltip content={TOOLTIPS.liquidityPool} />
             </p>
           </div>
 

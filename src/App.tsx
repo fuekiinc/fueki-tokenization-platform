@@ -14,6 +14,12 @@ const OrbitalAMMPage = lazy(() => import('./pages/OrbitalAMMPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const SignupPage = lazy(() => import('./pages/SignupPage'))
 const PendingApprovalPage = lazy(() => import('./pages/PendingApprovalPage'))
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const AdminPage = lazy(() => import('./pages/AdminPage'))
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
+const ExplorePage = lazy(() => import('./pages/ExplorePage'))
 
 function PageLoader() {
   return (
@@ -37,11 +43,16 @@ export default function App() {
   return (
     <AuthInitializer>
       <Routes>
+        {/* Public exploration */}
+        <Route path="/explore" element={<Suspense fallback={<PageLoader />}><ExplorePage /></Suspense>} />
+
         {/* Auth pages - no navbar, standalone layout */}
         <Route element={<Suspense fallback={<PageLoader />}><AuthLayout /></Suspense>}>
           <Route path="/login" element={<AuthRedirect><LoginPage /></AuthRedirect>} />
           <Route path="/signup" element={<AuthRedirect><SignupPage /></AuthRedirect>} />
           <Route path="/pending-approval" element={<Suspense fallback={<PageLoader />}><PendingApprovalPage /></Suspense>} />
+          <Route path="/forgot-password" element={<AuthRedirect><Suspense fallback={<PageLoader />}><ForgotPasswordPage /></Suspense></AuthRedirect>} />
+          <Route path="/reset-password" element={<Suspense fallback={<PageLoader />}><ResetPasswordPage /></Suspense>} />
         </Route>
 
         {/* Protected app pages - with navbar */}
@@ -53,11 +64,13 @@ export default function App() {
             <Route path="portfolio" element={<Suspense fallback={<PageLoader />}><PortfolioPage /></Suspense>} />
             <Route path="exchange" element={<Suspense fallback={<PageLoader />}><ExchangePage /></Suspense>} />
             <Route path="advanced" element={<Suspense fallback={<PageLoader />}><OrbitalAMMPage /></Suspense>} />
+            <Route path="settings" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
+            <Route path="admin" element={<Suspense fallback={<PageLoader />}><AdminPage /></Suspense>} />
           </Route>
         </Route>
 
-        {/* Catch-all redirect */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        {/* 404 catch-all */}
+        <Route path="*" element={<Suspense fallback={<PageLoader />}><NotFoundPage /></Suspense>} />
       </Routes>
     </AuthInitializer>
   )

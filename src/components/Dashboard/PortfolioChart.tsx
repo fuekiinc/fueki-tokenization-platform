@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import {
   PieChart,
   Pie,
@@ -10,7 +10,8 @@ import toast from 'react-hot-toast';
 import { Package, PieChart as PieChartIcon, Copy, Check } from 'lucide-react';
 import clsx from 'clsx';
 import type { WrappedAsset } from '../../types/index';
-import { formatCurrency, formatAddress, copyToClipboard } from '../../lib/utils/helpers';
+import { formatAddress, copyToClipboard } from '../../lib/utils/helpers';
+import { formatCurrency, formatPercent } from '../../lib/formatters';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -82,7 +83,7 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
           {formatCurrency(data.value)}
         </span>
         <span className="text-xs font-medium text-indigo-400">
-          {(data.percentage ?? 0).toFixed(1)}%
+          {formatPercent(data.percentage ?? 0)}
         </span>
       </div>
     </div>
@@ -112,12 +113,18 @@ function CenterLabel({ total }: { total: number }) {
 
 function CopyAddressButton({ address }: { address: string }) {
   const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    return () => { clearTimeout(timerRef.current); };
+  }, []);
 
   const handleCopy = () => {
     void copyToClipboard(address).then(() => {
       setCopied(true);
       toast.success('Contract address copied!');
-      setTimeout(() => setCopied(false), 2000);
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 2000);
     });
   };
 
@@ -181,7 +188,7 @@ function CustomLegend({
                   </span>
                 </div>
                 <span className="text-[11px] tabular-nums font-medium text-gray-400 shrink-0 ml-3">
-                  {entry.percentage.toFixed(1)}%
+                  {formatPercent(entry.percentage)}
                 </span>
               </div>
               <CopyAddressButton address={entry.address} />

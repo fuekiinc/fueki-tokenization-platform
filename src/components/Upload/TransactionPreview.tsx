@@ -12,7 +12,7 @@ import {
   Banknote,
   CircleDot,
 } from 'lucide-react';
-import { useAppStore } from '../../store/useAppStore';
+import { useDocumentStore } from '../../store/documentStore.ts';
 import { formatCurrency, formatDate } from '../../lib/utils/helpers';
 import type { ParsedTransaction } from '../../types';
 
@@ -94,7 +94,7 @@ function SortButton({
 // ---------------------------------------------------------------------------
 
 export default function TransactionPreview() {
-  const { currentDocument } = useAppStore();
+  const currentDocument = useDocumentStore((s) => s.currentDocument);
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);

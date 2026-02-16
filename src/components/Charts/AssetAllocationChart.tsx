@@ -9,6 +9,7 @@ import {
 import clsx from 'clsx';
 import { PieChart as PieChartIcon } from 'lucide-react';
 import type { WrappedAsset } from '../../types/index';
+import { formatCurrency, formatPercent } from '../../lib/formatters';
 import ChartSkeleton from '../DataViz/ChartSkeleton';
 
 // ---------------------------------------------------------------------------
@@ -79,10 +80,10 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
       </div>
       <div className="flex items-baseline gap-3">
         <span className="text-sm text-gray-300">
-          ${data.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {formatCurrency(data.value)}
         </span>
         <span className="text-xs font-medium text-indigo-400">
-          {data.percentage.toFixed(1)}%
+          {formatPercent(data.percentage)}
         </span>
       </div>
     </div>
@@ -100,13 +101,12 @@ function ChartDataSummary({ data }: { data: ChartDatum[] }) {
   return (
     <div className="sr-only" role="list" aria-label="Asset allocation breakdown">
       <p>
-        Total portfolio value: $
-        {total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        Total portfolio value: {formatCurrency(total)}
       </p>
       {data.map((d) => (
         <div key={d.symbol} role="listitem">
-          {d.name} ({d.symbol}): ${d.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          , {d.percentage.toFixed(1)}% of portfolio
+          {d.name} ({d.symbol}): {formatCurrency(d.value)}
+          , {formatPercent(d.percentage)} of portfolio
         </div>
       ))}
     </div>
@@ -156,7 +156,7 @@ export default function AssetAllocationChart({
 
   return (
     <div
-      aria-label={`Asset allocation chart showing distribution of ${chartData.length} assets totalling $${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+      aria-label={`Asset allocation chart showing distribution of ${chartData.length} assets totalling ${formatCurrency(totalValue)}`}
       className={clsx(
         'relative overflow-hidden rounded-2xl',
         'bg-[#0D0F14]/80 backdrop-blur-xl',
@@ -214,7 +214,7 @@ export default function AssetAllocationChart({
                 Total Value
               </span>
               <span className="max-w-full truncate text-xl font-bold mt-1 leading-tight gradient-text sm:text-2xl">
-                ${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatCurrency(totalValue)}
               </span>
             </div>
             <ResponsiveContainer width="100%" height={300}>
@@ -291,7 +291,7 @@ export default function AssetAllocationChart({
                       </span>
                     </div>
                     <span className="text-[11px] tabular-nums font-medium text-gray-400 shrink-0 ml-3">
-                      {entry.percentage.toFixed(1)}%
+                      {formatPercent(entry.percentage)}
                     </span>
                   </div>
                 </div>

@@ -1,9 +1,11 @@
 import { Router, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import crypto from 'node:crypto';
 import { z } from 'zod';
-import { hashPassword, verifyPassword, createSession, refreshSession, invalidateSession } from '../services/auth';
+import { hashPassword, verifyPassword, createSession, refreshSession, invalidateSession, invalidateAllSessions } from '../services/auth';
 import { authenticate } from '../middleware/auth';
 import { config } from '../config';
+import { sendPasswordResetEmail } from '../services/email';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -84,6 +86,7 @@ router.post('/register', async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
+        role: user.role,
         walletAddress: user.walletAddress,
         kycStatus: user.kycStatus,
         createdAt: user.createdAt.toISOString(),
@@ -133,8 +136,7 @@ router.post('/login', async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        firstName: undefined,
-        lastName: undefined,
+        role: user.role,
         walletAddress: user.walletAddress,
         kycStatus: user.kycStatus,
         createdAt: user.createdAt.toISOString(),
@@ -195,6 +197,7 @@ router.get('/me', authenticate, async (req, res) => {
     res.json({
       id: user.id,
       email: user.email,
+      role: user.role,
       walletAddress: user.walletAddress,
       kycStatus: user.kycStatus,
       createdAt: user.createdAt.toISOString(),
@@ -231,6 +234,118 @@ router.post('/refresh', async (req, res) => {
     // Clear any stale cookie on refresh failure
     clearRefreshCookie(res);
     res.status(401).json({ error: { message: 'Invalid refresh token', code: 'INVALID_TOKEN' } });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/forgot-password
+// ---------------------------------------------------------------------------
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email('Invalid email'),
+});
+
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = forgotPasswordSchema.parse(req.body);
+
+    // Always return success to avoid leaking whether an account exists
+    const genericResponse = {
+      success: true,
+      message: 'If an account exists with that email, a password reset link has been sent.',
+    };
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      res.json(genericResponse);
+      return;
+    }
+
+    // Invalidate any existing unused tokens for this user
+    await prisma.passwordResetToken.updateMany({
+      where: { userId: user.id, used: false },
+      data: { used: true },
+    });
+
+    // Generate a new reset token with 1-hour expiry
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        token,
+        expiresAt,
+      },
+    });
+
+    // Send the reset email (fire-and-forget; don't block response on email delivery)
+    sendPasswordResetEmail(email, token).catch((err) => {
+      console.error('Failed to send password reset email:', err);
+    });
+
+    res.json(genericResponse);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: { message: err.errors[0].message, code: 'VALIDATION_ERROR' } });
+      return;
+    }
+    console.error('Forgot password error:', err);
+    res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/reset-password
+// ---------------------------------------------------------------------------
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1, 'Token is required'),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = resetPasswordSchema.parse(req.body);
+
+    // Find a valid, unexpired, unused token
+    const resetToken = await prisma.passwordResetToken.findUnique({
+      where: { token },
+    });
+
+    if (!resetToken || resetToken.used || resetToken.expiresAt < new Date()) {
+      res.status(400).json({
+        error: { message: 'Invalid or expired reset token', code: 'INVALID_TOKEN' },
+      });
+      return;
+    }
+
+    // Hash the new password
+    const passwordHash = await hashPassword(newPassword);
+
+    // Update user password and mark token as used in a transaction
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: resetToken.userId },
+        data: { passwordHash },
+      }),
+      prisma.passwordResetToken.update({
+        where: { id: resetToken.id },
+        data: { used: true },
+      }),
+    ]);
+
+    // Invalidate all existing sessions for this user (force re-login)
+    await invalidateAllSessions(resetToken.userId);
+
+    res.json({ success: true, message: 'Password has been reset successfully.' });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: { message: err.errors[0].message, code: 'VALIDATION_ERROR' } });
+      return;
+    }
+    console.error('Reset password error:', err);
+    res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
   }
 });
 

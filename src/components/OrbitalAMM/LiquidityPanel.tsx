@@ -9,7 +9,7 @@
  * slippage settings, and receive-preview for removals.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -27,6 +27,9 @@ import {
 } from 'lucide-react';
 import { OrbitalContractService } from '../../lib/blockchain/orbitalContracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
+import { formatPercent } from '../../lib/formatters';
+import { InfoTooltip } from '../Common/Tooltip';
+import { TOOLTIPS } from '../../lib/tooltipContent';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,6 +108,14 @@ export default function LiquidityPanel({
   const [showSlippage, setShowSlippage] = useState(false);
   const [txStatus, setTxStatus] = useState<TxStatus>('idle');
 
+  // ---- Timer ref for status reset -------------------------------------------
+
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    return () => { clearTimeout(statusTimerRef.current); };
+  }, []);
+
   // ---- Load pools -----------------------------------------------------------
 
   const fetchPools = useCallback(async () => {
@@ -161,6 +172,7 @@ export default function LiquidityPanel({
       }
     } catch (err) {
       console.error('Failed to load pools:', err);
+      toast.error('Failed to load liquidity pools');
     } finally {
       setLoadingPools(false);
     }
@@ -366,7 +378,8 @@ export default function LiquidityPanel({
       onLiquidityChanged?.();
       // Refresh pool data
       void fetchPools();
-      setTimeout(() => setTxStatus('idle'), 2500);
+      clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = setTimeout(() => setTxStatus('idle'), 2500);
     } catch (err: unknown) {
       toast.error(
         err instanceof Error ? err.message : 'Failed to add liquidity',
@@ -445,7 +458,8 @@ export default function LiquidityPanel({
       setRemoveAmount('');
       onLiquidityChanged?.();
       void fetchPools();
-      setTimeout(() => setTxStatus('idle'), 2500);
+      clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = setTimeout(() => setTxStatus('idle'), 2500);
     } catch (err: unknown) {
       toast.error(
         err instanceof Error ? err.message : 'Failed to remove liquidity',
@@ -573,7 +587,10 @@ export default function LiquidityPanel({
           {/* Pool composition */}
           <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-4 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-400">Pool Composition</span>
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-400">
+                Pool Composition
+                <InfoTooltip content={TOOLTIPS.liquidityPool} />
+              </span>
               <span className="font-mono text-[10px] text-gray-600">
                 {formatAddress(selectedPool.address)}
               </span>
@@ -605,7 +622,7 @@ export default function LiquidityPanel({
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-500">Your Pool Share</span>
                 <span className="font-mono text-purple-400">
-                  {((Number(lpBalance) / Number(selectedPool.totalSupply)) * 100).toFixed(4)}%
+                  {formatPercent((Number(lpBalance) / Number(selectedPool.totalSupply)) * 100)}
                 </span>
               </div>
             )}
@@ -674,7 +691,7 @@ export default function LiquidityPanel({
                 <div className="flex items-center justify-between rounded-lg bg-purple-500/5 border border-purple-500/10 px-4 py-2.5 text-xs">
                   <span className="text-gray-400">Estimated Pool Share</span>
                   <span className="font-mono font-medium text-purple-400">
-                    {sharePreview.toFixed(4)}%
+                    {formatPercent(sharePreview)}
                   </span>
                 </div>
               )}
@@ -687,7 +704,7 @@ export default function LiquidityPanel({
                   className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-300 transition-colors"
                 >
                   <Settings className="h-3 w-3" />
-                  Slippage: {(slippageBps / 100).toFixed(1)}%
+                  Slippage: {formatPercent(slippageBps / 100)}
                 </button>
               </div>
 
@@ -705,7 +722,7 @@ export default function LiquidityPanel({
                           : 'bg-white/[0.03] text-gray-500 hover:text-gray-300 hover:bg-white/[0.06]',
                       )}
                     >
-                      {(bps / 100).toFixed(1)}%
+                      {formatPercent(bps / 100)}
                     </button>
                   ))}
                 </div>
@@ -845,7 +862,7 @@ export default function LiquidityPanel({
                   className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-300 transition-colors"
                 >
                   <Settings className="h-3 w-3" />
-                  Slippage: {(slippageBps / 100).toFixed(1)}%
+                  Slippage: {formatPercent(slippageBps / 100)}
                 </button>
               </div>
 
@@ -863,7 +880,7 @@ export default function LiquidityPanel({
                           : 'bg-white/[0.03] text-gray-500 hover:text-gray-300 hover:bg-white/[0.06]',
                       )}
                     >
-                      {(bps / 100).toFixed(1)}%
+                      {formatPercent(bps / 100)}
                     </button>
                   ))}
                 </div>

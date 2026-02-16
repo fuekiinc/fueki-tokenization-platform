@@ -6,11 +6,12 @@
  */
 
 import { ethers } from 'ethers';
-import OrbitalFactoryABI from '../../contracts/abis/OrbitalFactory.json';
-import OrbitalRouterABI from '../../contracts/abis/OrbitalRouter.json';
-import OrbitalPoolABI from '../../contracts/abis/OrbitalPool.json';
-import WrappedAssetABI from '../../contracts/abis/WrappedAsset.json';
+import { OrbitalFactoryABI } from '../../contracts/abis/OrbitalFactory.ts';
+import { OrbitalRouterABI } from '../../contracts/abis/OrbitalRouter.ts';
+import { OrbitalPoolABI } from '../../contracts/abis/OrbitalPool.ts';
+import { WrappedAssetABI } from '../../contracts/abis/WrappedAsset.ts';
 import { getNetworkConfig } from '../../contracts/addresses';
+import { multicallSameTarget } from './multicall.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -141,43 +142,54 @@ export class OrbitalContractService {
   // -----------------------------------------------------------------------
 
   async getPoolInfo(poolAddress: string): Promise<OrbitalPoolInfo> {
-    const pool = this.getPoolContract(poolAddress);
-    const [name, symbol, tokens, reserves, concentration, swapFeeBps, totalSupply, invariant] =
-      await Promise.all([
-        pool.name(),
-        pool.symbol(),
-        pool.getTokens(),
-        pool.getReserves(),
-        pool.concentration(),
-        pool.swapFeeBps(),
-        pool.totalSupply(),
-        pool.getInvariant(),
-      ]);
+    // Batch all pool property reads into a single RPC call via Multicall3.
+    const results = await multicallSameTarget(
+      this.provider,
+      poolAddress,
+      OrbitalPoolABI,
+      [
+        { functionName: 'name' },
+        { functionName: 'symbol' },
+        { functionName: 'getTokens' },
+        { functionName: 'getReserves' },
+        { functionName: 'concentration' },
+        { functionName: 'swapFeeBps' },
+        { functionName: 'totalSupply' },
+        { functionName: 'getInvariant' },
+      ],
+    );
+
     return {
       address: poolAddress,
-      name,
-      symbol,
-      tokens: tokens as string[],
-      reserves: (reserves as bigint[]).map((r: bigint) => BigInt(r)),
-      concentration: Number(concentration),
-      swapFeeBps: BigInt(swapFeeBps),
-      totalSupply: BigInt(totalSupply),
-      invariant: BigInt(invariant),
+      name: results[0].success ? (results[0].data as string) : '',
+      symbol: results[1].success ? (results[1].data as string) : '',
+      tokens: results[2].success ? (results[2].data as string[]) : [],
+      reserves: results[3].success ? (results[3].data as bigint[]).map((r: bigint) => BigInt(r)) : [],
+      concentration: results[4].success ? Number(results[4].data) : 0,
+      swapFeeBps: results[5].success ? BigInt(results[5].data as bigint) : 0n,
+      totalSupply: results[6].success ? BigInt(results[6].data as bigint) : 0n,
+      invariant: results[7].success ? BigInt(results[7].data as bigint) : 0n,
     };
   }
 
   async getTokenInfo(tokenAddress: string): Promise<OrbitalTokenInfo> {
-    const token = this.getTokenContract(tokenAddress);
-    const [name, symbol, decimals] = await Promise.all([
-      token.name(),
-      token.symbol(),
-      token.decimals(),
-    ]);
+    // Batch all token property reads into a single RPC call via Multicall3.
+    const results = await multicallSameTarget(
+      this.provider,
+      tokenAddress,
+      WrappedAssetABI,
+      [
+        { functionName: 'name' },
+        { functionName: 'symbol' },
+        { functionName: 'decimals' },
+      ],
+    );
+
     return {
       address: tokenAddress,
-      name,
-      symbol,
-      decimals: Number(decimals),
+      name: results[0].success ? (results[0].data as string) : '',
+      symbol: results[1].success ? (results[1].data as string) : '',
+      decimals: results[2].success ? Number(results[2].data) : 18,
     };
   }
 

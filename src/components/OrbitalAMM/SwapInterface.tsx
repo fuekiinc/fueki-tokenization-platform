@@ -10,7 +10,7 @@
  * Follows the glass-morphism styling of the existing platform.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -25,6 +25,9 @@ import {
 } from 'lucide-react';
 import { OrbitalContractService } from '../../lib/blockchain/orbitalContracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
+import { formatTokenAmount, formatPercent, formatPrice } from '../../lib/formatters';
+import { InfoTooltip } from '../Common/Tooltip';
+import { TOOLTIPS } from '../../lib/tooltipContent';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,7 +64,7 @@ interface SwapInterfaceProps {
 const WAD = 10n ** 18n;
 
 function formatFeeBps(bps: number): string {
-  return `${(bps / 100).toFixed(2)}%`;
+  return formatPercent(bps / 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +96,14 @@ export default function SwapInterface({
   const [slippageBps, setSlippageBps] = useState(50); // 0.5%
   const [txStatus, setTxStatus] = useState<TxStatus>('idle');
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
+
+  // ---- Timer ref for status reset -------------------------------------------
+
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    return () => { clearTimeout(statusTimerRef.current); };
+  }, []);
 
   // ---- Derived values -------------------------------------------------------
 
@@ -212,6 +223,7 @@ export default function SwapInterface({
       }
     } catch (err) {
       console.error('Failed to fetch pools:', err);
+      toast.error('Failed to load liquidity pools');
     } finally {
       setLoadingPools(false);
     }
@@ -402,7 +414,8 @@ export default function SwapInterface({
       setQuoteOut(0n);
       setFeeAmount(0n);
       onSwapComplete?.();
-      setTimeout(() => setTxStatus('idle'), 2500);
+      clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = setTimeout(() => setTxStatus('idle'), 2500);
     } catch (err: unknown) {
       toast.error(
         err instanceof Error ? err.message : 'Swap failed',
@@ -669,7 +682,7 @@ export default function SwapInterface({
                 <span className="font-mono text-gray-300">
                   1 {tokenIn?.symbol} ={' '}
                   {parsedAmountIn > 0n
-                    ? (Number(quoteOut) / Number(parsedAmountIn)).toFixed(6)
+                    ? formatPrice(Number(quoteOut) / Number(parsedAmountIn))
                     : '0'}{' '}
                   {tokenOut?.symbol}
                 </span>
@@ -688,7 +701,10 @@ export default function SwapInterface({
               {/* Price impact */}
               {priceImpact !== null && (
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-500">Price Impact</span>
+                  <span className="flex items-center gap-1.5 text-gray-500">
+                    Price Impact
+                    <InfoTooltip content={TOOLTIPS.priceImpact} />
+                  </span>
                   <span
                     className={clsx(
                       'font-mono',
@@ -699,7 +715,7 @@ export default function SwapInterface({
                           : 'text-red-400',
                     )}
                   >
-                    ~{priceImpact.toFixed(2)}%
+                    ~{formatPercent(priceImpact)}
                   </span>
                 </div>
               )}
@@ -721,9 +737,10 @@ export default function SwapInterface({
                 >
                   <Info className="h-3 w-3" />
                   Slippage Tolerance
+                  <InfoTooltip content={TOOLTIPS.slippage} />
                 </button>
                 <span className="font-mono text-gray-400">
-                  {(slippageBps / 100).toFixed(2)}%
+                  {formatPercent(slippageBps / 100)}
                 </span>
               </div>
 
@@ -742,7 +759,7 @@ export default function SwapInterface({
                           : 'bg-white/[0.03] text-gray-500 hover:text-gray-300 hover:bg-white/[0.06]',
                       )}
                     >
-                      {(bps / 100).toFixed(1)}%
+                      {formatPercent(bps / 100)}
                     </button>
                   ))}
                 </div>

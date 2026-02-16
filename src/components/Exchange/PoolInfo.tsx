@@ -25,6 +25,7 @@ import type { WrappedAsset } from '../../types';
 import { ContractService, isETH } from '../../lib/blockchain/contracts';
 import type { Pool } from '../../lib/blockchain/contracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
+import { formatPrice, formatPercent } from '../../lib/formatters';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -233,7 +234,7 @@ export default function PoolInfo({
               Rate
             </span>
             <span className="font-mono text-[11px] sm:text-xs text-gray-300 truncate text-right">
-              1 {label0} = {rate0to1.toFixed(6)} {label1}
+              1 {label0} = {formatPrice(rate0to1)} {label1}
             </span>
           </div>
         )}
@@ -241,7 +242,7 @@ export default function PoolInfo({
           <div className="flex items-center justify-between gap-2 py-2.5 sm:py-3 min-h-[44px]">
             <span className="text-[11px] sm:text-xs text-gray-500 shrink-0">Inverse</span>
             <span className="font-mono text-[11px] sm:text-xs text-gray-400 truncate text-right">
-              1 {label1} = {rate1to0.toFixed(6)} {label0}
+              1 {label1} = {formatPrice(rate1to0)} {label0}
             </span>
           </div>
         )}
@@ -272,7 +273,7 @@ export default function PoolInfo({
               Pool Share
             </span>
             <span className="font-mono text-[11px] sm:text-xs font-medium text-purple-400">
-              {sharePercent.toFixed(4)}%
+              {formatPercent(sharePercent)}
             </span>
           </div>
         )}

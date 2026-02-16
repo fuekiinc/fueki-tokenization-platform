@@ -36,10 +36,13 @@ import {
   Settings2,
 } from 'lucide-react';
 import type { WrappedAsset } from '../../types';
-import { useAppStore } from '../../store/useAppStore';
+import { InfoTooltip } from '../Common/Tooltip';
+import { TOOLTIPS } from '../../lib/tooltipContent';
+import { useTradeStore } from '../../store/tradeStore.ts';
 import { ContractService, ETH_SENTINEL, isETH } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
+import { formatPrice, formatTokenAmount } from '../../lib/formatters';
 import TokenSelector from './TokenSelector';
 
 // ---------------------------------------------------------------------------
@@ -65,7 +68,7 @@ export default function TradeForm({
   contractService,
   onOrderCreated,
 }: TradeFormProps) {
-  const addTrade = useAppStore((s) => s.addTrade);
+  const addTrade = useTradeStore((s) => s.addTrade);
 
   // ---- Local state --------------------------------------------------------
 
@@ -248,6 +251,7 @@ export default function TradeForm({
         }
       } catch (err) {
         console.error('Failed to load token balances:', err);
+        toast.error('Failed to load token balances');
       }
     }
 
@@ -274,8 +278,9 @@ export default function TradeForm({
           const nativeBal = await provider.getBalance(userAddress);
           setEthBalance(nativeBal);
         }
-      } catch {
-        // ignore
+      } catch (error) {
+        console.error('Failed to resolve chain info:', error);
+        toast.error('Failed to load chain info');
       }
     }
     void resolveChain();
@@ -588,6 +593,7 @@ export default function TradeForm({
           <BookOpen className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Limit Order</span>
           <span className="sm:hidden">Limit</span>
+          <InfoTooltip content={TOOLTIPS.limitOrder} />
         </button>
         <button
           type="button"
@@ -704,7 +710,7 @@ export default function TradeForm({
               <span className="text-gray-500">
                 Balance:{' '}
                 <span className="font-mono text-gray-400">
-                  {formatBalance(sellBalance, 18, 6)}
+                  {formatTokenAmount(formatBalance(sellBalance, 18, 6), 6)}
                 </span>{' '}
                 {sellAsset.symbol}
               </span>
@@ -814,14 +820,14 @@ export default function TradeForm({
                 Price
               </span>
               <span className="font-mono text-sm font-medium text-white">
-                1 {buyAsset.symbol} = {price.toFixed(6)} {sellAsset.symbol}
+                1 {buyAsset.symbol} = {formatPrice(price)} {sellAsset.symbol}
               </span>
             </div>
             <div className="flex items-center justify-between py-3">
               <span className="text-sm text-gray-500">Inverse</span>
               <span className="font-mono text-sm text-gray-400">
                 1 {sellAsset.symbol} ={' '}
-                {price === 0 ? '0.000000' : (1 / price).toFixed(6)}{' '}
+                {price === 0 ? '0.000000' : formatPrice(1 / price)}{' '}
                 {buyAsset.symbol}
               </span>
             </div>
@@ -829,7 +835,7 @@ export default function TradeForm({
               <div className="flex items-center justify-between py-3 last:pb-0">
                 <span className="text-sm text-gray-500">You will pay</span>
                 <span className="font-mono text-sm font-medium text-white">
-                  {Number(ethers.formatUnits(parsedSellAmount, 18)).toFixed(4)}{' '}
+                  {formatTokenAmount(Number(ethers.formatUnits(parsedSellAmount, 18)))}{' '}
                   {sellAsset.symbol}
                 </span>
               </div>
@@ -1021,7 +1027,7 @@ export default function TradeForm({
               <span className="text-gray-500">
                 Balance:{' '}
                 <span className="font-mono text-gray-400">
-                  {formatBalance(sellBalance, 18, 6)}
+                  {formatTokenAmount(formatBalance(sellBalance, 18, 6), 6)}
                 </span>{' '}
                 {sellAsset.symbol}
               </span>
@@ -1081,7 +1087,7 @@ export default function TradeForm({
               {ammQuoteLoading ? (
                 <Loader2 className="h-5 w-5 animate-spin text-purple-400/60" />
               ) : ammQuote > 0n ? (
-                Number(ethers.formatUnits(ammQuote, 18)).toFixed(6)
+                formatPrice(Number(ethers.formatUnits(ammQuote, 18)))
               ) : (
                 '0.0'
               )}
@@ -1113,14 +1119,14 @@ export default function TradeForm({
               </span>
               <span className="font-mono text-xs font-medium text-white">
                 1 {sellAsset.symbol} ={' '}
-                {(Number(ethers.formatUnits(ammQuote, 18)) / Number(ethers.formatUnits(parsedSellAmount, 18))).toFixed(6)}{' '}
+                {formatPrice(Number(ethers.formatUnits(ammQuote, 18)) / Number(ethers.formatUnits(parsedSellAmount, 18)))}{' '}
                 {buyAsset.symbol}
               </span>
             </div>
             <div className="flex items-center justify-between py-2.5">
               <span className="text-xs text-gray-500">Min. received</span>
               <span className="font-mono text-xs text-gray-400">
-                {Number(ethers.formatUnits(ammQuote - (ammQuote * BigInt(Math.round(slippage * 10)) / 1000n), 18)).toFixed(6)}{' '}
+                {formatPrice(Number(ethers.formatUnits(ammQuote - (ammQuote * BigInt(Math.round(slippage * 10)) / 1000n), 18)))}{' '}
                 {buyAsset.symbol}
               </span>
             </div>
@@ -1136,6 +1142,7 @@ export default function TradeForm({
               >
                 <Settings2 className="h-3 w-3" />
                 Slippage Tolerance
+                <InfoTooltip content={TOOLTIPS.slippage} />
               </button>
               <span className="font-mono text-xs text-purple-400">{slippage}%</span>
             </div>

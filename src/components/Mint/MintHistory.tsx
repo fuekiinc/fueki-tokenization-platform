@@ -1,8 +1,9 @@
 import { ExternalLink, History, Clock, Copy, Check } from 'lucide-react';
-import { useState } from 'react';
-import { useAppStore } from '../../store/useAppStore';
+import { useState, useRef, useEffect } from 'react';
+import { useTradeStore } from '../../store/tradeStore.ts';
 import { useWallet } from '../../hooks/useWallet';
 import { formatAddress, copyToClipboard } from '../../lib/utils/helpers';
+import { formatTokenAmount } from '../../lib/formatters';
 import { getNetworkMetadata } from '../../contracts/addresses';
 
 // ---------------------------------------------------------------------------
@@ -54,11 +55,17 @@ const statusConfig = {
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    return () => { clearTimeout(timerRef.current); };
+  }, []);
 
   const handleCopy = () => {
     void copyToClipboard(text);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -82,7 +89,7 @@ function CopyButton({ text }: { text: string }) {
 // ---------------------------------------------------------------------------
 
 export default function MintHistory() {
-  const { tradeHistory } = useAppStore();
+  const tradeHistory = useTradeStore((s) => s.tradeHistory);
   const { chainId } = useWallet();
 
   // Use getNetworkMetadata (not getNetworkConfig) so the block explorer URL
@@ -142,9 +149,7 @@ export default function MintHistory() {
                   <span className="font-medium text-gray-300 tabular-nums font-mono">
                     {isNaN(Number(trade.amount))
                       ? trade.amount
-                      : Number(trade.amount).toLocaleString('en-US', {
-                          maximumFractionDigits: 4,
-                        })}
+                      : formatTokenAmount(trade.amount)}
                   </span>
                   <span className="text-gray-600">tokens minted</span>
                   <span className="text-gray-700">&middot;</span>

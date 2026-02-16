@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import clsx from 'clsx';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { formatPercent } from '../../lib/formatters';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,7 +67,7 @@ export default function StatCard({
 
   const formattedChange =
     change !== undefined
-      ? `${isPositive ? '+' : ''}${change.toFixed(1)}%`
+      ? `${isPositive ? '+' : ''}${formatPercent(change)}`
       : null;
 
   return (

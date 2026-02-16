@@ -3,8 +3,10 @@ import { NavLink, Link, useLocation } from 'react-router-dom';
 import { Menu, X, ChevronDown, ExternalLink, Copy, LogOut, Check } from 'lucide-react';
 import clsx from 'clsx';
 import { useWallet } from '../../hooks/useWallet';
-import { useAppStore } from '../../store/useAppStore';
+import { useWalletStore } from '../../store/walletStore.ts';
+import { formatTokenAmount } from '../../lib/formatters';
 import ThemeToggle from './ThemeToggle';
+import PendingTransactions from './PendingTransactions';
 
 // ---------------------------------------------------------------------------
 // Supported networks
@@ -102,11 +104,11 @@ function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-function formatBalance(balance: string): string {
+function formatNavBalance(balance: string): string {
   const num = parseFloat(balance);
   if (num === 0) return '0 ETH';
   if (num < 0.0001) return '<0.0001 ETH';
-  return `${num.toFixed(4)} ETH`;
+  return `${formatTokenAmount(num)} ETH`;
 }
 
 function copyToClipboard(text: string): void {
@@ -177,7 +179,7 @@ function AddressIdenticon({
 // ---------------------------------------------------------------------------
 
 function NetworkBadge() {
-  const { wallet } = useAppStore();
+  const wallet = useWalletStore((s) => s.wallet);
   const { isConnected } = useWallet();
 
   const currentNetwork = useMemo(
@@ -211,7 +213,7 @@ function NetworkBadge() {
 // ---------------------------------------------------------------------------
 
 function NetworkSelector({ compact = false }: { compact?: boolean }) {
-  const { wallet } = useAppStore();
+  const wallet = useWalletStore((s) => s.wallet);
   const { switchNetwork, isConnected } = useWallet();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -332,10 +334,15 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
     disconnectWallet,
   } = useWallet();
 
-  const { wallet } = useAppStore();
+  const wallet = useWalletStore((s) => s.wallet);
   const [showDetails, setShowDetails] = useState(false);
   const [copied, setCopied] = useState(false);
   const detailsRef = useRef<HTMLDivElement>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    return () => { clearTimeout(copyTimerRef.current); };
+  }, []);
 
   const close = useCallback(() => setShowDetails(false), []);
   useClickOutside(detailsRef, close);
@@ -348,7 +355,8 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
   const handleCopy = useCallback((text: string) => {
     copyToClipboard(text);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
   }, []);
 
   // Close on Escape key
@@ -485,7 +493,7 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
                 Balance
               </p>
               <p className="text-xl font-bold tracking-tight text-white">
-                {formatBalance(balance)}
+                {formatNavBalance(balance)}
               </p>
             </div>
 
@@ -808,6 +816,11 @@ export default function Navbar() {
 
               {/* Theme toggle */}
               <ThemeToggle />
+
+              {/* Pending transactions indicator */}
+              <div className="hidden sm:block">
+                <PendingTransactions />
+              </div>
 
               {/* Desktop wallet */}
               <div className="hidden sm:block">

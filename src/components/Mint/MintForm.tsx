@@ -18,9 +18,14 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ContractService } from '../../lib/blockchain/contracts';
+import { InfoTooltip } from '../Common/Tooltip';
+import { TOOLTIPS } from '../../lib/tooltipContent';
 import { useWallet } from '../../hooks/useWallet';
-import { useAppStore, getProvider } from '../../store/useAppStore';
+import { useTradeStore } from '../../store/tradeStore.ts';
+import { useAssetStore } from '../../store/assetStore.ts';
+import { getProvider } from '../../store/walletStore.ts';
 import { formatAddress, generateId, copyToClipboard } from '../../lib/utils/helpers';
+import { formatTokenAmount, formatCurrency, truncateAddress } from '../../lib/formatters';
 import { getNetworkConfig, getNetworkMetadata } from '../../contracts/addresses';
 import type { ParsedDocument, TradeHistory } from '../../types';
 
@@ -55,9 +60,7 @@ function deriveSymbol(name: string): string {
 function formatNumberDisplay(value: string): string {
   const cleaned = value.replace(/[,\s]/g, '');
   if (!cleaned || isNaN(Number(cleaned))) return value;
-  const parts = cleaned.split('.');
-  parts[0] = Number(parts[0]).toLocaleString('en-US');
-  return parts.join('.');
+  return formatTokenAmount(cleaned);
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +78,8 @@ const labelClasses = 'block text-sm font-medium text-gray-300 mb-2';
 
 export default function MintForm({ document }: MintFormProps) {
   const { address, chainId, isConnected, connectWallet, switchNetwork } = useWallet();
-  const { addTrade, addAsset } = useAppStore();
+  const addTrade = useTradeStore((s) => s.addTrade);
+  const addAsset = useAssetStore((s) => s.addAsset);
 
   // ---- Form state ---------------------------------------------------------
 
@@ -688,7 +692,10 @@ export default function MintForm({ document }: MintFormProps) {
         {/* Mint Amount */}
         <div>
           <label htmlFor="mintAmount" className={labelClasses}>
-            Mint Amount
+            <span className="inline-flex items-center gap-1.5">
+              Mint Amount
+              <InfoTooltip content={TOOLTIPS.mintAmount} />
+            </span>
           </label>
           <div className="relative">
             <input
@@ -800,7 +807,10 @@ export default function MintForm({ document }: MintFormProps) {
 
           {/* Hash (truncated) */}
           <div className="flex items-center justify-between py-3">
-            <span className="text-sm text-gray-400">Hash</span>
+            <span className="flex items-center gap-1.5 text-sm text-gray-400">
+              Hash
+              <InfoTooltip content={TOOLTIPS.documentHash} />
+            </span>
             <div className="flex items-center gap-2">
               <Hash className="h-3 w-3 text-gray-600" />
               <span className="font-mono text-xs text-white">
@@ -815,7 +825,7 @@ export default function MintForm({ document }: MintFormProps) {
           <div className="flex items-center justify-between py-3 last:pb-0">
             <span className="text-sm text-gray-400">Total Value</span>
             <span className="text-sm font-bold text-white tabular-nums font-mono">
-              {Number(document.totalValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+              {formatTokenAmount(document.totalValue, 2)}{' '}
               <span className="text-xs font-medium text-gray-500">{document.currency}</span>
             </span>
           </div>

@@ -26,9 +26,12 @@ import {
   AlertCircle,
   BookOpen,
 } from 'lucide-react';
+import { InfoTooltip } from '../Common/Tooltip';
+import { TOOLTIPS } from '../../lib/tooltipContent';
 import { ContractService, isETH, type Order } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress } from '../../lib/utils/helpers';
+import { formatPrice, formatTokenAmount, formatPercent } from '../../lib/formatters';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -210,7 +213,7 @@ export default function OrderBook({
     const highestBid = computeRowData(buyOrders[0], 'buy').priceDisplay;
     const spreadValue = lowestAsk - highestBid;
     const spreadPct =
-      highestBid > 0 ? ((spreadValue / highestBid) * 100).toFixed(2) : '0.00';
+      highestBid > 0 ? (spreadValue / highestBid) * 100 : 0;
     return { value: spreadValue, percent: spreadPct };
   }, [sellOrders, buyOrders]);
 
@@ -252,8 +255,9 @@ export default function OrderBook({
           const network = await provider.getNetwork();
           setChainId(Number(network.chainId));
         }
-      } catch {
-        // ignore
+      } catch (error) {
+        console.error('Failed to resolve chain:', error);
+        toast.error('Failed to detect network');
       }
     }
     void resolveChain();
@@ -412,17 +416,17 @@ export default function OrderBook({
             side === 'sell' ? 'text-red-400' : 'text-emerald-400',
           )}
         >
-          {priceDisplay.toFixed(6)}
+          {formatPrice(priceDisplay)}
         </span>
 
         {/* Amount */}
         <span className="relative z-10 text-right font-mono text-[11px] sm:text-[13px] tabular-nums text-gray-300">
-          {amount.toFixed(4)}
+          {formatTokenAmount(amount)}
         </span>
 
         {/* Total */}
         <span className="relative z-10 text-right font-mono text-[11px] sm:text-[13px] tabular-nums text-gray-500">
-          {total.toFixed(4)}
+          {formatTokenAmount(total)}
         </span>
 
         {/* Fill indicator on hover */}
@@ -464,6 +468,7 @@ export default function OrderBook({
         <span className="font-mono font-semibold text-gray-300">
           {formatTokenLabel(tokenBuy)}
         </span>
+        <InfoTooltip content={TOOLTIPS.orderBook} />
         {loading && orders.length > 0 && (
           <Loader2 className="ml-auto h-3 w-3 animate-spin text-gray-600" />
         )}
@@ -535,10 +540,10 @@ export default function OrderBook({
             {spread ? (
               <>
                 <span className="font-mono text-sm font-semibold text-white">
-                  {spread.value.toFixed(6)}
+                  {formatPrice(spread.value)}
                 </span>
                 <span className="rounded-md bg-white/[0.06] px-2 py-1 font-mono text-[11px] text-gray-400 border border-white/[0.04]">
-                  {spread.percent}%
+                  {formatPercent(spread.percent)}
                 </span>
                 <span className="text-[10px] font-medium uppercase tracking-wider text-gray-600">
                   Spread

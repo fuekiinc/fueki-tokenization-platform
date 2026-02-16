@@ -1,5 +1,6 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { showError } from '../lib/errorUtils';
 import clsx from 'clsx';
 import {
   Search,
@@ -20,21 +21,33 @@ import {
   Flame,
   ExternalLink,
   Package,
+  TrendingUp,
+  TrendingDown,
 } from 'lucide-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { ethers } from 'ethers';
-import { ContractService } from '../lib/blockchain/contracts';
-import { useWallet } from '../hooks/useWallet';
-import { useAppStore, getProvider } from '../store/useAppStore';
-import { Modal, Button, EmptyState } from '../components/Common';
-import { formatBalance, formatAddress, copyToClipboard } from '../lib/utils/helpers';
-import { SUPPORTED_NETWORKS } from '../contracts/addresses';
-import type { WrappedAsset, TradeHistory } from '../types/index';
+import { ContractService } from '../lib/blockchain/contracts.ts';
+import { useWallet } from '../hooks/useWallet.ts';
+import { getProvider } from '../store/walletStore.ts';
+import { useAssetStore } from '../store/assetStore.ts';
+import { useTradeStore } from '../store/tradeStore.ts';
+import { Modal, Button, EmptyState } from '../components/Common/index.ts';
+import { formatBalance, formatAddress, copyToClipboard } from '../lib/utils/helpers.ts';
+import { formatCurrency, formatTokenAmount, truncateAddress } from '../lib/formatters.ts';
+import { SUPPORTED_NETWORKS } from '../contracts/addresses.ts';
+import {
+  calculateAssetPerformance,
+  formatPnLPercent,
+} from '../lib/portfolioMetrics.ts';
+import type { AssetPerformance } from '../lib/portfolioMetrics.ts';
+import type { WrappedAsset, TradeHistory } from '../types/index.ts';
 
 // Sub-components extracted from this file
-import AssetAllocationChart from '../components/Charts/AssetAllocationChart';
-import PortfolioValueChart from '../components/Charts/PortfolioValueChart';
-import HoldingsTable from '../components/DataViz/HoldingsTable';
-import TransactionHistory from '../components/DataViz/TransactionHistory';
+import AssetAllocationChart from '../components/Charts/AssetAllocationChart.tsx';
+import PortfolioValueChart from '../components/Charts/PortfolioValueChart.tsx';
+import HoldingsTable from '../components/DataViz/HoldingsTable.tsx';
+import TransactionHistory from '../components/DataViz/TransactionHistory.tsx';
+import PerformanceMetrics from '../components/DataViz/PerformanceMetrics.tsx';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,6 +65,15 @@ interface TransferForm {
 interface BurnForm {
   amount: string;
 }
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const GRID_CARD_HEIGHT = 420; // estimated card height for virtualizer
+const GRID_OVERSCAN = 3;
+const GRID_SCROLL_HEIGHT = 1200;
+const GRID_COLS = 3; // lg breakpoint column count
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -92,10 +114,7 @@ function computePortfolioValue(assets: WrappedAsset[]): string {
     (sum, a) => sum + parseFloat(a.originalValue || '0'),
     0,
   );
-  return total.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  return formatCurrency(total);
 }
 
 function computeTotalLocked(assets: WrappedAsset[]): string {
@@ -103,10 +122,7 @@ function computeTotalLocked(assets: WrappedAsset[]): string {
     (sum, a) => sum + parseFloat(a.balance || '0'),
     0,
   );
-  return total.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
-  });
+  return formatTokenAmount(total);
 }
 
 function computeUniqueDocTypes(assets: WrappedAsset[]): number {
@@ -114,6 +130,12 @@ function computeUniqueDocTypes(assets: WrappedAsset[]): number {
     assets.map((a) => (a.documentType ?? '').toLowerCase()).filter(Boolean),
   );
   return types.size;
+}
+
+function pnlColorClass(value: number): string {
+  if (value > 0) return 'text-emerald-400';
+  if (value < 0) return 'text-red-400';
+  return 'text-gray-500';
 }
 
 // ---------------------------------------------------------------------------
@@ -223,19 +245,258 @@ function DetailRow({
 }
 
 // ---------------------------------------------------------------------------
+// Sub-component: Asset Grid Card
+// ---------------------------------------------------------------------------
+
+function AssetGridCard({
+  asset,
+  isExpanded,
+  onToggleExpand,
+  onTransfer,
+  onBurn,
+  onViewExplorer,
+  performance,
+  hasTrades,
+}: {
+  asset: WrappedAsset;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onTransfer: (asset: WrappedAsset) => void;
+  onBurn: (asset: WrappedAsset) => void;
+  onViewExplorer: (asset: WrappedAsset) => void;
+  performance: AssetPerformance | undefined;
+  hasTrades: boolean;
+}) {
+  const tokenInitials = (asset.name ?? '')
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w.charAt(0).toUpperCase())
+    .join('') || '??';
+  const gradient = getTokenGradient(asset.name ?? '');
+  const balanceFormatted = formatTokenAmount(formatBalance(asset.balance ?? '0'));
+  const valueFormatted = formatCurrency(formatBalance(asset.originalValue ?? '0'));
+  const docType = (asset.documentType ?? '').toUpperCase();
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onToggleExpand}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onToggleExpand();
+        }
+      }}
+      aria-expanded={isExpanded}
+      aria-label={`${asset.name} (${asset.symbol}). Balance: ${balanceFormatted}. Value: ${valueFormatted}. ${isExpanded ? 'Collapse' : 'Expand'} details.`}
+      className={clsx(
+        'group relative cursor-pointer overflow-hidden rounded-2xl',
+        'border border-white/[0.06]',
+        'bg-[#0D0F14]/80 backdrop-blur-xl',
+        'transition-all duration-300 ease-out',
+        'hover:-translate-y-0.5 hover:border-white/[0.10]',
+        'hover:shadow-[0_8px_40px_-8px_rgba(99,102,241,0.10)]',
+        'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]',
+      )}
+    >
+      {/* Top gradient hover line */}
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" aria-hidden="true" />
+
+      <div className="p-7 sm:p-9">
+        {/* Header row */}
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-4">
+            <div
+              className={clsx(
+                'flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br',
+                gradient,
+                'text-sm font-bold text-white shadow-lg',
+              )}
+              aria-hidden="true"
+            >
+              {tokenInitials}
+            </div>
+
+            <div className="min-w-0">
+              <h3 className="truncate text-base font-semibold text-white">
+                {asset.name}
+              </h3>
+              <p className="mt-1 text-sm text-gray-500">
+                {asset.symbol}
+              </p>
+            </div>
+          </div>
+
+          {docType && (
+            <span
+              className={clsx(
+                'inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide',
+                getDocBadgeClasses(asset.documentType ?? ''),
+              )}
+            >
+              {docType}
+            </span>
+          )}
+        </div>
+
+        {/* Balance / Value / P&L rows */}
+        <div className="mt-9 space-y-5">
+          <div className="flex items-baseline justify-between">
+            <span className="text-sm text-gray-500">Balance</span>
+            <span className="text-base font-semibold text-white">
+              {balanceFormatted}
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-sm text-gray-500">
+              Original Value
+            </span>
+            <span className="text-sm text-gray-400">
+              {valueFormatted}
+            </span>
+          </div>
+          {/* P&L row */}
+          <div className="flex items-baseline justify-between">
+            <span className="text-sm text-gray-500">P&L</span>
+            {performance && hasTrades && performance.hasCostData ? (
+              <span
+                className={clsx(
+                  'inline-flex items-center gap-1.5 text-sm font-medium',
+                  pnlColorClass(performance.percentageChange),
+                )}
+              >
+                {performance.percentageChange > 0 && (
+                  <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+                {performance.percentageChange < 0 && (
+                  <TrendingDown className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+                {formatPnLPercent(performance.percentageChange)}
+              </span>
+            ) : (
+              <span className="text-xs text-gray-600">--</span>
+            )}
+          </div>
+        </div>
+
+        {/* Document hash preview */}
+        {asset.documentHash && (
+          <div className="mt-7 rounded-xl border border-white/[0.04] bg-white/[0.02] px-5 py-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-600">Doc Hash</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  copyToClipboard(asset.documentHash);
+                }}
+                aria-label={`Copy document hash for ${asset.name}`}
+                className="flex items-center gap-1.5 font-mono text-xs text-gray-500 transition-colors hover:text-white focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]"
+              >
+                <span className="max-w-[160px] truncate">
+                  {asset.documentHash}
+                </span>
+                <Copy className="h-3 w-3 shrink-0 text-gray-600" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div className="mt-8 flex gap-3">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onTransfer(asset);
+            }}
+            aria-label={`Transfer ${asset.name}`}
+            className={clsx(
+              'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3',
+              'border border-indigo-500/10 bg-indigo-500/[0.06] text-sm font-medium text-indigo-400',
+              'transition-all duration-200 hover:border-indigo-500/25 hover:bg-indigo-500/[0.12] hover:shadow-sm hover:shadow-indigo-500/10',
+              'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+            )}
+          >
+            <Send className="h-3.5 w-3.5" aria-hidden="true" />
+            Transfer
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onBurn(asset);
+            }}
+            aria-label={`Burn ${asset.name}`}
+            className={clsx(
+              'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3',
+              'border border-red-500/10 bg-red-500/[0.06] text-sm font-medium text-red-400',
+              'transition-all duration-200 hover:border-red-500/25 hover:bg-red-500/[0.12] hover:shadow-sm hover:shadow-red-500/10',
+              'focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+            )}
+          >
+            <Flame className="h-3.5 w-3.5" aria-hidden="true" />
+            Burn
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewExplorer(asset);
+            }}
+            aria-label={`View ${asset.name} on block explorer`}
+            className={clsx(
+              'flex items-center justify-center rounded-xl px-3.5 py-3',
+              'border border-white/[0.06] bg-white/[0.03] text-gray-500',
+              'transition-all duration-200 hover:border-white/[0.10] hover:bg-white/[0.06] hover:text-gray-300',
+              'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+            )}
+          >
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        {/* Expandable details */}
+        {isExpanded && (
+          <div className="mt-8 space-y-4 border-t border-white/[0.06] pt-8">
+            <DetailRow
+              label="Contract"
+              value={asset.address}
+              mono
+              copiable
+            />
+            <DetailRow
+              label="Document Hash"
+              value={asset.documentHash}
+              mono
+              copiable
+            />
+            <DetailRow
+              label="Total Supply"
+              value={formatBalance(asset.totalSupply)}
+            />
+            <DetailRow
+              label="Original Value"
+              value={valueFormatted}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 
 export default function PortfolioPage() {
   const navigate = useNavigate();
   const { isConnected, address, chainId, connectWallet, error: walletError } = useWallet();
-  const wrappedAssets = useAppStore((s) => s.wrappedAssets);
-  const isLoadingAssets = useAppStore((s) => s.isLoadingAssets);
-  const setAssets = useAppStore((s) => s.setAssets);
-  const setLoadingAssets = useAppStore((s) => s.setLoadingAssets);
-  const addTrade = useAppStore((s) => s.addTrade);
-  const updateAsset = useAppStore((s) => s.updateAsset);
-  const tradeHistory = useAppStore((s) => s.tradeHistory);
+  const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
+  const isLoadingAssets = useAssetStore((s) => s.isLoadingAssets);
+  const setAssets = useAssetStore((s) => s.setAssets);
+  const setLoadingAssets = useAssetStore((s) => s.setLoadingAssets);
+  const updateAsset = useAssetStore((s) => s.updateAsset);
+  const addTrade = useTradeStore((s) => s.addTrade);
+  const tradeHistory = useTradeStore((s) => s.tradeHistory);
 
   // ---- UI state ------------------------------------------------------------
 
@@ -244,6 +505,10 @@ export default function PortfolioPage() {
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [expandedAsset, setExpandedAsset] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+
+  // ---- Grid virtualizer ref ------------------------------------------------
+
+  const gridParentRef = useRef<HTMLDivElement>(null);
 
   // ---- Transfer modal state ------------------------------------------------
 
@@ -295,6 +560,7 @@ export default function PortfolioPage() {
       setAssets(assets);
     } catch (err) {
       console.error('Failed to fetch portfolio assets:', err);
+      showError(err, 'Failed to load portfolio');
     } finally {
       setLoadingAssets(false);
     }
@@ -340,10 +606,30 @@ export default function PortfolioPage() {
     return result;
   }, [wrappedAssets, searchQuery, sortField, sortDir]);
 
+  // Pre-compute performance data for each filtered asset
+  const performanceMap = useMemo(() => {
+    const map = new Map<string, AssetPerformance>();
+    for (const asset of filteredAssets) {
+      map.set(asset.address, calculateAssetPerformance(asset, tradeHistory));
+    }
+    return map;
+  }, [filteredAssets, tradeHistory]);
+
   const explorerBaseUrl = useMemo(() => {
     const network = chainId ? SUPPORTED_NETWORKS[chainId] : null;
     return network?.blockExplorer ?? null;
   }, [chainId]);
+
+  // ---- Grid virtualizer (rows of 3) ----------------------------------------
+
+  const gridRowCount = Math.ceil(filteredAssets.length / GRID_COLS);
+
+  const gridVirtualizer = useVirtualizer({
+    count: gridRowCount,
+    getScrollElement: () => gridParentRef.current,
+    estimateSize: () => GRID_CARD_HEIGHT,
+    overscan: GRID_OVERSCAN,
+  });
 
   // ---- Handlers ------------------------------------------------------------
 
@@ -606,6 +892,7 @@ export default function PortfolioPage() {
   const portfolioValue = computePortfolioValue(wrappedAssets);
   const totalLocked = computeTotalLocked(wrappedAssets);
   const uniqueDocTypes = computeUniqueDocTypes(wrappedAssets);
+  const hasTrades = tradeHistory.length > 0;
 
   return (
     <div className="w-full">
@@ -660,6 +947,18 @@ export default function PortfolioPage() {
       </div>
 
       {/* ================================================================== */}
+      {/* Performance Metrics                                                */}
+      {/* ================================================================== */}
+      {!isLoadingAssets && wrappedAssets.length > 0 && (
+        <div className="mb-12 sm:mb-16">
+          <PerformanceMetrics
+            assets={wrappedAssets}
+            trades={tradeHistory}
+          />
+        </div>
+      )}
+
+      {/* ================================================================== */}
       {/* Summary Stats Row                                                  */}
       {/* ================================================================== */}
       <div className="mb-12 sm:mb-16">
@@ -686,7 +985,7 @@ export default function PortfolioPage() {
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
               role="group"
-              aria-label={`Portfolio Value: $${portfolioValue}`}
+              aria-label={`Portfolio Value: ${portfolioValue}`}
             >
               <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
               <div className="flex items-center gap-3">
@@ -698,7 +997,7 @@ export default function PortfolioPage() {
                 </p>
               </div>
               <p className="mt-6 text-3xl font-bold tracking-tight text-white">
-                ${portfolioValue}
+                {portfolioValue}
               </p>
             </div>
 
@@ -904,6 +1203,7 @@ export default function PortfolioPage() {
         <div className="mb-12 sm:mb-16">
           <HoldingsTable
             assets={filteredAssets}
+            trades={tradeHistory}
             isLoading={isLoadingAssets}
             onTransfer={handleOpenTransfer}
             onBurn={handleOpenBurn}
@@ -955,212 +1255,64 @@ export default function PortfolioPage() {
           />
         </div>
       ) : (
-        /* Grid view */
-        <div
-          className={clsx(
-            'grid mb-12 sm:mb-16',
-            'gap-6 sm:gap-8 lg:gap-8',
-            'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
-          )}
-        >
-          {filteredAssets.map((asset) => {
-            const isExpanded = expandedAsset === asset.address;
-            const tokenInitials = (asset.name ?? '')
-              .split(/\s+/)
-              .slice(0, 2)
-              .map((w) => w.charAt(0).toUpperCase())
-              .join('') || '??';
-            const gradient = getTokenGradient(asset.name ?? '');
-            const balanceFormatted = formatBalance(asset.balance ?? '0');
-            const valueFormatted = formatBalance(asset.originalValue ?? '0');
-            const docType = (asset.documentType ?? '').toUpperCase();
+        /* Virtualized grid view */
+        <div className="mb-12 sm:mb-16">
+          <div
+            ref={gridParentRef}
+            className="overflow-y-auto"
+            style={{ maxHeight: GRID_SCROLL_HEIGHT }}
+          >
+            <div
+              style={{
+                height: `${gridVirtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
+            >
+              {gridVirtualizer.getVirtualItems().map((virtualRow) => {
+                const rowStart = virtualRow.index * GRID_COLS;
+                const rowAssets = filteredAssets.slice(rowStart, rowStart + GRID_COLS);
 
-            return (
-              <div
-                key={asset.address}
-                role="button"
-                tabIndex={0}
-                onClick={() =>
-                  setExpandedAsset(isExpanded ? null : asset.address)
-                }
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    setExpandedAsset(isExpanded ? null : asset.address);
-                  }
-                }}
-                aria-expanded={isExpanded}
-                aria-label={`${asset.name} (${asset.symbol}). Balance: ${balanceFormatted}. Value: $${valueFormatted}. ${isExpanded ? 'Collapse' : 'Expand'} details.`}
-                className={clsx(
-                  'group relative cursor-pointer overflow-hidden rounded-2xl',
-                  'border border-white/[0.06]',
-                  'bg-[#0D0F14]/80 backdrop-blur-xl',
-                  'transition-all duration-300 ease-out',
-                  'hover:-translate-y-0.5 hover:border-white/[0.10]',
-                  'hover:shadow-[0_8px_40px_-8px_rgba(99,102,241,0.10)]',
-                  'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]',
-                )}
-              >
-                {/* Top gradient hover line */}
-                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" aria-hidden="true" />
-
-                <div className="p-7 sm:p-9">
-                  {/* Header row */}
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={clsx(
-                          'flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br',
-                          gradient,
-                          'text-sm font-bold text-white shadow-lg',
-                        )}
-                        aria-hidden="true"
-                      >
-                        {tokenInitials}
-                      </div>
-
-                      <div className="min-w-0">
-                        <h3 className="truncate text-base font-semibold text-white">
-                          {asset.name}
-                        </h3>
-                        <p className="mt-1 text-sm text-gray-500">
-                          {asset.symbol}
-                        </p>
-                      </div>
-                    </div>
-
-                    {docType && (
-                      <span
-                        className={clsx(
-                          'inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide',
-                          getDocBadgeClasses(asset.documentType ?? ''),
-                        )}
-                      >
-                        {docType}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Balance / Value rows */}
-                  <div className="mt-9 space-y-5">
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-sm text-gray-500">Balance</span>
-                      <span className="text-base font-semibold text-white">
-                        {balanceFormatted}
-                      </span>
-                    </div>
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-sm text-gray-500">
-                        Original Value
-                      </span>
-                      <span className="text-sm text-gray-400">
-                        ${valueFormatted}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Document hash preview */}
-                  {asset.documentHash && (
-                    <div className="mt-7 rounded-xl border border-white/[0.04] bg-white/[0.02] px-5 py-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-600">Doc Hash</span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            copyToClipboard(asset.documentHash);
-                          }}
-                          aria-label={`Copy document hash for ${asset.name}`}
-                          className="flex items-center gap-1.5 font-mono text-xs text-gray-500 transition-colors hover:text-white focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]"
-                        >
-                          <span className="max-w-[160px] truncate">
-                            {asset.documentHash}
-                          </span>
-                          <Copy className="h-3 w-3 shrink-0 text-gray-600" aria-hidden="true" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Action buttons */}
-                  <div className="mt-8 flex gap-3">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenTransfer(asset);
-                      }}
-                      aria-label={`Transfer ${asset.name}`}
+                return (
+                  <div
+                    key={virtualRow.index}
+                    className="absolute left-0 top-0 w-full"
+                    style={{
+                      height: `${virtualRow.size}px`,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    <div
                       className={clsx(
-                        'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3',
-                        'border border-indigo-500/10 bg-indigo-500/[0.06] text-sm font-medium text-indigo-400',
-                        'transition-all duration-200 hover:border-indigo-500/25 hover:bg-indigo-500/[0.12] hover:shadow-sm hover:shadow-indigo-500/10',
-                        'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+                        'grid h-full',
+                        'gap-6 sm:gap-8 lg:gap-8',
+                        'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+                        'pb-6 sm:pb-8',
                       )}
                     >
-                      <Send className="h-3.5 w-3.5" aria-hidden="true" />
-                      Transfer
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenBurn(asset);
-                      }}
-                      aria-label={`Burn ${asset.name}`}
-                      className={clsx(
-                        'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3',
-                        'border border-red-500/10 bg-red-500/[0.06] text-sm font-medium text-red-400',
-                        'transition-all duration-200 hover:border-red-500/25 hover:bg-red-500/[0.12] hover:shadow-sm hover:shadow-red-500/10',
-                        'focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
-                      )}
-                    >
-                      <Flame className="h-3.5 w-3.5" aria-hidden="true" />
-                      Burn
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleViewExplorer(asset);
-                      }}
-                      aria-label={`View ${asset.name} on block explorer`}
-                      className={clsx(
-                        'flex items-center justify-center rounded-xl px-3.5 py-3',
-                        'border border-white/[0.06] bg-white/[0.03] text-gray-500',
-                        'transition-all duration-200 hover:border-white/[0.10] hover:bg-white/[0.06] hover:text-gray-300',
-                        'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
-                      )}
-                    >
-                      <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                  </div>
-
-                  {/* Expandable details */}
-                  {isExpanded && (
-                    <div className="mt-8 space-y-4 border-t border-white/[0.06] pt-8">
-                      <DetailRow
-                        label="Contract"
-                        value={asset.address}
-                        mono
-                        copiable
-                      />
-                      <DetailRow
-                        label="Document Hash"
-                        value={asset.documentHash}
-                        mono
-                        copiable
-                      />
-                      <DetailRow
-                        label="Total Supply"
-                        value={formatBalance(asset.totalSupply)}
-                      />
-                      <DetailRow
-                        label="Original Value"
-                        value={`$${valueFormatted}`}
-                      />
+                      {rowAssets.map((asset) => (
+                        <AssetGridCard
+                          key={asset.address}
+                          asset={asset}
+                          isExpanded={expandedAsset === asset.address}
+                          onToggleExpand={() =>
+                            setExpandedAsset(
+                              expandedAsset === asset.address ? null : asset.address,
+                            )
+                          }
+                          onTransfer={handleOpenTransfer}
+                          onBurn={handleOpenBurn}
+                          onViewExplorer={handleViewExplorer}
+                          performance={performanceMap.get(asset.address)}
+                          hasTrades={hasTrades}
+                        />
+                      ))}
                     </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 

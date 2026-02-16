@@ -44,6 +44,7 @@ import {
 import { ContractService, isETH, type Order } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress } from '../../lib/utils/helpers';
+import { formatTokenAmount, formatPrice } from '../../lib/formatters';
 import Badge from '../Common/Badge';
 
 // ---------------------------------------------------------------------------
@@ -437,14 +438,14 @@ export default function UserOrders({
           <div className="flex items-center gap-2.5">
             <Download className="h-4 w-4 text-blue-400 shrink-0" aria-hidden="true" />
             <span className="text-xs sm:text-sm text-blue-300">
-              {Number(ethers.formatUnits(ethWithdrawable, 18)).toFixed(6)} ETH available to withdraw
+              {formatPrice(Number(ethers.formatUnits(ethWithdrawable, 18)))} ETH available to withdraw
             </span>
           </div>
           <button
             type="button"
             onClick={handleWithdrawETH}
             disabled={withdrawing}
-            aria-label={`Withdraw ${Number(ethers.formatUnits(ethWithdrawable, 18)).toFixed(6)} ETH`}
+            aria-label={`Withdraw ${formatPrice(Number(ethers.formatUnits(ethWithdrawable, 18)))} ETH`}
             className={clsx(
               'rounded-lg px-4 py-2 text-xs font-semibold transition-all',
               'focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
@@ -660,12 +661,12 @@ export default function UserOrders({
                   const open = isOrderOpenDerived(order);
                   const pct = fillPercentage(order);
                   const maker = isMaker(order, userAddress);
-                  const sellFormatted = Number(
-                    ethers.formatUnits(order.amountSell, 18),
-                  ).toFixed(4);
-                  const buyFormatted = Number(
-                    ethers.formatUnits(order.amountBuy, 18),
-                  ).toFixed(4);
+                  const sellFormatted = formatTokenAmount(
+                    Number(ethers.formatUnits(order.amountSell, 18)),
+                  );
+                  const buyFormatted = formatTokenAmount(
+                    Number(ethers.formatUnits(order.amountBuy, 18)),
+                  );
 
                   return (
                     <tr
@@ -800,12 +801,12 @@ export default function UserOrders({
               const status = deriveOrderStatus(order);
               const pct = fillPercentage(order);
               const maker = isMaker(order, userAddress);
-              const sellFormatted = Number(
-                ethers.formatUnits(order.amountSell, 18),
-              ).toFixed(4);
-              const buyFormatted = Number(
-                ethers.formatUnits(order.amountBuy, 18),
-              ).toFixed(4);
+              const sellFormatted = formatTokenAmount(
+                Number(ethers.formatUnits(order.amountSell, 18)),
+              );
+              const buyFormatted = formatTokenAmount(
+                Number(ethers.formatUnits(order.amountBuy, 18)),
+              );
 
               return (
                 <div

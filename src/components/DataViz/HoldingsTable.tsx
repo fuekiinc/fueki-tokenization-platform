@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import clsx from 'clsx';
 import {
   ChevronUp,
@@ -9,26 +9,46 @@ import {
   ExternalLink,
   Package,
   ArrowUpRight,
+  TrendingUp,
+  TrendingDown,
 } from 'lucide-react';
-import type { WrappedAsset } from '../../types/index';
-import { formatBalance, copyToClipboard } from '../../lib/utils/helpers';
-import ChartSkeleton from './ChartSkeleton';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { InfoTooltip } from '../Common/Tooltip';
+import { TOOLTIPS } from '../../lib/tooltipContent';
+import type { WrappedAsset, TradeHistory } from '../../types/index.ts';
+import { formatBalance, copyToClipboard } from '../../lib/utils/helpers.ts';
+import { formatTokenAmount, formatCurrency } from '../../lib/formatters.ts';
+import {
+  calculateAssetPerformance,
+  formatPnLPercent,
+} from '../../lib/portfolioMetrics.ts';
+import type { AssetPerformance } from '../../lib/portfolioMetrics.ts';
+import ChartSkeleton from './ChartSkeleton.tsx';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type SortField = 'name' | 'balance' | 'value';
+type SortField = 'name' | 'balance' | 'value' | 'pnl';
 type SortDir = 'asc' | 'desc';
 
 interface HoldingsTableProps {
   assets: WrappedAsset[];
+  trades?: TradeHistory[];
   isLoading?: boolean;
   onTransfer?: (asset: WrappedAsset) => void;
   onBurn?: (asset: WrappedAsset) => void;
   onViewExplorer?: (asset: WrappedAsset) => void;
   onMintNew?: () => void;
 }
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const ROW_HEIGHT = 64;
+const OVERSCAN = 5;
+const MAX_SCROLL_HEIGHT = 640; // 10 rows visible before scrolling
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -64,12 +84,19 @@ function getDocBadgeClasses(docType: string): string {
   return 'bg-gray-500/10 text-gray-400 border-gray-500/20';
 }
 
+function pnlColorClass(value: number): string {
+  if (value > 0) return 'text-emerald-400';
+  if (value < 0) return 'text-red-400';
+  return 'text-gray-500';
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export default function HoldingsTable({
   assets,
+  trades = [],
   isLoading = false,
   onTransfer,
   onBurn,
@@ -78,6 +105,9 @@ export default function HoldingsTable({
 }: HoldingsTableProps) {
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  // Ref for the virtualiser scroll container
+  const parentRef = useRef<HTMLDivElement>(null);
 
   const toggleSort = useCallback(
     (field: SortField) => {
@@ -90,6 +120,15 @@ export default function HoldingsTable({
     },
     [sortField],
   );
+
+  // Pre-compute performance data for each asset
+  const performanceMap = useMemo(() => {
+    const map = new Map<string, AssetPerformance>();
+    for (const asset of assets) {
+      map.set(asset.address, calculateAssetPerformance(asset, trades));
+    }
+    return map;
+  }, [assets, trades]);
 
   const sortedAssets = useMemo(() => {
     const result = [...assets];
@@ -107,11 +146,25 @@ export default function HoldingsTable({
             parseFloat(a.originalValue || '0') -
             parseFloat(b.originalValue || '0');
           break;
+        case 'pnl': {
+          const aPnl = performanceMap.get(a.address)?.percentageChange ?? 0;
+          const bPnl = performanceMap.get(b.address)?.percentageChange ?? 0;
+          cmp = aPnl - bPnl;
+          break;
+        }
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return result;
-  }, [assets, sortField, sortDir]);
+  }, [assets, sortField, sortDir, performanceMap]);
+
+  // Virtualiser
+  const virtualizer = useVirtualizer({
+    count: sortedAssets.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: OVERSCAN,
+  });
 
   if (isLoading) {
     return <ChartSkeleton variant="table" rows={5} />;
@@ -176,6 +229,8 @@ export default function HoldingsTable({
     );
   }
 
+  const hasTrades = trades.length > 0;
+
   return (
     <div
       className={clsx(
@@ -189,7 +244,8 @@ export default function HoldingsTable({
 
       {/* Responsive wrapper -- horizontal scroll on mobile */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px]" aria-label="Token holdings">
+        {/* Sticky header */}
+        <table className="w-full min-w-[740px]" aria-label="Token holdings">
           <thead>
             <tr className="border-b border-white/[0.06]">
               <th
@@ -203,6 +259,7 @@ export default function HoldingsTable({
                   aria-sort={sortField === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                 >
                   Asset
+                  <InfoTooltip content={TOOLTIPS.wrappedAsset} />
                   <SortIcon field="name" />
                 </button>
               </th>
@@ -240,6 +297,22 @@ export default function HoldingsTable({
                   <SortIcon field="value" />
                 </button>
               </th>
+              {/* P&L column */}
+              <th
+                scope="col"
+                className="px-6 py-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500"
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleSort('pnl')}
+                  className="inline-flex items-center gap-1.5 transition-colors hover:text-gray-300"
+                  aria-sort={sortField === 'pnl' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                >
+                  P&L
+                  <InfoTooltip content={TOOLTIPS.unrealizedGain} />
+                  <SortIcon field="pnl" />
+                </button>
+              </th>
               <th
                 scope="col"
                 className="px-6 py-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500"
@@ -248,8 +321,24 @@ export default function HoldingsTable({
               </th>
             </tr>
           </thead>
-          <tbody>
-            {sortedAssets.map((asset) => {
+        </table>
+
+        {/* Virtualised scrollable body */}
+        <div
+          ref={parentRef}
+          className="overflow-y-auto"
+          style={{ maxHeight: MAX_SCROLL_HEIGHT }}
+        >
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const asset = sortedAssets[virtualRow.index];
+              const perf = performanceMap.get(asset.address);
               const gradient = getTokenGradient(asset.name ?? '');
               const tokenInitials = (asset.name ?? '')
                 .split(/\s+/)
@@ -259,136 +348,164 @@ export default function HoldingsTable({
               const docType = (asset.documentType ?? '').toUpperCase();
 
               return (
-                <tr
+                <div
                   key={asset.address}
-                  className="border-b border-white/[0.04] transition-colors hover:bg-white/[0.02]"
+                  className="absolute left-0 top-0 w-full min-w-[740px]"
+                  style={{
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
                 >
-                  {/* Asset name + symbol */}
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-3.5">
-                      <div
-                        className={clsx(
-                          'flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br',
-                          gradient,
-                          'text-xs font-bold text-white shadow-lg',
-                        )}
-                        aria-hidden="true"
-                      >
-                        {tokenInitials}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-white">
-                          {asset.name}
-                        </p>
-                        <p className="mt-0.5 text-xs text-gray-500">
-                          {asset.symbol}
-                        </p>
+                  <div className="flex h-full items-center border-b border-white/[0.04] transition-colors hover:bg-white/[0.02]">
+                    {/* Asset name + symbol */}
+                    <div className="w-auto flex-1 px-6">
+                      <div className="flex items-center gap-3.5">
+                        <div
+                          className={clsx(
+                            'flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br',
+                            gradient,
+                            'text-xs font-bold text-white shadow-lg',
+                          )}
+                          aria-hidden="true"
+                        >
+                          {tokenInitials}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-white">
+                            {asset.name}
+                          </p>
+                          <p className="mt-0.5 text-xs text-gray-500">
+                            {asset.symbol}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </td>
 
-                  {/* Document type */}
-                  <td className="px-6 py-5">
-                    {docType ? (
-                      <span
-                        className={clsx(
-                          'inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide',
-                          getDocBadgeClasses(asset.documentType ?? ''),
-                        )}
-                      >
-                        {docType}
+                    {/* Document type */}
+                    <div className="w-24 shrink-0 px-6">
+                      {docType ? (
+                        <span
+                          className={clsx(
+                            'inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide',
+                            getDocBadgeClasses(asset.documentType ?? ''),
+                          )}
+                        >
+                          {docType}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-600">--</span>
+                      )}
+                    </div>
+
+                    {/* Balance */}
+                    <div className="w-28 shrink-0 px-6 text-right">
+                      <span className="tabular-nums text-sm font-semibold text-white">
+                        {formatTokenAmount(formatBalance(asset.balance ?? '0'))}
                       </span>
-                    ) : (
-                      <span className="text-xs text-gray-600">--</span>
-                    )}
-                  </td>
+                    </div>
 
-                  {/* Balance */}
-                  <td className="px-6 py-5 text-right">
-                    <span className="tabular-nums text-sm font-semibold text-white">
-                      {formatBalance(asset.balance ?? '0')}
-                    </span>
-                  </td>
+                    {/* Value */}
+                    <div className="w-28 shrink-0 px-6 text-right">
+                      <span className="tabular-nums text-sm text-gray-400">
+                        {formatCurrency(formatBalance(asset.originalValue ?? '0'))}
+                      </span>
+                    </div>
 
-                  {/* Value */}
-                  <td className="px-6 py-5 text-right">
-                    <span className="tabular-nums text-sm text-gray-400">
-                      ${formatBalance(asset.originalValue ?? '0')}
-                    </span>
-                  </td>
-
-                  {/* Actions */}
-                  <td className="px-6 py-5 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      {onTransfer && (
-                        <button
-                          type="button"
-                          onClick={() => onTransfer(asset)}
-                          aria-label={`Transfer ${asset.name}`}
+                    {/* P&L */}
+                    <div className="w-28 shrink-0 px-6 text-right">
+                      {perf && hasTrades && perf.hasCostData ? (
+                        <span
                           className={clsx(
-                            'inline-flex items-center gap-1.5 rounded-lg px-3 py-2',
-                            'border border-indigo-500/10 bg-indigo-500/[0.06] text-xs font-medium text-indigo-400',
-                            'transition-all duration-200 hover:border-indigo-500/25 hover:bg-indigo-500/[0.12]',
-                            'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+                            'inline-flex items-center gap-1.5 tabular-nums text-sm font-medium',
+                            pnlColorClass(perf.percentageChange),
                           )}
                         >
-                          <Send className="h-3 w-3" aria-hidden="true" />
-                          <span className="hidden sm:inline">Transfer</span>
-                        </button>
-                      )}
-                      {onBurn && (
-                        <button
-                          type="button"
-                          onClick={() => onBurn(asset)}
-                          aria-label={`Burn ${asset.name}`}
-                          className={clsx(
-                            'inline-flex items-center gap-1.5 rounded-lg px-3 py-2',
-                            'border border-red-500/10 bg-red-500/[0.06] text-xs font-medium text-red-400',
-                            'transition-all duration-200 hover:border-red-500/25 hover:bg-red-500/[0.12]',
-                            'focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+                          {perf.percentageChange > 0 && (
+                            <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />
                           )}
-                        >
-                          <Flame className="h-3 w-3" aria-hidden="true" />
-                          <span className="hidden sm:inline">Burn</span>
-                        </button>
-                      )}
-                      {asset.documentHash && (
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(asset.documentHash)}
-                          aria-label={`Copy document hash for ${asset.name}`}
-                          className={clsx(
-                            'inline-flex items-center justify-center rounded-lg p-2',
-                            'border border-white/[0.06] bg-white/[0.03] text-gray-500',
-                            'transition-all duration-200 hover:border-white/[0.10] hover:bg-white/[0.06] hover:text-gray-300',
-                            'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+                          {perf.percentageChange < 0 && (
+                            <TrendingDown className="h-3.5 w-3.5" aria-hidden="true" />
                           )}
-                        >
-                          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
-                      )}
-                      {onViewExplorer && (
-                        <button
-                          type="button"
-                          onClick={() => onViewExplorer(asset)}
-                          aria-label={`View ${asset.name} on block explorer`}
-                          className={clsx(
-                            'inline-flex items-center justify-center rounded-lg p-2',
-                            'border border-white/[0.06] bg-white/[0.03] text-gray-500',
-                            'transition-all duration-200 hover:border-white/[0.10] hover:bg-white/[0.06] hover:text-gray-300',
-                            'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
-                          )}
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
+                          {formatPnLPercent(perf.percentageChange)}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-600">--</span>
                       )}
                     </div>
-                  </td>
-                </tr>
+
+                    {/* Actions */}
+                    <div className="w-44 shrink-0 px-6 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {onTransfer && (
+                          <button
+                            type="button"
+                            onClick={() => onTransfer(asset)}
+                            aria-label={`Transfer ${asset.name}`}
+                            className={clsx(
+                              'inline-flex items-center gap-1.5 rounded-lg px-3 py-2',
+                              'border border-indigo-500/10 bg-indigo-500/[0.06] text-xs font-medium text-indigo-400',
+                              'transition-all duration-200 hover:border-indigo-500/25 hover:bg-indigo-500/[0.12]',
+                              'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+                            )}
+                          >
+                            <Send className="h-3 w-3" aria-hidden="true" />
+                            <span className="hidden sm:inline">Transfer</span>
+                          </button>
+                        )}
+                        {onBurn && (
+                          <button
+                            type="button"
+                            onClick={() => onBurn(asset)}
+                            aria-label={`Burn ${asset.name}`}
+                            className={clsx(
+                              'inline-flex items-center gap-1.5 rounded-lg px-3 py-2',
+                              'border border-red-500/10 bg-red-500/[0.06] text-xs font-medium text-red-400',
+                              'transition-all duration-200 hover:border-red-500/25 hover:bg-red-500/[0.12]',
+                              'focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+                            )}
+                          >
+                            <Flame className="h-3 w-3" aria-hidden="true" />
+                            <span className="hidden sm:inline">Burn</span>
+                          </button>
+                        )}
+                        {asset.documentHash && (
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(asset.documentHash)}
+                            aria-label={`Copy document hash for ${asset.name}`}
+                            className={clsx(
+                              'inline-flex items-center justify-center rounded-lg p-2',
+                              'border border-white/[0.06] bg-white/[0.03] text-gray-500',
+                              'transition-all duration-200 hover:border-white/[0.10] hover:bg-white/[0.06] hover:text-gray-300',
+                              'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+                            )}
+                          >
+                            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        )}
+                        {onViewExplorer && (
+                          <button
+                            type="button"
+                            onClick={() => onViewExplorer(asset)}
+                            aria-label={`View ${asset.name} on block explorer`}
+                            className={clsx(
+                              'inline-flex items-center justify-center rounded-lg p-2',
+                              'border border-white/[0.06] bg-white/[0.03] text-gray-500',
+                              'transition-all duration-200 hover:border-white/[0.10] hover:bg-white/[0.06] hover:text-gray-300',
+                              'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+                            )}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               );
             })}
-          </tbody>
-        </table>
+          </div>
+        </div>
       </div>
     </div>
   );

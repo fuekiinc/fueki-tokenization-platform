@@ -8,14 +8,16 @@
  */
 
 import { ethers } from 'ethers';
-import WrappedAssetABI from '../../contracts/abis/WrappedAsset.json';
-import WrappedAssetFactoryABI from '../../contracts/abis/WrappedAssetFactory.json';
-import AssetExchangeABI from '../../contracts/abis/AssetExchange.json';
-import SecurityTokenFactoryABI from '../../contracts/abis/SecurityTokenFactory.json';
-import SecurityTokenABI from '../../contracts/abis/SecurityToken.json';
-import AssetBackedExchangeABI from '../../contracts/abis/AssetBackedExchange.json';
-import LiquidityPoolAMMABI from '../../contracts/abis/LiquidityPoolAMM.json';
+import { WrappedAssetABI } from '../../contracts/abis/WrappedAsset.ts';
+import { WrappedAssetFactoryABI } from '../../contracts/abis/WrappedAssetFactory.ts';
+import { AssetExchangeABI } from '../../contracts/abis/AssetExchange.ts';
+import { SecurityTokenFactoryABI } from '../../contracts/abis/SecurityTokenFactory.ts';
+import { SecurityTokenABI } from '../../contracts/abis/SecurityToken.ts';
+import { AssetBackedExchangeABI } from '../../contracts/abis/AssetBackedExchange.ts';
+import { LiquidityPoolAMMABI } from '../../contracts/abis/LiquidityPoolAMM.ts';
 import { getNetworkConfig } from '../../contracts/addresses';
+import { multicall, multicallSameTarget } from './multicall.ts';
+import type { MulticallRequest, MulticallResult } from './multicall.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -367,18 +369,29 @@ export class ContractService {
     assetAddress: string,
   ): Promise<FactoryAssetDetails> {
     this.validateAddress(assetAddress, 'asset');
-    const asset = this.getAssetContract(assetAddress);
 
     try {
-      const [name, symbol, totalSupply, documentHash, documentType, originalValue] =
-        await Promise.all([
-          asset.name(),
-          asset.symbol(),
-          asset.totalSupply(),
-          asset.documentHash(),
-          asset.documentType(),
-          asset.originalValue(),
-        ]);
+      // Batch all token property reads into a single RPC call via Multicall3.
+      const results = await multicallSameTarget(
+        this.provider,
+        assetAddress,
+        WrappedAssetABI,
+        [
+          { functionName: 'name' },
+          { functionName: 'symbol' },
+          { functionName: 'totalSupply' },
+          { functionName: 'documentHash' },
+          { functionName: 'documentType' },
+          { functionName: 'originalValue' },
+        ],
+      );
+
+      const name = results[0].success ? (results[0].data as string) : '';
+      const symbol = results[1].success ? (results[1].data as string) : '';
+      const totalSupply = results[2].success ? BigInt(results[2].data as bigint) : 0n;
+      const documentHash = results[3].success ? (results[3].data as string) : '';
+      const documentType = results[4].success ? (results[4].data as string) : '';
+      const originalValue = results[5].success ? BigInt(results[5].data as bigint) : 0n;
 
       // Attempt to resolve the creator from the factory's AssetCreated event log.
       let creator = ethers.ZeroAddress;
@@ -417,23 +430,89 @@ export class ContractService {
   /** Aggregate key details directly from a WrappedAsset token contract. */
   async getAssetDetails(assetAddress: string): Promise<AssetDetails> {
     this.validateAddress(assetAddress, 'asset');
-    const asset = this.getAssetContract(assetAddress);
     try {
-      const [name, symbol, totalSupply, documentHash, documentType, originalValue] =
-        await Promise.all([
-          asset.name(),
-          asset.symbol(),
-          asset.totalSupply(),
-          asset.documentHash(),
-          asset.documentType(),
-          asset.originalValue(),
-        ]);
-      return { name, symbol, totalSupply, documentHash, documentType, originalValue };
+      // Batch all property reads into a single RPC call via Multicall3.
+      const results = await multicallSameTarget(
+        this.provider,
+        assetAddress,
+        WrappedAssetABI,
+        [
+          { functionName: 'name' },
+          { functionName: 'symbol' },
+          { functionName: 'totalSupply' },
+          { functionName: 'documentHash' },
+          { functionName: 'documentType' },
+          { functionName: 'originalValue' },
+        ],
+      );
+
+      return {
+        name: results[0].success ? (results[0].data as string) : '',
+        symbol: results[1].success ? (results[1].data as string) : '',
+        totalSupply: results[2].success ? BigInt(results[2].data as bigint) : 0n,
+        documentHash: results[3].success ? (results[3].data as string) : '',
+        documentType: results[4].success ? (results[4].data as string) : '',
+        originalValue: results[5].success ? BigInt(results[5].data as bigint) : 0n,
+      };
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch asset details for ${assetAddress}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  }
+
+  /**
+   * Batch-load details for multiple asset addresses in a single RPC call.
+   * Uses Multicall3 to read name, symbol, totalSupply, documentHash,
+   * documentType, and originalValue for every address in one round-trip.
+   */
+  async getMultipleAssetDetails(
+    assetAddresses: string[],
+  ): Promise<(AssetDetails | null)[]> {
+    if (assetAddresses.length === 0) return [];
+
+    const fields = ['name', 'symbol', 'totalSupply', 'documentHash', 'documentType', 'originalValue'] as const;
+    const requests: MulticallRequest[] = [];
+
+    for (const addr of assetAddresses) {
+      for (const fn of fields) {
+        requests.push({
+          target: addr,
+          abi: WrappedAssetABI,
+          functionName: fn,
+        });
+      }
+    }
+
+    const results: MulticallResult[] = await multicall(this.provider, requests);
+    const assets: (AssetDetails | null)[] = [];
+
+    for (let i = 0; i < assetAddresses.length; i++) {
+      const offset = i * fields.length;
+      const nameResult = results[offset];
+      const symbolResult = results[offset + 1];
+      const totalSupplyResult = results[offset + 2];
+      const docHashResult = results[offset + 3];
+      const docTypeResult = results[offset + 4];
+      const origValueResult = results[offset + 5];
+
+      // If the first call (name) failed, the address is likely invalid.
+      if (!nameResult.success) {
+        assets.push(null);
+        continue;
+      }
+
+      assets.push({
+        name: nameResult.data as string,
+        symbol: symbolResult.success ? (symbolResult.data as string) : '',
+        totalSupply: totalSupplyResult.success ? BigInt(totalSupplyResult.data as bigint) : 0n,
+        documentHash: docHashResult.success ? (docHashResult.data as string) : '',
+        documentType: docTypeResult.success ? (docTypeResult.data as string) : '',
+        originalValue: origValueResult.success ? BigInt(origValueResult.data as bigint) : 0n,
+      });
+    }
+
+    return assets;
   }
 
   /** Get the token balance of a specific address for a WrappedAsset. */

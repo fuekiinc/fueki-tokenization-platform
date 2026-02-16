@@ -15,7 +15,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useWallet } from '../hooks/useWallet';
-import { useAppStore, getProvider } from '../store/useAppStore';
+import { useWalletStore, getProvider } from '../store/walletStore.ts';
+import { useAssetStore } from '../store/assetStore.ts';
 import { ContractService } from '../lib/blockchain/contracts';
 import { getNetworkConfig } from '../contracts/addresses';
 import { formatAddress } from '../lib/utils/helpers';
@@ -26,6 +27,7 @@ import UserOrders from '../components/Exchange/UserOrders';
 import TokenSelector from '../components/Exchange/TokenSelector';
 import LiquidityPanel from '../components/Exchange/LiquidityPanel';
 import PoolInfo from '../components/Exchange/PoolInfo';
+import TradingViewChart from '../components/Exchange/TradingViewChart';
 import {
   ArrowLeftRight,
   TrendingUp,
@@ -111,7 +113,10 @@ export default function ExchangePage() {
     connectWallet,
     isConnecting,
   } = useWallet();
-  const { wallet, wrappedAssets, setAssets, setLoadingAssets } = useAppStore();
+  const wallet = useWalletStore((s) => s.wallet);
+  const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
+  const setAssets = useAssetStore((s) => s.setAssets);
+  const setLoadingAssets = useAssetStore((s) => s.setLoadingAssets);
 
   // ---- Local state --------------------------------------------------------
 
@@ -161,6 +166,7 @@ export default function ExchangePage() {
       setContractService(service);
     } catch (err) {
       console.error('Failed to initialize ContractService:', err);
+      toast.error('Failed to initialize exchange contracts');
       setContractService(null);
     }
   }, [isConnected, wallet.chainId]);
@@ -274,8 +280,9 @@ export default function ExchangePage() {
           const bal = await provider.getBalance(address);
           setEthBalance(bal.toString());
         }
-      } catch {
-        // Non-critical
+      } catch (error) {
+        console.error('Failed to fetch ETH balance:', error);
+        toast.error('Failed to fetch ETH balance');
       }
     }
     void loadEthBalance();
@@ -588,6 +595,26 @@ export default function ExchangePage() {
                 </span>
               </button>
             ))}
+          </div>
+        )}
+
+        {/* ================================================================= */}
+        {/* Price chart                                                       */}
+        {/* ================================================================= */}
+        {assets.length > 0 && (
+          <div className="mb-6 md:mb-8">
+            <GlassCard
+              gradientFrom="from-emerald-500"
+              gradientTo="to-indigo-500"
+            >
+              <div className="p-4">
+                <TradingViewChart
+                  tokenSell={selectedSellToken ?? ''}
+                  tokenBuy={selectedBuyToken ?? ''}
+                  height={400}
+                />
+              </div>
+            </GlassCard>
           </div>
         )}
 

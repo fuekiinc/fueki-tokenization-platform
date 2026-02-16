@@ -9,7 +9,8 @@ import {
   Sparkles,
   HelpCircle,
 } from 'lucide-react';
-import { useAppStore } from '../store/useAppStore';
+import { useDocumentStore } from '../store/documentStore.ts';
+import { useTradeStore } from '../store/tradeStore.ts';
 import FileUploader from '../components/Upload/FileUploader';
 import TransactionPreview from '../components/Upload/TransactionPreview';
 import MintForm from '../components/Mint/MintForm';
@@ -278,7 +279,8 @@ function SectionCard({
 // ---------------------------------------------------------------------------
 
 export default function MintPage() {
-  const { currentDocument, tradeHistory } = useAppStore();
+  const currentDocument = useDocumentStore((s) => s.currentDocument);
+  const tradeHistory = useTradeStore((s) => s.tradeHistory);
 
   const hasMinted = tradeHistory.some(
     (t) => t.type === 'mint' && t.status === 'confirmed',

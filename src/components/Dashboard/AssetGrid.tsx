@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import type { WrappedAsset, ExchangeOrder, TradeHistory } from '../../types';
 import { formatCurrency } from '../../lib/utils/helpers';
+import { TOOLTIPS } from '../../lib/tooltipContent';
 import PortfolioSummaryCard from './PortfolioSummaryCard';
 
 // ---------------------------------------------------------------------------
@@ -48,6 +49,7 @@ export default function AssetGrid({
         icon={Package}
         gradientFrom="#3B82F6"
         gradientTo="#6366F1"
+        tooltip={TOOLTIPS.totalAssets}
       />
       <PortfolioSummaryCard
         title="Total Value Locked"
@@ -55,6 +57,7 @@ export default function AssetGrid({
         icon={DollarSign}
         gradientFrom="#10B981"
         gradientTo="#06B6D4"
+        tooltip={TOOLTIPS.tvl}
       />
       <PortfolioSummaryCard
         title="Active Orders"
@@ -62,6 +65,7 @@ export default function AssetGrid({
         icon={BarChart3}
         gradientFrom="#8B5CF6"
         gradientTo="#A855F7"
+        tooltip={TOOLTIPS.orderBook}
       />
       <PortfolioSummaryCard
         title="Total Trades"

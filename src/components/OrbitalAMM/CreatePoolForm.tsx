@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { OrbitalContractService } from '../../lib/blockchain/orbitalContracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
+import { formatPercent } from '../../lib/formatters';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -749,7 +750,7 @@ export default function CreatePoolForm({
           <div className="flex items-center justify-between text-xs">
             <span className="text-gray-500">Fee Tier</span>
             <span className="text-gray-300">
-              {FEE_TIERS.find((f) => f.bps === feeBps)?.label ?? `${(feeBps / 100).toFixed(2)}%`}
+              {FEE_TIERS.find((f) => f.bps === feeBps)?.label ?? formatPercent(feeBps / 100)}
             </span>
           </div>
           <div className="flex items-center justify-between text-xs">

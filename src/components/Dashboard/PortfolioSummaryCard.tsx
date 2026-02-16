@@ -3,6 +3,8 @@ import {
   ChevronUp,
   ChevronDown,
 } from 'lucide-react';
+import { InfoTooltip } from '../Common/Tooltip';
+import { formatPercent } from '../../lib/formatters';
 
 // ---------------------------------------------------------------------------
 // Glass morphism shared tokens (matches DashboardPage pattern)
@@ -22,6 +24,8 @@ export interface PortfolioSummaryCardProps {
   change?: number;
   gradientFrom: string;
   gradientTo: string;
+  /** Optional tooltip text shown via an InfoTooltip icon next to the title. */
+  tooltip?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -35,6 +39,7 @@ export default function PortfolioSummaryCard({
   change,
   gradientFrom,
   gradientTo,
+  tooltip,
 }: PortfolioSummaryCardProps) {
   const isPositive = change !== undefined && change >= 0;
 
@@ -61,8 +66,9 @@ export default function PortfolioSummaryCard({
       <div className="relative flex items-start justify-between gap-4">
         {/* Left: label + value */}
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium tracking-wide text-gray-400">
+          <p className="flex items-center gap-1.5 text-sm font-medium tracking-wide text-gray-400">
             {title}
+            {tooltip && <InfoTooltip content={tooltip} />}
           </p>
           <p className="mt-3 truncate text-2xl font-bold tracking-tight text-white sm:text-3xl">
             {value}
@@ -82,7 +88,7 @@ export default function PortfolioSummaryCard({
                 ) : (
                   <ChevronDown className="h-3 w-3" />
                 )}
-                {Math.abs(change).toFixed(2)}%
+                {formatPercent(Math.abs(change))}
               </div>
               {/* Mini trend sparkline */}
               <div className="ml-2 flex items-end gap-px">
