@@ -154,9 +154,9 @@ export default function PoolInfo({
 
   if (!tokenA || !tokenB) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <Droplets className="mb-4 h-8 w-8 text-gray-600" />
-        <p className="text-sm text-gray-500">
+      <div className="flex flex-col items-center justify-center py-10 sm:py-16 text-center px-4">
+        <Droplets className="mb-3 sm:mb-4 h-7 w-7 sm:h-8 sm:w-8 text-gray-600" />
+        <p className="text-xs sm:text-sm text-gray-500">
           Select a token pair to view pool statistics
         </p>
       </div>
@@ -167,7 +167,7 @@ export default function PoolInfo({
 
   if (loading && !pool) {
     return (
-      <div className="flex items-center justify-center py-16">
+      <div className="flex items-center justify-center py-10 sm:py-16">
         <Loader2 className="h-6 w-6 animate-spin text-purple-400/60" />
       </div>
     );
@@ -177,12 +177,12 @@ export default function PoolInfo({
 
   if (!pool) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <Droplets className="mb-4 h-8 w-8 text-gray-600" />
-        <p className="text-sm text-gray-500">
+      <div className="flex flex-col items-center justify-center py-10 sm:py-16 text-center px-4">
+        <Droplets className="mb-3 sm:mb-4 h-7 w-7 sm:h-8 sm:w-8 text-gray-600" />
+        <p className="text-xs sm:text-sm text-gray-500">
           No liquidity pool exists for this pair
         </p>
-        <p className="mt-1 text-[11px] text-gray-600">
+        <p className="mt-1 text-[10px] sm:text-[11px] text-gray-600">
           Create a pool and add liquidity to get started
         </p>
       </div>
@@ -212,65 +212,66 @@ export default function PoolInfo({
       {/* Stats grid */}
       <div className="space-y-0 divide-y divide-white/[0.04]">
         {/* Reserves */}
-        <div className="flex items-center justify-between py-3">
-          <span className="text-xs text-gray-500">{label0} Reserve</span>
-          <span className="font-mono text-xs font-medium text-gray-200">
+        <div className="flex items-center justify-between gap-2 py-2.5 sm:py-3 min-h-[44px]">
+          <span className="text-[11px] sm:text-xs text-gray-500 shrink-0">{label0} Reserve</span>
+          <span className="font-mono text-[11px] sm:text-xs font-medium text-gray-200 truncate text-right">
             {formatBalance(pool.reserve0, 18, 6)}
           </span>
         </div>
-        <div className="flex items-center justify-between py-3">
-          <span className="text-xs text-gray-500">{label1} Reserve</span>
-          <span className="font-mono text-xs font-medium text-gray-200">
+        <div className="flex items-center justify-between gap-2 py-2.5 sm:py-3 min-h-[44px]">
+          <span className="text-[11px] sm:text-xs text-gray-500 shrink-0">{label1} Reserve</span>
+          <span className="font-mono text-[11px] sm:text-xs font-medium text-gray-200 truncate text-right">
             {formatBalance(pool.reserve1, 18, 6)}
           </span>
         </div>
 
         {/* Exchange rates */}
         {rate0to1 !== null && (
-          <div className="flex items-center justify-between py-3">
-            <span className="flex items-center gap-1.5 text-xs text-gray-500">
+          <div className="flex items-center justify-between gap-2 py-2.5 sm:py-3 min-h-[44px]">
+            <span className="flex items-center gap-1.5 text-[11px] sm:text-xs text-gray-500 shrink-0">
               <ArrowRightLeft className="h-3 w-3" />
               Rate
             </span>
-            <span className="font-mono text-xs text-gray-300">
+            <span className="font-mono text-[11px] sm:text-xs text-gray-300 truncate text-right">
               1 {label0} = {rate0to1.toFixed(6)} {label1}
             </span>
           </div>
         )}
         {rate1to0 !== null && (
-          <div className="flex items-center justify-between py-3">
-            <span className="text-xs text-gray-500">Inverse</span>
-            <span className="font-mono text-xs text-gray-400">
+          <div className="flex items-center justify-between gap-2 py-2.5 sm:py-3 min-h-[44px]">
+            <span className="text-[11px] sm:text-xs text-gray-500 shrink-0">Inverse</span>
+            <span className="font-mono text-[11px] sm:text-xs text-gray-400 truncate text-right">
               1 {label1} = {rate1to0.toFixed(6)} {label0}
             </span>
           </div>
         )}
 
         {/* Total liquidity */}
-        <div className="flex items-center justify-between py-3">
-          <span className="flex items-center gap-1.5 text-xs text-gray-500">
+        <div className="flex items-center justify-between gap-2 py-2.5 sm:py-3 min-h-[44px]">
+          <span className="flex items-center gap-1.5 text-[11px] sm:text-xs text-gray-500 shrink-0">
             <Droplets className="h-3 w-3" />
-            Total LP Tokens
+            <span className="hidden sm:inline">Total LP Tokens</span>
+            <span className="sm:hidden">Total LP</span>
           </span>
-          <span className="font-mono text-xs font-medium text-gray-200">
+          <span className="font-mono text-[11px] sm:text-xs font-medium text-gray-200 truncate text-right">
             {formatBalance(pool.totalLiquidity, 18, 4)}
           </span>
         </div>
 
         {/* User position */}
-        <div className="flex items-center justify-between py-3">
-          <span className="text-xs text-gray-500">Your LP Balance</span>
-          <span className="font-mono text-xs font-medium text-gray-200">
+        <div className="flex items-center justify-between gap-2 py-2.5 sm:py-3 min-h-[44px]">
+          <span className="text-[11px] sm:text-xs text-gray-500 shrink-0">Your LP Balance</span>
+          <span className="font-mono text-[11px] sm:text-xs font-medium text-gray-200 truncate text-right">
             {formatBalance(lpBalance, 18, 6)}
           </span>
         </div>
         {sharePercent > 0 && (
-          <div className="flex items-center justify-between py-3">
-            <span className="flex items-center gap-1.5 text-xs text-gray-500">
+          <div className="flex items-center justify-between gap-2 py-2.5 sm:py-3 min-h-[44px]">
+            <span className="flex items-center gap-1.5 text-[11px] sm:text-xs text-gray-500 shrink-0">
               <TrendingUp className="h-3 w-3" />
-              Your Pool Share
+              Pool Share
             </span>
-            <span className="font-mono text-xs font-medium text-purple-400">
+            <span className="font-mono text-[11px] sm:text-xs font-medium text-purple-400">
               {sharePercent.toFixed(4)}%
             </span>
           </div>
@@ -278,11 +279,11 @@ export default function PoolInfo({
       </div>
 
       {/* K value (for advanced users) */}
-      <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-4 py-2.5">
+      <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-2 sm:px-4 sm:py-2.5">
         <span className="text-[10px] uppercase tracking-wider text-gray-600">
           Constant Product (k)
         </span>
-        <p className="mt-0.5 font-mono text-[11px] text-gray-500 break-all">
+        <p className="mt-0.5 font-mono text-[10px] sm:text-[11px] text-gray-500 break-all">
           {pool.kLast.toString()}
         </p>
       </div>

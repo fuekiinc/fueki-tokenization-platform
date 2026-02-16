@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useDropzone, type FileRejection } from 'react-dropzone';
-import { Upload, FileText, X, AlertCircle } from 'lucide-react';
+import { Upload, FileText, X, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -48,6 +48,19 @@ function isImageFile(file: File): boolean {
   return file.type === 'image/jpeg' || file.type === 'image/png';
 }
 
+function getSpecificErrorMessage(errorCode: string | undefined): string {
+  switch (errorCode) {
+    case 'file-too-large':
+      return `File exceeds the ${formatFileSize(MAX_FILE_SIZE)} size limit. Please upload a smaller file.`;
+    case 'file-invalid-type':
+      return 'Unsupported file type. Please upload a JPG, PNG, or PDF file.';
+    case 'too-many-files':
+      return 'Only one file can be uploaded at a time.';
+    default:
+      return 'File could not be uploaded. Please try again.';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -60,13 +73,20 @@ export default function DocumentUpload({
   className,
 }: DocumentUploadProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const mountedRef = useRef(true);
 
   const documentLabel = DOCUMENT_LABELS[documentType];
 
-  // ---- Object URL lifecycle -----------------------------------------------
-  // Create a preview URL when an image file is selected; revoke it on change
-  // or unmount to prevent memory leaks.
+  // Track mounted state to prevent updates after unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
+  // ---- Object URL lifecycle -----------------------------------------------
   useEffect(() => {
     if (selectedFile && isImageFile(selectedFile)) {
       const url = URL.createObjectURL(selectedFile);
@@ -81,8 +101,34 @@ export default function DocumentUpload({
     return undefined;
   }, [selectedFile]);
 
-  // ---- Drop handler -------------------------------------------------------
+  // ---- Simulated upload progress ------------------------------------------
+  useEffect(() => {
+    if (!selectedFile) {
+      setUploadProgress(null);
+      return;
+    }
 
+    // Simulate a brief processing animation when file is selected
+    setUploadProgress(0);
+    const steps = [20, 50, 75, 100];
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    steps.forEach((value, i) => {
+      timers.push(
+        setTimeout(() => {
+          if (mountedRef.current) {
+            setUploadProgress(value);
+          }
+        }, (i + 1) * 150),
+      );
+    });
+
+    return () => {
+      timers.forEach(clearTimeout);
+    };
+  }, [selectedFile]);
+
+  // ---- Drop handler -------------------------------------------------------
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
       if (acceptedFiles.length === 0) return;
@@ -94,15 +140,7 @@ export default function DocumentUpload({
   const onDropRejected = useCallback(
     (rejections: FileRejection[]) => {
       const errorCode = rejections[0]?.errors[0]?.code;
-
-      if (errorCode === 'file-too-large') {
-        toast.error('File exceeds the 10 MB size limit. Please upload a smaller file.');
-      } else if (errorCode === 'file-invalid-type') {
-        toast.error('Unsupported file type. Please upload a JPG, PNG, or PDF file.');
-      } else {
-        const message = rejections[0]?.errors[0]?.message ?? 'File could not be uploaded.';
-        toast.error(message);
-      }
+      toast.error(getSpecificErrorMessage(errorCode));
     },
     [],
   );
@@ -118,7 +156,6 @@ export default function DocumentUpload({
   });
 
   // ---- Remove handler -----------------------------------------------------
-
   const handleRemove = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -128,9 +165,9 @@ export default function DocumentUpload({
   );
 
   // ---- Derived state ------------------------------------------------------
-
   const hasFile = selectedFile !== null;
   const hasError = !!error;
+  const isProcessing = uploadProgress !== null && uploadProgress < 100;
 
   const borderClass = useMemo(() => {
     if (hasError) return 'border-[var(--danger)]';
@@ -141,8 +178,11 @@ export default function DocumentUpload({
 
   const borderStyle = hasFile ? 'border-solid' : 'border-dashed';
 
-  // ---- Render: file preview -----------------------------------------------
+  const fileSizeLabel = selectedFile
+    ? `${formatFileSize(selectedFile.size)} / ${formatFileSize(MAX_FILE_SIZE)} max`
+    : null;
 
+  // ---- Render: file preview -----------------------------------------------
   if (hasFile && selectedFile) {
     return (
       <div className={clsx('space-y-2', className)}>
@@ -154,17 +194,29 @@ export default function DocumentUpload({
             'bg-[var(--bg-secondary)]',
           )}
         >
+          {/* Upload progress bar */}
+          {isProcessing && (
+            <div className="absolute inset-x-0 top-0 h-1 bg-[var(--bg-tertiary)]" role="progressbar" aria-valuenow={uploadProgress ?? 0} aria-valuemin={0} aria-valuemax={100} aria-label="File upload progress">
+              <div
+                className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-300 ease-out rounded-full"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          )}
+
           <div className="flex items-center gap-4 p-4">
             {/* Thumbnail / file icon */}
             <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-[var(--bg-tertiary)] flex items-center justify-center">
-              {previewUrl ? (
+              {isProcessing ? (
+                <Loader2 className="h-6 w-6 text-[var(--accent-primary)] animate-spin" aria-hidden="true" />
+              ) : previewUrl ? (
                 <img
                   src={previewUrl}
                   alt={`Preview of ${selectedFile.name}`}
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <FileText className="h-7 w-7 text-[var(--text-muted)]" />
+                <FileText className="h-7 w-7 text-[var(--text-muted)]" aria-hidden="true" />
               )}
             </div>
 
@@ -174,8 +226,19 @@ export default function DocumentUpload({
                 {selectedFile.name}
               </p>
               <p className="mt-1 text-xs text-[var(--text-muted)]">
-                {formatFileSize(selectedFile.size)}
+                {fileSizeLabel}
               </p>
+              {isProcessing && (
+                <p className="mt-1 text-xs text-[var(--accent-primary)]" aria-live="polite">
+                  Processing file...
+                </p>
+              )}
+              {!isProcessing && uploadProgress === 100 && (
+                <div className="mt-1 flex items-center gap-1">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
+                  <span className="text-xs text-emerald-400">Ready</span>
+                </div>
+              )}
             </div>
 
             {/* Remove button */}
@@ -189,15 +252,15 @@ export default function DocumentUpload({
               )}
               aria-label="Remove file"
             >
-              <X className="h-4 w-4" />
+              <X className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>
 
         {/* Error message */}
         {hasError && (
-          <div className="flex items-center gap-2 px-1">
-            <AlertCircle className="h-3.5 w-3.5 shrink-0 text-[var(--danger)]" />
+          <div className="flex items-center gap-2 px-1" role="alert">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0 text-[var(--danger)]" aria-hidden="true" />
             <p className="text-xs text-[var(--danger)]">{error}</p>
           </div>
         )}
@@ -206,7 +269,6 @@ export default function DocumentUpload({
   }
 
   // ---- Render: empty drop zone --------------------------------------------
-
   return (
     <div className={clsx('space-y-2', className)}>
       <div
@@ -235,9 +297,9 @@ export default function DocumentUpload({
           )}
         >
           {isDragActive ? (
-            <Upload className="h-6 w-6 animate-bounce" />
+            <Upload className="h-6 w-6 animate-bounce" aria-hidden="true" />
           ) : (
-            <Upload className="h-6 w-6" />
+            <Upload className="h-6 w-6" aria-hidden="true" />
           )}
         </div>
 
@@ -261,7 +323,7 @@ export default function DocumentUpload({
               </span>
             </p>
             <p className="mt-3 text-xs text-[var(--text-muted)]">
-              JPG, PNG, or PDF up to 10MB
+              JPG, PNG, or PDF &middot; {formatFileSize(MAX_FILE_SIZE)} max
             </p>
           </>
         )}
@@ -269,8 +331,8 @@ export default function DocumentUpload({
 
       {/* Error message */}
       {hasError && (
-        <div className="flex items-center gap-2 px-1">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0 text-[var(--danger)]" />
+        <div className="flex items-center gap-2 px-1" role="alert">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0 text-[var(--danger)]" aria-hidden="true" />
           <p className="text-xs text-[var(--danger)]">{error}</p>
         </div>
       )}

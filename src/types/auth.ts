@@ -18,7 +18,6 @@ export interface User {
 
 export interface AuthTokens {
   accessToken: string;
-  refreshToken: string;
 }
 
 // --- Request / Response DTOs ------------------------------------------------
@@ -74,6 +73,14 @@ export interface KYCStatusResponse {
   message?: string;
   submittedAt?: string;
   reviewedAt?: string;
+}
+
+// --- Refresh Token Response -------------------------------------------------
+// The backend POST /api/auth/refresh returns { accessToken } in the body.
+// The refresh token itself is managed via httpOnly cookie.
+
+export interface RefreshTokenResponse {
+  accessToken: string;
 }
 
 // --- Auth State -------------------------------------------------------------

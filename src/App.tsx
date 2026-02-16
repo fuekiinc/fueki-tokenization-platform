@@ -5,12 +5,10 @@ import AuthLayout from './components/Layout/AuthLayout'
 import ProtectedRoute, { AuthRedirect } from './components/Auth/ProtectedRoute'
 import { useAuthStore } from './store/authStore'
 
-// Eager-load the core pages (small, always used)
-import DashboardPage from './pages/DashboardPage'
-import MintPage from './pages/MintPage'
-import PortfolioPage from './pages/PortfolioPage'
-
-// Lazy-load heavier pages
+// Lazy-load all page components for better initial bundle size
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const MintPage = lazy(() => import('./pages/MintPage'))
+const PortfolioPage = lazy(() => import('./pages/PortfolioPage'))
 const ExchangePage = lazy(() => import('./pages/ExchangePage'))
 const OrbitalAMMPage = lazy(() => import('./pages/OrbitalAMMPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -50,9 +48,9 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<Layout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="mint" element={<MintPage />} />
-            <Route path="portfolio" element={<PortfolioPage />} />
+            <Route path="dashboard" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
+            <Route path="mint" element={<Suspense fallback={<PageLoader />}><MintPage /></Suspense>} />
+            <Route path="portfolio" element={<Suspense fallback={<PageLoader />}><PortfolioPage /></Suspense>} />
             <Route path="exchange" element={<Suspense fallback={<PageLoader />}><ExchangePage /></Suspense>} />
             <Route path="advanced" element={<Suspense fallback={<PageLoader />}><OrbitalAMMPage /></Suspense>} />
           </Route>

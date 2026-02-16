@@ -109,10 +109,18 @@ export default function TokenSelector({
   const updatePosition = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
+    // On mobile (< 640px), use nearly full viewport width for the dropdown
+    const isMobile = window.innerWidth < 640;
+    const dropdownWidth = isMobile
+      ? Math.min(window.innerWidth - 32, 400)
+      : Math.max(rect.width, 340);
+    const dropdownLeft = isMobile
+      ? 16 + window.scrollX
+      : rect.left + window.scrollX;
     setDropdownPos({
       top: rect.bottom + 8 + window.scrollY,
-      left: rect.left + window.scrollX,
-      width: Math.max(rect.width, 340),
+      left: dropdownLeft,
+      width: dropdownWidth,
     });
   }, []);
 
@@ -232,7 +240,7 @@ export default function TokenSelector({
           </div>
 
           {/* Token list */}
-          <div className="max-h-72 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
+          <div role="listbox" aria-label={`${label} options`} className="max-h-72 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
                 <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.04]">
@@ -253,9 +261,12 @@ export default function TokenSelector({
                   <button
                     key={asset.address}
                     type="button"
+                    role="option"
+                    aria-selected={isSelected}
                     onClick={() => handleSelect(asset.address)}
                     className={clsx(
-                      'flex w-full items-center gap-3.5 px-4 py-3.5 text-left text-sm transition-colors',
+                      'flex w-full items-center gap-3 sm:gap-3.5 px-4 py-3.5 text-left text-sm transition-colors',
+                      'min-h-[44px]',
                       isSelected
                         ? 'bg-white/[0.06] text-white'
                         : 'text-gray-300 hover:bg-white/[0.04] hover:text-white',
@@ -322,13 +333,17 @@ export default function TokenSelector({
         {label}
       </label>
 
-      {/* Trigger button */}
+      {/* Trigger button -- 44px min height for touch target */}
       <button
         ref={triggerRef}
         type="button"
         onClick={handleToggle}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-label={`${label}: ${selectedAsset ? selectedAsset.symbol : 'Select token'}`}
         className={clsx(
           'flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm transition-all duration-200',
+          'min-h-[44px]',
           'bg-[#0D0F14]/80 backdrop-blur-xl',
           'border border-white/[0.06]',
           'hover:border-white/[0.12] hover:bg-[#0D0F14]',

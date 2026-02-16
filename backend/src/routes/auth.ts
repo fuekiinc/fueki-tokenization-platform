@@ -1,13 +1,47 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { hashPassword, verifyPassword, createSession, refreshSession, invalidateSession } from '../services/auth';
 import { authenticate } from '../middleware/auth';
+import { config } from '../config';
 
 const router = Router();
 const prisma = new PrismaClient();
 
+// ---------------------------------------------------------------------------
+// Cookie configuration for refresh tokens
+// ---------------------------------------------------------------------------
+
+const REFRESH_COOKIE_NAME = 'fueki_refresh_token';
+
+function setRefreshCookie(res: Response, refreshToken: string): void {
+  const isProduction = config.nodeEnv === 'production';
+
+  (res as any).cookie(REFRESH_COOKIE_NAME, refreshToken, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'strict' : 'lax',
+    path: '/api/auth',
+    maxAge: config.jwt.refreshExpiresIn * 1000, // 7 days in ms
+  });
+}
+
+function clearRefreshCookie(res: Response): void {
+  const isProduction = config.nodeEnv === 'production';
+
+  (res as any).cookie(REFRESH_COOKIE_NAME, '', {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'strict' : 'lax',
+    path: '/api/auth',
+    maxAge: 0,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Validation schemas
+// ---------------------------------------------------------------------------
+
 const registerSchema = z.object({
   email: z.string().email('Invalid email'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
@@ -18,7 +52,10 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+// ---------------------------------------------------------------------------
 // POST /api/auth/register
+// ---------------------------------------------------------------------------
+
 router.post('/register', async (req, res) => {
   try {
     const { email, password } = registerSchema.parse(req.body);
@@ -39,6 +76,10 @@ router.post('/register', async (req, res) => {
     // Create session
     const tokens = await createSession(user.id);
 
+    // Set refresh token as httpOnly cookie
+    setRefreshCookie(res, tokens.refreshToken);
+
+    // Return only the access token in the response body
     res.status(201).json({
       user: {
         id: user.id,
@@ -48,7 +89,9 @@ router.post('/register', async (req, res) => {
         createdAt: user.createdAt.toISOString(),
         updatedAt: user.updatedAt.toISOString(),
       },
-      tokens,
+      tokens: {
+        accessToken: tokens.accessToken,
+      },
     });
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -60,7 +103,10 @@ router.post('/register', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
 // POST /api/auth/login
+// ---------------------------------------------------------------------------
+
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = loginSchema.parse(req.body);
@@ -79,18 +125,24 @@ router.post('/login', async (req, res) => {
 
     const tokens = await createSession(user.id);
 
+    // Set refresh token as httpOnly cookie
+    setRefreshCookie(res, tokens.refreshToken);
+
+    // Return only the access token in the response body
     res.json({
       user: {
         id: user.id,
         email: user.email,
-        firstName: undefined, // Will be populated from KYC data if available
+        firstName: undefined,
         lastName: undefined,
         walletAddress: user.walletAddress,
         kycStatus: user.kycStatus,
         createdAt: user.createdAt.toISOString(),
         updatedAt: user.updatedAt.toISOString(),
       },
-      tokens,
+      tokens: {
+        accessToken: tokens.accessToken,
+      },
     });
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -102,20 +154,33 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
 // POST /api/auth/logout
+// ---------------------------------------------------------------------------
+
 router.post('/logout', authenticate, async (req, res) => {
   try {
-    const refreshToken = req.body.refreshToken;
+    // Read refresh token from httpOnly cookie (preferred) or body (legacy)
+    const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME] || req.body.refreshToken;
     if (refreshToken) {
       await invalidateSession(refreshToken);
     }
+
+    // Clear the refresh token cookie
+    clearRefreshCookie(res);
+
     res.json({ success: true });
   } catch {
+    // Clear cookie even on error
+    clearRefreshCookie(res);
     res.json({ success: true }); // Always succeed on logout
   }
 });
 
+// ---------------------------------------------------------------------------
 // GET /api/auth/me
+// ---------------------------------------------------------------------------
+
 router.get('/me', authenticate, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
@@ -141,19 +206,30 @@ router.get('/me', authenticate, async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
 // POST /api/auth/refresh
+// ---------------------------------------------------------------------------
+
 router.post('/refresh', async (req, res) => {
   try {
-    const { refreshToken } = req.body;
+    // Read refresh token from httpOnly cookie (preferred) or body (legacy)
+    const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME] || req.body.refreshToken;
     if (!refreshToken) {
       res.status(400).json({ error: { message: 'Refresh token required', code: 'MISSING_TOKEN' } });
       return;
     }
 
     const tokens = await refreshSession(refreshToken);
-    res.json(tokens);
+
+    // Set new refresh token as httpOnly cookie (rotation)
+    setRefreshCookie(res, tokens.refreshToken);
+
+    // Return only the access token in the response body
+    res.json({ accessToken: tokens.accessToken });
   } catch (err) {
     console.error('Refresh error:', err);
+    // Clear any stale cookie on refresh failure
+    clearRefreshCookie(res);
     res.status(401).json({ error: { message: 'Invalid refresh token', code: 'INVALID_TOKEN' } });
   }
 });

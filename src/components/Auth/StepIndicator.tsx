@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import clsx from 'clsx';
 import { CheckCircle2 } from 'lucide-react';
 
@@ -9,6 +10,8 @@ interface StepIndicatorProps {
   steps: { label: string; description?: string }[];
   /** Zero-indexed current step */
   currentStep: number;
+  /** Callback when a completed step is clicked to navigate back */
+  onStepClick?: (stepIndex: number) => void;
   className?: string;
 }
 
@@ -51,10 +54,9 @@ function StepCircle({
           'text-[var(--text-muted)]',
         ],
       )}
-      aria-current={status === 'current' ? 'step' : undefined}
     >
       {status === 'completed' ? (
-        <CheckCircle2 className="h-4.5 w-4.5" strokeWidth={2.5} />
+        <CheckCircle2 className="h-4.5 w-4.5" strokeWidth={2.5} aria-hidden="true" />
       ) : (
         <span>{stepNumber}</span>
       )}
@@ -80,51 +82,82 @@ function ConnectingLine({ completed }: { completed: boolean }) {
 // StepIndicator
 // ---------------------------------------------------------------------------
 
-export default function StepIndicator({
+const StepIndicator = memo(function StepIndicator({
   steps,
   currentStep,
+  onStepClick,
   className,
 }: StepIndicatorProps) {
   return (
-    <nav aria-label="Progress" className={clsx('w-full', className)}>
+    <nav
+      aria-label={`Signup progress: step ${currentStep + 1} of ${steps.length}, ${steps[currentStep]?.label ?? ''}`}
+      className={clsx('w-full', className)}
+    >
+      {/* Live region for screen reader step change announcements */}
+      <div aria-live="polite" className="sr-only">
+        Step {currentStep + 1} of {steps.length}: {steps[currentStep]?.label}
+      </div>
+
       <ol className="flex items-center">
         {steps.map((step, index) => {
           const status = getStepStatus(index, currentStep);
           const isLast = index === steps.length - 1;
+          const isClickable = status === 'completed' && !!onStepClick;
 
           return (
             <li
               key={step.label}
               className={clsx(
                 'flex items-center',
-                // Each step + its connecting line should share available space
-                // except the last step which only contains the circle
                 isLast ? 'shrink-0' : 'flex-1',
               )}
+              aria-current={status === 'current' ? 'step' : undefined}
             >
               {/* Circle + label column */}
               <div className="flex flex-col items-center gap-2">
-                <StepCircle status={status} stepNumber={index + 1} />
+                {isClickable ? (
+                  <button
+                    type="button"
+                    onClick={() => onStepClick(index)}
+                    aria-label={`Go back to step ${index + 1}: ${step.label} (completed)`}
+                    className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-primary)] rounded-full"
+                  >
+                    <StepCircle status={status} stepNumber={index + 1} />
+                  </button>
+                ) : (
+                  <StepCircle status={status} stepNumber={index + 1} />
+                )}
 
-                {/* Label -- hidden on small screens for compactness */}
-                <div className="hidden sm:flex flex-col items-center text-center">
+                {/* Label -- visible below each dot */}
+                <div className="flex flex-col items-center text-center">
                   <span
                     className={clsx(
                       'text-xs font-medium transition-colors duration-300',
+                      isClickable && 'cursor-pointer hover:text-[var(--accent-primary)]',
                       status === 'upcoming'
                         ? 'text-[var(--text-muted)]'
                         : 'text-[var(--text-primary)]',
                     )}
+                    onClick={isClickable ? () => onStepClick(index) : undefined}
                   >
                     {step.label}
                   </span>
 
                   {step.description && (
-                    <span className="mt-0.5 text-[10px] leading-tight text-[var(--text-muted)]">
+                    <span className="mt-0.5 hidden sm:block text-[10px] leading-tight text-[var(--text-muted)]">
                       {step.description}
                     </span>
                   )}
                 </div>
+
+                {/* Screen-reader-only status text */}
+                <span className="sr-only">
+                  {status === 'completed'
+                    ? '(completed)'
+                    : status === 'current'
+                      ? '(current step)'
+                      : '(upcoming)'}
+                </span>
               </div>
 
               {/* Connecting line to the next step */}
@@ -139,6 +172,7 @@ export default function StepIndicator({
       </ol>
     </nav>
   );
-}
+});
 
+export default StepIndicator;
 export type { StepIndicatorProps };

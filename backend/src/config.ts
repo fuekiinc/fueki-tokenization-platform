@@ -1,20 +1,41 @@
 import 'dotenv/config';
 
+// ---------------------------------------------------------------------------
+// Required environment variable validation
+// ---------------------------------------------------------------------------
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    console.error(`FATAL: Required environment variable ${name} is not set.`);
+    process.exit(1);
+  }
+  return value;
+}
+
+const isProduction = process.env.NODE_ENV === 'production';
+
 export const config = {
   port: parseInt(process.env.PORT || '8080', 10),
   host: process.env.HOST || '0.0.0.0',
   nodeEnv: process.env.NODE_ENV || 'development',
-  databaseUrl: process.env.DATABASE_URL!,
+  databaseUrl: requireEnv('DATABASE_URL'),
 
   jwt: {
-    accessSecret: process.env.JWT_ACCESS_SECRET || 'fueki-access-secret-change-in-production',
-    refreshSecret: process.env.JWT_REFRESH_SECRET || 'fueki-refresh-secret-change-in-production',
+    accessSecret: isProduction
+      ? requireEnv('JWT_ACCESS_SECRET')
+      : (process.env.JWT_ACCESS_SECRET ?? 'dev-only-access-secret-not-for-production'),
+    refreshSecret: isProduction
+      ? requireEnv('JWT_REFRESH_SECRET')
+      : (process.env.JWT_REFRESH_SECRET ?? 'dev-only-refresh-secret-not-for-production'),
     accessExpiresIn: 15 * 60, // 15 minutes in seconds
     refreshExpiresIn: 7 * 24 * 60 * 60, // 7 days in seconds
   },
 
   encryption: {
-    key: process.env.ENCRYPTION_KEY || 'a'.repeat(64), // 32 bytes hex
+    key: isProduction
+      ? requireEnv('ENCRYPTION_KEY')
+      : (process.env.ENCRYPTION_KEY ?? 'a]1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b'),
     algorithm: 'aes-256-gcm' as const,
   },
 

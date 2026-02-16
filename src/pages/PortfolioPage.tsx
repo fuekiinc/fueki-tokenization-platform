@@ -5,21 +5,21 @@ import {
   Search,
   Filter,
   Wallet,
-  Package,
   ArrowUpRight,
   Copy,
+  AlertTriangle,
+  DollarSign,
+  Layers,
+  Lock,
+  FileText,
+  LayoutGrid,
+  List,
+  ChevronUp,
+  ChevronDown,
   Send,
   Flame,
   ExternalLink,
-  LayoutGrid,
-  List,
-  AlertTriangle,
-  Lock,
-  ChevronDown,
-  ChevronUp,
-  DollarSign,
-  Layers,
-  FileText,
+  Package,
 } from 'lucide-react';
 import { ethers } from 'ethers';
 import { ContractService } from '../lib/blockchain/contracts';
@@ -29,6 +29,12 @@ import { Modal, Button, EmptyState } from '../components/Common';
 import { formatBalance, formatAddress, copyToClipboard } from '../lib/utils/helpers';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
 import type { WrappedAsset, TradeHistory } from '../types/index';
+
+// Sub-components extracted from this file
+import AssetAllocationChart from '../components/Charts/AssetAllocationChart';
+import PortfolioValueChart from '../components/Charts/PortfolioValueChart';
+import HoldingsTable from '../components/DataViz/HoldingsTable';
+import TransactionHistory from '../components/DataViz/TransactionHistory';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -111,12 +117,17 @@ function computeUniqueDocTypes(assets: WrappedAsset[]): number {
 }
 
 // ---------------------------------------------------------------------------
-// Skeleton Loader
+// Skeleton Loaders
 // ---------------------------------------------------------------------------
 
 function SkeletonCard() {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-7 sm:p-9">
+    <div
+      role="status"
+      aria-label="Loading asset card"
+      className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-7 sm:p-9"
+    >
+      <span className="sr-only">Loading asset...</span>
       <div className="flex items-start gap-4">
         <div className="shimmer h-12 w-12 rounded-full" />
         <div className="flex-1 space-y-3">
@@ -146,7 +157,12 @@ function SkeletonCard() {
 
 function SkeletonStatCard() {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-7 sm:p-9">
+    <div
+      role="status"
+      aria-label="Loading stat"
+      className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-7 sm:p-9"
+    >
+      <span className="sr-only">Loading...</span>
       <div className="flex items-center gap-3">
         <div className="shimmer h-10 w-10 rounded-xl" />
         <div className="shimmer h-3 w-20 rounded" />
@@ -157,7 +173,57 @@ function SkeletonStatCard() {
 }
 
 // ---------------------------------------------------------------------------
-// Component
+// Sub-component: Detail Row (expandable card detail)
+// ---------------------------------------------------------------------------
+
+function DetailRow({
+  label,
+  value,
+  mono = false,
+  copiable = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  copiable?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-gray-500">{label}</span>
+      {copiable ? (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            copyToClipboard(value);
+          }}
+          className={clsx(
+            'flex max-w-[220px] items-center gap-2 truncate text-gray-400 transition-colors hover:text-white',
+            'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+            mono && 'font-mono',
+          )}
+          aria-label={`Copy ${label}: ${value}`}
+          title={value}
+        >
+          <span className="truncate">{value}</span>
+          <Copy className="h-3.5 w-3.5 shrink-0 text-gray-600" aria-hidden="true" />
+        </button>
+      ) : (
+        <span
+          className={clsx(
+            'max-w-[220px] truncate text-gray-400',
+            mono && 'font-mono',
+          )}
+          title={value}
+        >
+          {value}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Component
 // ---------------------------------------------------------------------------
 
 export default function PortfolioPage() {
@@ -169,6 +235,7 @@ export default function PortfolioPage() {
   const setLoadingAssets = useAppStore((s) => s.setLoadingAssets);
   const addTrade = useAppStore((s) => s.addTrade);
   const updateAsset = useAppStore((s) => s.updateAsset);
+  const tradeHistory = useAppStore((s) => s.tradeHistory);
 
   // ---- UI state ------------------------------------------------------------
 
@@ -242,7 +309,6 @@ export default function PortfolioPage() {
   const filteredAssets = useMemo(() => {
     let result = [...wrappedAssets];
 
-    // Search filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(
@@ -253,7 +319,6 @@ export default function PortfolioPage() {
       );
     }
 
-    // Sort
     result.sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
@@ -275,6 +340,11 @@ export default function PortfolioPage() {
     return result;
   }, [wrappedAssets, searchQuery, sortField, sortDir]);
 
+  const explorerBaseUrl = useMemo(() => {
+    const network = chainId ? SUPPORTED_NETWORKS[chainId] : null;
+    return network?.blockExplorer ?? null;
+  }, [chainId]);
+
   // ---- Handlers ------------------------------------------------------------
 
   const toggleSort = useCallback(
@@ -291,16 +361,24 @@ export default function PortfolioPage() {
 
   const handleViewExplorer = useCallback(
     (asset: WrappedAsset) => {
-      const network = chainId ? SUPPORTED_NETWORKS[chainId] : null;
-      if (network?.blockExplorer) {
-        window.open(
-          `${network.blockExplorer}/address/${asset.address}`,
-          '_blank',
-        );
+      if (explorerBaseUrl) {
+        window.open(`${explorerBaseUrl}/address/${asset.address}`, '_blank');
       }
     },
-    [chainId],
+    [explorerBaseUrl],
   );
+
+  const handleOpenTransfer = useCallback((asset: WrappedAsset) => {
+    setTransferAsset(asset);
+    setTransferForm({ recipient: '', amount: '' });
+    setTransferError(null);
+  }, []);
+
+  const handleOpenBurn = useCallback((asset: WrappedAsset) => {
+    setBurnAsset(asset);
+    setBurnForm({ amount: '' });
+    setBurnError(null);
+  }, []);
 
   const handleTransferSubmit = useCallback(async () => {
     if (!transferAsset || !address || !chainId) return;
@@ -356,7 +434,6 @@ export default function PortfolioPage() {
       );
       await service.waitForTransaction(tx);
 
-      // Record trade in store
       const trade: TradeHistory = {
         id: `transfer-${Date.now()}`,
         type: 'transfer',
@@ -371,7 +448,6 @@ export default function PortfolioPage() {
       };
       addTrade(trade);
 
-      // Optimistic local balance update
       const currentBalance = parseFloat(transferAsset.balance || '0');
       const newBalance = Math.max(
         0,
@@ -381,12 +457,10 @@ export default function PortfolioPage() {
         balance: newBalance.toString(),
       });
 
-      // Close modal and reset form
       setTransferAsset(null);
       setTransferForm({ recipient: '', amount: '' });
       setTransferError(null);
 
-      // Refresh on-chain balances in the background
       void fetchAssets();
     } catch (err: unknown) {
       const message =
@@ -450,7 +524,6 @@ export default function PortfolioPage() {
       const tx = await service.burnAsset(burnAsset.address, amountWei);
       await service.waitForTransaction(tx);
 
-      // Record trade in store
       const trade: TradeHistory = {
         id: `burn-${Date.now()}`,
         type: 'burn',
@@ -465,7 +538,6 @@ export default function PortfolioPage() {
       };
       addTrade(trade);
 
-      // Optimistic local balance update
       const currentBalance = parseFloat(burnAsset.balance || '0');
       const newBalance = Math.max(
         0,
@@ -475,12 +547,10 @@ export default function PortfolioPage() {
         balance: newBalance.toString(),
       });
 
-      // Close modal and reset form
       setBurnAsset(null);
       setBurnForm({ amount: '' });
       setBurnError(null);
 
-      // Refresh on-chain balances in the background
       void fetchAssets();
     } catch (err: unknown) {
       const message =
@@ -497,10 +567,9 @@ export default function PortfolioPage() {
     return (
       <div className="flex min-h-[75vh] items-center justify-center px-4">
         <div className="w-full max-w-md text-center">
-          {/* Gradient icon */}
           <div className="mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-3xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 backdrop-blur-xl">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 shadow-lg shadow-indigo-500/25">
-              <Wallet className="h-8 w-8 text-white" />
+              <Wallet className="h-8 w-8 text-white" aria-hidden="true" />
             </div>
           </div>
 
@@ -523,7 +592,7 @@ export default function PortfolioPage() {
           </Button>
 
           {walletError && (
-            <div className="mx-auto mt-8 max-w-sm rounded-xl border border-red-500/20 bg-red-500/10 px-5 py-4 backdrop-blur-sm">
+            <div role="alert" className="mx-auto mt-8 max-w-sm rounded-xl border border-red-500/20 bg-red-500/10 px-5 py-4 backdrop-blur-sm">
               <p className="text-sm text-red-400">{walletError}</p>
             </div>
           )}
@@ -545,7 +614,6 @@ export default function PortfolioPage() {
       {/* ================================================================== */}
       <div className="mb-12 sm:mb-16">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-          {/* Left: Title and subtitle */}
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
               Portfolio
@@ -555,9 +623,7 @@ export default function PortfolioPage() {
             </p>
           </div>
 
-          {/* Right: Wallet address badge and mint CTA */}
           <div className="flex items-center gap-3">
-            {/* Wallet badge */}
             {address && (
               <button
                 onClick={() => copyToClipboard(address)}
@@ -567,20 +633,20 @@ export default function PortfolioPage() {
                   'px-4 py-2.5',
                   'transition-all duration-200',
                   'hover:border-white/[0.12] hover:bg-white/[0.04]',
+                  'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]',
                 )}
-                title="Click to copy address"
+                aria-label={`Copy wallet address ${formatAddress(address)}`}
               >
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500">
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500" aria-hidden="true">
                   <Wallet className="h-3 w-3 text-white" />
                 </div>
                 <span className="font-mono text-sm text-gray-400 transition-colors group-hover/badge:text-white">
                   {formatAddress(address)}
                 </span>
-                <Copy className="h-3.5 w-3.5 text-gray-600 transition-colors group-hover/badge:text-gray-400" />
+                <Copy className="h-3.5 w-3.5 text-gray-600 transition-colors group-hover/badge:text-gray-400" aria-hidden="true" />
               </button>
             )}
 
-            {/* Mint new asset button */}
             <Button
               variant="primary"
               size="lg"
@@ -604,7 +670,11 @@ export default function PortfolioPage() {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8 lg:grid-cols-4 lg:gap-8">
+          <div
+            className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8 lg:grid-cols-4 lg:gap-8"
+            role="group"
+            aria-label="Portfolio summary statistics"
+          >
             {/* Portfolio Value */}
             <div
               className={clsx(
@@ -615,11 +685,13 @@ export default function PortfolioPage() {
                 'transition-all duration-300 ease-out',
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
+              role="group"
+              aria-label={`Portfolio Value: $${portfolioValue}`}
             >
               <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 ring-1 ring-white/[0.06]">
-                  <DollarSign className="h-4.5 w-4.5 text-indigo-400" />
+                  <DollarSign className="h-4.5 w-4.5 text-indigo-400" aria-hidden="true" />
                 </div>
                 <p className="truncate text-xs font-medium uppercase tracking-wider text-gray-500">
                   Portfolio Value
@@ -640,10 +712,12 @@ export default function PortfolioPage() {
                 'transition-all duration-300 ease-out',
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
+              role="group"
+              aria-label={`Total Assets: ${wrappedAssets.length}`}
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 ring-1 ring-white/[0.06]">
-                  <Layers className="h-4.5 w-4.5 text-violet-400" />
+                  <Layers className="h-4.5 w-4.5 text-violet-400" aria-hidden="true" />
                 </div>
                 <p className="truncate text-xs font-medium uppercase tracking-wider text-gray-500">
                   Total Assets
@@ -664,10 +738,12 @@ export default function PortfolioPage() {
                 'transition-all duration-300 ease-out',
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
+              role="group"
+              aria-label={`Total Locked: ${totalLocked}`}
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 ring-1 ring-white/[0.06]">
-                  <Lock className="h-4.5 w-4.5 text-emerald-400" />
+                  <Lock className="h-4.5 w-4.5 text-emerald-400" aria-hidden="true" />
                 </div>
                 <p className="truncate text-xs font-medium uppercase tracking-wider text-gray-500">
                   Total Locked
@@ -688,10 +764,12 @@ export default function PortfolioPage() {
                 'transition-all duration-300 ease-out',
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
+              role="group"
+              aria-label={`Document Types: ${uniqueDocTypes}`}
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 ring-1 ring-white/[0.06]">
-                  <FileText className="h-4.5 w-4.5 text-amber-400" />
+                  <FileText className="h-4.5 w-4.5 text-amber-400" aria-hidden="true" />
                 </div>
                 <p className="truncate text-xs font-medium uppercase tracking-wider text-gray-500">
                   Document Types
@@ -706,6 +784,22 @@ export default function PortfolioPage() {
       </div>
 
       {/* ================================================================== */}
+      {/* Charts Section                                                     */}
+      {/* ================================================================== */}
+      {(wrappedAssets.length > 0 || isLoadingAssets) && (
+        <div className="mb-12 sm:mb-16 grid grid-cols-1 gap-6 sm:gap-8 lg:grid-cols-2">
+          <PortfolioValueChart
+            assets={wrappedAssets}
+            isLoading={isLoadingAssets}
+          />
+          <AssetAllocationChart
+            assets={wrappedAssets}
+            isLoading={isLoadingAssets}
+          />
+        </div>
+      )}
+
+      {/* ================================================================== */}
       {/* Search / Filter / Sort Bar                                         */}
       {/* ================================================================== */}
       <div className="mb-12 sm:mb-16">
@@ -718,12 +812,15 @@ export default function PortfolioPage() {
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
             {/* Search */}
             <div className="relative flex-1">
-              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              <label htmlFor="asset-search" className="sr-only">Search assets</label>
+              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" aria-hidden="true" />
               <input
-                type="text"
+                id="asset-search"
+                type="search"
                 placeholder="Search by name, symbol, or address..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Search assets"
                 className={clsx(
                   'w-full rounded-xl border border-white/[0.06] bg-white/[0.03] py-3.5 pl-12 pr-4',
                   'text-sm text-white placeholder-gray-600',
@@ -735,33 +832,35 @@ export default function PortfolioPage() {
 
             {/* Sort pills + view toggle */}
             <div className="flex items-center gap-2.5">
-              <Filter className="hidden h-4 w-4 text-gray-600 sm:block" />
+              <Filter className="hidden h-4 w-4 text-gray-600 sm:block" aria-hidden="true" />
               {(['name', 'balance', 'value'] as SortField[]).map((field) => (
                 <button
                   key={field}
                   onClick={() => toggleSort(field)}
+                  aria-label={`Sort by ${field}${sortField === field ? (sortDir === 'asc' ? ', ascending' : ', descending') : ''}`}
+                  aria-pressed={sortField === field}
                   className={clsx(
                     'inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-xs font-medium capitalize transition-all duration-200',
                     sortField === field
                       ? 'bg-gradient-to-r from-indigo-500/20 to-violet-500/20 text-indigo-400 shadow-sm shadow-indigo-500/10'
                       : 'bg-white/[0.03] text-gray-500 hover:bg-white/[0.06] hover:text-gray-300',
+                    'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
                   )}
                 >
                   {field}
                   {sortField === field && (
                     <span className="inline-flex">
                       {sortDir === 'asc' ? (
-                        <ChevronUp className="inline h-3 w-3" />
+                        <ChevronUp className="inline h-3 w-3" aria-hidden="true" />
                       ) : (
-                        <ChevronDown className="inline h-3 w-3" />
+                        <ChevronDown className="inline h-3 w-3" aria-hidden="true" />
                       )}
                     </span>
                   )}
                 </button>
               ))}
 
-              {/* Divider */}
-              <div className="mx-2 h-5 w-px bg-white/[0.06]" />
+              <div className="mx-2 h-5 w-px bg-white/[0.06]" aria-hidden="true" />
 
               {/* View toggle */}
               <button
@@ -771,10 +870,12 @@ export default function PortfolioPage() {
                   viewMode === 'grid'
                     ? 'bg-white/[0.08] text-white'
                     : 'text-gray-600 hover:text-gray-400',
+                  'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
                 )}
-                title="Grid view"
+                aria-label="Grid view"
+                aria-pressed={viewMode === 'grid'}
               >
-                <LayoutGrid className="h-4 w-4" />
+                <LayoutGrid className="h-4 w-4" aria-hidden="true" />
               </button>
               <button
                 onClick={() => setViewMode('list')}
@@ -783,10 +884,12 @@ export default function PortfolioPage() {
                   viewMode === 'list'
                     ? 'bg-white/[0.08] text-white'
                     : 'text-gray-600 hover:text-gray-400',
+                  'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
                 )}
-                title="List view"
+                aria-label="List view"
+                aria-pressed={viewMode === 'list'}
               >
-                <List className="h-4 w-4" />
+                <List className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -794,17 +897,27 @@ export default function PortfolioPage() {
       </div>
 
       {/* ================================================================== */}
-      {/* Asset Grid                                                         */}
+      {/* Asset Display -- Grid or Table                                     */}
       {/* ================================================================== */}
-      {isLoadingAssets ? (
-        /* Skeleton loaders */
+      {viewMode === 'list' ? (
+        /* Table view using the HoldingsTable sub-component */
+        <div className="mb-12 sm:mb-16">
+          <HoldingsTable
+            assets={filteredAssets}
+            isLoading={isLoadingAssets}
+            onTransfer={handleOpenTransfer}
+            onBurn={handleOpenBurn}
+            onViewExplorer={handleViewExplorer}
+            onMintNew={() => navigate('/mint')}
+          />
+        </div>
+      ) : isLoadingAssets ? (
+        /* Skeleton loaders for grid view */
         <div
           className={clsx(
-            'grid',
+            'grid mb-12 sm:mb-16',
             'gap-6 sm:gap-8 lg:gap-8',
-            viewMode === 'grid'
-              ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
-              : 'grid-cols-1',
+            'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
           )}
         >
           {Array.from({ length: 6 }).map((_, i) => (
@@ -812,8 +925,8 @@ export default function PortfolioPage() {
           ))}
         </div>
       ) : filteredAssets.length === 0 ? (
-        /* Empty state -- spacious with generous vertical padding */
-        <div className="py-6">
+        /* Empty state */
+        <div className="py-6 mb-12 sm:mb-16">
           <EmptyState
             icon={<Package className="h-8 w-8" />}
             title={
@@ -842,13 +955,12 @@ export default function PortfolioPage() {
           />
         </div>
       ) : (
+        /* Grid view */
         <div
           className={clsx(
-            'grid',
+            'grid mb-12 sm:mb-16',
             'gap-6 sm:gap-8 lg:gap-8',
-            viewMode === 'grid'
-              ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
-              : 'grid-cols-1',
+            'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
           )}
         >
           {filteredAssets.map((asset) => {
@@ -866,9 +978,19 @@ export default function PortfolioPage() {
             return (
               <div
                 key={asset.address}
+                role="button"
+                tabIndex={0}
                 onClick={() =>
                   setExpandedAsset(isExpanded ? null : asset.address)
                 }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setExpandedAsset(isExpanded ? null : asset.address);
+                  }
+                }}
+                aria-expanded={isExpanded}
+                aria-label={`${asset.name} (${asset.symbol}). Balance: ${balanceFormatted}. Value: $${valueFormatted}. ${isExpanded ? 'Collapse' : 'Expand'} details.`}
                 className={clsx(
                   'group relative cursor-pointer overflow-hidden rounded-2xl',
                   'border border-white/[0.06]',
@@ -876,22 +998,23 @@ export default function PortfolioPage() {
                   'transition-all duration-300 ease-out',
                   'hover:-translate-y-0.5 hover:border-white/[0.10]',
                   'hover:shadow-[0_8px_40px_-8px_rgba(99,102,241,0.10)]',
+                  'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]',
                 )}
               >
                 {/* Top gradient hover line */}
-                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" aria-hidden="true" />
 
                 <div className="p-7 sm:p-9">
                   {/* Header row */}
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-4">
-                      {/* Token gradient circle */}
                       <div
                         className={clsx(
                           'flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br',
                           gradient,
                           'text-sm font-bold text-white shadow-lg',
                         )}
+                        aria-hidden="true"
                       >
                         {tokenInitials}
                       </div>
@@ -906,7 +1029,6 @@ export default function PortfolioPage() {
                       </div>
                     </div>
 
-                    {/* Document type badge */}
                     {docType && (
                       <span
                         className={clsx(
@@ -947,12 +1069,13 @@ export default function PortfolioPage() {
                             e.stopPropagation();
                             copyToClipboard(asset.documentHash);
                           }}
-                          className="flex items-center gap-1.5 font-mono text-xs text-gray-500 transition-colors hover:text-white"
+                          aria-label={`Copy document hash for ${asset.name}`}
+                          className="flex items-center gap-1.5 font-mono text-xs text-gray-500 transition-colors hover:text-white focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]"
                         >
                           <span className="max-w-[160px] truncate">
                             {asset.documentHash}
                           </span>
-                          <Copy className="h-3 w-3 shrink-0 text-gray-600" />
+                          <Copy className="h-3 w-3 shrink-0 text-gray-600" aria-hidden="true" />
                         </button>
                       </div>
                     </div>
@@ -963,33 +1086,33 @@ export default function PortfolioPage() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        setTransferAsset(asset);
-                        setTransferForm({ recipient: '', amount: '' });
-                        setTransferError(null);
+                        handleOpenTransfer(asset);
                       }}
+                      aria-label={`Transfer ${asset.name}`}
                       className={clsx(
                         'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3',
                         'border border-indigo-500/10 bg-indigo-500/[0.06] text-sm font-medium text-indigo-400',
                         'transition-all duration-200 hover:border-indigo-500/25 hover:bg-indigo-500/[0.12] hover:shadow-sm hover:shadow-indigo-500/10',
+                        'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
                       )}
                     >
-                      <Send className="h-3.5 w-3.5" />
+                      <Send className="h-3.5 w-3.5" aria-hidden="true" />
                       Transfer
                     </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        setBurnAsset(asset);
-                        setBurnForm({ amount: '' });
-                        setBurnError(null);
+                        handleOpenBurn(asset);
                       }}
+                      aria-label={`Burn ${asset.name}`}
                       className={clsx(
                         'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3',
                         'border border-red-500/10 bg-red-500/[0.06] text-sm font-medium text-red-400',
                         'transition-all duration-200 hover:border-red-500/25 hover:bg-red-500/[0.12] hover:shadow-sm hover:shadow-red-500/10',
+                        'focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
                       )}
                     >
-                      <Flame className="h-3.5 w-3.5" />
+                      <Flame className="h-3.5 w-3.5" aria-hidden="true" />
                       Burn
                     </button>
                     <button
@@ -997,14 +1120,15 @@ export default function PortfolioPage() {
                         e.stopPropagation();
                         handleViewExplorer(asset);
                       }}
+                      aria-label={`View ${asset.name} on block explorer`}
                       className={clsx(
                         'flex items-center justify-center rounded-xl px-3.5 py-3',
                         'border border-white/[0.06] bg-white/[0.03] text-gray-500',
                         'transition-all duration-200 hover:border-white/[0.10] hover:bg-white/[0.06] hover:text-gray-300',
+                        'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
                       )}
-                      title="View on Explorer"
                     >
-                      <ExternalLink className="h-4 w-4" />
+                      <ExternalLink className="h-4 w-4" aria-hidden="true" />
                     </button>
                   </div>
 
@@ -1041,6 +1165,18 @@ export default function PortfolioPage() {
       )}
 
       {/* ================================================================== */}
+      {/* Transaction History Section                                        */}
+      {/* ================================================================== */}
+      <div className="mb-12 sm:mb-16">
+        <TransactionHistory
+          trades={tradeHistory}
+          isLoading={isLoadingAssets && tradeHistory.length === 0}
+          explorerBaseUrl={explorerBaseUrl ?? undefined}
+          onMintNew={() => navigate('/mint')}
+        />
+      </div>
+
+      {/* ================================================================== */}
       {/* Transfer Modal                                                     */}
       {/* ================================================================== */}
       <Modal
@@ -1056,7 +1192,6 @@ export default function PortfolioPage() {
       >
         {transferAsset && (
           <div className="space-y-6">
-            {/* Balance display */}
             <div className="relative overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
               <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
               <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
@@ -1070,12 +1205,12 @@ export default function PortfolioPage() {
               </p>
             </div>
 
-            {/* Recipient */}
             <div>
-              <label className="mb-3 block text-xs font-semibold uppercase tracking-wider text-gray-400">
+              <label htmlFor="transfer-recipient" className="mb-3 block text-xs font-semibold uppercase tracking-wider text-gray-400">
                 Recipient Address
               </label>
               <input
+                id="transfer-recipient"
                 type="text"
                 placeholder="0x..."
                 value={transferForm.recipient}
@@ -1086,6 +1221,7 @@ export default function PortfolioPage() {
                   }))
                 }
                 disabled={transferLoading}
+                aria-invalid={transferError?.includes('recipient') || transferError?.includes('address') ? true : undefined}
                 className={clsx(
                   'w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3.5',
                   'font-mono text-sm text-white placeholder-gray-600',
@@ -1096,13 +1232,13 @@ export default function PortfolioPage() {
               />
             </div>
 
-            {/* Amount */}
             <div>
-              <label className="mb-3 block text-xs font-semibold uppercase tracking-wider text-gray-400">
+              <label htmlFor="transfer-amount" className="mb-3 block text-xs font-semibold uppercase tracking-wider text-gray-400">
                 Amount
               </label>
               <div className="relative">
                 <input
+                  id="transfer-amount"
                   type="number"
                   step="any"
                   min="0"
@@ -1132,6 +1268,7 @@ export default function PortfolioPage() {
                     }))
                   }
                   disabled={transferLoading}
+                  aria-label="Set maximum transfer amount"
                   className={clsx(
                     'absolute right-3 top-1/2 -translate-y-1/2 rounded-lg px-3 py-1.5',
                     'bg-gradient-to-r from-indigo-500/20 to-violet-500/20',
@@ -1145,14 +1282,12 @@ export default function PortfolioPage() {
               </div>
             </div>
 
-            {/* Error */}
             {transferError && (
-              <div className="rounded-xl border border-red-500/20 bg-red-500/[0.08] px-5 py-4">
+              <div role="alert" className="rounded-xl border border-red-500/20 bg-red-500/[0.08] px-5 py-4">
                 <p className="text-sm text-red-400">{transferError}</p>
               </div>
             )}
 
-            {/* Submit */}
             <Button
               variant="primary"
               fullWidth
@@ -1183,7 +1318,6 @@ export default function PortfolioPage() {
       >
         {burnAsset && (
           <div className="space-y-6">
-            {/* Balance display (red accent) */}
             <div className="relative overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
               <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-red-500/30 to-transparent" />
               <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
@@ -1197,10 +1331,9 @@ export default function PortfolioPage() {
               </p>
             </div>
 
-            {/* Warning banner */}
-            <div className="flex items-start gap-4 rounded-xl border border-red-500/20 bg-red-500/[0.06] p-5">
+            <div role="alert" className="flex items-start gap-4 rounded-xl border border-red-500/20 bg-red-500/[0.06] p-5">
               <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-500/20">
-                <AlertTriangle className="h-4 w-4 text-red-400" />
+                <AlertTriangle className="h-4 w-4 text-red-400" aria-hidden="true" />
               </div>
               <div>
                 <p className="text-sm font-semibold text-red-400">
@@ -1213,13 +1346,13 @@ export default function PortfolioPage() {
               </div>
             </div>
 
-            {/* Amount */}
             <div>
-              <label className="mb-3 block text-xs font-semibold uppercase tracking-wider text-gray-400">
+              <label htmlFor="burn-amount" className="mb-3 block text-xs font-semibold uppercase tracking-wider text-gray-400">
                 Amount to Burn
               </label>
               <div className="relative">
                 <input
+                  id="burn-amount"
                   type="number"
                   step="any"
                   min="0"
@@ -1245,6 +1378,7 @@ export default function PortfolioPage() {
                     })
                   }
                   disabled={burnLoading}
+                  aria-label="Set maximum burn amount"
                   className={clsx(
                     'absolute right-3 top-1/2 -translate-y-1/2 rounded-lg px-3 py-1.5',
                     'bg-red-500/15 text-xs font-bold tracking-wide text-red-400',
@@ -1257,26 +1391,24 @@ export default function PortfolioPage() {
               </div>
             </div>
 
-            {/* Contract reference */}
             <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-5 py-4">
               <span className="text-sm text-gray-500">Contract</span>
               <button
                 onClick={() => copyToClipboard(burnAsset.address)}
+                aria-label={`Copy contract address ${formatAddress(burnAsset.address)}`}
                 className="flex items-center gap-2 font-mono text-sm text-gray-400 transition-colors hover:text-white"
               >
                 {formatAddress(burnAsset.address)}
-                <Copy className="h-3.5 w-3.5 text-gray-600" />
+                <Copy className="h-3.5 w-3.5 text-gray-600" aria-hidden="true" />
               </button>
             </div>
 
-            {/* Error */}
             {burnError && (
-              <div className="rounded-xl border border-red-500/20 bg-red-500/[0.08] px-5 py-4">
+              <div role="alert" className="rounded-xl border border-red-500/20 bg-red-500/[0.08] px-5 py-4">
                 <p className="text-sm text-red-400">{burnError}</p>
               </div>
             )}
 
-            {/* Submit */}
             <Button
               variant="danger"
               fullWidth
@@ -1290,54 +1422,6 @@ export default function PortfolioPage() {
           </div>
         )}
       </Modal>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Sub-component: Detail Row
-// ---------------------------------------------------------------------------
-
-function DetailRow({
-  label,
-  value,
-  mono = false,
-  copiable = false,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  copiable?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-gray-500">{label}</span>
-      {copiable ? (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            copyToClipboard(value);
-          }}
-          className={clsx(
-            'flex max-w-[220px] items-center gap-2 truncate text-gray-400 transition-colors hover:text-white',
-            mono && 'font-mono',
-          )}
-          title={value}
-        >
-          <span className="truncate">{value}</span>
-          <Copy className="h-3.5 w-3.5 shrink-0 text-gray-600" />
-        </button>
-      ) : (
-        <span
-          className={clsx(
-            'max-w-[220px] truncate text-gray-400',
-            mono && 'font-mono',
-          )}
-          title={value}
-        >
-          {value}
-        </span>
-      )}
     </div>
   );
 }

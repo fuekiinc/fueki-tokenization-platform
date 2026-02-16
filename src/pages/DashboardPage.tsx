@@ -1,21 +1,10 @@
-import { useEffect, useMemo, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import clsx from 'clsx';
 import {
-  TrendingUp,
-  BarChart3,
-  Activity,
-  ArrowUpRight,
-  Package,
-  DollarSign,
-  Repeat,
   FileText,
+  Repeat,
   Shield,
-  ArrowRight,
-  ChevronUp,
-  ChevronDown,
   Copy,
-  Zap,
   Globe,
   Layers,
 } from 'lucide-react';
@@ -23,11 +12,16 @@ import { ethers } from 'ethers';
 import { useAppStore, getProvider } from '../store/useAppStore';
 import { useWallet } from '../hooks/useWallet';
 import { ContractService } from '../lib/blockchain/contracts';
-import { formatCurrency, formatAddress, copyToClipboard } from '../lib/utils/helpers';
+import { formatAddress, copyToClipboard } from '../lib/utils/helpers';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
+
+// Dashboard sub-components
+import AssetGrid from '../components/Dashboard/AssetGrid';
+import RecentActivity from '../components/Dashboard/RecentActivity';
+import QuickActions from '../components/Dashboard/QuickActions';
 import PortfolioChart from '../components/Dashboard/PortfolioChart';
-import ActivityFeed from '../components/Dashboard/ActivityFeed';
 import ValueChart from '../components/Dashboard/ValueChart';
+import DashboardSkeleton from '../components/Dashboard/DashboardSkeleton';
 
 // ---------------------------------------------------------------------------
 // Shared glass morphism style tokens
@@ -38,104 +32,6 @@ const GLASS =
 
 const GLASS_HOVER =
   'hover:border-white/[0.12] hover:shadow-lg hover:shadow-black/20 transition-all duration-300';
-
-// ---------------------------------------------------------------------------
-// StatCard -- generous padding, icon in rounded-xl container, no clipping
-// ---------------------------------------------------------------------------
-
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  change,
-  gradientFrom,
-  gradientTo,
-}: {
-  title: string;
-  value: string;
-  icon: React.ElementType;
-  change?: number;
-  gradientFrom: string;
-  gradientTo: string;
-}) {
-  const isPositive = change !== undefined && change >= 0;
-
-  return (
-    <div
-      className={clsx(
-        GLASS,
-        'group relative overflow-hidden p-7 sm:p-9',
-        'hover:border-white/[0.12] hover:shadow-lg hover:shadow-black/20',
-        'transition-all duration-300',
-      )}
-    >
-      {/* Subtle gradient glow on hover */}
-      <div
-        className={clsx(
-          'absolute -right-8 -top-8 h-28 w-28 rounded-full opacity-0',
-          'transition-opacity duration-500 group-hover:opacity-100 blur-3xl',
-        )}
-        style={{
-          background: `radial-gradient(circle, ${gradientFrom}18, transparent 70%)`,
-        }}
-      />
-
-      <div className="relative flex items-start justify-between gap-4">
-        {/* Left: label + value */}
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium tracking-wide text-gray-400">
-            {title}
-          </p>
-          <p className="mt-3 truncate text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            {value}
-          </p>
-          {change !== undefined && !Number.isNaN(change) && (
-            <div className="mt-3 flex items-center gap-1.5">
-              <div
-                className={clsx(
-                  'flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold',
-                  isPositive
-                    ? 'bg-emerald-500/10 text-emerald-400'
-                    : 'bg-red-500/10 text-red-400',
-                )}
-              >
-                {isPositive ? (
-                  <ChevronUp className="h-3 w-3" />
-                ) : (
-                  <ChevronDown className="h-3 w-3" />
-                )}
-                {Math.abs(change).toFixed(2)}%
-              </div>
-              {/* Mini trend sparkline */}
-              <div className="ml-2 flex items-end gap-px">
-                {[0.4, 0.7, 0.5, 0.8, 0.6, 0.9, 1].map((h, i) => (
-                  <div
-                    key={i}
-                    className={clsx(
-                      'w-1 rounded-full transition-all',
-                      isPositive ? 'bg-emerald-500/40' : 'bg-red-500/40',
-                    )}
-                    style={{ height: `${h * 20}px` }}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right: icon in gradient container */}
-        <div
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl"
-          style={{
-            background: `linear-gradient(135deg, ${gradientFrom}22, ${gradientTo}22)`,
-          }}
-        >
-          <Icon className="h-6 w-6" style={{ color: gradientFrom }} />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Feature card for the not-connected hero
@@ -187,69 +83,6 @@ function FeatureCard({
 }
 
 // ---------------------------------------------------------------------------
-// Quick action card for connected state
-// ---------------------------------------------------------------------------
-
-function QuickAction({
-  icon: Icon,
-  title,
-  description,
-  gradientFrom,
-  gradientTo,
-  onClick,
-}: {
-  icon: React.ElementType;
-  title: string;
-  description: string;
-  gradientFrom: string;
-  gradientTo: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={clsx(
-        GLASS,
-        'group relative flex w-full items-center gap-5 overflow-hidden p-5 text-left sm:p-7',
-        'hover:border-white/[0.12] hover:shadow-lg hover:shadow-black/20',
-        'hover:-translate-y-0.5',
-        'transition-all duration-300',
-      )}
-    >
-      {/* Hover glow */}
-      <div
-        className="absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-        style={{
-          background: `radial-gradient(ellipse at 0% 50%, ${gradientFrom}08, transparent 70%)`,
-        }}
-      />
-
-      <div
-        className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
-        style={{
-          background: `linear-gradient(135deg, ${gradientFrom}20, ${gradientTo}20)`,
-        }}
-      >
-        <Icon className="h-5 w-5" style={{ color: gradientFrom }} />
-      </div>
-
-      <div className="relative min-w-0 flex-1">
-        <p className="text-sm font-semibold text-white">{title}</p>
-        <p className="mt-1 text-xs text-gray-500">{description}</p>
-      </div>
-
-      <ArrowRight
-        className={clsx(
-          'relative h-4 w-4 shrink-0 text-gray-600',
-          'transition-all duration-300',
-          'group-hover:translate-x-0.5 group-hover:text-gray-300',
-        )}
-      />
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Network name helper
 // ---------------------------------------------------------------------------
 
@@ -264,7 +97,6 @@ function getNetworkName(chainId: number | null): string {
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
-  const navigate = useNavigate();
   const { isConnected, address } = useWallet();
   const wrappedAssets = useAppStore((s) => s.wrappedAssets);
   const tradeHistory = useAppStore((s) => s.tradeHistory);
@@ -274,6 +106,9 @@ export default function DashboardPage() {
   const setTrades = useAppStore((s) => s.setTrades);
   const setLoadingAssets = useAppStore((s) => s.setLoadingAssets);
   const chainId = useAppStore((s) => s.wallet.chainId);
+
+  // Track whether the initial data fetch is still in progress
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   // ---- Data fetching -------------------------------------------------------
 
@@ -289,15 +124,22 @@ export default function DashboardPage() {
   }, [tradeHistory]);
 
   const fetchData = useCallback(async () => {
-    if (!isConnected || !address || !chainId) return;
+    if (!isConnected || !address || !chainId) {
+      setIsInitialLoading(false);
+      return;
+    }
 
     const provider = getProvider();
-    if (!provider) return;
+    if (!provider) {
+      setIsInitialLoading(false);
+      return;
+    }
 
     let service: ContractService;
     try {
       service = new ContractService(provider, chainId);
     } catch {
+      setIsInitialLoading(false);
       return;
     }
 
@@ -463,28 +305,13 @@ export default function DashboardPage() {
     } catch {
       // non-critical -- trade history just won't include exchange fills
     }
+
+    setIsInitialLoading(false);
   }, [isConnected, address, chainId, setAssets, setLoadingAssets, setUserOrders, setTrades]);
 
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
-
-  // ---- Derived stats -------------------------------------------------------
-
-  const totalAssets = wrappedAssets.length;
-
-  const totalValueLocked = useMemo(() => {
-    return wrappedAssets.reduce((sum, asset) => {
-      const v = parseFloat(asset.originalValue || '0');
-      return sum + (Number.isNaN(v) ? 0 : v);
-    }, 0);
-  }, [wrappedAssets]);
-
-  const activeOrders = useMemo(() => {
-    return userOrders.filter((o) => !o.cancelled).length;
-  }, [userOrders]);
-
-  const totalTrades = tradeHistory.length;
 
   // ---- Not connected state -------------------------------------------------
 
@@ -614,6 +441,12 @@ export default function DashboardPage() {
     );
   }
 
+  // ---- Loading state (connected but data not yet loaded) --------------------
+
+  if (isInitialLoading) {
+    return <DashboardSkeleton />;
+  }
+
   // ---- Connected state -----------------------------------------------------
 
   const networkName = getNetworkName(chainId);
@@ -695,36 +528,11 @@ export default function DashboardPage() {
       {/* ================================================================== */}
       {/* Stats Row -- 4 cards in a spacious grid                           */}
       {/* ================================================================== */}
-      <div className="grid grid-cols-1 gap-6 pl-4 sm:grid-cols-2 lg:grid-cols-4 sm:gap-12 overflow-hidden">
-        <StatCard
-          title="Total Assets"
-          value={String(totalAssets)}
-          icon={Package}
-          gradientFrom="#3B82F6"
-          gradientTo="#6366F1"
-        />
-        <StatCard
-          title="Total Value Locked"
-          value={formatCurrency(totalValueLocked)}
-          icon={DollarSign}
-          gradientFrom="#10B981"
-          gradientTo="#06B6D4"
-        />
-        <StatCard
-          title="Active Orders"
-          value={String(activeOrders)}
-          icon={BarChart3}
-          gradientFrom="#8B5CF6"
-          gradientTo="#A855F7"
-        />
-        <StatCard
-          title="Total Trades"
-          value={String(totalTrades)}
-          icon={Activity}
-          gradientFrom="#F59E0B"
-          gradientTo="#EF4444"
-        />
-      </div>
+      <AssetGrid
+        wrappedAssets={wrappedAssets}
+        userOrders={userOrders}
+        tradeHistory={tradeHistory}
+      />
 
       {/* ================================================================== */}
       {/* Charts Row -- two columns with generous spacing                   */}
@@ -740,52 +548,11 @@ export default function DashboardPage() {
       <div className="mt-12 grid grid-cols-1 gap-8 sm:mt-16 sm:gap-10 lg:grid-cols-3">
         {/* Activity feed -- takes 2/3 width on large screens */}
         <div className="lg:col-span-2">
-          <ActivityFeed trades={tradeHistory} />
+          <RecentActivity trades={tradeHistory} />
         </div>
 
         {/* Quick actions sidebar */}
-        <div className={clsx(GLASS, 'p-7 sm:p-9')}>
-          <div className="mb-10 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10">
-              <Zap className="h-5 w-5 text-amber-400" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold tracking-tight text-gray-100">
-                Quick Actions
-              </h3>
-              <p className="mt-0.5 text-xs text-gray-500">
-                Common operations
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-5">
-            <QuickAction
-              icon={ArrowUpRight}
-              title="Upload & Mint"
-              description="Tokenize a new document"
-              gradientFrom="#3B82F6"
-              gradientTo="#6366F1"
-              onClick={() => navigate('/mint')}
-            />
-            <QuickAction
-              icon={TrendingUp}
-              title="View Portfolio"
-              description="Manage your wrapped assets"
-              gradientFrom="#8B5CF6"
-              gradientTo="#A855F7"
-              onClick={() => navigate('/portfolio')}
-            />
-            <QuickAction
-              icon={Repeat}
-              title="Exchange"
-              description="Trade wrapped assets"
-              gradientFrom="#10B981"
-              gradientTo="#06B6D4"
-              onClick={() => navigate('/exchange')}
-            />
-          </div>
-        </div>
+        <QuickActions />
       </div>
     </div>
   );

@@ -15,6 +15,9 @@ import * as authApi from '../lib/api/auth';
 // localStorage keys
 // ---------------------------------------------------------------------------
 
+// Only the short-lived access token is stored in localStorage.
+// The long-lived refresh token is managed via an httpOnly cookie set by the
+// backend, keeping it out of reach of XSS attacks (security audit H-01 fix).
 const TOKENS_KEY = 'fueki-auth-tokens';
 const USER_KEY = 'fueki-auth-user';
 
@@ -45,6 +48,33 @@ function removeFromStorage(key: string): void {
   } catch {
     // Silently ignore.
   }
+}
+
+// ---------------------------------------------------------------------------
+// Token validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal structural check that a token string looks like a JWT (three
+ * dot-separated, non-empty segments). This does NOT verify the signature.
+ */
+function isPlausibleJWT(token: string): boolean {
+  if (!token || typeof token !== 'string') return false;
+  const parts = token.split('.');
+  return parts.length === 3 && parts.every((p) => p.length > 0);
+}
+
+/**
+ * Validates that a stored tokens object has the expected shape and that the
+ * access token string is structurally plausible.
+ * (The refresh token is now in an httpOnly cookie, not in localStorage.)
+ */
+function validateTokens(tokens: AuthTokens | null): tokens is AuthTokens {
+  if (!tokens) return false;
+  return (
+    typeof tokens.accessToken === 'string' &&
+    isPlausibleJWT(tokens.accessToken)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +125,11 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     const savedTokens = loadFromStorage<AuthTokens>(TOKENS_KEY);
     const savedUser = loadFromStorage<User>(USER_KEY);
 
-    if (!savedTokens) {
+    if (!savedTokens || !validateTokens(savedTokens)) {
+      // No valid tokens -- clear any partial/corrupt state and mark ready.
+      if (savedTokens) {
+        removeFromStorage(TOKENS_KEY);
+      }
       set({ isInitialized: true });
       return;
     }
@@ -112,13 +146,25 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       });
     } catch {
       // Access token may have expired -- attempt a refresh.
+      // The refresh token is sent automatically via httpOnly cookie.
       try {
-        const refreshed = await authApi.refreshToken();
-        saveToStorage(TOKENS_KEY, refreshed.tokens);
-        saveToStorage(USER_KEY, refreshed.user);
+        const newTokens = await authApi.refreshToken();
+
+        saveToStorage(TOKENS_KEY, newTokens);
+
+        // Fetch the user profile with the new access token.
+        let user: User | null = savedUser;
+        try {
+          user = await authApi.getProfile();
+          saveToStorage(USER_KEY, user);
+        } catch {
+          // If profile fetch fails, use the previously saved user data.
+          // This is a degraded state but better than logging the user out.
+        }
+
         set({
-          user: refreshed.user,
-          tokens: refreshed.tokens,
+          user,
+          tokens: newTokens,
           isAuthenticated: true,
           isInitialized: true,
         });
@@ -171,6 +217,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
   // ---- logout --------------------------------------------------------------
   logout: async () => {
     // Fire-and-forget -- don't block the UI on the server call.
+    // The refresh token is sent via httpOnly cookie automatically.
     authApi.logout().catch(() => {});
     get().clearAuth();
   },

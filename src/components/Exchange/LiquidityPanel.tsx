@@ -321,12 +321,17 @@ export default function LiquidityPanel({
   return (
     <div className="space-y-5">
       {/* Tab switcher */}
-      <div className="flex gap-1 rounded-xl bg-[#0D0F14] p-1.5 border border-white/[0.06]">
+      <div role="tablist" aria-label="Liquidity action" className="flex gap-1 rounded-xl bg-[#0D0F14] p-1.5 border border-white/[0.06]">
         <button
           type="button"
+          role="tab"
+          aria-selected={tab === 'add'}
+          aria-controls="liq-panel-add"
+          id="liq-tab-add"
           onClick={() => setTab('add')}
           className={clsx(
             'flex-1 flex items-center justify-center gap-2 rounded-lg py-3 text-sm font-semibold transition-all duration-200',
+            'min-h-[44px]',
             tab === 'add'
               ? 'bg-purple-500/15 text-purple-400 shadow-[inset_0_1px_0_rgba(168,85,247,0.2)]'
               : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03]',
@@ -337,9 +342,14 @@ export default function LiquidityPanel({
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={tab === 'remove'}
+          aria-controls="liq-panel-remove"
+          id="liq-tab-remove"
           onClick={() => setTab('remove')}
           className={clsx(
             'flex-1 flex items-center justify-center gap-2 rounded-lg py-3 text-sm font-semibold transition-all duration-200',
+            'min-h-[44px]',
             tab === 'remove'
               ? 'bg-teal-500/15 text-teal-400 shadow-[inset_0_1px_0_rgba(20,184,166,0.2)]'
               : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03]',
@@ -371,7 +381,7 @@ export default function LiquidityPanel({
       </div>
 
       {sameTokenError && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-400">
+        <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 sm:px-4 sm:py-3 text-xs text-amber-400">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           Tokens must be different.
         </div>
@@ -379,15 +389,15 @@ export default function LiquidityPanel({
 
       {/* Pool status */}
       {tokenA && tokenB && !sameTokenError && (
-        <div className="rounded-lg bg-[#0D0F14]/80 border border-white/[0.06] px-4 py-3">
+        <div className="rounded-lg bg-[#0D0F14]/80 border border-white/[0.06] px-3 py-2.5 sm:px-4 sm:py-3">
           {pool === null ? (
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <span className="text-xs text-gray-500">Pool does not exist</span>
               <button
                 type="button"
                 onClick={handleCreatePool}
                 disabled={txStatus !== 'idle'}
-                className="rounded-lg bg-purple-500/10 px-3 py-1.5 text-xs font-semibold text-purple-400 hover:bg-purple-500/20 transition-colors disabled:opacity-40"
+                className="rounded-lg bg-purple-500/10 px-3 py-1.5 text-xs font-semibold text-purple-400 hover:bg-purple-500/20 transition-colors disabled:opacity-40 min-h-[44px] shrink-0"
               >
                 {txStatus === 'submitting' ? (
                   <span className="flex items-center gap-1.5">
@@ -399,15 +409,15 @@ export default function LiquidityPanel({
             </div>
           ) : (
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-500">Pool Reserves</span>
-                <span className="font-mono text-gray-300">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-gray-500 shrink-0">Pool Reserves</span>
+                <span className="font-mono text-gray-300 truncate text-right">
                   {formatBalance(pool.reserve0, 18, 4)} / {formatBalance(pool.reserve1, 18, 4)}
                 </span>
               </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-500">Your LP Balance</span>
-                <span className="font-mono text-gray-300">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-gray-500 shrink-0">Your LP Balance</span>
+                <span className="font-mono text-gray-300 truncate text-right">
                   {formatBalance(lpBalance, 18, 6)}
                 </span>
               </div>
@@ -426,7 +436,7 @@ export default function LiquidityPanel({
 
       {/* ---- ADD TAB -------------------------------------------------------- */}
       {tab === 'add' && (
-        <div className="space-y-4">
+        <div role="tabpanel" id="liq-panel-add" aria-labelledby="liq-tab-add" className="space-y-4">
           {/* Amount A */}
           <div>
             <label className="mb-1.5 block text-xs text-gray-500">Amount A</label>
@@ -483,7 +493,7 @@ export default function LiquidityPanel({
 
           {/* Pool share preview */}
           {sharePreview !== null && (
-            <div className="flex items-center justify-between rounded-lg bg-purple-500/5 border border-purple-500/10 px-4 py-2.5 text-xs">
+            <div className="flex items-center justify-between rounded-lg bg-purple-500/5 border border-purple-500/10 px-3 py-2 sm:px-4 sm:py-2.5 text-xs">
               <span className="text-gray-400">Estimated Pool Share</span>
               <span className="font-mono font-medium text-purple-400">{sharePreview.toFixed(2)}%</span>
             </div>
@@ -512,7 +522,7 @@ export default function LiquidityPanel({
               (txStatus !== 'idle' && txStatus !== 'confirmed')
             }
             className={clsx(
-              'flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-semibold transition-all',
+              'flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-semibold transition-all min-h-[44px]',
               txStatus === 'confirmed'
                 ? 'bg-emerald-500/20 text-emerald-400'
                 : 'bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-[0_0_20px_rgba(168,85,247,0.15)] hover:shadow-[0_0_30px_rgba(168,85,247,0.25)]',
@@ -536,7 +546,7 @@ export default function LiquidityPanel({
 
       {/* ---- REMOVE TAB ----------------------------------------------------- */}
       {tab === 'remove' && (
-        <div className="space-y-4">
+        <div role="tabpanel" id="liq-panel-remove" aria-labelledby="liq-tab-remove" className="space-y-4">
           <div>
             <label className="mb-1.5 block text-xs text-gray-500">LP Tokens to Remove</label>
             <input
@@ -564,7 +574,7 @@ export default function LiquidityPanel({
                 <button
                   type="button"
                   onClick={() => setRemoveAmount(ethers.formatUnits(lpBalance, 18))}
-                  className="rounded bg-teal-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-teal-400 hover:bg-teal-500/20"
+                  className="rounded bg-teal-500/10 px-2 py-1 sm:py-0.5 text-[10px] font-bold uppercase text-teal-400 hover:bg-teal-500/20 min-h-[44px] sm:min-h-0"
                 >
                   Max
                 </button>
@@ -577,7 +587,7 @@ export default function LiquidityPanel({
                     key={pct}
                     type="button"
                     onClick={() => setRemoveAmount(ethers.formatUnits((lpBalance * BigInt(pct)) / 100n, 18))}
-                    className="flex-1 rounded-lg bg-white/[0.04] py-1.5 text-[10px] font-semibold text-gray-500 hover:bg-teal-500/10 hover:text-teal-400 transition-colors"
+                    className="flex-1 rounded-lg bg-white/[0.04] py-2 sm:py-1.5 text-[10px] font-semibold text-gray-500 hover:bg-teal-500/10 hover:text-teal-400 transition-colors min-h-[44px] sm:min-h-0"
                   >
                     {pct}%
                   </button>
@@ -588,16 +598,16 @@ export default function LiquidityPanel({
 
           {/* Remove preview */}
           {removePreview && pool && (
-            <div className="space-y-1.5 rounded-lg bg-teal-500/5 border border-teal-500/10 px-4 py-3 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-gray-400">You Receive ({tokenLabel(pool?.token0 ?? tokenA)})</span>
-                <span className="font-mono text-teal-400">
+            <div className="space-y-1.5 rounded-lg bg-teal-500/5 border border-teal-500/10 px-3 py-2.5 sm:px-4 sm:py-3 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-gray-400 shrink-0 text-[11px] sm:text-xs">Receive ({tokenLabel(pool?.token0 ?? tokenA)})</span>
+                <span className="font-mono text-teal-400 truncate">
                   {Number(ethers.formatUnits(removePreview.amount0, 18)).toFixed(6)}
                 </span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-400">You Receive ({tokenLabel(pool?.token1 ?? tokenB)})</span>
-                <span className="font-mono text-teal-400">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-gray-400 shrink-0 text-[11px] sm:text-xs">Receive ({tokenLabel(pool?.token1 ?? tokenB)})</span>
+                <span className="font-mono text-teal-400 truncate">
                   {Number(ethers.formatUnits(removePreview.amount1, 18)).toFixed(6)}
                 </span>
               </div>
@@ -618,7 +628,7 @@ export default function LiquidityPanel({
               txStatus !== 'idle'
             }
             className={clsx(
-              'flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-semibold transition-all',
+              'flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-semibold transition-all min-h-[44px]',
               txStatus === 'confirmed'
                 ? 'bg-emerald-500/20 text-emerald-400'
                 : 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-[0_0_20px_rgba(20,184,166,0.15)] hover:shadow-[0_0_30px_rgba(20,184,166,0.25)]',

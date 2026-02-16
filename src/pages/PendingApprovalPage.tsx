@@ -152,29 +152,31 @@ export default function PendingApprovalPage() {
   // ---- Render ------------------------------------------------------------
 
   return (
-    <div className="gradient-bg-subtle min-h-screen flex items-center justify-center px-4 py-12">
+    <div className="w-full max-w-[520px] mx-auto animate-page-fade-in">
+      {/* ---- Branding -------------------------------------------------- */}
+      <div className="text-center mb-10">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/25 mb-5">
+          <Shield className="h-8 w-8 text-white" />
+        </div>
+        <h1 className="text-4xl font-bold tracking-tight">
+          <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-300 bg-clip-text text-transparent">
+            Fueki
+          </span>
+        </h1>
+        <p className="mt-2 text-sm text-[var(--text-muted)] tracking-widest uppercase font-medium">
+          Tokenization Platform
+        </p>
+      </div>
+
       {/* Card */}
       <div
         className={clsx(
-          'w-full max-w-lg',
-          'bg-[var(--bg-secondary)]/80 backdrop-blur-xl',
+          'bg-[var(--bg-secondary)]/80 backdrop-blur-2xl',
           'border border-[var(--border-primary)]',
-          'rounded-2xl shadow-2xl',
+          'rounded-3xl shadow-2xl shadow-black/20',
           'p-8 sm:p-10',
-          'animate-page-fade-in',
         )}
       >
-        {/* ---- Branding -------------------------------------------------- */}
-        <div className="text-center mb-2">
-          <h1 className="text-3xl font-bold tracking-tight">
-            <span className="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-              Fueki
-            </span>
-          </h1>
-          <p className="mt-1 text-sm text-[var(--text-muted)] tracking-wide">
-            Tokenization Platform
-          </p>
-        </div>
 
         {/* ================================================================
             STATE: APPROVED
@@ -528,11 +530,14 @@ export default function PendingApprovalPage() {
           </div>
         )}
 
-        {/* ---- Security badge -------------------------------------------- */}
-        <div className="mt-8 flex items-center justify-center gap-1.5 text-[var(--text-muted)]">
-          <Shield className="h-3.5 w-3.5" />
-          <span className="text-xs">Your data is encrypted and secure</span>
-        </div>
+      </div>
+
+      {/* Security badge */}
+      <div className="mt-8 flex items-center justify-center gap-2 text-[var(--text-muted)]">
+        <Shield className="h-4 w-4" />
+        <span className="text-xs font-medium tracking-wide">
+          Your data is encrypted and secure
+        </span>
       </div>
     </div>
   );

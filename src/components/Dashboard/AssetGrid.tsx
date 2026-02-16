@@ -1,0 +1,75 @@
+import clsx from 'clsx';
+import {
+  Package,
+  DollarSign,
+  BarChart3,
+  Activity,
+} from 'lucide-react';
+import type { WrappedAsset, ExchangeOrder, TradeHistory } from '../../types';
+import { formatCurrency } from '../../lib/utils/helpers';
+import PortfolioSummaryCard from './PortfolioSummaryCard';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface AssetGridProps {
+  wrappedAssets: WrappedAsset[];
+  userOrders: ExchangeOrder[];
+  tradeHistory: TradeHistory[];
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export default function AssetGrid({
+  wrappedAssets,
+  userOrders,
+  tradeHistory,
+}: AssetGridProps) {
+  const totalAssets = wrappedAssets.length;
+
+  const totalValueLocked = wrappedAssets.reduce((sum, asset) => {
+    const v = parseFloat(asset.originalValue || '0');
+    return sum + (Number.isNaN(v) ? 0 : v);
+  }, 0);
+
+  const activeOrders = userOrders.filter((o) => !o.cancelled).length;
+  const totalTrades = tradeHistory.length;
+
+  return (
+    <div className={clsx(
+      'grid grid-cols-1 gap-6 pl-4 sm:grid-cols-2 lg:grid-cols-4 sm:gap-12 overflow-hidden',
+    )}>
+      <PortfolioSummaryCard
+        title="Total Assets"
+        value={String(totalAssets)}
+        icon={Package}
+        gradientFrom="#3B82F6"
+        gradientTo="#6366F1"
+      />
+      <PortfolioSummaryCard
+        title="Total Value Locked"
+        value={formatCurrency(totalValueLocked)}
+        icon={DollarSign}
+        gradientFrom="#10B981"
+        gradientTo="#06B6D4"
+      />
+      <PortfolioSummaryCard
+        title="Active Orders"
+        value={String(activeOrders)}
+        icon={BarChart3}
+        gradientFrom="#8B5CF6"
+        gradientTo="#A855F7"
+      />
+      <PortfolioSummaryCard
+        title="Total Trades"
+        value={String(totalTrades)}
+        icon={Activity}
+        gradientFrom="#F59E0B"
+        gradientTo="#EF4444"
+      />
+    </div>
+  );
+}

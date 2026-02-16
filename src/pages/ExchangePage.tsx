@@ -454,10 +454,10 @@ export default function ExchangePage() {
           </div>
 
           {/* Right: pair selectors + refresh + network badge */}
-          <div className="flex items-end gap-4">
-            {/* Pair selectors */}
-            <div className="flex items-end gap-3">
-              <div className="w-52">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            {/* Pair selectors -- stack on mobile, inline on sm+ */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="w-full sm:w-52">
                 <TokenSelector
                   assets={assets}
                   selectedToken={selectedSellToken}
@@ -468,9 +468,9 @@ export default function ExchangePage() {
                 />
               </div>
 
-              <span className="mb-2.5 text-lg font-light text-gray-600 select-none">/</span>
+              <span className="hidden sm:block mb-2.5 text-lg font-light text-gray-600 select-none">/</span>
 
-              <div className="w-52">
+              <div className="w-full sm:w-52">
                 <TokenSelector
                   assets={assets}
                   selectedToken={selectedBuyToken}
@@ -482,34 +482,37 @@ export default function ExchangePage() {
               </div>
             </div>
 
-            {/* Refresh button */}
-            <button
-              type="button"
-              onClick={handleRefresh}
-              className={clsx(
-                'mb-0.5 flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl',
-                'bg-[#0D0F14]/80 backdrop-blur-xl',
-                'border border-white/[0.06]',
-                'text-gray-400 transition-all duration-200',
-                'hover:border-white/[0.12] hover:text-white hover:bg-white/[0.04]',
-              )}
-              title="Refresh data"
-            >
-              <RefreshCw
+            {/* Refresh + network row */}
+            <div className="flex items-center gap-3 sm:items-end sm:gap-4">
+              {/* Refresh button -- 44px minimum touch target */}
+              <button
+                type="button"
+                onClick={handleRefresh}
+                aria-label="Refresh data"
                 className={clsx(
-                  'h-4 w-4 transition-transform duration-500',
-                  isRefreshing && 'animate-spin',
+                  'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
+                  'bg-[#0D0F14]/80 backdrop-blur-xl',
+                  'border border-white/[0.06]',
+                  'text-gray-400 transition-all duration-200',
+                  'hover:border-white/[0.12] hover:text-white hover:bg-white/[0.04]',
                 )}
-              />
-            </button>
+              >
+                <RefreshCw
+                  className={clsx(
+                    'h-4 w-4 transition-transform duration-500',
+                    isRefreshing && 'animate-spin',
+                  )}
+                />
+              </button>
 
-            {/* Network badge */}
-            {networkConfig && (
-              <div className="mb-0.5 hidden items-center gap-2 rounded-xl bg-[#0D0F14]/80 px-4 py-2.5 text-xs text-gray-500 ring-1 ring-white/[0.06] backdrop-blur-xl xl:flex">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                {networkConfig.name}
-              </div>
-            )}
+              {/* Network badge */}
+              {networkConfig && (
+                <div className="hidden items-center gap-2 rounded-xl bg-[#0D0F14]/80 px-4 py-2.5 text-xs text-gray-500 ring-1 ring-white/[0.06] backdrop-blur-xl xl:flex">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  {networkConfig.name}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -549,6 +552,8 @@ export default function ExchangePage() {
         {/* ================================================================= */}
         {assets.length > 0 && (
           <div
+            role="tablist"
+            aria-label="Exchange sections"
             className={clsx(
               'mb-6 flex gap-1.5 rounded-2xl p-2 lg:hidden',
               'bg-[#0D0F14]/80 backdrop-blur-xl',
@@ -559,9 +564,14 @@ export default function ExchangePage() {
               <button
                 key={tab.id}
                 type="button"
+                role="tab"
+                id={`exchange-tab-${tab.id}`}
+                aria-selected={mobileTab === tab.id}
+                aria-controls={`exchange-panel-${tab.id}`}
                 onClick={() => setMobileTab(tab.id)}
                 className={clsx(
-                  'relative flex flex-1 items-center justify-center gap-2.5 rounded-xl py-3.5 text-xs font-medium transition-all duration-200',
+                  'relative flex flex-1 items-center justify-center gap-2 rounded-xl py-3.5 text-xs font-medium transition-all duration-200',
+                  'min-h-[44px]',
                   mobileTab === tab.id
                     ? 'text-white'
                     : 'text-gray-500 hover:text-gray-300',
@@ -571,9 +581,10 @@ export default function ExchangePage() {
                 {mobileTab === tab.id && (
                   <span className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-600/20 to-cyan-600/20 ring-1 ring-white/[0.08]" />
                 )}
-                <span className="relative flex items-center gap-2.5">
+                <span className="relative flex items-center gap-2">
                   {tab.icon}
-                  {tab.label}
+                  <span className="hidden xs:inline sm:inline">{tab.label}</span>
+                  <span className="xs:hidden sm:hidden">{tab.label}</span>
                 </span>
               </button>
             ))}
@@ -584,12 +595,15 @@ export default function ExchangePage() {
         {/* Three-column desktop / tabbed mobile layout                       */}
         {/* ================================================================= */}
         {assets.length > 0 && (
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:gap-8">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8 lg:grid-cols-12 lg:gap-8">
             {/* ---- Left: Order Book ---------------------------------------- */}
             <div
+              role="tabpanel"
+              id="exchange-panel-book"
+              aria-labelledby="exchange-tab-book"
               className={clsx(
-                'lg:col-span-3',
-                mobileTab !== 'book' && 'hidden lg:block',
+                'md:col-span-1 lg:col-span-3',
+                mobileTab !== 'book' && 'hidden md:block',
               )}
             >
               <GlassCard
@@ -597,8 +611,8 @@ export default function ExchangePage() {
                 gradientTo="to-indigo-500"
               >
                 {/* Card header */}
-                <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
-                  <div className="flex items-center gap-3.5">
+                <div className="flex items-center justify-between border-b border-white/[0.04] p-5 sm:p-7">
+                  <div className="flex items-center gap-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-500/10 ring-1 ring-rose-500/20">
                       <BookOpen className="h-4 w-4 text-rose-400" />
                     </span>
@@ -606,7 +620,7 @@ export default function ExchangePage() {
                       <h3 className="text-sm font-semibold text-gray-100">
                         Order Book
                       </h3>
-                      <p className="text-[11px] text-gray-500">
+                      <p className="text-[11px] text-gray-500 truncate max-w-[180px] sm:max-w-none">
                         {selectedSellToken && selectedBuyToken
                           ? `${formatAddress(selectedSellToken)} / ${formatAddress(selectedBuyToken)}`
                           : 'Select a trading pair'}
@@ -616,7 +630,7 @@ export default function ExchangePage() {
                   <Activity className="h-4 w-4 text-gray-600" />
                 </div>
                 {/* Card body */}
-                <div className="p-7">
+                <div className="p-5 sm:p-7">
                   <OrderBook
                     key={`orderbook-${refreshKey}`}
                     tokenSell={selectedSellToken ?? ''}
@@ -630,9 +644,12 @@ export default function ExchangePage() {
 
             {/* ---- Center: Trade Form -------------------------------------- */}
             <div
+              role="tabpanel"
+              id="exchange-panel-trade"
+              aria-labelledby="exchange-tab-trade"
               className={clsx(
-                'lg:col-span-6',
-                mobileTab !== 'trade' && 'hidden lg:block',
+                'md:col-span-2 lg:col-span-6',
+                mobileTab !== 'trade' && 'hidden md:block',
               )}
             >
               <GlassCard
@@ -640,8 +657,8 @@ export default function ExchangePage() {
                 gradientTo="to-cyan-500"
               >
                 {/* Card header */}
-                <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
-                  <div className="flex items-center gap-3.5">
+                <div className="flex items-center justify-between border-b border-white/[0.04] p-5 sm:p-7">
+                  <div className="flex items-center gap-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/10 ring-1 ring-indigo-500/20">
                       <TrendingUp className="h-4 w-4 text-indigo-400" />
                     </span>
@@ -656,8 +673,8 @@ export default function ExchangePage() {
                   </div>
                   <BarChart3 className="h-4 w-4 text-gray-600" />
                 </div>
-                {/* Card body -- extra padding for the trade form */}
-                <div className="p-7 sm:p-9">
+                {/* Card body -- responsive padding for the trade form */}
+                <div className="p-5 sm:p-7 lg:p-9">
                   <TradeForm
                     assets={assets}
                     contractService={contractService}
@@ -669,9 +686,12 @@ export default function ExchangePage() {
 
             {/* ---- Right: User Orders -------------------------------------- */}
             <div
+              role="tabpanel"
+              id="exchange-panel-orders"
+              aria-labelledby="exchange-tab-orders"
               className={clsx(
-                'lg:col-span-3',
-                mobileTab !== 'orders' && 'hidden lg:block',
+                'md:col-span-2 lg:col-span-3',
+                mobileTab !== 'orders' && 'hidden md:block',
               )}
             >
               <GlassCard
@@ -679,8 +699,8 @@ export default function ExchangePage() {
                 gradientTo="to-emerald-500"
               >
                 {/* Card header */}
-                <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
-                  <div className="flex items-center gap-3.5">
+                <div className="flex items-center justify-between border-b border-white/[0.04] p-5 sm:p-7">
+                  <div className="flex items-center gap-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/10 ring-1 ring-cyan-500/20">
                       <Clock className="h-4 w-4 text-cyan-400" />
                     </span>
@@ -696,7 +716,7 @@ export default function ExchangePage() {
                   <Wallet className="h-4 w-4 text-gray-600" />
                 </div>
                 {/* Card body */}
-                <div className="p-7">
+                <div className="p-5 sm:p-7">
                   <UserOrders
                     key={`userorders-${refreshKey}`}
                     contractService={contractService}
@@ -734,8 +754,8 @@ export default function ExchangePage() {
                 gradientFrom="from-purple-500"
                 gradientTo="to-teal-500"
               >
-                <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
-                  <div className="flex items-center gap-3.5">
+                <div className="flex items-center justify-between border-b border-white/[0.04] p-5 sm:p-7">
+                  <div className="flex items-center gap-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-500/10 ring-1 ring-purple-500/20">
                       <Droplets className="h-4 w-4 text-purple-400" />
                     </span>
@@ -749,7 +769,7 @@ export default function ExchangePage() {
                     </div>
                   </div>
                 </div>
-                <div className="p-7">
+                <div className="p-5 sm:p-7">
                   <LiquidityPanel
                     assets={assets}
                     contractService={contractService}
@@ -765,8 +785,8 @@ export default function ExchangePage() {
                 gradientFrom="from-teal-500"
                 gradientTo="to-purple-500"
               >
-                <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
-                  <div className="flex items-center gap-3.5">
+                <div className="flex items-center justify-between border-b border-white/[0.04] p-5 sm:p-7">
+                  <div className="flex items-center gap-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-500/10 ring-1 ring-teal-500/20">
                       <BarChart3 className="h-4 w-4 text-teal-400" />
                     </span>
@@ -780,7 +800,7 @@ export default function ExchangePage() {
                     </div>
                   </div>
                 </div>
-                <div className="p-7">
+                <div className="p-5 sm:p-7">
                   <PoolInfo
                     tokenA={selectedSellToken}
                     tokenB={selectedBuyToken}
@@ -801,7 +821,7 @@ export default function ExchangePage() {
         {networkConfig && (
           <div
             className={clsx(
-              'mt-12 sm:mt-16 flex flex-wrap items-center justify-center gap-x-10 gap-y-3 rounded-2xl px-8 py-6',
+              'mt-12 sm:mt-16 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 rounded-2xl px-5 py-5 sm:gap-x-10 sm:px-8 sm:py-6',
               'bg-[#0D0F14]/80 backdrop-blur-xl',
               'border border-white/[0.06]',
             )}

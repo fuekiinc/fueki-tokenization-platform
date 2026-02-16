@@ -571,32 +571,40 @@ export default function TradeForm({
   return (
     <div className="space-y-6">
       {/* ---- Mode toggle: Limit Order vs Instant Swap (AMM) --------------- */}
-      <div className="flex gap-1 rounded-xl bg-[#0D0F14] p-1 border border-white/[0.06]">
+      <div className="flex gap-1 rounded-xl bg-[#0D0F14] p-1 border border-white/[0.06]" role="tablist" aria-label="Trade mode">
         <button
           type="button"
+          role="tab"
+          aria-selected={tradeMode === 'limit'}
           onClick={() => { setTradeMode('limit'); setTxStatus('idle'); setTxHash(null); }}
           className={clsx(
             'flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold transition-all duration-200',
+            'min-h-[44px]',
             tradeMode === 'limit'
               ? 'bg-indigo-500/15 text-indigo-400 shadow-[inset_0_1px_0_rgba(99,102,241,0.2)]'
               : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03]',
           )}
         >
           <BookOpen className="h-3.5 w-3.5" />
-          Limit Order
+          <span className="hidden sm:inline">Limit Order</span>
+          <span className="sm:hidden">Limit</span>
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={tradeMode === 'amm'}
           onClick={() => { setTradeMode('amm'); setTxStatus('idle'); setTxHash(null); }}
           className={clsx(
             'flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold transition-all duration-200',
+            'min-h-[44px]',
             tradeMode === 'amm'
               ? 'bg-purple-500/15 text-purple-400 shadow-[inset_0_1px_0_rgba(168,85,247,0.2)]'
               : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03]',
           )}
         >
           <Zap className="h-3.5 w-3.5" />
-          Instant Swap (AMM)
+          <span className="hidden sm:inline">Instant Swap (AMM)</span>
+          <span className="sm:hidden">Swap</span>
         </button>
       </div>
 
@@ -608,6 +616,7 @@ export default function TradeForm({
           onClick={() => setSide('buy')}
           className={clsx(
             'flex-1 flex items-center justify-center gap-2 rounded-lg py-3 text-sm font-semibold transition-all duration-200',
+            'min-h-[44px]',
             isBuy
               ? 'bg-emerald-500/15 text-emerald-400 shadow-[inset_0_1px_0_rgba(16,185,129,0.2)]'
               : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03]',
@@ -620,6 +629,7 @@ export default function TradeForm({
           onClick={() => setSide('sell')}
           className={clsx(
             'flex-1 flex items-center justify-center gap-2 rounded-lg py-3 text-sm font-semibold transition-all duration-200',
+            'min-h-[44px]',
             !isBuy
               ? 'bg-red-500/15 text-red-400 shadow-[inset_0_1px_0_rgba(239,68,68,0.2)]'
               : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03]',
@@ -636,7 +646,7 @@ export default function TradeForm({
       {tradeMode === 'limit' && (
       <>
       {/* ---- Sell section -------------------------------------------------- */}
-      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-7 sm:p-8">
+      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-5 sm:p-7 lg:p-8">
         <TokenSelector
           assets={assets}
           selectedToken={sellToken}
@@ -741,7 +751,7 @@ export default function TradeForm({
       </div>
 
       {/* ---- Buy section --------------------------------------------------- */}
-      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-7 sm:p-8">
+      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-5 sm:p-7 lg:p-8">
         <TokenSelector
           assets={assets}
           selectedToken={buyToken}
@@ -796,7 +806,7 @@ export default function TradeForm({
 
       {/* ---- Order summary / Price display --------------------------------- */}
       {price !== null && sellAsset && buyAsset && (
-        <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-7 sm:p-8">
+        <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-5 sm:p-7 lg:p-8">
           <div className="space-y-0 divide-y divide-white/[0.06]">
             <div className="flex items-center justify-between py-3 first:pt-0">
               <span className="flex items-center gap-2 text-sm text-gray-500">
@@ -962,7 +972,7 @@ export default function TradeForm({
       {tradeMode === 'amm' && (
       <>
       {/* ---- Sell token + amount ------------------------------------------- */}
-      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-7 sm:p-8">
+      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-5 sm:p-7 lg:p-8">
         <TokenSelector
           assets={assets}
           selectedToken={sellToken}
@@ -1049,7 +1059,7 @@ export default function TradeForm({
       </div>
 
       {/* ---- Buy token + auto-calculated output ----------------------------- */}
-      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-7 sm:p-8">
+      <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-5 sm:p-7 lg:p-8">
         <TokenSelector
           assets={assets}
           selectedToken={buyToken}

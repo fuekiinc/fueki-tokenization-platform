@@ -335,18 +335,18 @@ export default function OrbitalAMMPage() {
 
           {/* Right: Refresh + network badge */}
           <div className="flex items-end gap-4">
-            {/* Refresh button */}
+            {/* Refresh button -- 44px touch target */}
             <button
               type="button"
               onClick={handleRefresh}
+              aria-label="Refresh data"
               className={clsx(
-                'mb-0.5 flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl',
+                'mb-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
                 'bg-[#0D0F14]/80 backdrop-blur-xl',
                 'border border-white/[0.06]',
                 'text-gray-400 transition-all duration-200',
                 'hover:border-white/[0.12] hover:text-white hover:bg-white/[0.04]',
               )}
-              title="Refresh data"
             >
               <RefreshCw
                 className={clsx(
@@ -370,8 +370,10 @@ export default function OrbitalAMMPage() {
         {/* Tab navigation (segmented control)                                */}
         {/* ================================================================= */}
         <div
+          role="tablist"
+          aria-label="Orbital AMM sections"
           className={clsx(
-            'mb-8 flex gap-1.5 rounded-2xl p-2',
+            'mb-8 flex gap-1 sm:gap-1.5 rounded-2xl p-1.5 sm:p-2',
             'bg-[#0D0F14]/80 backdrop-blur-xl',
             'border border-white/[0.06]',
           )}
@@ -380,9 +382,14 @@ export default function OrbitalAMMPage() {
             <button
               key={tab.id}
               type="button"
+              role="tab"
+              id={`orbital-tab-${tab.id}`}
+              aria-selected={activeTab === tab.id}
+              aria-controls={`orbital-panel-${tab.id}`}
               onClick={() => setActiveTab(tab.id)}
               className={clsx(
-                'relative flex flex-1 items-center justify-center gap-2.5 rounded-xl py-3.5 text-xs font-medium transition-all duration-200',
+                'relative flex flex-1 items-center justify-center gap-1.5 sm:gap-2.5 rounded-xl py-3 sm:py-3.5 text-[11px] sm:text-xs font-medium transition-all duration-200',
+                'min-h-[44px]',
                 activeTab === tab.id
                   ? 'text-white'
                   : 'text-gray-500 hover:text-gray-300',
@@ -392,9 +399,10 @@ export default function OrbitalAMMPage() {
               {activeTab === tab.id && (
                 <span className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-600/20 to-cyan-600/20 ring-1 ring-white/[0.08]" />
               )}
-              <span className="relative flex items-center gap-2.5">
+              <span className="relative flex items-center gap-1.5 sm:gap-2.5">
                 {tab.icon}
-                {tab.label}
+                <span className="hidden sm:inline">{tab.label}</span>
+                <span className="sm:hidden">{tab.label.split(' ')[0]}</span>
               </span>
             </button>
           ))}
@@ -406,10 +414,11 @@ export default function OrbitalAMMPage() {
 
         {/* ---- Pools Tab ---- */}
         {activeTab === 'pools' && (
+          <div role="tabpanel" id="orbital-panel-pools" aria-labelledby="orbital-tab-pools">
           <GlassCard gradientFrom="from-indigo-500" gradientTo="to-cyan-500">
             {/* Card header */}
-            <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
-              <div className="flex items-center gap-3.5">
+            <div className="flex items-center justify-between border-b border-white/[0.04] p-5 sm:p-7">
+              <div className="flex items-center gap-3">
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/10 ring-1 ring-indigo-500/20">
                   <Layers className="h-4 w-4 text-indigo-400" />
                 </span>
@@ -417,7 +426,7 @@ export default function OrbitalAMMPage() {
                   <h3 className="text-sm font-semibold text-gray-100">
                     Orbital Pools
                   </h3>
-                  <p className="text-[11px] text-gray-500">
+                  <p className="text-[11px] text-gray-500 hidden sm:block">
                     Browse all concentrated multi-token liquidity pools
                   </p>
                 </div>
@@ -425,7 +434,7 @@ export default function OrbitalAMMPage() {
               <Activity className="h-4 w-4 text-gray-600" />
             </div>
             {/* Card body */}
-            <div className="p-7">
+            <div className="p-5 sm:p-7">
               <PoolList
                 key={`pools-${refreshKey}`}
                 contractService={contractService}
@@ -434,15 +443,16 @@ export default function OrbitalAMMPage() {
               />
             </div>
           </GlassCard>
+          </div>
         )}
 
         {/* ---- Swap Tab ---- */}
         {activeTab === 'swap' && (
-          <div className="mx-auto max-w-xl">
+          <div role="tabpanel" id="orbital-panel-swap" aria-labelledby="orbital-tab-swap" className="mx-auto max-w-xl">
             <GlassCard gradientFrom="from-cyan-500" gradientTo="to-indigo-500">
               {/* Card header */}
-              <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
-                <div className="flex items-center gap-3.5">
+              <div className="flex items-center justify-between border-b border-white/[0.04] p-5 sm:p-7">
+                <div className="flex items-center gap-3">
                   <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/10 ring-1 ring-cyan-500/20">
                     <ArrowDownUp className="h-4 w-4 text-cyan-400" />
                   </span>
@@ -450,7 +460,7 @@ export default function OrbitalAMMPage() {
                     <h3 className="text-sm font-semibold text-gray-100">
                       Orbital Swap
                     </h3>
-                    <p className="text-[11px] text-gray-500">
+                    <p className="text-[11px] text-gray-500 hidden sm:block">
                       Swap tokens through concentrated liquidity pools
                     </p>
                   </div>
@@ -458,7 +468,7 @@ export default function OrbitalAMMPage() {
                 <BarChart3 className="h-4 w-4 text-gray-600" />
               </div>
               {/* Card body */}
-              <div className="p-7 sm:p-9">
+              <div className="p-5 sm:p-7 lg:p-9">
                 <SwapInterface
                   key={`swap-${refreshKey}`}
                   contractService={contractService}
@@ -473,11 +483,11 @@ export default function OrbitalAMMPage() {
 
         {/* ---- Liquidity Tab ---- */}
         {activeTab === 'liquidity' && (
-          <div className="mx-auto max-w-xl">
+          <div role="tabpanel" id="orbital-panel-liquidity" aria-labelledby="orbital-tab-liquidity" className="mx-auto max-w-xl">
             <GlassCard gradientFrom="from-purple-500" gradientTo="to-teal-500">
               {/* Card header */}
-              <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
-                <div className="flex items-center gap-3.5">
+              <div className="flex items-center justify-between border-b border-white/[0.04] p-5 sm:p-7">
+                <div className="flex items-center gap-3">
                   <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-500/10 ring-1 ring-purple-500/20">
                     <Droplets className="h-4 w-4 text-purple-400" />
                   </span>
@@ -485,7 +495,7 @@ export default function OrbitalAMMPage() {
                     <h3 className="text-sm font-semibold text-gray-100">
                       Manage Liquidity
                     </h3>
-                    <p className="text-[11px] text-gray-500">
+                    <p className="text-[11px] text-gray-500 hidden sm:block">
                       Add or remove liquidity from Orbital pools
                     </p>
                   </div>
@@ -493,7 +503,7 @@ export default function OrbitalAMMPage() {
                 <Droplets className="h-4 w-4 text-gray-600" />
               </div>
               {/* Card body */}
-              <div className="p-7 sm:p-9">
+              <div className="p-5 sm:p-7 lg:p-9">
                 <LiquidityPanel
                   key={`liquidity-${refreshKey}`}
                   contractService={contractService}
@@ -508,11 +518,11 @@ export default function OrbitalAMMPage() {
 
         {/* ---- Create Pool Tab ---- */}
         {activeTab === 'create' && (
-          <div className="mx-auto max-w-2xl">
+          <div role="tabpanel" id="orbital-panel-create" aria-labelledby="orbital-tab-create" className="mx-auto max-w-2xl">
             <GlassCard gradientFrom="from-emerald-500" gradientTo="to-indigo-500">
               {/* Card header */}
-              <div className="flex items-center justify-between border-b border-white/[0.04] p-7">
-                <div className="flex items-center gap-3.5">
+              <div className="flex items-center justify-between border-b border-white/[0.04] p-5 sm:p-7">
+                <div className="flex items-center gap-3">
                   <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 ring-1 ring-emerald-500/20">
                     <PlusCircle className="h-4 w-4 text-emerald-400" />
                   </span>
@@ -520,7 +530,7 @@ export default function OrbitalAMMPage() {
                     <h3 className="text-sm font-semibold text-gray-100">
                       Create Orbital Pool
                     </h3>
-                    <p className="text-[11px] text-gray-500">
+                    <p className="text-[11px] text-gray-500 hidden sm:block">
                       Launch a new multi-token concentrated liquidity pool
                     </p>
                   </div>
@@ -528,7 +538,7 @@ export default function OrbitalAMMPage() {
                 <Orbit className="h-4 w-4 text-gray-600" />
               </div>
               {/* Card body */}
-              <div className="p-7 sm:p-9">
+              <div className="p-5 sm:p-7 lg:p-9">
                 <CreatePoolForm
                   key={`create-${refreshKey}`}
                   contractService={contractService}
@@ -547,7 +557,7 @@ export default function OrbitalAMMPage() {
         {networkConfig && (
           <div
             className={clsx(
-              'mt-12 sm:mt-16 flex flex-wrap items-center justify-center gap-x-10 gap-y-3 rounded-2xl px-8 py-6',
+              'mt-12 sm:mt-16 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 rounded-2xl px-5 py-5 sm:gap-x-10 sm:px-8 sm:py-6',
               'bg-[#0D0F14]/80 backdrop-blur-xl',
               'border border-white/[0.06]',
             )}

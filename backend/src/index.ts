@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import authRoutes from './routes/auth';
@@ -17,6 +18,9 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// Cookie parsing (for httpOnly refresh token cookies)
+app.use(cookieParser());
 
 // Rate limiting
 const limiter = rateLimit({

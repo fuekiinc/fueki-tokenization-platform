@@ -28,6 +28,21 @@ interface IERC20 {
 contract AssetBackedExchange {
 
     // ---------------------------------------------------------------
+    //  Reentrancy guard
+    // ---------------------------------------------------------------
+
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+    uint256 private _reentrancyStatus = _NOT_ENTERED;
+
+    modifier nonReentrant() {
+        if (_reentrancyStatus == _ENTERED) revert ReentrantCall();
+        _reentrancyStatus = _ENTERED;
+        _;
+        _reentrancyStatus = _NOT_ENTERED;
+    }
+
+    // ---------------------------------------------------------------
     //  Constants
     // ---------------------------------------------------------------
 
@@ -96,6 +111,7 @@ contract AssetBackedExchange {
     error TransferFailed();
     error InsufficientEth();
     error NothingToWithdraw();
+    error ReentrantCall();
 
     // ---------------------------------------------------------------
     //  Create order
@@ -181,7 +197,7 @@ contract AssetBackedExchange {
      * @param orderId       The order to fill
      * @param fillAmountBuy Amount of the buy token to provide
      */
-    function fillOrder(uint256 orderId, uint256 fillAmountBuy) external {
+    function fillOrder(uint256 orderId, uint256 fillAmountBuy) external nonReentrant {
         Order storage order = _orders[orderId];
         _validateOrderActive(order);
         if (fillAmountBuy == 0) revert ZeroAmount();
@@ -218,7 +234,7 @@ contract AssetBackedExchange {
      *
      * @param orderId The order to fill
      */
-    function fillOrderWithETH(uint256 orderId) external payable {
+    function fillOrderWithETH(uint256 orderId) external payable nonReentrant {
         Order storage order = _orders[orderId];
         _validateOrderActive(order);
         if (msg.value == 0) revert ZeroAmount();
@@ -258,7 +274,7 @@ contract AssetBackedExchange {
     /**
      * @notice Cancel an open order and return unfilled tokens to the maker.
      */
-    function cancelOrder(uint256 orderId) external {
+    function cancelOrder(uint256 orderId) external nonReentrant {
         Order storage order = _orders[orderId];
         _validateOrderActive(order);
         if (msg.sender != order.maker) revert NotMaker();
@@ -283,7 +299,7 @@ contract AssetBackedExchange {
     /**
      * @notice Withdraw credited ETH (from cancelled ETH-sell orders).
      */
-    function withdrawEth() external {
+    function withdrawEth() external nonReentrant {
         uint256 balance = ethBalances[msg.sender];
         if (balance == 0) revert NothingToWithdraw();
         ethBalances[msg.sender] = 0;

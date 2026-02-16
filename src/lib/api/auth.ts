@@ -9,7 +9,7 @@ import type {
   DocumentUploadResponse,
   KYCStatusResponse,
   User,
-  AuthTokens,
+  RefreshTokenResponse,
 } from '../../types/auth';
 
 // ---------------------------------------------------------------------------
@@ -26,8 +26,13 @@ export async function register(data: RegisterRequest): Promise<RegisterResponse>
   return response.data;
 }
 
+/**
+ * Logs the user out. The refresh token is sent automatically via the httpOnly
+ * cookie (withCredentials: true on the axios client), so the backend can
+ * invalidate the session server-side.
+ */
 export async function logout(): Promise<void> {
-  await apiClient.post('/api/auth/logout');
+  await apiClient.post('/api/auth/logout', {});
 }
 
 export async function getProfile(): Promise<User> {
@@ -35,10 +40,13 @@ export async function getProfile(): Promise<User> {
   return response.data;
 }
 
-export async function refreshToken(token: string): Promise<AuthTokens> {
-  const response = await apiClient.post<AuthTokens>('/api/auth/refresh', {
-    refreshToken: token,
-  });
+/**
+ * Refreshes the auth session. The refresh token is sent automatically via
+ * the httpOnly cookie (withCredentials: true). The backend returns a new
+ * { accessToken } in the response body and rotates the cookie.
+ */
+export async function refreshToken(): Promise<RefreshTokenResponse> {
+  const response = await apiClient.post<RefreshTokenResponse>('/api/auth/refresh', {});
   return response.data;
 }
 

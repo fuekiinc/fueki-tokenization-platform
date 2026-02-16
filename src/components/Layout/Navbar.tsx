@@ -219,6 +219,18 @@ function NetworkSelector({ compact = false }: { compact?: boolean }) {
   const close = useCallback(() => setIsOpen(false), []);
   useClickOutside(dropdownRef, close);
 
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
+
   const currentNetwork = useMemo(
     () => NETWORKS.find((n) => n.chainId === wallet.chainId) ?? null,
     [wallet.chainId],
@@ -339,6 +351,18 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
     setTimeout(() => setCopied(false), 2000);
   }, []);
 
+  // Close on Escape key
+  useEffect(() => {
+    if (!showDetails) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setShowDetails(false);
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showDetails]);
+
   // -- Disconnected: show connect button with gradient
   if (!isConnected || !address) {
     return (
@@ -351,6 +375,7 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
           'flex items-center justify-center rounded-xl px-6 py-2.5 text-sm font-semibold text-white',
           'transition-all duration-300',
           'disabled:cursor-not-allowed disabled:opacity-50',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50',
           compact && 'w-full',
         )}
       >
@@ -371,6 +396,7 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
           'flex items-center gap-2.5 rounded-xl border px-3.5 py-2 text-sm transition-all duration-200',
           'border-white/[0.06] bg-white/[0.03] text-gray-200',
           'hover:border-white/[0.1] hover:bg-white/[0.06]',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50',
           compact && 'w-full',
         )}
       >
@@ -537,6 +563,7 @@ function MobileSlideOver({
   onClose: () => void;
 }) {
   const location = useLocation();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   // Close on route change
   useEffect(() => {
@@ -556,10 +583,31 @@ function MobileSlideOver({
     };
   }, [isOpen]);
 
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  // Focus close button when panel opens
+  useEffect(() => {
+    if (isOpen) {
+      // Small delay to allow animation to start
+      const timer = setTimeout(() => closeButtonRef.current?.focus(), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 lg:hidden">
+    <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation menu">
       {/* Overlay */}
       <div
         className="sidebar-overlay absolute inset-0 animate-fade-in"
@@ -590,9 +638,11 @@ function MobileSlideOver({
             Fueki
           </span>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            className="rounded-xl p-2 text-gray-400 transition-colors hover:bg-white/[0.06] hover:text-white"
+            className="rounded-xl p-2 text-gray-400 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+            aria-label="Close navigation menu"
           >
             <X className="h-5 w-5" />
           </button>
@@ -600,7 +650,7 @@ function MobileSlideOver({
 
         {/* Nav links */}
         <div className="flex-1 overflow-y-auto px-4 pb-6">
-          <nav className="space-y-1">
+          <nav className="space-y-1" aria-label="Mobile navigation">
             {NAV_ITEMS.map((item) => (
               <NavLink
                 key={item.to}
@@ -608,14 +658,26 @@ function MobileSlideOver({
                 onClick={onClose}
                 className={({ isActive }) =>
                   clsx(
-                    'block rounded-2xl px-5 py-3.5 text-[15px] font-medium transition-all duration-150',
+                    'flex items-center gap-3 rounded-2xl px-5 py-3.5 text-[15px] font-medium transition-all duration-150',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50',
                     isActive
                       ? 'bg-white/[0.08] text-white'
                       : 'text-gray-400 hover:bg-white/[0.04] hover:text-white',
                   )
                 }
               >
-                {item.label}
+                {({ isActive }) => (
+                  <>
+                    {/* Active indicator bar */}
+                    {isActive && (
+                      <span
+                        className="h-5 w-0.5 shrink-0 rounded-full bg-indigo-400"
+                        aria-hidden="true"
+                      />
+                    )}
+                    {item.label}
+                  </>
+                )}
               </NavLink>
             ))}
           </nav>
@@ -662,9 +724,22 @@ function MobileSlideOver({
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // Close mobile menu on Escape
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setMobileMenuOpen(false);
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [mobileMenuOpen]);
+
   return (
     <>
       <nav
+        aria-label="Primary navigation"
         className={clsx(
           'glass-navbar sticky top-0 z-50',
           'border-b border-white/[0.04]',
@@ -678,7 +753,7 @@ export default function Navbar() {
               {/* Logo */}
               <Link
                 to="/"
-                className="group flex items-center transition-opacity duration-200 hover:opacity-90"
+                className="group flex items-center transition-opacity duration-200 hover:opacity-90 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
               >
                 <span
                   className="text-xl font-bold tracking-tight"
@@ -693,23 +768,35 @@ export default function Navbar() {
                 </span>
               </Link>
 
-              {/* Desktop nav links */}
-              <div className="hidden items-center gap-2 lg:flex">
+              {/* Desktop nav links -- NavLink auto-sets aria-current="page" when active */}
+              <div className="hidden items-center gap-1 lg:flex" role="navigation" aria-label="Main navigation">
                 {NAV_ITEMS.map((item) => (
                   <NavLink
                     key={item.to}
                     to={item.to}
                     className={({ isActive }) =>
                       clsx(
-                        'rounded-full px-5 py-2.5 text-sm font-medium',
+                        'relative rounded-full px-5 py-2.5 text-sm font-medium',
                         'transition-all duration-200',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
                         isActive
                           ? 'bg-white/[0.08] text-white'
-                          : 'text-gray-400 hover:text-white',
+                          : 'text-gray-400 hover:bg-white/[0.04] hover:text-white',
                       )
                     }
                   >
-                    {item.label}
+                    {({ isActive }) => (
+                      <>
+                        {item.label}
+                        {/* Active route indicator dot */}
+                        {isActive && (
+                          <span
+                            className="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-indigo-400"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </>
+                    )}
                   </NavLink>
                 ))}
               </div>
@@ -734,7 +821,10 @@ export default function Navbar() {
                 className={clsx(
                   'rounded-xl p-2.5 transition-all duration-200 lg:hidden',
                   'text-gray-400 hover:bg-white/[0.06] hover:text-white',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50',
                 )}
+                aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+                aria-expanded={mobileMenuOpen}
               >
                 {mobileMenuOpen ? (
                   <X className="h-5 w-5" />

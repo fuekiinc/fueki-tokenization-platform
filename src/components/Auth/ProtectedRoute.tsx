@@ -4,6 +4,23 @@ import { Loader2 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 
 // ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/** Shape of the location.state we set when redirecting to login. */
+interface LocationStateWithFrom {
+  from?: { pathname: string };
+}
+
+/** Type guard for LocationStateWithFrom. */
+function hasFromPath(state: unknown): state is LocationStateWithFrom {
+  if (typeof state !== 'object' || state === null) return false;
+  const s = state as Record<string, unknown>;
+  if (!('from' in s) || typeof s.from !== 'object' || s.from === null) return false;
+  return typeof (s.from as Record<string, unknown>).pathname === 'string';
+}
+
+// ---------------------------------------------------------------------------
 // Shared loading spinner used by both guards
 // ---------------------------------------------------------------------------
 
@@ -67,13 +84,19 @@ export function AuthRedirect({ children }: { children: React.ReactNode }) {
   if (isAuthenticated) {
     // KYC approved -- send them to wherever they came from, or the dashboard.
     if (user?.kycStatus === 'approved') {
-      const from =
-        (location.state as { from?: Location })?.from?.pathname || '/dashboard';
-      return <Navigate to={from} replace />;
+      const from = hasFromPath(location.state) ? location.state.from?.pathname : undefined;
+      return <Navigate to={from ?? '/dashboard'} replace />;
     }
 
-    // KYC pending or rejected -- send them to the approval-pending page.
-    if (user?.kycStatus === 'pending' || user?.kycStatus === 'rejected') {
+    // KYC pending -- send them to the approval-pending page.
+    if (user?.kycStatus === 'pending') {
+      return <Navigate to="/pending-approval" replace />;
+    }
+
+    // KYC rejected -- allow access to /signup so they can re-submit KYC.
+    // Redirecting rejected users to /pending-approval while /pending-approval's
+    // "Try Again" button points to /signup would create an infinite redirect loop.
+    if (user?.kycStatus === 'rejected' && location.pathname !== '/signup') {
       return <Navigate to="/pending-approval" replace />;
     }
 

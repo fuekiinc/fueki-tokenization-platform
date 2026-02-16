@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Shield,
   Loader2,
+  Fingerprint,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -34,21 +35,6 @@ const loginSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Style tokens
-// ---------------------------------------------------------------------------
-
-const INPUT_BASE = clsx(
-  'w-full bg-[var(--bg-tertiary)] border border-[var(--border-primary)]',
-  'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
-  'rounded-xl px-4 py-3 pl-11',
-  'outline-none transition-all duration-200',
-  'focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)]',
-);
-
-const ICON_LEFT =
-  'pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-[var(--text-muted)]';
-
-// ---------------------------------------------------------------------------
 // LoginPage
 // ---------------------------------------------------------------------------
 
@@ -66,8 +52,6 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
     defaultValues: { email: '', password: '' },
   });
-
-  // ---- Submit handler -----------------------------------------------------
 
   const onSubmit = async (values: LoginFormValues) => {
     try {
@@ -90,89 +74,107 @@ export default function LoginPage() {
     }
   };
 
-  // ---- Render -------------------------------------------------------------
-
   return (
-    <div className="gradient-bg-subtle min-h-screen flex items-center justify-center px-4 py-12">
-      {/* Card */}
+    <div className="w-full max-w-[460px] mx-auto animate-page-fade-in">
+      {/* ------------------------------------------------------------------ */}
+      {/* Branding                                                            */}
+      {/* ------------------------------------------------------------------ */}
+      <div className="text-center mb-10">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/25 mb-5">
+          <Fingerprint className="h-8 w-8 text-white" />
+        </div>
+        <h1 className="text-4xl font-bold tracking-tight">
+          <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-300 bg-clip-text text-transparent">
+            Fueki
+          </span>
+        </h1>
+        <p className="mt-2 text-sm text-[var(--text-muted)] tracking-widest uppercase font-medium">
+          Tokenization Platform
+        </p>
+      </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Card                                                                */}
+      {/* ------------------------------------------------------------------ */}
       <div
         className={clsx(
-          'w-full max-w-md',
-          'bg-[var(--bg-secondary)]/80 backdrop-blur-xl',
+          'bg-[var(--bg-secondary)]/80 backdrop-blur-2xl',
           'border border-[var(--border-primary)]',
-          'rounded-2xl shadow-2xl',
+          'rounded-3xl shadow-2xl shadow-black/20',
           'p-8 sm:p-10',
         )}
       >
-        {/* ---- Branding -------------------------------------------------- */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">
-            <span className="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-              Fueki
-            </span>
-          </h1>
-          <p className="mt-1.5 text-sm text-[var(--text-muted)] tracking-wide">
-            Tokenization Platform
-          </p>
-        </div>
-
-        {/* ---- Heading --------------------------------------------------- */}
-        <div className="mb-6">
-          <h2 className="text-xl font-semibold text-[var(--text-primary)]">
+        {/* Heading */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-[var(--text-primary)]">
             Welcome back
           </h2>
-          <p className="mt-1 text-sm text-[var(--text-secondary)]">
+          <p className="mt-2 text-[15px] text-[var(--text-secondary)] leading-relaxed">
             Sign in to your account to continue
           </p>
         </div>
 
-        {/* ---- Form ------------------------------------------------------ */}
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
+        {/* Form */}
+        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-6">
           {/* Email */}
-          <div>
+          <div className="space-y-2">
             <label
               htmlFor="email"
-              className="block text-sm font-medium text-[var(--text-secondary)] mb-1.5"
+              className="block text-sm font-semibold text-[var(--text-secondary)]"
             >
               Email address
             </label>
             <div className="relative">
-              <Mail className={ICON_LEFT} />
+              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+                <Mail className="h-[18px] w-[18px]" />
+              </span>
               <input
                 id="email"
                 type="email"
                 autoComplete="email"
                 placeholder="you@example.com"
-                className={clsx(INPUT_BASE, errors.email && 'border-[var(--danger)]')}
+                className={clsx(
+                  'w-full rounded-xl bg-[var(--bg-tertiary)] border px-4 py-3.5 pl-12 text-[15px]',
+                  'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
+                  'outline-none transition-all duration-200',
+                  errors.email
+                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                    : 'border-[var(--border-primary)] focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary)]/20',
+                )}
                 {...register('email')}
               />
             </div>
             {errors.email && (
-              <p className="mt-1.5 text-xs text-[var(--danger)]">
+              <p className="text-xs font-medium text-red-400 pl-1">
                 {errors.email.message}
               </p>
             )}
           </div>
 
           {/* Password */}
-          <div>
+          <div className="space-y-2">
             <label
               htmlFor="password"
-              className="block text-sm font-medium text-[var(--text-secondary)] mb-1.5"
+              className="block text-sm font-semibold text-[var(--text-secondary)]"
             >
               Password
             </label>
             <div className="relative">
-              <Lock className={ICON_LEFT} />
+              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+                <Lock className="h-[18px] w-[18px]" />
+              </span>
               <input
                 id="password"
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
                 placeholder="Enter your password"
                 className={clsx(
-                  INPUT_BASE,
-                  'pr-11',
-                  errors.password && 'border-[var(--danger)]',
+                  'w-full rounded-xl bg-[var(--bg-tertiary)] border px-4 py-3.5 pl-12 pr-12 text-[15px]',
+                  'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
+                  'outline-none transition-all duration-200',
+                  errors.password
+                    ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                    : 'border-[var(--border-primary)] focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary)]/20',
                 )}
                 {...register('password')}
               />
@@ -181,11 +183,7 @@ export default function LoginPage() {
                 tabIndex={-1}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
                 onClick={() => setShowPassword((v) => !v)}
-                className={clsx(
-                  'absolute right-3 top-1/2 -translate-y-1/2',
-                  'text-[var(--text-muted)] hover:text-[var(--text-secondary)]',
-                  'transition-colors duration-150',
-                )}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
               >
                 {showPassword ? (
                   <EyeOff className="h-[18px] w-[18px]" />
@@ -195,7 +193,7 @@ export default function LoginPage() {
               </button>
             </div>
             {errors.password && (
-              <p className="mt-1.5 text-xs text-[var(--danger)]">
+              <p className="text-xs font-medium text-red-400 pl-1">
                 {errors.password.message}
               </p>
             )}
@@ -206,47 +204,68 @@ export default function LoginPage() {
             type="submit"
             disabled={isSubmitting}
             className={clsx(
-              'w-full flex items-center justify-center gap-2',
+              'w-full flex items-center justify-center gap-2.5',
               'bg-gradient-to-r from-indigo-600 to-purple-600',
               'hover:from-indigo-500 hover:to-purple-500',
-              'text-white font-semibold',
-              'rounded-xl px-4 py-3',
+              'text-white font-semibold text-[15px]',
+              'rounded-xl px-6 py-3.5',
               'transition-all duration-200',
               'disabled:opacity-50 disabled:cursor-not-allowed',
-              'shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30',
+              'shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:shadow-indigo-500/30',
+              'active:scale-[0.98]',
+              'mt-8',
             )}
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="h-[18px] w-[18px] animate-spin" />
+                <Loader2 className="h-5 w-5 animate-spin" />
                 <span>Signing in...</span>
               </>
             ) : (
               <>
-                <LogIn className="h-[18px] w-[18px]" />
+                <LogIn className="h-5 w-5" />
                 <span>Sign In</span>
-                <ArrowRight className="h-4 w-4 ml-0.5" />
+                <ArrowRight className="h-4 w-4 ml-1" />
               </>
             )}
           </button>
         </form>
 
-        {/* ---- Footer link ----------------------------------------------- */}
-        <p className="mt-6 text-center text-sm text-[var(--text-muted)]">
-          Don&apos;t have an account?{' '}
-          <Link
-            to="/signup"
-            className="font-medium text-[var(--accent-primary)] hover:text-indigo-300 transition-colors duration-150"
-          >
-            Sign up
-          </Link>
-        </p>
-
-        {/* ---- Security badge -------------------------------------------- */}
-        <div className="mt-6 flex items-center justify-center gap-1.5 text-[var(--text-muted)]">
-          <Shield className="h-3.5 w-3.5" />
-          <span className="text-xs">Secured with end-to-end encryption</span>
+        {/* Divider */}
+        <div className="relative my-8">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-[var(--border-primary)]" />
+          </div>
+          <div className="relative flex justify-center">
+            <span className="bg-[var(--bg-secondary)] px-4 text-xs text-[var(--text-muted)] uppercase tracking-wider">
+              New here?
+            </span>
+          </div>
         </div>
+
+        {/* Sign up link */}
+        <Link
+          to="/signup"
+          className={clsx(
+            'w-full flex items-center justify-center gap-2',
+            'bg-[var(--bg-tertiary)] border border-[var(--border-primary)]',
+            'hover:border-[var(--border-hover)] hover:bg-[var(--bg-tertiary)]/80',
+            'text-[var(--text-primary)] font-semibold text-[15px]',
+            'rounded-xl px-6 py-3.5',
+            'transition-all duration-200',
+          )}
+        >
+          Create an account
+          <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
+
+      {/* Security badge */}
+      <div className="mt-8 flex items-center justify-center gap-2 text-[var(--text-muted)]">
+        <Shield className="h-4 w-4" />
+        <span className="text-xs font-medium tracking-wide">
+          Secured with end-to-end encryption
+        </span>
       </div>
     </div>
   );

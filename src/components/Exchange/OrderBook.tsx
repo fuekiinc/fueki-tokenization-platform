@@ -362,7 +362,7 @@ export default function OrderBook({
     return (
       <div
         key={`skeleton-${index}`}
-        className="grid grid-cols-3 gap-6 px-5 py-3"
+        className="grid grid-cols-3 gap-3 sm:gap-6 px-3 sm:px-5 py-3"
       >
         <div className="h-4 animate-pulse rounded-md bg-white/[0.04]" />
         <div className="h-4 animate-pulse rounded-md bg-white/[0.04]" />
@@ -390,8 +390,9 @@ export default function OrderBook({
           if (e.key === 'Enter' && !isFilling) handleFillOrder(order);
         }}
         className={clsx(
-          'group relative grid cursor-pointer grid-cols-3 gap-6 px-5 py-3 transition-all duration-150',
+          'group relative grid cursor-pointer grid-cols-3 gap-3 sm:gap-6 px-3 sm:px-5 py-3 transition-all duration-150',
           'hover:bg-white/[0.04]',
+          'min-h-[44px] items-center',
           isFilling && 'pointer-events-none opacity-50',
         )}
       >
@@ -407,7 +408,7 @@ export default function OrderBook({
         {/* Price */}
         <span
           className={clsx(
-            'relative z-10 text-right font-mono text-[13px] font-medium tabular-nums',
+            'relative z-10 text-right font-mono text-[11px] sm:text-[13px] font-medium tabular-nums',
             side === 'sell' ? 'text-red-400' : 'text-emerald-400',
           )}
         >
@@ -415,12 +416,12 @@ export default function OrderBook({
         </span>
 
         {/* Amount */}
-        <span className="relative z-10 text-right font-mono text-[13px] tabular-nums text-gray-300">
+        <span className="relative z-10 text-right font-mono text-[11px] sm:text-[13px] tabular-nums text-gray-300">
           {amount.toFixed(4)}
         </span>
 
         {/* Total */}
-        <span className="relative z-10 text-right font-mono text-[13px] tabular-nums text-gray-500">
+        <span className="relative z-10 text-right font-mono text-[11px] sm:text-[13px] tabular-nums text-gray-500">
           {total.toFixed(4)}
         </span>
 
@@ -469,7 +470,7 @@ export default function OrderBook({
       </div>
 
       {/* Column headers */}
-      <div className="grid grid-cols-3 gap-6 border-b border-white/[0.06] px-5 py-3">
+      <div className="grid grid-cols-3 gap-3 sm:gap-6 border-b border-white/[0.06] px-3 sm:px-5 py-3">
         <span className="text-right text-[11px] font-semibold uppercase tracking-wider text-gray-500">
           Price
         </span>
