@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String
+  walletAddress String?  @unique
+  kycStatus     String   @default("not_submitted") // not_submitted, pending, approved, rejected
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  kycData   KYCData?
+  sessions  Session[]
+
+  @@index([email])
+  @@index([walletAddress])
+}
+
+model KYCData {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // All PII fields are AES-256-GCM encrypted
+  encryptedFirstName  String
+  encryptedLastName   String
+  encryptedDOB        String
+  encryptedSSN        String
+  encryptedAddress1   String
+  encryptedAddress2   String?
+  encryptedCity       String
+  encryptedState      String
+  encryptedZipCode    String
+  encryptedCountry    String
+
+  documentType        String   // drivers_license or passport
+  documentPath        String   // encrypted file stored on disk
+  documentOrigName    String
+
+  submittedAt         DateTime @default(now())
+  reviewedAt          DateTime?
+  reviewNotes         String?
+
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([refreshToken])
+}
