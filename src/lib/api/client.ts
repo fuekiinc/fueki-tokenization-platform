@@ -21,7 +21,7 @@ if (!baseURL && import.meta.env.DEV) {
 }
 
 const apiClient = axios.create({
-  baseURL: baseURL ?? 'https://fueki-wallet-backend-production.up.railway.app',
+  baseURL: baseURL ?? 'https://fueki-backend-114394197024.us-central1.run.app',
   timeout: 15_000,
   headers: {
     'Content-Type': 'application/json',
