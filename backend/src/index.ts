@@ -11,6 +11,9 @@ import adminRoutes from './routes/admin';
 
 const app = express();
 
+// Trust proxy (required for Cloud Run / load balancers)
+app.set('trust proxy', 1);
+
 // Security
 app.use(helmet());
 app.use(cors({

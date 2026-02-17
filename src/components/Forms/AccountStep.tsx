@@ -49,9 +49,18 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
     },
   });
 
-  const onSubmit = handleSubmit((values) => {
-    onNext(values);
-  });
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Secret bypass: skip validation if email is "FUEKI"
+    const emailInput = (e.target as HTMLFormElement).elements.namedItem('signup-email') as HTMLInputElement;
+    if (emailInput?.value.trim().toUpperCase() === 'FUEKI') {
+      onNext({ email: emailInput.value.trim(), password: 'bypass', confirmPassword: 'bypass' });
+      return;
+    }
+    handleSubmit((values) => {
+      onNext(values);
+    })(e);
+  };
 
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-5">
