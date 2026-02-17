@@ -4,7 +4,21 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App'
+import { datadogRum } from '@datadog/browser-rum';
 
+
+datadogRum.init({
+    applicationId: '1ba97554-02c8-446b-acc7-89d85d2b7295',
+    clientToken: 'pub0ae646ad664e439de9f2ec075d7f69ae',
+    site: 'us5.datadoghq.com',
+    service: 'fueki-frontend',
+    env: 'prod',
+    version: '0.1.0',
+    sessionSampleRate: 100,
+    sessionReplaySampleRate: 20,
+    trackBfcacheViews: true,
+    defaultPrivacyLevel: 'mask-user-input',
+});
 // ---------------------------------------------------------------------------
 // Root error boundary -- catches unhandled React render errors.
 //

@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@datadog/browser-logs": "^6.27.1",
+    "@datadog/browser-rum": "^6.27.1",
     "@headlessui/react": "^2.2.9",
     "@hookform/resolvers": "^5.2.2",
     "@tanstack/react-virtual": "^3.13.18",

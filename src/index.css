@@ -93,6 +93,7 @@
 /* --------------------------------------------------------------------------
    2. RESET & BASE
    -------------------------------------------------------------------------- */
+@layer base {
 *,
 *::before,
 *::after {
@@ -138,6 +139,7 @@ body {
     scroll-behavior: auto !important;
   }
 }
+} /* end @layer base */
 
 /* --------------------------------------------------------------------------
    3. KEYFRAME ANIMATIONS
@@ -303,6 +305,7 @@ body {
 /* --------------------------------------------------------------------------
    4. SCROLLBAR
    -------------------------------------------------------------------------- */
+@layer base {
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -330,6 +333,7 @@ body {
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.15) transparent;
 }
+} /* end @layer base */
 
 .scrollbar-thin {
   scrollbar-width: thin;
@@ -357,6 +361,7 @@ body {
 /* --------------------------------------------------------------------------
    5. DEFAULT TRANSITIONS
    -------------------------------------------------------------------------- */
+@layer base {
 a,
 button,
 input,
@@ -365,6 +370,7 @@ textarea,
 [role="button"] {
   transition: all var(--duration-base) var(--ease-default);
 }
+} /* end @layer base */
 
 /* --------------------------------------------------------------------------
    6. GLASS MORPHISM UTILITIES
@@ -714,6 +720,7 @@ textarea,
 /* --------------------------------------------------------------------------
    14. FORM ELEMENTS
    -------------------------------------------------------------------------- */
+@layer base {
 input,
 select,
 textarea {
@@ -760,6 +767,7 @@ textarea:disabled {
 input[type='number']::-webkit-inner-spin-button,
 input[type='number']::-webkit-outer-spin-button {
   -webkit-appearance: none;
+  appearance: none;
   margin: 0;
 }
 
@@ -797,10 +805,12 @@ a:focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
 }
+} /* end @layer base */
 
 /* --------------------------------------------------------------------------
    16. SELECTION
    -------------------------------------------------------------------------- */
+@layer base {
 ::selection {
   background: rgba(99, 102, 241, 0.3);
   color: var(--text-primary);
@@ -862,6 +872,7 @@ dialog::backdrop,
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
+} /* end @layer base */
 
 /* --------------------------------------------------------------------------
    20. TOOLTIP BASE (data-tooltip attribute)
@@ -931,12 +942,14 @@ dialog::backdrop,
 /* --------------------------------------------------------------------------
    22. DIVIDER
    -------------------------------------------------------------------------- */
+@layer base {
 hr,
 .divider {
   border: none;
   height: 1px;
   background: var(--border-primary);
 }
+} /* end @layer base */
 
 /* --------------------------------------------------------------------------
    23. PROSE (rendered markdown or long-form text blocks)
