@@ -70,11 +70,6 @@ export async function uploadDocument(
   const response = await apiClient.post<DocumentUploadResponse>(
     '/api/kyc/upload-document',
     formData,
-    {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    },
   );
   return response.data;
 }
