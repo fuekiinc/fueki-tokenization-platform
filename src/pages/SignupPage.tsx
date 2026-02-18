@@ -203,10 +203,17 @@ export default function SignupPage() {
 
       toast.success('Account created. Your identity verification is being reviewed.');
       navigate('/pending-approval');
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Registration could not be completed. Please try again.';
-      toast.error(message);
+    } catch (err: any) {
+      const code = err?.response?.data?.error?.code;
+      const serverMessage = err?.response?.data?.error?.message;
+
+      if (code === 'EMAIL_EXISTS') {
+        toast.error('An account with this email already exists. Please log in instead.');
+        navigate('/login');
+        return;
+      }
+
+      toast.error(serverMessage || (err instanceof Error ? err.message : 'Registration could not be completed. Please try again.'));
     } finally {
       setIsSubmitting(false);
     }
