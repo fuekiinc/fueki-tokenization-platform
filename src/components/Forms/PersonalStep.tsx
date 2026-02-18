@@ -26,7 +26,7 @@ import {
 interface PersonalStepProps {
   defaultValues: PersonalValues | null;
   onNext: (values: PersonalValues) => void;
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -188,10 +188,12 @@ export default function PersonalStep({ defaultValues, onNext, onBack }: Personal
 
       {/* Navigation */}
       <div className="flex gap-3 pt-2">
-        <button type="button" onClick={onBack} className={BACK_BUTTON}>
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          <span>Back</span>
-        </button>
+        {onBack && (
+          <button type="button" onClick={onBack} className={BACK_BUTTON}>
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            <span>Back</span>
+          </button>
+        )}
         <button type="submit" className={CONTINUE_BUTTON}>
           <span>Continue</span>
           <ArrowRight className="h-4 w-4" aria-hidden="true" />

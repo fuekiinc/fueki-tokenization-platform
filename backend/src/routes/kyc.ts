@@ -1,10 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import multer from 'multer';
 import { authenticate } from '../middleware/auth';
 import { documentUpload } from '../middleware/upload';
 import { submitKYC, getKYCStatus, saveEncryptedDocument } from '../services/kyc';
 
 const router = Router();
+
+const VALID_DOC_TYPES = ['drivers_license', 'passport', 'national_id'] as const;
 
 const kycSchema = z.object({
   firstName: z.string().min(1),
@@ -17,7 +20,7 @@ const kycSchema = z.object({
   state: z.string().min(1),
   zipCode: z.string().min(1),
   country: z.string().min(1),
-  documentType: z.enum(['drivers_license', 'passport']),
+  documentType: z.enum(VALID_DOC_TYPES),
 });
 
 // POST /api/kyc/submit
@@ -48,31 +51,48 @@ router.post('/submit', authenticate, async (req, res) => {
 });
 
 // POST /api/kyc/upload-document
-router.post('/upload-document', authenticate, documentUpload.single('document'), async (req, res) => {
-  try {
-    if (!req.file) {
-      res.status(400).json({ error: { message: 'No file uploaded', code: 'NO_FILE' } });
-      return;
+// Accept file on field "document" or "file" (older frontends may use "file")
+router.post(
+  '/upload-document',
+  authenticate,
+  documentUpload.fields([
+    { name: 'document', maxCount: 1 },
+    { name: 'file', maxCount: 1 },
+  ]),
+  async (req, res) => {
+    try {
+      const files = req.files as { [field: string]: Express.Multer.File[] } | undefined;
+      const file = files?.document?.[0] ?? files?.file?.[0];
+
+      if (!file) {
+        res.status(400).json({ error: { message: 'No file uploaded', code: 'NO_FILE' } });
+        return;
+      }
+
+      const documentType = req.body.documentType;
+      if (!documentType || !VALID_DOC_TYPES.includes(documentType)) {
+        res.status(400).json({ error: { message: 'Invalid document type', code: 'INVALID_TYPE' } });
+        return;
+      }
+
+      const filePath = await saveEncryptedDocument(file, req.userId!);
+
+      res.json({
+        documentId: filePath,
+        fileName: file.originalname,
+        uploadedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      if (err instanceof multer.MulterError) {
+        console.error('Multer error:', err);
+        res.status(400).json({ error: { message: `Upload failed: ${err.message}`, code: 'UPLOAD_ERROR' } });
+        return;
+      }
+      console.error('Upload error:', err);
+      res.status(500).json({ error: { message: 'Failed to upload document', code: 'INTERNAL_ERROR' } });
     }
-
-    const documentType = req.body.documentType;
-    if (!documentType || !['drivers_license', 'passport'].includes(documentType)) {
-      res.status(400).json({ error: { message: 'Invalid document type', code: 'INVALID_TYPE' } });
-      return;
-    }
-
-    const filePath = await saveEncryptedDocument(req.file, req.userId!);
-
-    res.json({
-      documentId: filePath,
-      fileName: req.file.originalname,
-      uploadedAt: new Date().toISOString(),
-    });
-  } catch (err) {
-    console.error('Upload error:', err);
-    res.status(500).json({ error: { message: 'Failed to upload document', code: 'INTERNAL_ERROR' } });
-  }
-});
+  },
+);
 
 // GET /api/kyc/status
 router.get('/status', authenticate, async (req, res) => {

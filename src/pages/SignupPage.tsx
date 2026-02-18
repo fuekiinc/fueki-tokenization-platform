@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Shield } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -26,14 +26,14 @@ import type {
 
 export default function SignupPage() {
   const navigate = useNavigate();
-  const location = useLocation();
   const authRegister = useAuthStore((s) => s.register);
   const uploadDocument = useAuthStore((s) => s.uploadDocument);
   const submitKYC = useAuthStore((s) => s.submitKYC);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  // If already authenticated (redirected from login with KYC not submitted), skip account step
-  const initialStep = isAuthenticated && (location.state as any)?.step === 'kyc' ? 1 : 0;
+  // If already authenticated, skip account creation step -- go straight to KYC
+  const isKycOnly = isAuthenticated;
+  const initialStep = isKycOnly ? 1 : 0;
 
   // ---- Wizard state ---------------------------------------------------------
 
@@ -104,8 +104,8 @@ export default function SignupPage() {
   }, []);
 
   const handlePersonalBack = useCallback(() => {
-    goToStep(0);
-  }, [goToStep]);
+    if (!isKycOnly) goToStep(0);
+  }, [goToStep, isKycOnly]);
 
   const handleAddressNext = useCallback((values: AddressValues) => {
     setAddressData(values);
@@ -172,7 +172,10 @@ export default function SignupPage() {
         documentType: identityValues.documentType,
       });
 
-      toast.success('Account created. Your identity verification is being reviewed.');
+      toast.success(isKycOnly
+        ? 'Verification submitted. Your identity is being reviewed.'
+        : 'Account created. Your identity verification is being reviewed.',
+      );
       navigate('/pending-approval');
     } catch (err: any) {
       const code = err?.response?.data?.error?.code;
@@ -207,7 +210,7 @@ export default function SignupPage() {
           <PersonalStep
             defaultValues={personalData}
             onNext={handlePersonalNext}
-            onBack={handlePersonalBack}
+            onBack={isKycOnly ? undefined : handlePersonalBack}
           />
         );
       case 2:
@@ -249,7 +252,7 @@ export default function SignupPage() {
           </span>
         </h1>
         <p className="mt-1.5 text-sm text-[var(--text-muted)] tracking-widest uppercase font-medium">
-          Create your account
+          {isKycOnly ? 'Complete verification' : 'Create your account'}
         </p>
       </div>
 
@@ -298,15 +301,17 @@ export default function SignupPage() {
         {renderCurrentStep()}
 
         {/* Footer link */}
-        <p className="mt-6 text-center text-sm text-[var(--text-muted)]">
-          Already have an account?{' '}
-          <Link
-            to="/login"
-            className="font-medium text-[var(--accent-primary)] hover:text-indigo-300 transition-colors duration-150"
-          >
-            Sign in
-          </Link>
-        </p>
+        {!isKycOnly && (
+          <p className="mt-6 text-center text-sm text-[var(--text-muted)]">
+            Already have an account?{' '}
+            <Link
+              to="/login"
+              className="font-medium text-[var(--accent-primary)] hover:text-indigo-300 transition-colors duration-150"
+            >
+              Sign in
+            </Link>
+          </p>
+        )}
 
         {/* Security badge */}
         <div className="mt-6 flex items-center justify-center gap-2 text-[var(--text-muted)]">
