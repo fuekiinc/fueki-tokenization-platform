@@ -7,7 +7,7 @@
  * user into the swap or liquidity tab pre-configured for that pool.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import {
@@ -20,6 +20,7 @@ import {
   RefreshCw,
   AlertCircle,
   Orbit,
+  ArrowUpDown,
 } from 'lucide-react';
 import { OrbitalContractService } from '../../lib/blockchain/orbitalContracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
@@ -91,6 +92,8 @@ export default function PoolList({
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [sortBy, setSortBy] = useState<'tvl' | 'concentration' | 'fee' | 'tokens'>('tvl');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // ---- Fetch all pools -----------------------------------------------------
 
@@ -150,7 +153,7 @@ export default function PoolList({
       setPools(poolDataList);
     } catch (err) {
       logger.error('Failed to fetch pools:', err);
-      toast.error('Failed to load Orbital pools');
+      toast.error('Unable to load Orbital pools. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -169,18 +172,58 @@ export default function PoolList({
     });
   }, [fetchPools]);
 
-  // ---- Filtered pools ------------------------------------------------------
+  // ---- Sort toggle handler --------------------------------------------------
 
-  const filteredPools = pools.filter((pool) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      pool.name.toLowerCase().includes(q) ||
-      pool.symbol.toLowerCase().includes(q) ||
-      pool.tokenSymbols.some((s) => s.toLowerCase().includes(q)) ||
-      pool.address.toLowerCase().includes(q)
-    );
-  });
+  const handleSortToggle = useCallback((field: typeof sortBy) => {
+    if (sortBy === field) {
+      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortBy(field);
+      setSortDir('desc');
+    }
+  }, [sortBy]);
+
+  // ---- Filtered & sorted pools --------------------------------------------
+
+  const filteredPools = useMemo(() => {
+    // 1. Filter
+    const filtered = pools.filter((pool) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        pool.name.toLowerCase().includes(q) ||
+        pool.symbol.toLowerCase().includes(q) ||
+        pool.tokenSymbols.some((s) => s.toLowerCase().includes(q)) ||
+        pool.address.toLowerCase().includes(q)
+      );
+    });
+
+    // 2. Sort
+    const sorted = [...filtered];
+    sorted.sort((a, b) => {
+      let cmp = 0;
+      switch (sortBy) {
+        case 'tvl': {
+          const tvlA = a.reserves.reduce((sum, r) => sum + r, 0n);
+          const tvlB = b.reserves.reduce((sum, r) => sum + r, 0n);
+          cmp = tvlA > tvlB ? 1 : tvlA < tvlB ? -1 : 0;
+          break;
+        }
+        case 'concentration':
+          cmp = a.concentration - b.concentration;
+          break;
+        case 'fee':
+          cmp = a.swapFeeBps - b.swapFeeBps;
+          break;
+        case 'tokens':
+          cmp = a.numTokens - b.numTokens;
+          break;
+      }
+      return sortDir === 'desc' ? -cmp : cmp;
+    });
+
+    return sorted;
+  }, [pools, searchQuery, sortBy, sortDir]);
 
   // ---- Loading state -------------------------------------------------------
 
@@ -256,20 +299,53 @@ export default function PoolList({
         </button>
       </div>
 
-      {/* Pool count */}
-      <div className="flex items-center justify-between px-1">
-        <span className="text-xs text-gray-500">
-          {filteredPools.length} pool{filteredPools.length !== 1 ? 's' : ''}
-        </span>
-        {searchQuery && filteredPools.length !== pools.length && (
-          <button
-            type="button"
-            onClick={() => setSearchQuery('')}
-            className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-          >
-            Clear filter
-          </button>
-        )}
+      {/* Pool count + sort controls */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-1">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-500">
+            {filteredPools.length} pool{filteredPools.length !== 1 ? 's' : ''}
+          </span>
+          {searchQuery && filteredPools.length !== pools.length && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+            >
+              Clear filter
+            </button>
+          )}
+        </div>
+
+        {/* Sort controls */}
+        <div className="flex items-center gap-1.5">
+          <span className="mr-1 text-[10px] text-gray-600 uppercase tracking-wider">Sort:</span>
+          {([
+            { key: 'tvl' as const, label: 'TVL' },
+            { key: 'concentration' as const, label: 'Focus' },
+            { key: 'fee' as const, label: 'Fee' },
+            { key: 'tokens' as const, label: 'Tokens' },
+          ]).map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => handleSortToggle(key)}
+              className={clsx(
+                'flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-medium transition-all',
+                sortBy === key
+                  ? 'bg-indigo-500/15 text-indigo-400 ring-1 ring-indigo-500/20'
+                  : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.04]',
+              )}
+            >
+              {label}
+              {sortBy === key && (
+                <ArrowUpDown className={clsx(
+                  'h-2.5 w-2.5',
+                  sortDir === 'asc' && 'rotate-180',
+                )} />
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Pool cards */}
@@ -321,26 +397,18 @@ export default function PoolList({
 
             {/* Stats row */}
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {/* Total Reserves */}
+              {/* Total Reserves (TVL proxy) */}
               <div className="rounded-lg bg-white/[0.02] px-3 py-2.5">
                 <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-wider">
                   <TrendingUp className="h-3 w-3" />
-                  Reserves
+                  TVL
                   <InfoTooltip content={TOOLTIPS.tvl} />
                 </div>
                 <div className="mt-1 text-sm font-semibold font-mono text-gray-200">
                   {estimateTVL(pool.reserves)}
                 </div>
-              </div>
-
-              {/* Tokens */}
-              <div className="rounded-lg bg-white/[0.02] px-3 py-2.5">
-                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-wider">
-                  <Layers className="h-3 w-3" />
-                  Tokens
-                </div>
-                <div className="mt-1 text-sm font-semibold font-mono text-gray-200">
-                  {pool.numTokens}
+                <div className="mt-0.5 text-[10px] text-gray-600">
+                  {pool.numTokens} token{pool.numTokens !== 1 ? 's' : ''}
                 </div>
               </div>
 
@@ -354,9 +422,9 @@ export default function PoolList({
                   <span className="text-sm font-semibold font-mono text-gray-200">
                     {pool.concentration}x
                   </span>
-                  <span className="text-[10px] text-gray-500">
-                    {CONCENTRATION_LABELS[pool.concentration] ?? ''}
-                  </span>
+                </div>
+                <div className="mt-0.5 text-[10px] text-gray-500">
+                  {CONCENTRATION_LABELS[pool.concentration] ?? 'Custom'}
                 </div>
               </div>
 
@@ -364,10 +432,27 @@ export default function PoolList({
               <div className="rounded-lg bg-white/[0.02] px-3 py-2.5">
                 <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-wider">
                   <TrendingUp className="h-3 w-3" />
-                  Fee
+                  Swap Fee
                 </div>
                 <div className="mt-1 text-sm font-semibold font-mono text-gray-200">
                   {formatFeeBps(pool.swapFeeBps)}
+                </div>
+                <div className="mt-0.5 text-[10px] text-gray-600">
+                  per trade
+                </div>
+              </div>
+
+              {/* LP Supply */}
+              <div className="rounded-lg bg-white/[0.02] px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-wider">
+                  <Layers className="h-3 w-3" />
+                  LP Supply
+                </div>
+                <div className="mt-1 text-sm font-semibold font-mono text-gray-200">
+                  {formatTokenAmount(formatBalance(pool.totalSupply, 18, 2))}
+                </div>
+                <div className="mt-0.5 text-[10px] text-gray-600">
+                  {pool.symbol}
                 </div>
               </div>
             </div>
@@ -399,7 +484,7 @@ export default function PoolList({
         <div className="flex flex-col items-center py-12 text-center">
           <AlertCircle className="mb-3 h-6 w-6 text-gray-600" />
           <p className="text-sm text-gray-400">No pools match your search</p>
-          <p className="mt-1 text-xs text-gray-600">Try a different name, symbol, or address</p>
+          <p className="mt-1 text-xs text-gray-600">Try a different name, symbol, or token address</p>
         </div>
       )}
     </div>

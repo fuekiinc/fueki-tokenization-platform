@@ -10,6 +10,10 @@ import {
 } from 'lucide-react';
 import type { TradeHistory } from '../../types/index';
 import { formatAddress, formatDate } from '../../lib/utils/helpers';
+import {
+  CARD_CLASSES,
+  CHART_HEADER_CLASSES,
+} from '../../lib/designTokens';
 import ChartSkeleton from './ChartSkeleton';
 
 // ---------------------------------------------------------------------------
@@ -166,25 +170,24 @@ export default function TransactionHistory({
   return (
     <div
       className={clsx(
-        'relative overflow-hidden rounded-2xl',
-        'bg-[#0D0F14]/80 backdrop-blur-xl',
-        'border border-white/[0.06]',
+        CARD_CLASSES.base,
+        CARD_CLASSES.wrapper,
       )}
     >
       {/* Top gradient accent */}
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
+      <div className={CARD_CLASSES.gradientAccent} />
 
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-4 sm:px-7 sm:py-5 md:px-9 border-b border-white/[0.06]">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/10 border border-indigo-500/[0.08]">
+          <div className={clsx(CHART_HEADER_CLASSES.icon, 'h-9 w-9 rounded-lg')}>
             <Clock className="h-4 w-4 text-indigo-400" aria-hidden="true" />
           </div>
-          <h3 className="text-sm font-semibold text-white tracking-tight">
+          <h3 className={CHART_HEADER_CLASSES.title}>
             Transaction History
           </h3>
         </div>
-        <span className="text-xs text-gray-600 tabular-nums font-medium bg-white/[0.03] px-3 py-1.5 rounded-lg">
+        <span className={CHART_HEADER_CLASSES.counter}>
           {trades.length} transaction{trades.length !== 1 ? 's' : ''}
         </span>
       </div>

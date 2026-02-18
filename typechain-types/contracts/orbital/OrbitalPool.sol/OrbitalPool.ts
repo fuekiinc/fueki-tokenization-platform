@@ -39,20 +39,25 @@ export interface OrbitalPoolInterface extends Interface {
       | "balanceOf"
       | "collectFees"
       | "concentration"
+      | "cumulativeReserves"
       | "factory"
       | "feeCollector"
       | "getAccumulatedFees"
       | "getAmountOut"
+      | "getCumulativeReserves"
       | "getInvariant"
       | "getReserves"
       | "getSpotPrice"
       | "getTokenIndex"
       | "getTokens"
+      | "getTwapTimestamp"
       | "initialize"
       | "initialized"
       | "lpDecimals"
       | "name"
       | "numTokens"
+      | "pause"
+      | "poolPaused"
       | "removeLiquidity"
       | "reserves"
       | "swap"
@@ -62,6 +67,8 @@ export interface OrbitalPoolInterface extends Interface {
       | "totalSupply"
       | "transfer"
       | "transferFrom"
+      | "twapTimestamp"
+      | "unpause"
   ): FunctionFragment;
 
   getEvent(
@@ -70,6 +77,8 @@ export interface OrbitalPoolInterface extends Interface {
       | "FeesCollected"
       | "LiquidityAdded"
       | "LiquidityRemoved"
+      | "PoolPausedEvent"
+      | "PoolUnpausedEvent"
       | "Swap"
       | "Transfer"
   ): EventFragment;
@@ -123,6 +132,10 @@ export interface OrbitalPoolInterface extends Interface {
     functionFragment: "concentration",
     values?: undefined
   ): string;
+  encodeFunctionData(
+    functionFragment: "cumulativeReserves",
+    values: [BigNumberish]
+  ): string;
   encodeFunctionData(functionFragment: "factory", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "feeCollector",
@@ -135,6 +148,10 @@ export interface OrbitalPoolInterface extends Interface {
   encodeFunctionData(
     functionFragment: "getAmountOut",
     values: [BigNumberish, BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getCumulativeReserves",
+    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "getInvariant",
@@ -153,6 +170,10 @@ export interface OrbitalPoolInterface extends Interface {
     values: [AddressLike]
   ): string;
   encodeFunctionData(functionFragment: "getTokens", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "getTwapTimestamp",
+    values?: undefined
+  ): string;
   encodeFunctionData(
     functionFragment: "initialize",
     values: [
@@ -174,6 +195,11 @@ export interface OrbitalPoolInterface extends Interface {
   ): string;
   encodeFunctionData(functionFragment: "name", values?: undefined): string;
   encodeFunctionData(functionFragment: "numTokens", values?: undefined): string;
+  encodeFunctionData(functionFragment: "pause", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "poolPaused",
+    values?: undefined
+  ): string;
   encodeFunctionData(
     functionFragment: "removeLiquidity",
     values: [BigNumberish, BigNumberish[], BigNumberish]
@@ -213,6 +239,11 @@ export interface OrbitalPoolInterface extends Interface {
     functionFragment: "transferFrom",
     values: [AddressLike, AddressLike, BigNumberish]
   ): string;
+  encodeFunctionData(
+    functionFragment: "twapTimestamp",
+    values?: undefined
+  ): string;
+  encodeFunctionData(functionFragment: "unpause", values?: undefined): string;
 
   decodeFunctionResult(
     functionFragment: "FEE_DENOMINATOR",
@@ -248,6 +279,10 @@ export interface OrbitalPoolInterface extends Interface {
     functionFragment: "concentration",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "cumulativeReserves",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "factory", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "feeCollector",
@@ -259,6 +294,10 @@ export interface OrbitalPoolInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "getAmountOut",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "getCumulativeReserves",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -278,6 +317,10 @@ export interface OrbitalPoolInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "getTokens", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "getTwapTimestamp",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "initialize", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "initialized",
@@ -286,6 +329,8 @@ export interface OrbitalPoolInterface extends Interface {
   decodeFunctionResult(functionFragment: "lpDecimals", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "name", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "numTokens", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "pause", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "poolPaused", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "removeLiquidity",
     data: BytesLike
@@ -304,6 +349,11 @@ export interface OrbitalPoolInterface extends Interface {
     functionFragment: "transferFrom",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "twapTimestamp",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "unpause", data: BytesLike): Result;
 }
 
 export namespace ApprovalEvent {
@@ -374,6 +424,30 @@ export namespace LiquidityRemovedEvent {
     provider: string;
     amounts: bigint[];
     lpBurned: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace PoolPausedEventEvent {
+  export type InputTuple = [by: AddressLike];
+  export type OutputTuple = [by: string];
+  export interface OutputObject {
+    by: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace PoolUnpausedEventEvent {
+  export type InputTuple = [by: AddressLike];
+  export type OutputTuple = [by: string];
+  export interface OutputObject {
+    by: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -515,6 +589,12 @@ export interface OrbitalPool extends BaseContract {
 
   concentration: TypedContractMethod<[], [bigint], "view">;
 
+  cumulativeReserves: TypedContractMethod<
+    [arg0: BigNumberish],
+    [bigint],
+    "view"
+  >;
+
   factory: TypedContractMethod<[], [string], "view">;
 
   feeCollector: TypedContractMethod<[], [string], "view">;
@@ -531,6 +611,8 @@ export interface OrbitalPool extends BaseContract {
     "view"
   >;
 
+  getCumulativeReserves: TypedContractMethod<[], [bigint[]], "view">;
+
   getInvariant: TypedContractMethod<[], [bigint], "view">;
 
   getReserves: TypedContractMethod<[], [bigint[]], "view">;
@@ -544,6 +626,8 @@ export interface OrbitalPool extends BaseContract {
   getTokenIndex: TypedContractMethod<[token: AddressLike], [bigint], "view">;
 
   getTokens: TypedContractMethod<[], [string[]], "view">;
+
+  getTwapTimestamp: TypedContractMethod<[], [bigint], "view">;
 
   initialize: TypedContractMethod<
     [
@@ -565,6 +649,10 @@ export interface OrbitalPool extends BaseContract {
   name: TypedContractMethod<[], [string], "view">;
 
   numTokens: TypedContractMethod<[], [bigint], "view">;
+
+  pause: TypedContractMethod<[], [void], "nonpayable">;
+
+  poolPaused: TypedContractMethod<[], [boolean], "view">;
 
   removeLiquidity: TypedContractMethod<
     [
@@ -609,6 +697,10 @@ export interface OrbitalPool extends BaseContract {
     [boolean],
     "nonpayable"
   >;
+
+  twapTimestamp: TypedContractMethod<[], [bigint], "view">;
+
+  unpause: TypedContractMethod<[], [void], "nonpayable">;
 
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
@@ -670,6 +762,9 @@ export interface OrbitalPool extends BaseContract {
     nameOrSignature: "concentration"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
+    nameOrSignature: "cumulativeReserves"
+  ): TypedContractMethod<[arg0: BigNumberish], [bigint], "view">;
+  getFunction(
     nameOrSignature: "factory"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
@@ -690,6 +785,9 @@ export interface OrbitalPool extends BaseContract {
     "view"
   >;
   getFunction(
+    nameOrSignature: "getCumulativeReserves"
+  ): TypedContractMethod<[], [bigint[]], "view">;
+  getFunction(
     nameOrSignature: "getInvariant"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
@@ -708,6 +806,9 @@ export interface OrbitalPool extends BaseContract {
   getFunction(
     nameOrSignature: "getTokens"
   ): TypedContractMethod<[], [string[]], "view">;
+  getFunction(
+    nameOrSignature: "getTwapTimestamp"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "initialize"
   ): TypedContractMethod<
@@ -734,6 +835,12 @@ export interface OrbitalPool extends BaseContract {
   getFunction(
     nameOrSignature: "numTokens"
   ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "pause"
+  ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "poolPaused"
+  ): TypedContractMethod<[], [boolean], "view">;
   getFunction(
     nameOrSignature: "removeLiquidity"
   ): TypedContractMethod<
@@ -787,6 +894,12 @@ export interface OrbitalPool extends BaseContract {
     [boolean],
     "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "twapTimestamp"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "unpause"
+  ): TypedContractMethod<[], [void], "nonpayable">;
 
   getEvent(
     key: "Approval"
@@ -815,6 +928,20 @@ export interface OrbitalPool extends BaseContract {
     LiquidityRemovedEvent.InputTuple,
     LiquidityRemovedEvent.OutputTuple,
     LiquidityRemovedEvent.OutputObject
+  >;
+  getEvent(
+    key: "PoolPausedEvent"
+  ): TypedContractEvent<
+    PoolPausedEventEvent.InputTuple,
+    PoolPausedEventEvent.OutputTuple,
+    PoolPausedEventEvent.OutputObject
+  >;
+  getEvent(
+    key: "PoolUnpausedEvent"
+  ): TypedContractEvent<
+    PoolUnpausedEventEvent.InputTuple,
+    PoolUnpausedEventEvent.OutputTuple,
+    PoolUnpausedEventEvent.OutputObject
   >;
   getEvent(
     key: "Swap"
@@ -874,6 +1001,28 @@ export interface OrbitalPool extends BaseContract {
       LiquidityRemovedEvent.InputTuple,
       LiquidityRemovedEvent.OutputTuple,
       LiquidityRemovedEvent.OutputObject
+    >;
+
+    "PoolPausedEvent(address)": TypedContractEvent<
+      PoolPausedEventEvent.InputTuple,
+      PoolPausedEventEvent.OutputTuple,
+      PoolPausedEventEvent.OutputObject
+    >;
+    PoolPausedEvent: TypedContractEvent<
+      PoolPausedEventEvent.InputTuple,
+      PoolPausedEventEvent.OutputTuple,
+      PoolPausedEventEvent.OutputObject
+    >;
+
+    "PoolUnpausedEvent(address)": TypedContractEvent<
+      PoolUnpausedEventEvent.InputTuple,
+      PoolUnpausedEventEvent.OutputTuple,
+      PoolUnpausedEventEvent.OutputObject
+    >;
+    PoolUnpausedEvent: TypedContractEvent<
+      PoolUnpausedEventEvent.InputTuple,
+      PoolUnpausedEventEvent.OutputTuple,
+      PoolUnpausedEventEvent.OutputObject
     >;
 
     "Swap(address,uint256,uint256,uint256,uint256,uint256)": TypedContractEvent<

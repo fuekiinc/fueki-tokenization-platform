@@ -12,6 +12,13 @@ import clsx from 'clsx';
 import type { WrappedAsset } from '../../types/index';
 import { formatAddress, copyToClipboard } from '../../lib/utils/helpers';
 import { formatCurrency, formatPercent } from '../../lib/formatters';
+import {
+  CARD_CLASSES,
+  CHART_HEADER_CLASSES,
+  CHART_TOOLTIP_STYLE,
+  CHART_COLORS as TOKEN_CHART_COLORS,
+  EMPTY_STATE_CLASSES,
+} from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,16 +40,7 @@ interface ChartDatum {
 // Constants
 // ---------------------------------------------------------------------------
 
-const CHART_COLORS = [
-  '#6366F1',
-  '#8B5CF6',
-  '#A78BFA',
-  '#10B981',
-  '#F59E0B',
-  '#EF4444',
-  '#06B6D4',
-  '#EC4899',
-];
+const CHART_COLORS = TOKEN_CHART_COLORS;
 
 // ---------------------------------------------------------------------------
 // Custom tooltip
@@ -59,17 +57,7 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
   if (!data) return null;
 
   return (
-    <div
-      style={{
-        background: 'rgba(13, 15, 20, 0.92)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        borderRadius: 14,
-        padding: '14px 18px',
-        boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
-      }}
-    >
+    <div style={CHART_TOOLTIP_STYLE}>
       <div className="flex items-center gap-2.5 mb-2">
         <span className="text-sm font-semibold text-white tracking-tight">
           {data.name}
@@ -236,41 +224,41 @@ export default function PortfolioChart({ assets }: PortfolioChartProps) {
   );
 
   return (
-    <div className="relative bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl p-8 sm:p-11 overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.2)]">
+    <div className={clsx(CARD_CLASSES.base, CARD_CLASSES.wrapper, CARD_CLASSES.shadow, 'p-8 sm:p-11')}>
       {/* Subtle gradient accent at top */}
-      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
+      <div className={CARD_CLASSES.gradientAccent} />
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/[0.08]">
-            <PieChartIcon className="h-[18px] w-[18px] text-indigo-400" />
+      <div className={CHART_HEADER_CLASSES.container}>
+        <div className={CHART_HEADER_CLASSES.left}>
+          <div className={CHART_HEADER_CLASSES.icon}>
+            <PieChartIcon className={CHART_HEADER_CLASSES.iconSvg} />
           </div>
           <div>
-            <h3 className="text-[15px] font-semibold text-white tracking-tight">
+            <h3 className={CHART_HEADER_CLASSES.title}>
               Portfolio Allocation
             </h3>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className={CHART_HEADER_CLASSES.subtitle}>
               Asset distribution by value
             </p>
           </div>
         </div>
         {chartData.length > 0 && (
-          <span className="text-xs text-gray-600 tabular-nums font-medium bg-white/[0.03] px-3 py-1.5 rounded-lg">
+          <span className={CHART_HEADER_CLASSES.counter}>
             {chartData.length} asset{chartData.length !== 1 ? 's' : ''}
           </span>
         )}
       </div>
 
       {chartData.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl mb-5 bg-indigo-500/[0.06] border border-indigo-500/10">
-            <Package className="h-7 w-7 text-gray-600" />
+        <div className={EMPTY_STATE_CLASSES.container}>
+          <div className={EMPTY_STATE_CLASSES.iconBox}>
+            <Package className={EMPTY_STATE_CLASSES.icon} />
           </div>
-          <p className="text-sm font-medium text-gray-400">
+          <p className={EMPTY_STATE_CLASSES.title}>
             No assets to display
           </p>
-          <p className="text-xs text-gray-600 mt-2 max-w-[220px] leading-relaxed">
+          <p className={EMPTY_STATE_CLASSES.description}>
             Tokenize your first asset to see your portfolio allocation
           </p>
         </div>

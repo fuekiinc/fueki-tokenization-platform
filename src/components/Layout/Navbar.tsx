@@ -6,6 +6,8 @@ import { useWallet } from '../../hooks/useWallet';
 import { useWalletStore } from '../../store/walletStore.ts';
 import { useAuthStore } from '../../store/authStore';
 import { formatTokenAmount } from '../../lib/formatters';
+import { ComponentErrorBoundary } from '../ErrorBoundary';
+import logger from '../../lib/logger';
 import ThemeToggle from './ThemeToggle';
 import PendingTransactions from './PendingTransactions';
 
@@ -696,7 +698,7 @@ function MobileSlideOver({
 
           {/* Network + Wallet */}
           <div className="space-y-3">
-            <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wider text-gray-600">
+            <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
               Wallet
             </p>
             <NetworkSelector compact />
@@ -708,7 +710,7 @@ function MobileSlideOver({
 
           {/* Theme toggle (mobile) */}
           <div className="flex items-center justify-between px-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-600">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
               Theme
             </p>
             <ThemeToggle />
@@ -723,7 +725,7 @@ function MobileSlideOver({
 
         {/* Footer */}
         <div className="border-t border-white/[0.04] px-6 py-5">
-          <p className="text-center text-[11px] text-gray-600">
+          <p className="text-center text-[11px] text-gray-500">
             Fueki v1.0
           </p>
         </div>
@@ -744,8 +746,15 @@ function LogoutButton({ compact = false }: { compact?: boolean }) {
   if (!isAuthenticated) return null;
 
   const handleLogout = async () => {
-    await logout();
-    navigate('/login');
+    try {
+      await logout();
+      navigate('/login');
+    } catch (err) {
+      logger.error('[LogoutButton] logout failed:', err);
+      // Force navigate to login even if the API call fails so the
+      // user is not stuck in an authenticated-but-broken state.
+      navigate('/login');
+    }
   };
 
   return (
@@ -858,14 +867,21 @@ export default function Navbar() {
               {/* Theme toggle */}
               <ThemeToggle />
 
-              {/* Pending transactions indicator */}
+              {/* Pending transactions indicator -- isolated boundary so
+                  a failure here does not take down the rest of the navbar. */}
               <div className="hidden sm:block">
-                <PendingTransactions />
+                <ComponentErrorBoundary name="PendingTransactions" variant="inline">
+                  <PendingTransactions />
+                </ComponentErrorBoundary>
               </div>
 
-              {/* Desktop wallet */}
+              {/* Desktop wallet -- isolated boundary so wallet errors
+                  (provider issues, disconnection race conditions) are
+                  contained and do not break navigation. */}
               <div className="hidden sm:block">
-                <WalletButton />
+                <ComponentErrorBoundary name="WalletButton" variant="inline">
+                  <WalletButton />
+                </ComponentErrorBoundary>
               </div>
 
               {/* Desktop logout */}

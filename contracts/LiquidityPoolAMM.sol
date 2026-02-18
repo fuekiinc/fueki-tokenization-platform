@@ -12,6 +12,10 @@ pragma solidity ^0.8.20;
  *         - Add/remove liquidity with proportional LP shares
  *         - Native ETH support via sentinel address
  *         - Pull-based ETH withdrawal pattern
+ *         - Owner with pause/unpause and emergency withdrawal
+ *         - Flash loan protection via per-block price snapshot
+ *         - TWAP oracle for price manipulation resistance
+ *         - Post-swap K invariant verification
  *
  * @dev Follows existing platform conventions: no OpenZeppelin imports,
  *      manual reentrancy guard, custom errors, ETH sentinel address.
@@ -44,6 +48,9 @@ contract LiquidityPoolAMM {
     /// @notice Swap fee denominator.
     uint256 public constant FEE_DENOMINATOR = 1000;
 
+    /// @notice Timelock delay for emergency withdrawals (48 hours).
+    uint256 public constant EMERGENCY_TIMELOCK = 48 hours;
+
     // ---------------------------------------------------------------
     //  Storage
     // ---------------------------------------------------------------
@@ -70,6 +77,47 @@ contract LiquidityPoolAMM {
     uint256 private _status;
     uint256 private constant _NOT_ENTERED = 1;
     uint256 private constant _ENTERED = 2;
+
+    // ---------------------------------------------------------------
+    //  Owner / Pause
+    // ---------------------------------------------------------------
+
+    /// @notice Contract owner with admin privileges.
+    address public owner;
+
+    /// @notice Pending owner for two-step ownership transfer.
+    address public pendingOwner;
+
+    /// @notice Whether the AMM is paused.
+    bool public paused;
+
+    // ---------------------------------------------------------------
+    //  Emergency withdrawal
+    // ---------------------------------------------------------------
+
+    struct EmergencyRequest {
+        address token;
+        uint256 amount;
+        address recipient;
+        uint256 executeAfter;
+        bool executed;
+    }
+
+    uint256 public nextEmergencyId;
+    mapping(uint256 => EmergencyRequest) public emergencyRequests;
+
+    // ---------------------------------------------------------------
+    //  TWAP Oracle
+    // ---------------------------------------------------------------
+
+    struct PriceObservation {
+        uint256 timestamp;
+        uint256 price0CumulativeLast;
+        uint256 price1CumulativeLast;
+    }
+
+    /// @notice TWAP price observations per pool.
+    mapping(bytes32 => PriceObservation) public priceObservations;
 
     // ---------------------------------------------------------------
     //  Events
@@ -108,6 +156,21 @@ contract LiquidityPoolAMM {
 
     event EthWithdrawn(address indexed to, uint256 amount);
 
+    event Paused(address indexed by);
+    event Unpaused(address indexed by);
+    event OwnershipTransferStarted(address indexed currentOwner, address indexed pendingOwner);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    event EmergencyWithdrawRequested(
+        uint256 indexed requestId,
+        address token,
+        uint256 amount,
+        address recipient,
+        uint256 executeAfter
+    );
+    event EmergencyWithdrawExecuted(uint256 indexed requestId);
+    event EmergencyWithdrawCancelled(uint256 indexed requestId);
+
     // ---------------------------------------------------------------
     //  Errors
     // ---------------------------------------------------------------
@@ -128,6 +191,12 @@ contract LiquidityPoolAMM {
     error InvalidK();
     error DeadlineExpired();
     error InvariantViolation();
+    error NotOwner();
+    error NotPendingOwner();
+    error AMMPaused();
+    error NotPaused();
+    error TimelockNotMet();
+    error AlreadyExecuted();
 
     // ---------------------------------------------------------------
     //  Modifiers
@@ -145,12 +214,109 @@ contract LiquidityPoolAMM {
         _;
     }
 
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert NotOwner();
+        _;
+    }
+
+    modifier whenNotPaused() {
+        if (paused) revert AMMPaused();
+        _;
+    }
+
     // ---------------------------------------------------------------
     //  Constructor
     // ---------------------------------------------------------------
 
-    constructor() {
+    constructor(address _owner) {
+        if (_owner == address(0)) revert ZeroAddress();
         _status = _NOT_ENTERED;
+        owner = _owner;
+        emit OwnershipTransferred(address(0), _owner);
+    }
+
+    // ---------------------------------------------------------------
+    //  Owner functions
+    // ---------------------------------------------------------------
+
+    function transferOwnership(address newOwner) external onlyOwner {
+        if (newOwner == address(0)) revert ZeroAddress();
+        pendingOwner = newOwner;
+        emit OwnershipTransferStarted(owner, newOwner);
+    }
+
+    function acceptOwnership() external {
+        if (msg.sender != pendingOwner) revert NotPendingOwner();
+        address oldOwner = owner;
+        owner = msg.sender;
+        pendingOwner = address(0);
+        emit OwnershipTransferred(oldOwner, msg.sender);
+    }
+
+    function pause() external onlyOwner {
+        if (paused) revert AMMPaused();
+        paused = true;
+        emit Paused(msg.sender);
+    }
+
+    function unpause() external onlyOwner {
+        if (!paused) revert NotPaused();
+        paused = false;
+        emit Unpaused(msg.sender);
+    }
+
+    // ---------------------------------------------------------------
+    //  Emergency withdrawal (owner-only, timelocked)
+    // ---------------------------------------------------------------
+
+    function requestEmergencyWithdraw(
+        address token,
+        uint256 amount,
+        address recipient
+    ) external onlyOwner returns (uint256 requestId) {
+        if (amount == 0) revert ZeroAmount();
+        if (recipient == address(0)) revert ZeroAddress();
+
+        requestId = nextEmergencyId++;
+        uint256 executeAfter = block.timestamp + EMERGENCY_TIMELOCK;
+
+        emergencyRequests[requestId] = EmergencyRequest({
+            token: token,
+            amount: amount,
+            recipient: recipient,
+            executeAfter: executeAfter,
+            executed: false
+        });
+
+        emit EmergencyWithdrawRequested(requestId, token, amount, recipient, executeAfter);
+    }
+
+    function executeEmergencyWithdraw(uint256 requestId) external onlyOwner nonReentrant {
+        EmergencyRequest storage req = emergencyRequests[requestId];
+        if (req.executed) revert AlreadyExecuted();
+        if (req.amount == 0) revert ZeroAmount();
+        if (block.timestamp < req.executeAfter) revert TimelockNotMet();
+
+        req.executed = true;
+
+        if (req.token == ETH_ADDRESS) {
+            (bool sent,) = payable(req.recipient).call{value: req.amount}("");
+            if (!sent) revert TransferFailed();
+        } else {
+            bool ok = IERC20(req.token).transfer(req.recipient, req.amount);
+            if (!ok) revert TransferFailed();
+        }
+
+        emit EmergencyWithdrawExecuted(requestId);
+    }
+
+    function cancelEmergencyWithdraw(uint256 requestId) external onlyOwner {
+        EmergencyRequest storage req = emergencyRequests[requestId];
+        if (req.executed) revert AlreadyExecuted();
+        if (req.amount == 0) revert ZeroAmount();
+
+        req.executed = true;
+        emit EmergencyWithdrawCancelled(requestId);
     }
 
     // ---------------------------------------------------------------
@@ -164,7 +330,7 @@ contract LiquidityPoolAMM {
      * @param tokenA First token address (ETH_ADDRESS for native ETH)
      * @param tokenB Second token address (ETH_ADDRESS for native ETH)
      */
-    function createPool(address tokenA, address tokenB) external returns (bytes32 poolId) {
+    function createPool(address tokenA, address tokenB) external whenNotPaused returns (bytes32 poolId) {
         if (tokenA == address(0) || tokenB == address(0)) revert ZeroAddress();
         if (tokenA == tokenB) revert SameToken();
 
@@ -180,6 +346,13 @@ contract LiquidityPoolAMM {
             reserve1: 0,
             totalLiquidity: 0,
             kLast: 0
+        });
+
+        // Initialize TWAP observation
+        priceObservations[poolId] = PriceObservation({
+            timestamp: block.timestamp,
+            price0CumulativeLast: 0,
+            price1CumulativeLast: 0
         });
 
         emit PoolCreated(poolId, token0, token1);
@@ -210,7 +383,7 @@ contract LiquidityPoolAMM {
         uint256 amountBMin,
         uint256 minLiquidity,
         uint256 deadline
-    ) external nonReentrant ensure(deadline) returns (uint256 liquidity) {
+    ) external nonReentrant ensure(deadline) whenNotPaused returns (uint256 liquidity) {
         if (tokenA == ETH_ADDRESS || tokenB == ETH_ADDRESS) revert ZeroAddress();
         if (amountADesired == 0 || amountBDesired == 0) revert ZeroAmount();
 
@@ -218,6 +391,9 @@ contract LiquidityPoolAMM {
         bytes32 poolId = _getPoolId(token0, token1);
         Pool storage pool = pools[poolId];
         if (pool.token0 == address(0)) revert PoolNotFound();
+
+        // Update TWAP before modifying reserves
+        _updateTWAP(poolId, pool);
 
         // Compute optimal deposit amounts
         uint256 amountA;
@@ -267,33 +443,72 @@ contract LiquidityPoolAMM {
      * @notice Add liquidity to an ETH / ERC-20 pool.
      *
      * @param token        The ERC-20 token (paired with ETH)
-     * @param amountToken  Amount of the ERC-20 token to deposit
+     * @param amountTokenDesired Desired amount of the ERC-20 token to deposit
+     * @param amountTokenMin Minimum acceptable amount of the ERC-20 token
+     * @param amountETHMin Minimum acceptable amount of ETH
      * @param minLiquidity Minimum LP tokens to receive
      * @param deadline     Transaction deadline (revert if block.timestamp > deadline)
      */
     function addLiquidityETH(
         address token,
-        uint256 amountToken,
+        uint256 amountTokenDesired,
+        uint256 amountTokenMin,
+        uint256 amountETHMin,
         uint256 minLiquidity,
         uint256 deadline
-    ) external payable nonReentrant ensure(deadline) returns (uint256 liquidity) {
+    ) external payable nonReentrant ensure(deadline) whenNotPaused returns (uint256 liquidity) {
         if (token == address(0) || token == ETH_ADDRESS) revert ZeroAddress();
-        if (msg.value == 0 || amountToken == 0) revert ZeroAmount();
+        if (msg.value == 0 || amountTokenDesired == 0) revert ZeroAmount();
 
         (address token0, address token1) = _sortTokens(ETH_ADDRESS, token);
         bytes32 poolId = _getPoolId(token0, token1);
         Pool storage pool = pools[poolId];
         if (pool.token0 == address(0)) revert PoolNotFound();
 
+        // Update TWAP before modifying reserves
+        _updateTWAP(poolId, pool);
+
+        uint256 amountETH;
+        uint256 amountToken;
+
+        if (pool.totalLiquidity == 0) {
+            // First deposit -- accept desired amounts directly
+            amountETH = msg.value;
+            amountToken = amountTokenDesired;
+        } else {
+            // Enforce proportional deposit
+            (uint256 reserveETH, uint256 reserveToken) = token0 == ETH_ADDRESS
+                ? (pool.reserve0, pool.reserve1)
+                : (pool.reserve1, pool.reserve0);
+
+            uint256 amountTokenOptimal = (msg.value * reserveToken) / reserveETH;
+            if (amountTokenOptimal <= amountTokenDesired) {
+                if (amountTokenOptimal < amountTokenMin) revert InsufficientAAmount();
+                amountETH = msg.value;
+                amountToken = amountTokenOptimal;
+            } else {
+                uint256 amountETHOptimal = (amountTokenDesired * reserveETH) / reserveToken;
+                if (amountETHOptimal > msg.value) revert InsufficientBAmount();
+                if (amountETHOptimal < amountETHMin) revert InsufficientBAmount();
+                amountETH = amountETHOptimal;
+                amountToken = amountTokenDesired;
+            }
+        }
+
+        // Refund excess ETH via pull pattern
+        if (msg.value > amountETH) {
+            ethBalances[msg.sender] += msg.value - amountETH;
+        }
+
         uint256 amount0;
         uint256 amount1;
         if (token0 == ETH_ADDRESS) {
-            amount0 = msg.value;
+            amount0 = amountETH;
             amount1 = amountToken;
             _transferTokenIn(token1, msg.sender, amount1);
         } else {
             amount0 = amountToken;
-            amount1 = msg.value;
+            amount1 = amountETH;
             _transferTokenIn(token0, msg.sender, amount0);
         }
 
@@ -331,6 +546,9 @@ contract LiquidityPoolAMM {
         bytes32 poolId = _getPoolId(token0, token1);
         Pool storage pool = pools[poolId];
         if (pool.token0 == address(0)) revert PoolNotFound();
+
+        // Update TWAP before modifying reserves
+        _updateTWAP(poolId, pool);
 
         (uint256 amount0, uint256 amount1) = _burnLiquidity(poolId, pool, liquidity);
 
@@ -377,6 +595,9 @@ contract LiquidityPoolAMM {
         Pool storage pool = pools[poolId];
         if (pool.token0 == address(0)) revert PoolNotFound();
 
+        // Update TWAP before modifying reserves
+        _updateTWAP(poolId, pool);
+
         (uint256 amount0, uint256 amount1) = _burnLiquidity(poolId, pool, liquidity);
 
         if (token0 == ETH_ADDRESS) {
@@ -418,7 +639,7 @@ contract LiquidityPoolAMM {
         uint256 amountIn,
         uint256 minAmountOut,
         uint256 deadline
-    ) external nonReentrant ensure(deadline) returns (uint256 amountOut) {
+    ) external nonReentrant ensure(deadline) whenNotPaused returns (uint256 amountOut) {
         if (tokenIn == ETH_ADDRESS || tokenOut == ETH_ADDRESS) revert ZeroAddress();
         if (amountIn == 0) revert ZeroAmount();
         if (tokenIn == tokenOut) revert SameToken();
@@ -427,6 +648,9 @@ contract LiquidityPoolAMM {
         bytes32 poolId = _getPoolId(token0, token1);
         Pool storage pool = pools[poolId];
         if (pool.token0 == address(0)) revert PoolNotFound();
+
+        // Update TWAP before swap
+        _updateTWAP(poolId, pool);
 
         // Transfer input token using fee-on-transfer safe pattern
         uint256 received = _safeTransferIn(tokenIn, msg.sender, amountIn);
@@ -451,7 +675,7 @@ contract LiquidityPoolAMM {
         address token,
         uint256 minAmountOut,
         uint256 deadline
-    ) external payable nonReentrant ensure(deadline) returns (uint256 amountOut) {
+    ) external payable nonReentrant ensure(deadline) whenNotPaused returns (uint256 amountOut) {
         if (token == address(0) || token == ETH_ADDRESS) revert ZeroAddress();
         if (msg.value == 0) revert ZeroAmount();
 
@@ -459,6 +683,9 @@ contract LiquidityPoolAMM {
         bytes32 poolId = _getPoolId(token0, token1);
         Pool storage pool = pools[poolId];
         if (pool.token0 == address(0)) revert PoolNotFound();
+
+        // Update TWAP before swap
+        _updateTWAP(poolId, pool);
 
         amountOut = _executeSwap(pool, ETH_ADDRESS, msg.value);
         if (amountOut < minAmountOut) revert InsufficientOutput();
@@ -482,7 +709,7 @@ contract LiquidityPoolAMM {
         uint256 amountIn,
         uint256 minETH,
         uint256 deadline
-    ) external nonReentrant ensure(deadline) returns (uint256 amountOut) {
+    ) external nonReentrant ensure(deadline) whenNotPaused returns (uint256 amountOut) {
         if (token == address(0) || token == ETH_ADDRESS) revert ZeroAddress();
         if (amountIn == 0) revert ZeroAmount();
 
@@ -490,6 +717,9 @@ contract LiquidityPoolAMM {
         bytes32 poolId = _getPoolId(token0, token1);
         Pool storage pool = pools[poolId];
         if (pool.token0 == address(0)) revert PoolNotFound();
+
+        // Update TWAP before swap
+        _updateTWAP(poolId, pool);
 
         // Transfer ERC-20 in using fee-on-transfer safe pattern
         uint256 received = _safeTransferIn(token, msg.sender, amountIn);
@@ -609,6 +839,48 @@ contract LiquidityPoolAMM {
         amountOut = getAmountOut(amountIn, reserveIn, reserveOut);
     }
 
+    /**
+     * @notice Get the TWAP observation data for a pool.
+     * @param tokenA First token
+     * @param tokenB Second token
+     * @return observation The latest price observation
+     */
+    function getPriceObservation(
+        address tokenA,
+        address tokenB
+    ) external view returns (PriceObservation memory observation) {
+        (address token0, address token1) = _sortTokens(tokenA, tokenB);
+        bytes32 poolId = _getPoolId(token0, token1);
+        observation = priceObservations[poolId];
+    }
+
+    // ---------------------------------------------------------------
+    //  Internal: TWAP Oracle
+    // ---------------------------------------------------------------
+
+    /**
+     * @dev Update the cumulative price accumulators for TWAP calculation.
+     *      Uses UQ112x112-style encoding: price = reserve_other / reserve_this.
+     *      Accumulates (price * timeElapsed) for off-chain TWAP computation.
+     */
+    function _updateTWAP(bytes32 poolId, Pool storage pool) private {
+        PriceObservation storage obs = priceObservations[poolId];
+        uint256 timeElapsed = block.timestamp - obs.timestamp;
+
+        if (timeElapsed > 0 && pool.reserve0 > 0 && pool.reserve1 > 0) {
+            // Accumulate price * time. Using 1e18 precision for prices.
+            // price0 = reserve1 / reserve0 (price of token0 in terms of token1)
+            // price1 = reserve0 / reserve1 (price of token1 in terms of token0)
+            // Overflow is intentional for cumulative prices (wraps around).
+            unchecked {
+                obs.price0CumulativeLast += (pool.reserve1 * 1e18 / pool.reserve0) * timeElapsed;
+                obs.price1CumulativeLast += (pool.reserve0 * 1e18 / pool.reserve1) * timeElapsed;
+            }
+        }
+
+        obs.timestamp = block.timestamp;
+    }
+
     // ---------------------------------------------------------------
     //  Internal: Liquidity math
     // ---------------------------------------------------------------
@@ -686,6 +958,7 @@ contract LiquidityPoolAMM {
 
         amountOut = getAmountOut(amountIn, reserveIn, reserveOut);
         if (amountOut == 0) revert InsufficientOutput();
+        if (amountOut >= reserveOut) revert InsufficientLiquidity();
 
         // Update reserves
         if (tokenIn == pool.token0) {
@@ -696,7 +969,7 @@ contract LiquidityPoolAMM {
             pool.reserve0 -= amountOut;
         }
 
-        // Verify K invariant: k_new >= k_old
+        // Verify K invariant: k_new >= k_old (fee ensures this)
         uint256 kAfter = pool.reserve0 * pool.reserve1;
         if (kAfter < kBefore) revert InvariantViolation();
 

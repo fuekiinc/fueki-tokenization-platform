@@ -1,25 +1,39 @@
 /**
  * Multicall3 batching utility for reducing RPC round-trips.
  *
- * Uses the standard Multicall3 contract deployed at the same address
- * on all major EVM chains. Encodes multiple contract read calls into
+ * Uses the standard Multicall3 contract deployed at the same deterministic
+ * address on all major EVM chains. Encodes multiple contract read calls into
  * a single `aggregate3` RPC call and decodes results per-call, with
  * graceful per-call failure handling.
+ *
+ * Features:
+ *   - Batch size limiting (max 50 calls per RPC request) to avoid gas limits.
+ *   - Automatic sequential fallback if the Multicall3 call reverts.
+ *   - Per-call allowFailure so one revert does not break the batch.
  *
  * @see https://www.multicall3.com/
  */
 
 import { ethers } from 'ethers';
 import type { InterfaceAbi } from 'ethers';
+import logger from '../logger';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 /**
- * Multicall3 is deployed at the same deterministic address on 70+ chains.
+ * Multicall3 is deployed at the same deterministic address on 70+ chains
+ * including Ethereum, Arbitrum, Optimism, Base, Polygon, Holesky, etc.
  */
 export const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
+
+/**
+ * Maximum number of calls in a single aggregate3 batch.
+ * Public RPCs and some nodes have gas limits on eth_call that can be
+ * exceeded with very large batches. 50 is a safe default.
+ */
+const MAX_BATCH_SIZE = 50;
 
 /**
  * Minimal human-readable ABI for Multicall3.aggregate3.
@@ -62,70 +76,20 @@ export interface MulticallResult<T = unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// Core implementation
+// Internal helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Batch multiple contract read calls into a single RPC request via
- * the Multicall3 contract.
- *
- * Each request is encoded independently, sent as one `aggregate3`
- * call, and then decoded back. Calls that revert on-chain return
- * `{ success: false, data: null }` without failing the entire batch.
- *
- * @param provider  An ethers.js Provider to execute the call against.
- * @param requests  Array of call descriptors to batch.
- * @returns         Array of results in the same order as `requests`.
- *
- * @example
- * ```ts
- * const results = await multicall(provider, [
- *   { target: token1, abi: WrappedAssetABI, functionName: 'name' },
- *   { target: token1, abi: WrappedAssetABI, functionName: 'symbol' },
- *   { target: token1, abi: WrappedAssetABI, functionName: 'totalSupply' },
- * ]);
- * const name = results[0].data as string;
- * ```
+ * Execute a single batch of requests via Multicall3.
+ * This function assumes the batch is already within MAX_BATCH_SIZE.
  */
-export async function multicall<T = unknown>(
+async function executeBatch<T>(
   provider: ethers.Provider,
-  requests: MulticallRequest[],
+  _requests: MulticallRequest[],
+  interfaces: ethers.Interface[],
+  functionNames: string[],
+  calls: { target: string; allowFailure: boolean; callData: string }[],
 ): Promise<MulticallResult<T>[]> {
-  if (requests.length === 0) {
-    return [];
-  }
-
-  // Build an Interface for each unique ABI (to avoid re-parsing).
-  // For most use-cases the same ABI is shared across many requests,
-  // so a simple cache keyed by reference identity works well.
-  const ifaceCache = new Map<InterfaceAbi, ethers.Interface>();
-  function getInterface(abi: InterfaceAbi): ethers.Interface {
-    let iface = ifaceCache.get(abi);
-    if (!iface) {
-      iface = new ethers.Interface(abi);
-      ifaceCache.set(abi, iface);
-    }
-    return iface;
-  }
-
-  // Encode each call.
-  const calls: { target: string; allowFailure: boolean; callData: string }[] = [];
-  const interfaces: ethers.Interface[] = [];
-  const functionNames: string[] = [];
-
-  for (const req of requests) {
-    const iface = getInterface(req.abi);
-    const callData = iface.encodeFunctionData(req.functionName, req.args ?? []);
-    calls.push({
-      target: req.target,
-      allowFailure: req.allowFailure !== false, // default true
-      callData,
-    });
-    interfaces.push(iface);
-    functionNames.push(req.functionName);
-  }
-
-  // Execute the batched call via Multicall3.
   const multicall3 = new ethers.Contract(
     MULTICALL3_ADDRESS,
     MULTICALL3_ABI,
@@ -135,7 +99,6 @@ export async function multicall<T = unknown>(
   const rawResults: { success: boolean; returnData: string }[] =
     await multicall3.aggregate3.staticCall(calls);
 
-  // Decode results.
   const results: MulticallResult<T>[] = [];
   for (let i = 0; i < rawResults.length; i++) {
     const { success, returnData } = rawResults[i];
@@ -160,6 +123,151 @@ export async function multicall<T = unknown>(
   }
 
   return results;
+}
+
+/**
+ * Execute requests one at a time as a fallback when Multicall3 fails.
+ * This handles chains where Multicall3 is not deployed or when the
+ * aggregate3 call itself reverts (e.g. due to gas limits).
+ */
+async function executeSequentialFallback<T>(
+  provider: ethers.Provider,
+  requests: MulticallRequest[],
+): Promise<MulticallResult<T>[]> {
+  const ifaceCache = new Map<InterfaceAbi, ethers.Interface>();
+  function getIface(abi: InterfaceAbi): ethers.Interface {
+    let iface = ifaceCache.get(abi);
+    if (!iface) {
+      iface = new ethers.Interface(abi);
+      ifaceCache.set(abi, iface);
+    }
+    return iface;
+  }
+
+  const results: MulticallResult<T>[] = [];
+
+  for (const req of requests) {
+    try {
+      const iface = getIface(req.abi);
+      const callData = iface.encodeFunctionData(req.functionName, req.args ?? []);
+      const rawResult = await provider.call({
+        to: req.target,
+        data: callData,
+      });
+
+      if (!rawResult || rawResult === '0x') {
+        results.push({ success: false, data: null });
+        continue;
+      }
+
+      const decoded = iface.decodeFunctionResult(req.functionName, rawResult);
+      const data = decoded.length === 1 ? decoded[0] : decoded;
+      results.push({ success: true, data: data as T });
+    } catch {
+      results.push({ success: false, data: null });
+    }
+  }
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Core implementation
+// ---------------------------------------------------------------------------
+
+/**
+ * Batch multiple contract read calls into a single RPC request via
+ * the Multicall3 contract.
+ *
+ * Each request is encoded independently, sent as one `aggregate3`
+ * call, and then decoded back. Calls that revert on-chain return
+ * `{ success: false, data: null }` without failing the entire batch.
+ *
+ * If the total number of requests exceeds MAX_BATCH_SIZE (50), the
+ * calls are split into multiple batches executed sequentially.
+ *
+ * If the Multicall3 contract call itself fails (e.g. not deployed on
+ * the chain), the function falls back to sequential individual calls.
+ *
+ * @param provider  An ethers.js Provider to execute the call against.
+ * @param requests  Array of call descriptors to batch.
+ * @returns         Array of results in the same order as `requests`.
+ *
+ * @example
+ * ```ts
+ * const results = await multicall(provider, [
+ *   { target: token1, abi: WrappedAssetABI, functionName: 'name' },
+ *   { target: token1, abi: WrappedAssetABI, functionName: 'symbol' },
+ *   { target: token1, abi: WrappedAssetABI, functionName: 'totalSupply' },
+ * ]);
+ * const name = results[0].data as string;
+ * ```
+ */
+export async function multicall<T = unknown>(
+  provider: ethers.Provider,
+  requests: MulticallRequest[],
+): Promise<MulticallResult<T>[]> {
+  if (requests.length === 0) {
+    return [];
+  }
+
+  // Build an Interface for each unique ABI (to avoid re-parsing).
+  const ifaceCache = new Map<InterfaceAbi, ethers.Interface>();
+  function getInterface(abi: InterfaceAbi): ethers.Interface {
+    let iface = ifaceCache.get(abi);
+    if (!iface) {
+      iface = new ethers.Interface(abi);
+      ifaceCache.set(abi, iface);
+    }
+    return iface;
+  }
+
+  // Encode each call.
+  const allCalls: { target: string; allowFailure: boolean; callData: string }[] = [];
+  const allInterfaces: ethers.Interface[] = [];
+  const allFunctionNames: string[] = [];
+
+  for (const req of requests) {
+    const iface = getInterface(req.abi);
+    const callData = iface.encodeFunctionData(req.functionName, req.args ?? []);
+    allCalls.push({
+      target: req.target,
+      allowFailure: req.allowFailure !== false, // default true
+      callData,
+    });
+    allInterfaces.push(iface);
+    allFunctionNames.push(req.functionName);
+  }
+
+  // Split into batches of MAX_BATCH_SIZE and execute.
+  try {
+    const allResults: MulticallResult<T>[] = [];
+
+    for (let offset = 0; offset < allCalls.length; offset += MAX_BATCH_SIZE) {
+      const batchCalls = allCalls.slice(offset, offset + MAX_BATCH_SIZE);
+      const batchInterfaces = allInterfaces.slice(offset, offset + MAX_BATCH_SIZE);
+      const batchFunctionNames = allFunctionNames.slice(offset, offset + MAX_BATCH_SIZE);
+      const batchRequests = requests.slice(offset, offset + MAX_BATCH_SIZE);
+
+      const batchResults = await executeBatch<T>(
+        provider,
+        batchRequests,
+        batchInterfaces,
+        batchFunctionNames,
+        batchCalls,
+      );
+      allResults.push(...batchResults);
+    }
+
+    return allResults;
+  } catch (err: unknown) {
+    // Multicall3 failed entirely -- fall back to sequential calls.
+    logger.warn(
+      '[multicall] aggregate3 failed, falling back to sequential calls:',
+      err instanceof Error ? err.message : String(err),
+    );
+    return executeSequentialFallback<T>(provider, requests);
+  }
 }
 
 // ---------------------------------------------------------------------------

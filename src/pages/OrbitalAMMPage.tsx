@@ -18,7 +18,7 @@ import { useWalletStore, getProvider } from '../store/walletStore.ts';
 import { useAssetStore } from '../store/assetStore.ts';
 import { OrbitalContractService } from '../lib/blockchain/orbitalContracts';
 import logger from '../lib/logger';
-import { getNetworkConfig } from '../contracts/addresses';
+import { getNetworkConfig, getNetworkMetadata } from '../contracts/addresses';
 import { formatAddress } from '../lib/utils/helpers';
 import { InfoTooltip } from '../components/Common/Tooltip';
 import { ErrorState } from '../components/Common/StateDisplays';
@@ -111,6 +111,7 @@ export default function OrbitalAMMPage() {
     isConnected,
     connectWallet,
     isConnecting,
+    switchNetwork,
   } = useWallet();
   const wallet = useWalletStore((s) => s.wallet);
   const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
@@ -161,10 +162,12 @@ export default function OrbitalAMMPage() {
     try {
       const service = new OrbitalContractService(provider, wallet.chainId);
       setContractService(service);
+      setInitError(null);
     } catch (err) {
       logger.error('Failed to initialize OrbitalContractService:', err);
       toast.error('Failed to initialize AMM contracts');
       setContractService(null);
+      setInitError('Failed to initialize AMM contracts. Please check your network connection and try again.');
     }
   }, [isConnected, wallet.chainId]);
 
@@ -311,9 +314,39 @@ export default function OrbitalAMMPage() {
               Network Not Supported
             </h2>
             <p className="mx-auto max-w-sm text-sm leading-relaxed text-gray-400">
-              The Orbital AMM contracts are not deployed on the current network.
-              Please switch to a supported network such as Ethereum Mainnet.
+              The Orbital AMM contracts are not deployed on your current network.
+              Please switch to a supported network to use concentrated liquidity pools.
             </p>
+
+            {/* Current network badge */}
+            {(() => {
+              const currentMeta = wallet.chainId ? getNetworkMetadata(wallet.chainId) : null;
+              const currentName = currentMeta?.name ?? (wallet.chainId ? `Unknown Network (${wallet.chainId})` : 'Unknown Network');
+              return (
+                <div className="mt-8 inline-flex items-center gap-2.5 rounded-full bg-amber-500/10 px-5 py-2.5 text-xs font-medium text-amber-400 ring-1 ring-amber-500/20">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  Connected to: {currentName}
+                </div>
+              );
+            })()}
+
+            {/* Switch network buttons */}
+            <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => void switchNetwork(1)}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-500/15 border border-indigo-500/25 px-6 py-3 text-sm font-semibold text-indigo-300 transition-all hover:bg-indigo-500/25 hover:text-indigo-200"
+              >
+                Switch to Ethereum Mainnet
+              </button>
+              <button
+                type="button"
+                onClick={() => void switchNetwork(31337)}
+                className="inline-flex items-center gap-2 rounded-xl bg-white/[0.04] border border-white/[0.08] px-6 py-3 text-sm font-medium text-gray-400 transition-all hover:bg-white/[0.08] hover:text-gray-300"
+              >
+                Hardhat Local
+              </button>
+            </div>
           </GlassCard>
         </div>
       </div>
@@ -430,6 +463,21 @@ export default function OrbitalAMMPage() {
             </button>
           ))}
         </div>
+
+        {/* ================================================================= */}
+        {/* Contract init error                                               */}
+        {/* ================================================================= */}
+
+        {initError && !contractService && (
+          <div className="mb-8">
+            <GlassCard className="p-8">
+              <ErrorState
+                message={initError}
+                onRetry={() => window.location.reload()}
+              />
+            </GlassCard>
+          </div>
+        )}
 
         {/* ================================================================= */}
         {/* Tab content                                                       */}

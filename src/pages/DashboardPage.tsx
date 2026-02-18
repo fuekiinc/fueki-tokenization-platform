@@ -15,6 +15,7 @@ import { useWalletStore, getProvider } from '../store/walletStore.ts';
 import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
 import { useExchangeStore } from '../store/exchangeStore.ts';
+import { useAuthStore } from '../store/authStore';
 import { useWallet } from '../hooks/useWallet';
 import { ContractService } from '../lib/blockchain/contracts';
 import { formatAddress, copyToClipboard } from '../lib/utils/helpers';
@@ -105,6 +106,7 @@ function getNetworkName(chainId: number | null): string {
 
 export default function DashboardPage() {
   const { isConnected, address } = useWallet();
+  const user = useAuthStore((s) => s.user);
   const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
   const tradeHistory = useTradeStore((s) => s.tradeHistory);
   const userOrders = useExchangeStore((s) => s.userOrders);
@@ -151,9 +153,9 @@ export default function DashboardPage() {
     try {
       service = new ContractService(provider, chainId);
     } catch (error) {
-      showError(error, 'Failed to initialize contracts');
+      showError(error, 'Unable to initialize contracts on this network');
       setIsInitialLoading(false);
-      setLoadError('Failed to initialize contracts. Please check your network connection.');
+      setLoadError('Unable to initialize contracts. Please check your network and try again.');
       return;
     }
 
@@ -170,7 +172,7 @@ export default function DashboardPage() {
         try {
           userAssetAddresses = await service.getUserAssets(address);
         } catch (error) {
-          showError(error, 'Failed to fetch your assets');
+          showError(error, 'Unable to fetch your token list');
         }
         if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
 
@@ -206,7 +208,7 @@ export default function DashboardPage() {
         setAssets(assetList);
       }
     } catch (error) {
-      showError(error, 'Failed to load assets');
+      showError(error, 'Unable to load your assets. Check your connection and try again.');
     } finally {
       setLoadingAssets(false);
     }
@@ -251,7 +253,7 @@ export default function DashboardPage() {
         setUserOrders([]);
       }
     } catch (error) {
-      showError(error, 'Failed to load orders');
+      showError(error, 'Unable to load your exchange orders');
     }
 
     // Fetch trade history from on-chain events (user-scoped filters)
@@ -321,7 +323,7 @@ export default function DashboardPage() {
       merged.sort((a, b) => b.timestamp - a.timestamp);
       setTrades(merged);
     } catch (error) {
-      showError(error, 'Failed to load trade history');
+      showError(error, 'Unable to load your trade history');
     }
 
     setIsInitialLoading(false);
@@ -482,6 +484,16 @@ export default function DashboardPage() {
 
   const networkName = getNetworkName(chainId);
 
+  // Build a greeting based on the time of day
+  const getGreeting = (): string => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
+
+  const displayName = user?.firstName || (address ? formatAddress(address) : 'there');
+
   return (
     <div className="w-full">
       {/* ================================================================== */}
@@ -492,7 +504,7 @@ export default function DashboardPage() {
           {/* Left: title + subtitle */}
           <div className="min-w-0">
             <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-              Dashboard
+              {getGreeting()}, {displayName}
             </h1>
             <p className="mt-3 text-base leading-relaxed text-gray-400">
               Overview of your tokenized assets and platform activity.

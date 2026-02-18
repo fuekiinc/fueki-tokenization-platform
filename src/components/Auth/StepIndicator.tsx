@@ -64,13 +64,27 @@ function StepCircle({
   );
 }
 
-function ConnectingLine({ completed }: { completed: boolean }) {
+function HorizontalConnectingLine({ completed }: { completed: boolean }) {
   return (
     <div
       className={clsx(
         'h-0.5 flex-1 rounded-full transition-colors duration-300',
         completed
           ? 'bg-gradient-to-r from-indigo-500 to-violet-500'
+          : 'bg-[var(--border-primary)]',
+      )}
+      aria-hidden="true"
+    />
+  );
+}
+
+function VerticalConnectingLine({ completed }: { completed: boolean }) {
+  return (
+    <div
+      className={clsx(
+        'w-0.5 flex-1 min-h-[24px] rounded-full transition-colors duration-300 mx-auto',
+        completed
+          ? 'bg-gradient-to-b from-indigo-500 to-violet-500'
           : 'bg-[var(--border-primary)]',
       )}
       aria-hidden="true"
@@ -98,7 +112,8 @@ const StepIndicator = memo(function StepIndicator({
         Step {currentStep + 1} of {steps.length}: {steps[currentStep]?.label}
       </div>
 
-      <ol className="flex items-center">
+      {/* Horizontal layout for sm+ screens */}
+      <ol className="hidden sm:flex items-center">
         {steps.map((step, index) => {
           const status = getStepStatus(index, currentStep);
           const isLast = index === steps.length - 1;
@@ -139,12 +154,24 @@ const StepIndicator = memo(function StepIndicator({
                         : 'text-[var(--text-primary)]',
                     )}
                     onClick={isClickable ? () => onStepClick(index) : undefined}
+                    role={isClickable ? 'button' : undefined}
+                    tabIndex={isClickable ? 0 : undefined}
+                    onKeyDown={
+                      isClickable
+                        ? (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              onStepClick(index);
+                            }
+                          }
+                        : undefined
+                    }
                   >
                     {step.label}
                   </span>
 
                   {step.description && (
-                    <span className="mt-0.5 hidden sm:block text-[10px] leading-tight text-[var(--text-muted)]">
+                    <span className="mt-0.5 block text-[10px] leading-tight text-[var(--text-muted)]">
                       {step.description}
                     </span>
                   )}
@@ -163,7 +190,86 @@ const StepIndicator = memo(function StepIndicator({
               {/* Connecting line to the next step */}
               {!isLast && (
                 <div className="mx-2 sm:mx-3 mb-auto mt-4 flex-1">
-                  <ConnectingLine completed={index < currentStep} />
+                  <HorizontalConnectingLine completed={index < currentStep} />
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+
+      {/* Vertical layout for mobile screens */}
+      <ol className="flex sm:hidden flex-col">
+        {steps.map((step, index) => {
+          const status = getStepStatus(index, currentStep);
+          const isLast = index === steps.length - 1;
+          const isClickable = status === 'completed' && !!onStepClick;
+
+          return (
+            <li
+              key={step.label}
+              className="flex flex-col"
+              aria-current={status === 'current' ? 'step' : undefined}
+            >
+              <div className="flex items-center gap-3">
+                {isClickable ? (
+                  <button
+                    type="button"
+                    onClick={() => onStepClick(index)}
+                    aria-label={`Go back to step ${index + 1}: ${step.label} (completed)`}
+                    className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-primary)] rounded-full"
+                  >
+                    <StepCircle status={status} stepNumber={index + 1} />
+                  </button>
+                ) : (
+                  <StepCircle status={status} stepNumber={index + 1} />
+                )}
+
+                <div className="flex flex-col min-w-0">
+                  <span
+                    className={clsx(
+                      'text-sm font-medium transition-colors duration-300',
+                      isClickable && 'cursor-pointer hover:text-[var(--accent-primary)]',
+                      status === 'upcoming'
+                        ? 'text-[var(--text-muted)]'
+                        : 'text-[var(--text-primary)]',
+                    )}
+                    onClick={isClickable ? () => onStepClick(index) : undefined}
+                    role={isClickable ? 'button' : undefined}
+                    tabIndex={isClickable ? 0 : undefined}
+                    onKeyDown={
+                      isClickable
+                        ? (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              onStepClick(index);
+                            }
+                          }
+                        : undefined
+                    }
+                  >
+                    {step.label}
+                  </span>
+                  {step.description && (
+                    <span className="text-xs text-[var(--text-muted)] leading-tight">
+                      {step.description}
+                    </span>
+                  )}
+                </div>
+
+                <span className="sr-only">
+                  {status === 'completed'
+                    ? '(completed)'
+                    : status === 'current'
+                      ? '(current step)'
+                      : '(upcoming)'}
+                </span>
+              </div>
+
+              {/* Vertical connecting line */}
+              {!isLast && (
+                <div className="flex ml-[15px] py-1">
+                  <VerticalConnectingLine completed={index < currentStep} />
                 </div>
               )}
             </li>

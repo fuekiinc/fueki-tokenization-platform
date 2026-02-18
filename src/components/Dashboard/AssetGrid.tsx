@@ -1,4 +1,3 @@
-import clsx from 'clsx';
 import {
   Package,
   DollarSign,
@@ -8,6 +7,7 @@ import {
 import type { WrappedAsset, ExchangeOrder, TradeHistory } from '../../types';
 import { formatCurrency } from '../../lib/utils/helpers';
 import { TOOLTIPS } from '../../lib/tooltipContent';
+import { GRID_CLASSES } from '../../lib/designTokens';
 import PortfolioSummaryCard from './PortfolioSummaryCard';
 
 // ---------------------------------------------------------------------------
@@ -40,9 +40,7 @@ export default function AssetGrid({
   const totalTrades = tradeHistory.length;
 
   return (
-    <div className={clsx(
-      'grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4 lg:gap-8 overflow-hidden',
-    )}>
+    <div className={GRID_CLASSES.stats}>
       <PortfolioSummaryCard
         title="Total Assets"
         value={String(totalAssets)}

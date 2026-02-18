@@ -81,7 +81,7 @@ function MintStepIndicator({ activeStep }: { activeStep: number }) {
                     <StepIcon className="h-4 w-4" aria-hidden="true" />
                   )}
                   {isCurrent && (
-                    <span className="absolute inset-0 animate-ping rounded-full bg-indigo-500/20 duration-1000" aria-hidden="true" />
+                    <span className="absolute inset-0 animate-ping motion-reduce:animate-none rounded-full bg-indigo-500/20 duration-1000" aria-hidden="true" />
                   )}
                 </div>
                 <span

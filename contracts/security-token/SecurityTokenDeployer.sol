@@ -23,14 +23,15 @@ contract SecurityTokenDeployer {
 
     /**
      * @notice Deploy a new RestrictedSwap token (full ERC-1404 security token).
+     * Gas optimization: string parameters use calldata instead of memory to avoid copying
      * @return addr The address of the newly deployed RestrictedSwap token.
      */
     function deployRestrictedSwap(
         address transferRules_,
         address contractAdmin_,
         address tokenReserveAdmin_,
-        string memory symbol_,
-        string memory name_,
+        string calldata symbol_,
+        string calldata name_,
         uint8 decimals_,
         uint256 totalSupply_,
         uint256 maxTotalSupply_,

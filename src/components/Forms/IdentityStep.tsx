@@ -12,6 +12,7 @@ import {
   Loader2,
   X,
   Camera,
+  IdCard,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -36,6 +37,27 @@ const ACCEPTED_FILE_TYPES: Record<string, string[]> = {
 };
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+const DOCUMENT_TYPE_OPTIONS = [
+  {
+    value: 'drivers_license' as const,
+    label: "Driver's license",
+    icon: CreditCard,
+    description: 'Front side required',
+  },
+  {
+    value: 'passport' as const,
+    label: 'Passport',
+    icon: FileCheck,
+    description: 'Photo page required',
+  },
+  {
+    value: 'national_id' as const,
+    label: 'National ID',
+    icon: IdCard,
+    description: 'Front side required',
+  },
+] as const;
 
 // ---------------------------------------------------------------------------
 // SSN helpers
@@ -74,7 +96,7 @@ function formatFileSize(bytes: number): string {
 
 interface IdentityStepProps {
   defaultSSN?: string;
-  defaultDocumentType?: 'drivers_license' | 'passport';
+  defaultDocumentType?: 'drivers_license' | 'passport' | 'national_id';
   documentFile: File | null;
   documentPreview: string | null;
   onDocumentSelect: (file: File | null, preview: string | null) => void;
@@ -194,6 +216,8 @@ export default function IdentityStep({
     ? `${formatFileSize(documentFile.size)} / ${formatFileSize(MAX_FILE_SIZE)} max`
     : null;
 
+  const selectedDocType = watch('documentType');
+
   // ---- Render ---------------------------------------------------------------
 
   return (
@@ -202,6 +226,7 @@ export default function IdentityStep({
       <div>
         <label htmlFor="signup-ssn" className={LABEL}>
           Social Security Number
+          <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
         </label>
         <div className="relative">
           <CreditCard className={ICON_LEFT} aria-hidden="true" />
@@ -218,6 +243,7 @@ export default function IdentityStep({
             onChange={handleSSNChange}
             aria-invalid={errors.ssn ? true : undefined}
             aria-describedby={errors.ssn ? 'signup-ssn-error' : 'signup-ssn-hint'}
+            aria-required="true"
             className={clsx(
               INPUT_BASE,
               'tracking-widest',
@@ -238,23 +264,17 @@ export default function IdentityStep({
 
       {/* Document Type */}
       <div>
-        <label className={LABEL}>Identity document type</label>
-        <div className="grid grid-cols-2 gap-3 mt-1" role="radiogroup" aria-label="Identity document type">
-          {(
-            [
-              {
-                value: 'drivers_license' as const,
-                label: "Driver's license",
-                icon: CreditCard,
-              },
-              {
-                value: 'passport' as const,
-                label: 'Passport',
-                icon: FileCheck,
-              },
-            ] as const
-          ).map(({ value, label, icon: Icon }) => {
-            const selected = watch('documentType') === value;
+        <label className={LABEL}>
+          Identity document type
+          <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
+        </label>
+        <div
+          className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1"
+          role="radiogroup"
+          aria-label="Identity document type"
+        >
+          {DOCUMENT_TYPE_OPTIONS.map(({ value, label, icon: Icon, description }) => {
+            const selected = selectedDocType === value;
             return (
               <label
                 key={value}
@@ -281,18 +301,26 @@ export default function IdentityStep({
                   )}
                   aria-hidden="true"
                 />
-                <span
-                  className={clsx(
-                    'text-sm font-medium',
-                    selected
-                      ? 'text-[var(--text-primary)]'
-                      : 'text-[var(--text-secondary)]',
-                  )}
-                >
-                  {label}
-                </span>
+                <div className="min-w-0 flex-1">
+                  <span
+                    className={clsx(
+                      'text-sm font-medium block',
+                      selected
+                        ? 'text-[var(--text-primary)]'
+                        : 'text-[var(--text-secondary)]',
+                    )}
+                  >
+                    {label}
+                  </span>
+                  <span className="text-xs text-[var(--text-muted)] block mt-0.5">
+                    {description}
+                  </span>
+                </div>
                 {selected && (
-                  <CheckCircle2 className="absolute top-2 right-2 h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />
+                  <CheckCircle2
+                    className="absolute top-2 right-2 h-4 w-4 text-[var(--accent-primary)]"
+                    aria-hidden="true"
+                  />
                 )}
               </label>
             );
@@ -307,7 +335,10 @@ export default function IdentityStep({
 
       {/* Document Upload */}
       <div>
-        <label className={LABEL}>Upload identity document</label>
+        <label className={LABEL}>
+          Upload identity document
+          <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
+        </label>
 
         {!documentFile ? (
           <div

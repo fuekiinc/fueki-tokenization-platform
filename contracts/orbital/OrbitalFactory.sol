@@ -11,6 +11,11 @@ import "./OrbitalPool.sol";
  *         pool key derived from the sorted token set. Ensures only one
  *         pool exists per unique combination of tokens + concentration.
  *
+ *         Security features:
+ *         - Admin-only pool pause/unpause for emergency response
+ *         - Paginated pool listing to prevent gas griefing
+ *         - Two-step admin transfer
+ *
  * @dev    Follows existing Fueki platform conventions.
  */
 contract OrbitalFactory {
@@ -19,8 +24,11 @@ contract OrbitalFactory {
     //  Storage
     // ---------------------------------------------------------------
 
-    /// @notice Admin address (can update default parameters).
+    /// @notice Admin address (can update default parameters and pause pools).
     address public admin;
+
+    /// @notice Pending admin for two-step transfer.
+    address public pendingAdmin;
 
     /// @notice Default fee collector for new pools.
     address public defaultFeeCollector;
@@ -37,6 +45,9 @@ contract OrbitalFactory {
     /// @notice token => list of pools that include this token.
     mapping(address => address[]) private _tokenPools;
 
+    /// @notice Track whether an address is a registered pool.
+    mapping(address => bool) public isRegisteredPool;
+
     // ---------------------------------------------------------------
     //  Events
     // ---------------------------------------------------------------
@@ -49,18 +60,23 @@ contract OrbitalFactory {
         address feeCollector
     );
 
+    event AdminTransferStarted(address indexed currentAdmin, address indexed pendingAdmin);
     event AdminUpdated(address indexed oldAdmin, address indexed newAdmin);
     event DefaultFeeCollectorUpdated(address indexed collector);
     event DefaultSwapFeeUpdated(uint256 newFeeBps);
+    event PoolPaused(address indexed pool, address indexed by);
+    event PoolUnpaused(address indexed pool, address indexed by);
 
     // ---------------------------------------------------------------
     //  Errors
     // ---------------------------------------------------------------
 
     error NotAdmin();
+    error NotPendingAdmin();
     error ZeroAddress();
     error PoolExists();
     error InvalidFee();
+    error PoolNotRegistered();
 
     // ---------------------------------------------------------------
     //  Modifiers
@@ -138,6 +154,7 @@ contract OrbitalFactory {
         // Register in storage
         poolsByKey[poolKey] = pool;
         _allPools.push(pool);
+        isRegisteredPool[pool] = true;
 
         // Index by token for lookup
         for (uint256 i = 0; i < _tokens.length; ++i) {
@@ -145,6 +162,30 @@ contract OrbitalFactory {
         }
 
         emit PoolCreated(pool, _tokens, _concentration, feeBps, defaultFeeCollector);
+    }
+
+    // ---------------------------------------------------------------
+    //  Pool Emergency Controls
+    // ---------------------------------------------------------------
+
+    /**
+     * @notice Pause a registered pool (emergency). Admin-only.
+     * @param pool The pool address to pause.
+     */
+    function pausePool(address pool) external onlyAdmin {
+        if (!isRegisteredPool[pool]) revert PoolNotRegistered();
+        OrbitalPool(pool).pause();
+        emit PoolPaused(pool, msg.sender);
+    }
+
+    /**
+     * @notice Unpause a registered pool. Admin-only.
+     * @param pool The pool address to unpause.
+     */
+    function unpausePool(address pool) external onlyAdmin {
+        if (!isRegisteredPool[pool]) revert PoolNotRegistered();
+        OrbitalPool(pool).unpause();
+        emit PoolUnpaused(pool, msg.sender);
     }
 
     // ---------------------------------------------------------------
@@ -161,7 +202,27 @@ contract OrbitalFactory {
         return _allPools[index];
     }
 
-    /// @notice Get all pool addresses.
+    /**
+     * @notice Get pool addresses with pagination to bound gas usage.
+     * @param offset Starting index.
+     * @param limit  Maximum number of results to return.
+     * @return result Array of pool addresses.
+     */
+    function getPools(uint256 offset, uint256 limit) external view returns (address[] memory result) {
+        uint256 total = _allPools.length;
+        if (offset >= total) {
+            return new address[](0);
+        }
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        uint256 count = end - offset;
+        result = new address[](count);
+        for (uint256 i = 0; i < count; ++i) {
+            result[i] = _allPools[offset + i];
+        }
+    }
+
+    /// @notice Get all pool addresses. Use getPools() for large registries.
     function getAllPools() external view returns (address[] memory) {
         return _allPools;
     }
@@ -184,10 +245,33 @@ contract OrbitalFactory {
     //  Admin Functions
     // ---------------------------------------------------------------
 
+    /**
+     * @notice Start two-step admin transfer.
+     * @param _newAdmin The address that will become admin after accepting.
+     */
+    function transferAdmin(address _newAdmin) external onlyAdmin {
+        if (_newAdmin == address(0)) revert ZeroAddress();
+        pendingAdmin = _newAdmin;
+        emit AdminTransferStarted(admin, _newAdmin);
+    }
+
+    /**
+     * @notice Accept admin role (must be called by pendingAdmin).
+     */
+    function acceptAdmin() external {
+        if (msg.sender != pendingAdmin) revert NotPendingAdmin();
+        address old = admin;
+        admin = msg.sender;
+        pendingAdmin = address(0);
+        emit AdminUpdated(old, msg.sender);
+    }
+
+    /// @dev Legacy single-step admin transfer. Kept for backward compatibility.
     function setAdmin(address _newAdmin) external onlyAdmin {
         if (_newAdmin == address(0)) revert ZeroAddress();
         address old = admin;
         admin = _newAdmin;
+        pendingAdmin = address(0);
         emit AdminUpdated(old, _newAdmin);
     }
 

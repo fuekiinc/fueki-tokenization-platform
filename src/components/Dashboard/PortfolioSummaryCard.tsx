@@ -5,13 +5,7 @@ import {
 } from 'lucide-react';
 import { InfoTooltip } from '../Common/Tooltip';
 import { formatPercent } from '../../lib/formatters';
-
-// ---------------------------------------------------------------------------
-// Glass morphism shared tokens (matches DashboardPage pattern)
-// ---------------------------------------------------------------------------
-
-const GLASS =
-  'bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl';
+import { CARD_CLASSES, TYPOGRAPHY } from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,10 +40,11 @@ export default function PortfolioSummaryCard({
   return (
     <div
       className={clsx(
-        GLASS,
-        'group relative overflow-hidden p-7 sm:p-9',
-        'hover:border-white/[0.12] hover:shadow-lg hover:shadow-black/20',
-        'transition-all duration-300',
+        CARD_CLASSES.base,
+        CARD_CLASSES.wrapper,
+        CARD_CLASSES.padding,
+        CARD_CLASSES.hover,
+        'group',
       )}
     >
       {/* Subtle gradient glow on hover */}
@@ -70,7 +65,7 @@ export default function PortfolioSummaryCard({
             {title}
             {tooltip && <InfoTooltip content={tooltip} />}
           </p>
-          <p className="mt-3 truncate text-2xl font-bold tracking-tight text-white sm:text-3xl">
+          <p className={clsx('mt-3 truncate', TYPOGRAPHY.statValue)}>
             {value}
           </p>
           {change !== undefined && !Number.isNaN(change) && (

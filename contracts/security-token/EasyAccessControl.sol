@@ -5,10 +5,29 @@ pragma solidity ^0.8.4;
 
 contract EasyAccessControl {
 
-  uint8 constant CONTRACT_ADMIN_ROLE = 1; // 0001
-  uint8 constant RESERVE_ADMIN_ROLE = 2;  // 0010
-  uint8 constant WALLETS_ADMIN_ROLE = 4;  // 0100
-  uint8 constant TRANSFER_ADMIN_ROLE = 8; // 1000
+  // ---------------------------------------------------------------
+  //  Custom Errors (gas optimization: ~200 gas cheaper than require strings)
+  // ---------------------------------------------------------------
+  error ZeroAddress();
+  error InvalidRole();
+  error DoesNotHaveContractAdminRole();
+  error DoesNotHaveTransferAdminRole();
+  error DoesNotHaveWalletsAdminRole();
+  error DoesNotHaveReserveAdminRole();
+  error DoesNotHaveWalletsOrReserveAdminRole();
+  error AddressLacksSpecifiedRoles();
+  error MustHaveAtLeastOneContractAdmin();
+
+  // ---------------------------------------------------------------
+  //  Constants (gas optimization: constants are inlined by the compiler)
+  // ---------------------------------------------------------------
+  uint8 internal constant CONTRACT_ADMIN_ROLE = 1; // 0001
+  uint8 internal constant RESERVE_ADMIN_ROLE = 2;  // 0010
+  uint8 internal constant WALLETS_ADMIN_ROLE = 4;  // 0100
+  uint8 internal constant TRANSFER_ADMIN_ROLE = 8; // 1000
+
+  // Gas optimization: constant for the valid role mask avoids recomputation
+  uint8 private constant VALID_ROLE_MASK = 15;
 
   event RoleChange(address indexed grantor, address indexed grantee, uint8 role, bool indexed status);
 
@@ -17,32 +36,33 @@ contract EasyAccessControl {
   uint8 public contractAdminCount; // counter of contract admins to keep at least one
 
   modifier validAddress(address addr) {
-    require(addr != address(0), "Address cannot be 0x0");
+    if (addr == address(0)) revert ZeroAddress();
     _;
   }
 
   modifier validRole(uint8 role) {
-    require( role > 0 && role | 15 == 15, "DOES NOT HAVE VALID ROLE");
+    // Gas optimization: single comparison instead of two separate checks
+    if (role == 0 || role | VALID_ROLE_MASK != VALID_ROLE_MASK) revert InvalidRole();
     _;
   }
 
   modifier onlyContractAdmin() {
-    require(hasRole(msg.sender, CONTRACT_ADMIN_ROLE), "DOES NOT HAVE CONTRACT ADMIN ROLE");
+    if (!hasRole(msg.sender, CONTRACT_ADMIN_ROLE)) revert DoesNotHaveContractAdminRole();
     _;
   }
 
   modifier onlyTransferAdmin() {
-    require(hasRole(msg.sender, TRANSFER_ADMIN_ROLE), "DOES NOT HAVE TRANSFER ADMIN ROLE");
+    if (!hasRole(msg.sender, TRANSFER_ADMIN_ROLE)) revert DoesNotHaveTransferAdminRole();
     _;
   }
 
   modifier onlyWalletsAdmin() {
-    require(hasRole(msg.sender, WALLETS_ADMIN_ROLE), "DOES NOT HAVE WALLETS ADMIN ROLE");
+    if (!hasRole(msg.sender, WALLETS_ADMIN_ROLE)) revert DoesNotHaveWalletsAdminRole();
     _;
   }
 
   modifier onlyReserveAdmin() {
-    require(hasRole(msg.sender, RESERVE_ADMIN_ROLE), "DOES NOT HAVE RESERVE ADMIN ROLE");
+    if (!hasRole(msg.sender, RESERVE_ADMIN_ROLE)) revert DoesNotHaveReserveAdminRole();
     _;
   }
 
@@ -63,9 +83,9 @@ contract EasyAccessControl {
     @param role bitmask of role/roles to revoke
   **/
   function revokeRole(address addr, uint8 role) public validRole(role) validAddress(addr) onlyContractAdmin  {
-    require((admins[addr] & role) == role, "Address does not have specified roles");
+    if ((admins[addr] & role) != role) revert AddressLacksSpecifiedRoles();
     if ( role & CONTRACT_ADMIN_ROLE > 0 ) {
-      require( contractAdminCount > 1, "Must have at least one contract admin" );
+      if (contractAdminCount <= 1) revert MustHaveAtLeastOneContractAdmin();
       contractAdminCount--;
     }
     admins[addr] &= ~role;

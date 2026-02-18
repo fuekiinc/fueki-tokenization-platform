@@ -1305,7 +1305,7 @@ export interface RestrictedSwap extends BaseContract {
   >;
 
   cancelSell: TypedContractMethod<
-    [swapNumber: BigNumberish],
+    [_swapNumber: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -1336,13 +1336,13 @@ export interface RestrictedSwap extends BaseContract {
   >;
 
   completeSwapWithPaymentToken: TypedContractMethod<
-    [swapNumber: BigNumberish],
+    [_swapNumber: BigNumberish],
     [void],
     "nonpayable"
   >;
 
   completeSwapWithRestrictedToken: TypedContractMethod<
-    [swapNumber: BigNumberish],
+    [_swapNumber: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -1563,7 +1563,11 @@ export interface RestrictedSwap extends BaseContract {
 
   swapNumber: TypedContractMethod<[], [bigint], "view">;
 
-  swapStatus: TypedContractMethod<[swapNumber: BigNumberish], [bigint], "view">;
+  swapStatus: TypedContractMethod<
+    [_swapNumber: BigNumberish],
+    [bigint],
+    "view"
+  >;
 
   symbol: TypedContractMethod<[], [string], "view">;
 
@@ -1769,7 +1773,7 @@ export interface RestrictedSwap extends BaseContract {
   >;
   getFunction(
     nameOrSignature: "cancelSell"
-  ): TypedContractMethod<[swapNumber: BigNumberish], [void], "nonpayable">;
+  ): TypedContractMethod<[_swapNumber: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "cancelTimelock"
   ): TypedContractMethod<
@@ -1800,10 +1804,10 @@ export interface RestrictedSwap extends BaseContract {
   >;
   getFunction(
     nameOrSignature: "completeSwapWithPaymentToken"
-  ): TypedContractMethod<[swapNumber: BigNumberish], [void], "nonpayable">;
+  ): TypedContractMethod<[_swapNumber: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "completeSwapWithRestrictedToken"
-  ): TypedContractMethod<[swapNumber: BigNumberish], [void], "nonpayable">;
+  ): TypedContractMethod<[_swapNumber: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "configureBuy"
   ): TypedContractMethod<
@@ -2059,7 +2063,7 @@ export interface RestrictedSwap extends BaseContract {
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "swapStatus"
-  ): TypedContractMethod<[swapNumber: BigNumberish], [bigint], "view">;
+  ): TypedContractMethod<[_swapNumber: BigNumberish], [bigint], "view">;
   getFunction(
     nameOrSignature: "symbol"
   ): TypedContractMethod<[], [string], "view">;

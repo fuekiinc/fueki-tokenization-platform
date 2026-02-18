@@ -1,13 +1,16 @@
 /**
- * Tooltip -- lightweight, accessible tooltip component.
+ * Tooltip -- lightweight, accessible tooltip component (WCAG 2.1 AA).
  *
  * Features:
  *   - Shows on hover (desktop) and tap (mobile)
+ *   - Shows on focus for keyboard accessibility
  *   - Auto-detects viewport edges and repositions
  *   - Supports simple text and rich ReactNode content
  *   - Glass-morphism styling matching the platform dark theme
- *   - Fade-in animation
- *   - Closes on outside click (mobile)
+ *   - Fade-in animation respecting prefers-reduced-motion
+ *   - Closes on Escape key and outside click (mobile)
+ *   - Proper ARIA: role="tooltip", aria-describedby linkage
+ *   - Unique IDs for multiple tooltip instances
  *
  * Also exports `InfoTooltip` -- a convenience wrapper that renders a small
  * HelpCircle icon as the trigger with a text-only tooltip.
@@ -18,6 +21,7 @@ import {
   useRef,
   useEffect,
   useCallback,
+  useId,
   type ReactNode,
 } from 'react';
 import clsx from 'clsx';
@@ -68,6 +72,7 @@ export default function Tooltip({
   const [resolvedPos, setResolvedPos] = useState(position);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
+  const tooltipId = useId();
 
   // ---- Resolve position (flip if near viewport edge) ----------------------
 
@@ -139,7 +144,11 @@ export default function Tooltip({
     if (!visible) return;
 
     function handleEscape(e: KeyboardEvent) {
-      if (e.key === 'Escape') hide();
+      if (e.key === 'Escape') {
+        hide();
+        // Return focus to the trigger element
+        triggerRef.current?.focus();
+      }
     }
 
     document.addEventListener('keydown', handleEscape);
@@ -166,12 +175,15 @@ export default function Tooltip({
       onFocus={show}
       onBlur={hide}
       onClick={toggle}
+      tabIndex={0}
+      aria-describedby={visible ? tooltipId : undefined}
     >
       {children}
 
       {/* Tooltip bubble */}
       <div
         ref={bubbleRef}
+        id={tooltipId}
         role="tooltip"
         aria-hidden={!visible}
         className={clsx(
@@ -182,10 +194,10 @@ export default function Tooltip({
           'bg-[#1a1d24] backdrop-blur-xl',
           'border border-white/[0.08]',
           'shadow-xl shadow-black/40',
-          // Typography
-          'text-sm leading-relaxed text-white/80',
-          // Animation
-          'transition-all duration-150 ease-out',
+          // Typography -- 4.5:1 contrast on dark bg
+          'text-sm leading-relaxed text-gray-100',
+          // Animation -- respects prefers-reduced-motion
+          'transition-all duration-150 ease-out motion-reduce:transition-none',
           visible
             ? 'opacity-100 scale-100'
             : 'opacity-0 scale-95',
@@ -207,8 +219,9 @@ export function InfoTooltip({ content, className }: InfoTooltipProps) {
     <Tooltip content={content} position="top" className={className}>
       <HelpCircle
         className="h-4 w-4 shrink-0 text-white/30 transition-colors duration-150 hover:text-white/60 cursor-help"
-        aria-label="More info"
+        aria-hidden="true"
       />
+      <span className="sr-only">More info: {content}</span>
     </Tooltip>
   );
 }

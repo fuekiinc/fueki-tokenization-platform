@@ -151,6 +151,7 @@ export default function AddressStep({ defaultValues, onNext, onBack }: AddressSt
       <div>
         <label htmlFor="signup-addressLine1" className={LABEL}>
           Street address
+          <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
         </label>
         {apiReady && GOOGLE_API_KEY ? (
           <PlacesInput
@@ -175,6 +176,7 @@ export default function AddressStep({ defaultValues, onNext, onBack }: AddressSt
               placeholder="123 Main Street"
               aria-invalid={errors.addressLine1 ? true : undefined}
               aria-describedby={errors.addressLine1 ? 'signup-addressLine1-error' : undefined}
+              aria-required="true"
               className={clsx(INPUT_BASE, errors.addressLine1 && 'border-[var(--danger)]')}
               {...register('addressLine1')}
             />
@@ -212,6 +214,7 @@ export default function AddressStep({ defaultValues, onNext, onBack }: AddressSt
         <div>
           <label htmlFor="signup-city" className={LABEL}>
             City
+            <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
           </label>
           <input
             id="signup-city"
@@ -220,6 +223,7 @@ export default function AddressStep({ defaultValues, onNext, onBack }: AddressSt
             placeholder="New York"
             aria-invalid={errors.city ? true : undefined}
             aria-describedby={errors.city ? 'signup-city-error' : undefined}
+            aria-required="true"
             className={clsx(INPUT_NO_ICON, errors.city && 'border-[var(--danger)]')}
             {...register('city')}
           />
@@ -233,7 +237,8 @@ export default function AddressStep({ defaultValues, onNext, onBack }: AddressSt
         {/* State */}
         <div>
           <label htmlFor="signup-state" className={LABEL}>
-            State
+            State / Province
+            <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
           </label>
           <input
             id="signup-state"
@@ -242,6 +247,7 @@ export default function AddressStep({ defaultValues, onNext, onBack }: AddressSt
             placeholder="NY"
             aria-invalid={errors.state ? true : undefined}
             aria-describedby={errors.state ? 'signup-state-error' : undefined}
+            aria-required="true"
             className={clsx(INPUT_NO_ICON, errors.state && 'border-[var(--danger)]')}
             {...register('state')}
           />
@@ -258,7 +264,8 @@ export default function AddressStep({ defaultValues, onNext, onBack }: AddressSt
         {/* ZIP Code */}
         <div>
           <label htmlFor="signup-zipCode" className={LABEL}>
-            ZIP code
+            ZIP / Postal code
+            <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
           </label>
           <div className="relative">
             <Hash className={ICON_LEFT} aria-hidden="true" />
@@ -270,6 +277,7 @@ export default function AddressStep({ defaultValues, onNext, onBack }: AddressSt
               maxLength={10}
               aria-invalid={errors.zipCode ? true : undefined}
               aria-describedby={errors.zipCode ? 'signup-zipCode-error' : undefined}
+              aria-required="true"
               className={clsx(INPUT_BASE, errors.zipCode && 'border-[var(--danger)]')}
               {...register('zipCode')}
             />
@@ -285,6 +293,7 @@ export default function AddressStep({ defaultValues, onNext, onBack }: AddressSt
         <div>
           <label htmlFor="signup-country" className={LABEL}>
             Country
+            <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
           </label>
           <div className="relative">
             <MapPin className={ICON_LEFT} aria-hidden="true" />
@@ -293,6 +302,7 @@ export default function AddressStep({ defaultValues, onNext, onBack }: AddressSt
               autoComplete="country-name"
               aria-invalid={errors.country ? true : undefined}
               aria-describedby={errors.country ? 'signup-country-error' : undefined}
+              aria-required="true"
               className={clsx(SELECT_BASE, errors.country && 'border-[var(--danger)]')}
               {...register('country')}
             >

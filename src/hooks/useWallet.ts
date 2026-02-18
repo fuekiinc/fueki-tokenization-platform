@@ -1,3 +1,19 @@
+/**
+ * Production wallet connection hook.
+ *
+ * Supports:
+ *   - MetaMask (including Flask), Trust Wallet, Coinbase Wallet, Brave Wallet
+ *   - EIP-6963 provider discovery (modern multi-wallet environments)
+ *   - Connection persistence across page reloads (localStorage + auto-reconnect)
+ *   - Account change detection and automatic re-binding
+ *   - Network change detection and automatic re-initialisation
+ *   - ENS name resolution for the connected address
+ *   - Chain validation and switching with automatic wallet_addEthereumChain
+ *
+ * All user-facing error messages are parsed from ethers v6 nested error
+ * structures into clear, actionable text.
+ */
+
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
@@ -7,6 +23,10 @@ import { useAssetStore } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
 import { useExchangeStore } from '../store/exchangeStore.ts';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
+
+// ---------------------------------------------------------------------------
+// Wallet provider type (EIP-1193 + extensions)
+// ---------------------------------------------------------------------------
 
 interface EthereumProvider {
   isMetaMask?: boolean;
@@ -71,21 +91,18 @@ startEIP6963Discovery();
 
 // ---------------------------------------------------------------------------
 // Module-level ref-counter so that wallet event listeners are registered
-// exactly once and only removed when the LAST consumer unmounts.  A simple
-// boolean flag would fail when component A unmounts (clearing the flag and
-// removing listeners) while component B still expects them to be active.
+// exactly once and only removed when the LAST consumer unmounts.
 // ---------------------------------------------------------------------------
 let listenerConsumerCount = 0;
 
 // ---------------------------------------------------------------------------
-// Extract a user-friendly message from ethers v6 / wallet RPC errors.
-//
-// ethers v6 wraps low-level JSON-RPC errors in its own error classes.
-// The original wallet message is often buried in `error.info.error.message`
-// or `error.error.message`.  We dig it out and map known codes to clear text.
+// Error parsing
 // ---------------------------------------------------------------------------
+
+/**
+ * Extract a user-friendly message from ethers v6 / wallet RPC errors.
+ */
 function parseWalletError(err: unknown): string {
-  // 1. Try to extract the inner wallet/RPC error message.
   const inner =
     (err as { info?: { error?: { message?: string; code?: number } } })?.info
       ?.error ??
@@ -99,18 +116,13 @@ function parseWalletError(err: unknown): string {
     inner?.message ??
     (err instanceof Error ? err.message : '');
 
-  // 2. Map known error codes / messages to user-facing text.
-
   // User rejected the request in their wallet popup.
   if (code === 4001 || /user (rejected|denied)/i.test(rawMessage)) {
     return 'Connection request was rejected. Please approve the wallet prompt to connect.';
   }
 
   // Wallet extension is present but has no unlocked / created account.
-  if (
-    code === -32603 &&
-    /no active wallet/i.test(rawMessage)
-  ) {
+  if (code === -32603 && /no active wallet/i.test(rawMessage)) {
     return 'No active wallet found. Please open your wallet extension and create or unlock an account first.';
   }
 
@@ -124,12 +136,16 @@ function parseWalletError(err: unknown): string {
     return rawMessage || 'Wallet encountered an internal error. Please try again.';
   }
 
-  // 3. Fallback: use the raw message if it's short enough, otherwise generic.
+  // Fallback: use the raw message if it's short enough, otherwise generic.
   if (rawMessage && rawMessage.length < 200) {
     return rawMessage;
   }
   return 'Failed to connect wallet. Please try again.';
 }
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 export function useWallet() {
   const wallet = useWalletStore((s) => s.wallet);
@@ -137,6 +153,9 @@ export function useWallet() {
   const setProvider = useWalletStore((s) => s.setProvider);
   const setSigner = useWalletStore((s) => s.setSigner);
   const resetWallet = useWalletStore((s) => s.resetWallet);
+  const setEnsName = useWalletStore((s) => s.setEnsName);
+  const persistConnection = useWalletStore((s) => s.persistConnection);
+  const hasPersistedConnection = useWalletStore((s) => s.hasPersistedConnection);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -145,22 +164,17 @@ export function useWallet() {
   const walletRef = useRef(wallet);
   walletRef.current = wallet;
 
-  // Guard against concurrent connectWallet invocations (e.g. fast double-click
-  // or a chain-change event firing while a connection is already in progress).
+  // Guard against concurrent connectWallet invocations.
   const connectingRef = useRef(false);
+
+  // Track whether auto-reconnect has already been attempted this session.
+  const autoReconnectAttemptedRef = useRef(false);
 
   // ---- Helpers ------------------------------------------------------------
 
   /**
-   * Discover available wallet providers.  MetaMask browser extension is
-   * preferred; if it is not found we fall back to other wallets.
-   *
-   * Discovery order:
-   *  1. EIP-6963 announced providers -- look for MetaMask first (rdns
-   *     "io.metamask"), then take the first available provider.
-   *  2. window.ethereum.providers array -- look for isMetaMask, then first.
-   *  3. window.ethereum directly (legacy single-provider).
-   *  4. window.trustwallet (Trust Wallet specific injection, older versions).
+   * Discover available wallet providers. MetaMask is preferred; if not
+   * found we fall back to other wallets.
    */
   const getEthereumProvider = useCallback((): EthereumProvider | null => {
     if (typeof window === 'undefined') return null;
@@ -171,19 +185,17 @@ export function useWallet() {
         (p) => p.info.rdns === 'io.metamask' || p.info.rdns === 'io.metamask.flask',
       );
       if (metamask) return metamask.provider;
-      // Fallback: first non-Trust-Wallet EIP-6963 provider, then any.
       return eip6963Providers[0].provider;
     }
 
-    // 2. Multi-provider environments (e.g. MetaMask + Coinbase co-installed).
-    //    window.ethereum.providers is an array when multiple extensions inject.
+    // 2. Multi-provider environments.
     if (window.ethereum?.providers?.length) {
       const mm = window.ethereum.providers.find((p) => p.isMetaMask && !p.isBraveWallet);
       if (mm) return mm;
       return window.ethereum.providers[0];
     }
 
-    // 3. Legacy single-provider -- check isMetaMask flag.
+    // 3. Legacy single-provider.
     if (window.ethereum) return window.ethereum;
 
     // 4. Trust Wallet specific injection (older versions).
@@ -195,6 +207,28 @@ export function useWallet() {
   const checkIfWalletIsInstalled = useCallback((): boolean => {
     return getEthereumProvider() !== null;
   }, [getEthereumProvider]);
+
+  // ---- ENS Resolution -----------------------------------------------------
+
+  /**
+   * Resolve ENS name for an address. Non-blocking; updates store on success.
+   * Only resolves on mainnet (chainId 1) where ENS is deployed.
+   */
+  const resolveEnsName = useCallback(async (address: string, provider: ethers.BrowserProvider) => {
+    try {
+      const network = await provider.getNetwork();
+      // ENS is only available on mainnet. On other chains, clear ENS name.
+      if (Number(network.chainId) !== 1) {
+        setEnsName(null);
+        return;
+      }
+      const name = await provider.lookupAddress(address);
+      setEnsName(name);
+    } catch {
+      // ENS resolution is best-effort; do not surface errors.
+      setEnsName(null);
+    }
+  }, [setEnsName]);
 
   // ---- Connect ------------------------------------------------------------
 
@@ -209,7 +243,7 @@ export function useWallet() {
       return;
     }
 
-    // Prevent overlapping connection attempts (race-condition guard).
+    // Prevent overlapping connection attempts.
     if (connectingRef.current) return;
     connectingRef.current = true;
 
@@ -217,14 +251,9 @@ export function useWallet() {
       setWallet({ isConnecting: true });
       setError(null);
 
-      // Try multiple connection strategies. Some wallets (Trust Wallet, Brave,
-      // Coinbase) don't support all methods and may trigger biometric auth
-      // which can take extra time. We give generous timeouts.
       let accounts: string[] = [];
 
-      // Helper: race a promise against a timeout. Wallets with biometric
-      // unlock (Trust Wallet, etc.) may take 30+ seconds for the user to
-      // authenticate, so we use a 120s timeout to avoid cutting them off.
+      // Helper: race a promise against a timeout.
       const withTimeout = <T,>(promise: Promise<T>, ms = 120_000): Promise<T> =>
         Promise.race([
           promise,
@@ -240,14 +269,11 @@ export function useWallet() {
         }))) ?? []) as string[];
       } catch (reqErr: unknown) {
         const code = (reqErr as { code?: number }).code;
-
-        // If user rejected (4001), don't try fallbacks -- they said no.
         if (code === 4001) throw reqErr;
 
         logger.warn('eth_requestAccounts failed, trying wallet_requestPermissions...', reqErr);
 
-        // Strategy 2: wallet_requestPermissions (works on some wallets that
-        // don't implement eth_requestAccounts properly)
+        // Strategy 2: wallet_requestPermissions
         try {
           await withTimeout(walletProvider.request({
             method: 'wallet_requestPermissions',
@@ -268,7 +294,6 @@ export function useWallet() {
               method: 'eth_accounts',
             }))) ?? []) as string[];
           } catch {
-            // All strategies failed, rethrow the original error
             throw reqErr;
           }
         }
@@ -280,10 +305,7 @@ export function useWallet() {
         );
       }
 
-      // Use the discovered provider (not window.ethereum) so we bind to the
-      // correct wallet instance in multi-wallet environments.
       const provider = new ethers.BrowserProvider(walletProvider as ethers.Eip1193Provider);
-
       const signer = await provider.getSigner();
       const address = await signer.getAddress();
       const network = await provider.getNetwork();
@@ -299,13 +321,17 @@ export function useWallet() {
         balance: ethers.formatEther(balance),
       });
 
+      // Persist connection for auto-reconnect on page reload.
+      persistConnection();
+
+      // Resolve ENS name in the background (non-blocking).
+      void resolveEnsName(address, provider);
+
       toast.success(
         `Wallet connected: ${address.slice(0, 6)}...${address.slice(-4)}`,
       );
     } catch (err: unknown) {
       logger.error('Wallet connection failed:', err);
-
-      // Parse the user-facing message out of ethers v6 nested error structure.
       const message = parseWalletError(err);
       setError(message);
       toast.error(message);
@@ -313,7 +339,7 @@ export function useWallet() {
     } finally {
       connectingRef.current = false;
     }
-  }, [getEthereumProvider, setWallet, setProvider, setSigner]);
+  }, [getEthereumProvider, setWallet, setProvider, setSigner, persistConnection, resolveEnsName]);
 
   // Keep a ref to connectWallet so the event handlers always call the
   // latest version without needing to re-register listeners.
@@ -352,10 +378,7 @@ export function useWallet() {
         (err as { data?: { originalError?: { code?: number } } })?.data
           ?.originalError?.code;
 
-      // 4902 = chain not configured in wallet. Attempt to add it automatically
-      // using wallet_addEthereumChain with data from our SUPPORTED_NETWORKS
-      // registry. This is critical for Holesky and other testnets that wallets
-      // don't ship with by default.
+      // 4902 = chain not configured in wallet.
       if (code === 4902) {
         const networkConfig = SUPPORTED_NETWORKS[chainId];
         if (networkConfig) {
@@ -374,7 +397,7 @@ export function useWallet() {
                 },
               ],
             });
-            return; // Success -- wallet will emit chainChanged.
+            return;
           } catch (addErr: unknown) {
             const addCode = (addErr as { code?: number }).code;
             if (addCode === 4001) {
@@ -408,8 +431,6 @@ export function useWallet() {
     if (!wallet.address || !wallet.isConnected) return;
 
     try {
-      // Re-use the ethers BrowserProvider stored in the module-level ref;
-      // fall back to creating a fresh one from the raw wallet provider.
       const existingProvider = getStoreProvider();
       const rawProvider = getEthereumProvider();
       if (!existingProvider && !rawProvider) return;
@@ -423,17 +444,41 @@ export function useWallet() {
     }
   }, [wallet.address, wallet.isConnected, setWallet, getEthereumProvider]);
 
-  // ---- Event listeners (account / chain changes) --------------------------
-  //
-  // Listeners are registered exactly ONCE across all hook instances via the
-  // module-level ref counter.  Handler closures read from refs so they
-  // always act on the most recent wallet / connectWallet values and never
-  // go stale when deps change.
-  // -----------------------------------------------------------------------
+  // ---- Auto-reconnect from persisted session ------------------------------
 
   useEffect(() => {
-    // Resolve the provider using the same MetaMask-first logic as
-    // getEthereumProvider() so we register listeners on the correct instance.
+    if (autoReconnectAttemptedRef.current) return;
+    if (wallet.isConnected || wallet.isConnecting) return;
+
+    autoReconnectAttemptedRef.current = true;
+
+    if (!hasPersistedConnection()) return;
+
+    const walletProvider = getEthereumProvider();
+    if (!walletProvider) return;
+
+    // Silently check if accounts are still available (no popup).
+    const attemptReconnect = async () => {
+      try {
+        const accounts = (await walletProvider.request({
+          method: 'eth_accounts',
+        })) as string[];
+
+        if (accounts && accounts.length > 0) {
+          // Accounts still available -- re-connect silently.
+          void connectWalletRef.current();
+        }
+      } catch {
+        // Silent failure -- user can manually reconnect.
+      }
+    };
+
+    void attemptReconnect();
+  }, [wallet.isConnected, wallet.isConnecting, hasPersistedConnection, getEthereumProvider]);
+
+  // ---- Event listeners (account / chain changes) --------------------------
+
+  useEffect(() => {
     let walletProvider: EthereumProvider | null = null;
     if (typeof window !== 'undefined') {
       if (eip6963Providers.length > 0) {
@@ -452,14 +497,11 @@ export function useWallet() {
 
     if (!walletProvider) return;
 
-    // Increment the consumer count.  Only the first consumer actually
-    // registers the listeners; subsequent consumers just bump the counter.
     listenerConsumerCount += 1;
     if (listenerConsumerCount > 1) return;
 
     const handleAccountsChanged = async (accounts: string[]) => {
       if (accounts.length === 0) {
-        // User locked wallet or disconnected all accounts.
         useWalletStore.getState().resetWallet();
         useAssetStore.getState().setAssets([]);
         useAssetStore.getState().setSecurityTokens([]);
@@ -469,7 +511,6 @@ export function useWallet() {
         return;
       }
 
-      // Normalize to checksum address for consistent comparison and storage.
       let checksumAddress: string;
       try {
         checksumAddress = ethers.getAddress(accounts[0]);
@@ -491,6 +532,7 @@ export function useWallet() {
             balance: ethers.formatEther(balance),
             isConnected: true,
           });
+          useWalletStore.getState().persistConnection();
         } catch (err) {
           logger.error('Failed to handle account change:', err);
           toast.error('Failed to update wallet after account change');
@@ -502,17 +544,13 @@ export function useWallet() {
       const newChainId = parseInt(chainIdHex, 16);
       useWalletStore.getState().setChainId(newChainId);
 
-      // Re-initialise provider & signer for the new chain
       if (walletRef.current.isConnected) {
         void connectWalletRef.current();
       }
     };
 
-    // EIP-1193 disconnect: emitted when the wallet becomes disconnected from
-    // all chains, or when Trust Wallet / Coinbase Wallet explicitly revoke
-    // the dApp's permission from the wallet UI.
-    const handleDisconnect = (error: { code: number; message: string }) => {
-      logger.warn('Wallet disconnect event:', error);
+    const handleDisconnect = (disconnectError: { code: number; message: string }) => {
+      logger.warn('Wallet disconnect event:', disconnectError);
       useWalletStore.getState().resetWallet();
       useAssetStore.getState().setAssets([]);
       useAssetStore.getState().setSecurityTokens([]);
@@ -537,7 +575,6 @@ export function useWallet() {
     return () => {
       listenerConsumerCount = Math.max(0, listenerConsumerCount - 1);
 
-      // Only tear down listeners when the very last consumer unmounts.
       if (listenerConsumerCount === 0) {
         walletProvider.removeListener(
           'accountsChanged',

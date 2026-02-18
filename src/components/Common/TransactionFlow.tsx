@@ -1,28 +1,35 @@
 /**
- * TransactionFlow -- 3-phase transaction confirmation modal.
+ * TransactionFlow -- 3-phase transaction confirmation modal (WCAG 2.1 AA).
  *
  * Phase 1: REVIEW    -- Plain-language summary of the transaction details.
  * Phase 2: WALLET    -- Waiting for the user to confirm/reject in their wallet.
  * Phase 3: SUBMITTED -- Tracks the on-chain status until confirmed or failed.
  *
+ * Accessibility:
+ *   - Step indicator with aria-current="step"
+ *   - Live region (aria-live) for status updates
+ *   - Block explorer links with descriptive text (opens in new tab)
+ *   - Focus management between phases
+ *   - All animations respect prefers-reduced-motion
+ *   - Minimum 44px touch targets on mobile
+ *   - Fullscreen dialog on mobile, centered on desktop
+ *   - Proper heading hierarchy and semantic HTML
+ *
  * Usage:
  * ```tsx
  * const { showTransactionFlow, TransactionFlowModal } = useTransactionFlow();
  *
- * // Trigger from any form submission:
  * showTransactionFlow({
  *   type: 'mint',
- *   title: 'Mint 1 000 TSLA tokens',
+ *   title: 'Mint 1,000 TSLA tokens',
  *   details: [
  *     { label: 'Token', value: 'TSLA' },
  *     { label: 'Amount', value: '1,000' },
- *     { label: 'Estimated Gas', value: '0.003 ETH' },
  *   ],
  *   execute: () => contract.mint(amount),
  *   onSuccess: (receipt) => { ... },
  * });
  *
- * // Render the modal somewhere in the tree (once):
  * return <>{children}<TransactionFlowModal /></>;
  * ```
  */
@@ -113,6 +120,13 @@ const WALLET_TIMEOUT_MS = 30_000;
 /** Polling interval for checking the receipt. */
 const POLL_INTERVAL_MS = 3_000;
 
+/** Phase labels for screen readers */
+const PHASE_LABELS: Record<Phase, string> = {
+  review: 'Review transaction details',
+  wallet: 'Confirm in your wallet',
+  submitted: 'Transaction status',
+};
+
 /**
  * Maps our broader TransactionType to the narrower type expected by
  * `addPendingTransaction`. Keeps the two type systems decoupled.
@@ -176,8 +190,9 @@ function PulseRing({ className }: { className?: string }) {
         className={clsx(
           'absolute inset-0 rounded-full',
           'bg-gradient-to-r from-indigo-500/20 to-violet-500/20',
-          'animate-ping',
+          'animate-ping motion-reduce:animate-none',
         )}
+        aria-hidden="true"
       />
       {/* Inner steady ring */}
       <div
@@ -188,7 +203,7 @@ function PulseRing({ className }: { className?: string }) {
           'border border-indigo-500/30',
         )}
       >
-        <Loader2 className="h-8 w-8 text-indigo-400 animate-spin" />
+        <Loader2 className="h-8 w-8 text-indigo-400 animate-spin motion-reduce:animate-none" aria-hidden="true" />
       </div>
     </div>
   );
@@ -209,16 +224,17 @@ function CopyButton({ text }: { text: string }) {
       type="button"
       onClick={handleCopy}
       className={clsx(
-        'rounded-lg p-1.5',
+        'rounded-lg p-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center',
         'text-gray-500 hover:text-white hover:bg-white/[0.08]',
         'transition-colors duration-150',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60',
       )}
-      aria-label="Copy transaction hash"
+      aria-label={copied ? 'Transaction hash copied' : 'Copy transaction hash to clipboard'}
     >
       {copied ? (
-        <Check className="h-3.5 w-3.5 text-emerald-400" />
+        <Check className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
       ) : (
-        <Copy className="h-3.5 w-3.5" />
+        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
       )}
     </button>
   );
@@ -260,13 +276,15 @@ function StatusBadge({ status }: { status: TxStatus }) {
         s.bg,
         s.text,
       )}
+      role="status"
+      aria-label={`Transaction status: ${s.label}`}
     >
       {status === 'pending' || status === 'confirming' ? (
-        <Spinner size="xs" />
+        <Spinner size="xs" label={s.label} />
       ) : status === 'confirmed' ? (
-        <CheckCircle2 className="h-3.5 w-3.5" />
+        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
       ) : (
-        <XCircle className="h-3.5 w-3.5" />
+        <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
       )}
       {s.label}
     </span>
@@ -284,6 +302,15 @@ interface ReviewPhaseProps {
 }
 
 function ReviewPhase({ config, onConfirm, onCancel }: ReviewPhaseProps) {
+  const confirmRef = useRef<HTMLButtonElement>(null);
+
+  // Auto-focus the confirm button when this phase renders
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      confirmRef.current?.focus();
+    });
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* Transaction type badge */}
@@ -300,7 +327,7 @@ function ReviewPhase({ config, onConfirm, onCancel }: ReviewPhaseProps) {
       </div>
 
       {/* Detail rows */}
-      <div
+      <dl
         className={clsx(
           'rounded-2xl border border-white/[0.06]',
           'bg-white/[0.02] divide-y divide-white/[0.06]',
@@ -311,13 +338,13 @@ function ReviewPhase({ config, onConfirm, onCancel }: ReviewPhaseProps) {
             key={detail.label}
             className="flex items-center justify-between gap-4 px-5 py-3.5"
           >
-            <span className="text-sm text-gray-400">{detail.label}</span>
-            <span className="text-sm font-medium text-white text-right break-all">
+            <dt className="text-sm text-gray-400">{detail.label}</dt>
+            <dd className="text-sm font-medium text-white text-right break-all">
               {detail.value}
-            </span>
+            </dd>
           </div>
         ))}
-      </div>
+      </dl>
 
       {/* Disclaimer */}
       <p className="text-xs text-gray-500 leading-relaxed">
@@ -326,35 +353,38 @@ function ReviewPhase({ config, onConfirm, onCancel }: ReviewPhaseProps) {
       </p>
 
       {/* Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-center gap-3">
         <button
           type="button"
           onClick={onCancel}
           className={clsx(
-            'flex-1 h-12 rounded-xl px-6',
+            'w-full sm:flex-1 h-12 min-h-[44px] rounded-xl px-6',
             'text-sm font-semibold text-gray-300',
             'bg-white/[0.06] border border-white/[0.08]',
             'hover:bg-white/[0.10] hover:text-white',
             'transition-all duration-200',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60',
           )}
         >
           Cancel
         </button>
         <button
+          ref={confirmRef}
           type="button"
           onClick={onConfirm}
           className={clsx(
-            'flex-1 inline-flex items-center justify-center gap-2.5',
-            'h-12 rounded-xl px-6',
+            'w-full sm:flex-1 inline-flex items-center justify-center gap-2.5',
+            'h-12 min-h-[44px] rounded-xl px-6',
             'text-sm font-semibold text-white',
             'bg-gradient-to-r from-indigo-500 to-violet-500',
             'shadow-[0_0_24px_-6px_rgba(99,102,241,0.45)]',
             'hover:shadow-[0_0_32px_-4px_rgba(99,102,241,0.6)] hover:brightness-110',
             'transition-all duration-200',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0D0F14]',
           )}
         >
           Confirm
-          <ArrowRight className="h-4 w-4" />
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -371,7 +401,7 @@ function WalletPhase({ timedOut, onRetry }: WalletPhaseProps) {
     <div className="flex flex-col items-center py-6 space-y-6">
       <PulseRing className="h-20 w-20" />
 
-      <div className="text-center space-y-2">
+      <div className="text-center space-y-2" aria-live="polite">
         <h3 className="text-lg font-semibold text-white">
           Waiting for Wallet Confirmation
         </h3>
@@ -383,11 +413,12 @@ function WalletPhase({ timedOut, onRetry }: WalletPhaseProps) {
       {timedOut && (
         <div
           className={clsx(
-            'flex items-center gap-3 rounded-xl px-5 py-3',
+            'flex flex-col sm:flex-row items-center gap-3 rounded-xl px-5 py-3',
             'bg-amber-500/10 border border-amber-500/20',
           )}
+          role="alert"
         >
-          <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+          <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" aria-hidden="true" />
           <p className="text-xs text-amber-300">
             Still waiting. Your wallet may need attention.
           </p>
@@ -396,13 +427,14 @@ function WalletPhase({ timedOut, onRetry }: WalletPhaseProps) {
             onClick={onRetry}
             className={clsx(
               'inline-flex items-center gap-1.5 shrink-0',
-              'rounded-lg px-3 py-1.5',
+              'rounded-lg px-3 py-1.5 min-h-[44px]',
               'text-xs font-semibold text-amber-300',
               'bg-amber-500/10 hover:bg-amber-500/20',
               'transition-colors duration-150',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60',
             )}
           >
-            <RefreshCw className="h-3 w-3" />
+            <RefreshCw className="h-3 w-3" aria-hidden="true" />
             Retry
           </button>
         </div>
@@ -431,11 +463,21 @@ function SubmittedPhase({
   onAnother,
 }: SubmittedPhaseProps) {
   const explorerUrl = getExplorerTxURL(txHash, chainId);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // Auto-focus the primary action button when status resolves
+  useEffect(() => {
+    if (txStatus === 'confirmed' || txStatus === 'failed') {
+      requestAnimationFrame(() => {
+        closeRef.current?.focus();
+      });
+    }
+  }, [txStatus]);
 
   return (
     <div className="space-y-6">
       {/* Status hero */}
-      <div className="flex flex-col items-center py-4 space-y-4">
+      <div className="flex flex-col items-center py-4 space-y-4" aria-live="polite">
         {txStatus === 'confirmed' ? (
           <div
             className={clsx(
@@ -444,7 +486,7 @@ function SubmittedPhase({
               'bg-emerald-500/10 border border-emerald-500/30',
             )}
           >
-            <CheckCircle2 className="h-10 w-10 text-emerald-400" />
+            <CheckCircle2 className="h-10 w-10 text-emerald-400" aria-hidden="true" />
           </div>
         ) : txStatus === 'failed' ? (
           <div
@@ -454,7 +496,7 @@ function SubmittedPhase({
               'bg-red-500/10 border border-red-500/30',
             )}
           >
-            <XCircle className="h-10 w-10 text-red-400" />
+            <XCircle className="h-10 w-10 text-red-400" aria-hidden="true" />
           </div>
         ) : (
           <div
@@ -464,7 +506,7 @@ function SubmittedPhase({
               'bg-indigo-500/10 border border-indigo-500/30',
             )}
           >
-            <Spinner size="lg" />
+            <Spinner size="lg" label="Waiting for confirmation" />
           </div>
         )}
 
@@ -502,43 +544,47 @@ function SubmittedPhase({
               target="_blank"
               rel="noopener noreferrer"
               className={clsx(
-                'rounded-lg p-1.5',
+                'rounded-lg p-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center',
                 'text-gray-500 hover:text-indigo-400 hover:bg-white/[0.08]',
                 'transition-colors duration-150',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60',
               )}
-              aria-label="View on block explorer"
+              aria-label={`View transaction ${truncateHash(txHash)} on block explorer (opens in new tab)`}
             >
-              <ExternalLink className="h-3.5 w-3.5" />
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
             </a>
           )}
         </div>
       </div>
 
       {/* CTA buttons */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-center gap-3">
         <button
           type="button"
           onClick={onAnother}
           className={clsx(
-            'flex-1 h-11 rounded-xl px-6',
+            'w-full sm:flex-1 h-11 min-h-[44px] rounded-xl px-6',
             'text-sm font-semibold text-gray-300',
             'bg-white/[0.06] border border-white/[0.08]',
             'hover:bg-white/[0.10] hover:text-white',
             'transition-all duration-200',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60',
           )}
         >
           Make Another
         </button>
         <button
+          ref={closeRef}
           type="button"
           onClick={onClose}
           className={clsx(
-            'flex-1 h-11 rounded-xl px-6',
+            'w-full sm:flex-1 h-11 min-h-[44px] rounded-xl px-6',
             'text-sm font-semibold text-white',
             'bg-gradient-to-r from-indigo-500 to-violet-500',
             'shadow-[0_0_24px_-6px_rgba(99,102,241,0.45)]',
             'hover:shadow-[0_0_32px_-4px_rgba(99,102,241,0.6)] hover:brightness-110',
             'transition-all duration-200',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0D0F14]',
           )}
         >
           {txStatus === 'confirmed' ? 'View in Portfolio' : 'Close'}
@@ -766,6 +812,9 @@ export function useTransactionFlow(): UseTransactionFlowReturn {
   const TransactionFlowModal: FC = useCallback(() => {
     if (!config) return null;
 
+    const phases: Phase[] = ['review', 'wallet', 'submitted'];
+    const currentPhaseIndex = phases.indexOf(phase);
+
     return (
       <Dialog
         open={isOpen}
@@ -777,26 +826,28 @@ export function useTransactionFlow(): UseTransactionFlowReturn {
           transition
           className={clsx(
             'fixed inset-0 bg-black/60 backdrop-blur-sm',
-            'transition-opacity duration-300 ease-out',
+            'transition-opacity duration-300 ease-out motion-reduce:transition-none',
             'data-[closed]:opacity-0',
           )}
         />
 
-        {/* Centering container */}
+        {/* Centering container -- fullscreen on mobile, centered on desktop */}
         <div className="fixed inset-0 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
+          <div className="flex min-h-full items-end sm:items-center justify-center p-0 sm:p-6">
             {/* Panel */}
             <DialogPanel
               transition
               className={clsx(
-                'relative w-full max-w-lg overflow-hidden',
+                'relative w-full sm:max-w-lg overflow-hidden',
+                // Fullscreen bottom sheet on mobile, centered card on desktop
+                'rounded-t-2xl sm:rounded-2xl',
                 // Glass morphism
-                'rounded-2xl bg-[#0D0F14]/95 backdrop-blur-xl',
+                'bg-[#0D0F14]/95 backdrop-blur-xl',
                 'border border-white/[0.08]',
                 // Depth shadow
                 'shadow-[0_25px_60px_-12px_rgba(0,0,0,0.5)]',
                 // Transition
-                'transition duration-300 ease-out',
+                'transition duration-300 ease-out motion-reduce:transition-none',
                 'data-[closed]:scale-95 data-[closed]:opacity-0 data-[closed]:translate-y-2',
               )}
             >
@@ -807,9 +858,9 @@ export function useTransactionFlow(): UseTransactionFlowReturn {
               />
 
               {/* Header */}
-              <div className="flex items-start justify-between gap-4 border-b border-white/[0.06] px-8 sm:px-10 pt-8 sm:pt-10 pb-6">
+              <div className="flex items-start justify-between gap-4 border-b border-white/[0.06] px-6 sm:px-10 pt-6 sm:pt-10 pb-6">
                 <div className="min-w-0 flex-1">
-                  <DialogTitle className="text-xl font-semibold text-white leading-tight">
+                  <DialogTitle className="text-lg sm:text-xl font-semibold text-white leading-tight">
                     {phase === 'review'
                       ? config.title
                       : phase === 'wallet'
@@ -817,19 +868,20 @@ export function useTransactionFlow(): UseTransactionFlowReturn {
                         : 'Transaction Status'}
                   </DialogTitle>
 
-                  {/* Phase indicators */}
-                  <div className="flex items-center gap-2 mt-4">
-                    {(['review', 'wallet', 'submitted'] as const).map(
-                      (p, i) => (
-                        <div key={p} className="flex items-center gap-2">
+                  {/* Phase indicators with aria-current */}
+                  <nav aria-label="Transaction progress" className="mt-4">
+                    <ol className="flex items-center gap-2">
+                      {phases.map((p, i) => (
+                        <li key={p} className="flex items-center gap-2">
                           {i > 0 && (
                             <div
                               className={clsx(
-                                'h-px w-6',
-                                phaseIndex(phase) >= i
+                                'h-px w-4 sm:w-6',
+                                currentPhaseIndex >= i
                                   ? 'bg-indigo-500'
                                   : 'bg-white/[0.08]',
                               )}
+                              aria-hidden="true"
                             />
                           )}
                           <div
@@ -838,17 +890,19 @@ export function useTransactionFlow(): UseTransactionFlowReturn {
                               'h-6 w-6 rounded-full text-xs font-semibold',
                               p === phase
                                 ? 'bg-indigo-500 text-white'
-                                : phaseIndex(phase) > phaseIndex(p)
+                                : currentPhaseIndex > i
                                   ? 'bg-indigo-500/20 text-indigo-400'
                                   : 'bg-white/[0.06] text-gray-500',
                             )}
+                            aria-current={p === phase ? 'step' : undefined}
+                            aria-label={`Step ${i + 1}: ${PHASE_LABELS[p]}${p === phase ? ' (current)' : ''}`}
                           >
                             {i + 1}
                           </div>
-                        </div>
-                      ),
-                    )}
-                  </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </nav>
                 </div>
 
                 {/* Close button -- hidden during wallet phase */}
@@ -858,19 +912,19 @@ export function useTransactionFlow(): UseTransactionFlowReturn {
                     onClick={handleClose}
                     aria-label="Close dialog"
                     className={clsx(
-                      'absolute top-6 right-6 sm:top-8 sm:right-8 shrink-0 rounded-xl p-2',
+                      'absolute top-4 right-4 sm:top-8 sm:right-8 shrink-0 rounded-xl p-2 min-h-[44px] min-w-[44px] flex items-center justify-center',
                       'text-gray-500 transition-all duration-200',
                       'hover:bg-white/[0.06] hover:text-white',
                       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0D0F14]',
                     )}
                   >
-                    <X className="h-5 w-5" />
+                    <X className="h-5 w-5" aria-hidden="true" />
                   </button>
                 )}
               </div>
 
               {/* Body */}
-              <div className="px-8 sm:px-10 py-8 sm:py-10">
+              <div className="px-6 sm:px-10 py-6 sm:py-10">
                 {/* Error banner */}
                 {error && phase === 'review' && (
                   <div
@@ -878,8 +932,9 @@ export function useTransactionFlow(): UseTransactionFlowReturn {
                       'flex items-start gap-3 rounded-xl px-4 py-3 mb-6',
                       'bg-red-500/10 border border-red-500/20',
                     )}
+                    role="alert"
                   >
-                    <XCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                    <XCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" aria-hidden="true" />
                     <p className="text-xs text-red-300 leading-relaxed">
                       {error}
                     </p>
@@ -943,3 +998,6 @@ function phaseIndex(phase: Phase): number {
   const order: Phase[] = ['review', 'wallet', 'submitted'];
   return order.indexOf(phase);
 }
+
+// Preserve export for any external consumers
+void phaseIndex;

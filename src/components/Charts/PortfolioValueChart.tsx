@@ -12,6 +12,13 @@ import clsx from 'clsx';
 import { TrendingUp } from 'lucide-react';
 import type { WrappedAsset } from '../../types/index';
 import { formatCurrency, formatCompact } from '../../lib/formatters';
+import {
+  CARD_CLASSES,
+  CHART_HEADER_CLASSES,
+  CHART_TOOLTIP_STYLE,
+  CHART_AXIS,
+  EMPTY_STATE_CLASSES,
+} from '../../lib/designTokens';
 import ChartSkeleton from '../DataViz/ChartSkeleton';
 
 // ---------------------------------------------------------------------------
@@ -43,18 +50,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   const value = payload[0]?.value ?? 0;
 
   return (
-    <div
-      role="tooltip"
-      style={{
-        background: 'rgba(13, 15, 20, 0.92)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        borderRadius: 14,
-        padding: '14px 18px',
-        boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
-      }}
-    >
+    <div role="tooltip" style={CHART_TOOLTIP_STYLE}>
       <p className="text-xs text-gray-500 mb-1">{label}</p>
       <p className="text-sm font-semibold text-white">
         {formatCurrency(value)}
@@ -102,26 +98,25 @@ export default function PortfolioValueChart({
     <div
       aria-label={`Portfolio value chart showing total value of ${formatCurrency(totalValue)} across ${assets.length} assets`}
       className={clsx(
-        'relative overflow-hidden rounded-2xl',
-        'bg-[#0D0F14]/80 backdrop-blur-xl',
-        'border border-white/[0.06]',
-        'p-7 sm:p-9',
+        CARD_CLASSES.base,
+        CARD_CLASSES.wrapper,
+        CARD_CLASSES.padding,
       )}
     >
       {/* Top gradient accent */}
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
+      <div className={CARD_CLASSES.gradientAccent} />
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/[0.08]">
-            <TrendingUp className="h-[18px] w-[18px] text-indigo-400" aria-hidden="true" />
+      <div className={CHART_HEADER_CLASSES.container}>
+        <div className={CHART_HEADER_CLASSES.left}>
+          <div className={CHART_HEADER_CLASSES.icon}>
+            <TrendingUp className={CHART_HEADER_CLASSES.iconSvg} aria-hidden="true" />
           </div>
           <div>
-            <h3 className="text-[15px] font-semibold text-white tracking-tight">
+            <h3 className={CHART_HEADER_CLASSES.title}>
               Portfolio Value
             </h3>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className={CHART_HEADER_CLASSES.subtitle}>
               Cumulative asset value
             </p>
           </div>
@@ -140,14 +135,14 @@ export default function PortfolioValueChart({
       </div>
 
       {chartData.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl mb-5 bg-indigo-500/[0.06] border border-indigo-500/10">
-            <TrendingUp className="h-7 w-7 text-gray-600" aria-hidden="true" />
+        <div className={EMPTY_STATE_CLASSES.container}>
+          <div className={EMPTY_STATE_CLASSES.iconBox}>
+            <TrendingUp className={EMPTY_STATE_CLASSES.icon} aria-hidden="true" />
           </div>
-          <p className="text-sm font-medium text-gray-400">
+          <p className={EMPTY_STATE_CLASSES.title}>
             No value data available
           </p>
-          <p className="text-xs text-gray-600 mt-2 max-w-[220px] leading-relaxed">
+          <p className={EMPTY_STATE_CLASSES.description}>
             Mint assets to see your portfolio value chart
           </p>
         </div>
@@ -162,18 +157,18 @@ export default function PortfolioValueChart({
                 </linearGradient>
               </defs>
               <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="rgba(255,255,255,0.04)"
+                strokeDasharray={CHART_AXIS.grid.strokeDasharray}
+                stroke={CHART_AXIS.grid.stroke}
                 vertical={false}
               />
               <XAxis
                 dataKey="label"
-                tick={{ fill: '#64748B', fontSize: 11 }}
-                axisLine={{ stroke: 'rgba(255,255,255,0.06)' }}
+                tick={CHART_AXIS.tick}
+                axisLine={CHART_AXIS.axisLine}
                 tickLine={false}
               />
               <YAxis
-                tick={{ fill: '#64748B', fontSize: 11 }}
+                tick={CHART_AXIS.tick}
                 axisLine={false}
                 tickLine={false}
                 tickFormatter={(v: number) =>

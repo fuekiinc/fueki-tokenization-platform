@@ -2,12 +2,12 @@
 
 pragma solidity ^0.8.4;
 
-interface IRestrictedSwap {  
+interface IRestrictedSwap {
 
   /************************
    * Data Structures
    ************************/
-  
+
   enum SwapStatus {
     SellConfigured,
     BuyConfigured,
@@ -83,24 +83,25 @@ interface IRestrictedSwap {
 
   /****************************
    * Events
+   * Gas optimization: indexed parameters on addresses/IDs for efficient log filtering
    ****************************/
 
-  event SwapCanceled(address sender, uint256 swapNumber);
+  event SwapCanceled(address indexed sender, uint256 indexed swapNumber);
 
   event SwapConfigured(
-    uint256 swapNumber,
-    address restrictedTokenSender,
+    uint256 indexed swapNumber,
+    address indexed restrictedTokenSender,
     uint256 restrictedTokenAmount,
     address quoteToken,
-    address quoteTokenSender,
+    address indexed quoteTokenSender,
     uint256 quoteTokenAmount
   );
 
   event SwapComplete(
-    uint256 swapNumber,
-    address restrictedTokenSender,
+    uint256 indexed swapNumber,
+    address indexed restrictedTokenSender,
     uint256 restrictedTokenAmount,
-    address quoteTokenSender,
+    address indexed quoteTokenSender,
     address quoteToken,
     uint256 quoteTokenAmount
   );

@@ -7,6 +7,8 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
+  TrendingUp,
+  TrendingDown,
 } from 'lucide-react';
 import { getAdminStats } from '../../lib/api/admin';
 import type { AdminStats } from '../../lib/api/admin';
@@ -28,6 +30,8 @@ interface StatConfig {
   icon: React.ElementType;
   gradientFrom: string;
   gradientTo: string;
+  /** If provided, will show as trend percentage */
+  trendKey?: string;
 }
 
 const STAT_CARDS: StatConfig[] = [
@@ -69,6 +73,40 @@ const STAT_CARDS: StatConfig[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Trend indicator helper
+// ---------------------------------------------------------------------------
+
+function computeTrend(stats: AdminStats, key: keyof AdminStats): { value: number; isPositive: boolean } | null {
+  // Show trend for new users (30d) based on total users ratio
+  if (key === 'newUsersLast30Days' && stats.totalUsers > 0) {
+    const pct = Math.round((stats.newUsersLast30Days / stats.totalUsers) * 100);
+    return { value: pct, isPositive: pct > 0 };
+  }
+  // Show approval rate for approved
+  if (key === 'kycApproved') {
+    const total = stats.kycApproved + stats.kycPending + stats.kycRejected;
+    if (total === 0) return null;
+    const pct = Math.round((stats.kycApproved / total) * 100);
+    return { value: pct, isPositive: true };
+  }
+  // Show rejection rate for rejected
+  if (key === 'kycRejected') {
+    const total = stats.kycApproved + stats.kycPending + stats.kycRejected;
+    if (total === 0) return null;
+    const pct = Math.round((stats.kycRejected / total) * 100);
+    return { value: pct, isPositive: false };
+  }
+  return null;
+}
+
+function getTrendLabel(key: keyof AdminStats): string {
+  if (key === 'newUsersLast30Days') return 'of total';
+  if (key === 'kycApproved') return 'approval rate';
+  if (key === 'kycRejected') return 'rejection rate';
+  return '';
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -101,8 +139,12 @@ export default function AdminStatsGrid() {
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-5">
         {STAT_CARDS.map((card) => (
           <div key={card.key} className={clsx(GLASS, 'animate-pulse p-7')}>
-            <div className="h-4 w-20 rounded bg-white/[0.06]" />
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-white/[0.06]" />
+              <div className="h-4 w-20 rounded bg-white/[0.06]" />
+            </div>
             <div className="mt-4 h-8 w-16 rounded bg-white/[0.06]" />
+            <div className="mt-2 h-3 w-24 rounded bg-white/[0.06]" />
           </div>
         ))}
       </div>
@@ -112,7 +154,7 @@ export default function AdminStatsGrid() {
   if (error) {
     return (
       <div className={clsx(GLASS, 'flex flex-col items-center gap-4 p-10')}>
-        <AlertTriangle className="h-8 w-8 text-amber-400" />
+        <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
         <p className="text-sm text-gray-400">{error}</p>
         <button
           onClick={() => void fetchStats()}
@@ -131,6 +173,8 @@ export default function AdminStatsGrid() {
       {STAT_CARDS.map((card) => {
         const Icon = card.icon;
         const value = stats[card.key];
+        const trend = computeTrend(stats, card.key);
+        const trendLabel = getTrendLabel(card.key);
 
         return (
           <div
@@ -163,6 +207,7 @@ export default function AdminStatsGrid() {
                   <Icon
                     className="h-5 w-5"
                     style={{ color: card.gradientFrom }}
+                    aria-hidden="true"
                   />
                 </div>
                 <p className="min-w-0 truncate text-xs font-medium uppercase tracking-wider text-gray-400">
@@ -173,6 +218,34 @@ export default function AdminStatsGrid() {
               <p className="mt-4 text-2xl font-bold tracking-tight text-white">
                 {typeof value === 'number' ? value.toLocaleString() : value}
               </p>
+
+              {/* Trend indicator */}
+              {trend && (
+                <div className="mt-2 flex items-center gap-1.5">
+                  {trend.isPositive ? (
+                    <TrendingUp
+                      className="h-3.5 w-3.5 text-emerald-400"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <TrendingDown
+                      className="h-3.5 w-3.5 text-red-400"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span
+                    className={clsx(
+                      'text-xs font-medium',
+                      trend.isPositive ? 'text-emerald-400' : 'text-red-400',
+                    )}
+                  >
+                    {trend.value}%
+                  </span>
+                  {trendLabel && (
+                    <span className="text-xs text-gray-500">{trendLabel}</span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -180,4 +253,3 @@ export default function AdminStatsGrid() {
     </div>
   );
 }
-

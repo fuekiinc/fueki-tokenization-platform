@@ -95,10 +95,31 @@ const REFRESH_INTERVAL_MS = 15_000;
 
 const TABS: { label: string; value: TabFilter }[] = [
   { label: 'All', value: 'all' },
-  { label: 'Open', value: 'open' },
+  { label: 'Active', value: 'open' },
   { label: 'Filled', value: 'filled' },
   { label: 'Cancelled', value: 'cancelled' },
 ];
+
+/** Generate CSV content from orders for export. */
+function generateOrdersCSV(orders: Order[], userAddress: string): string {
+  const headers = ['Order ID', 'Role', 'Sell Token', 'Buy Token', 'Sell Amount', 'Buy Amount', 'Fill %', 'Status'];
+  const rows = orders.map((order) => {
+    const status = order.cancelled ? 'Cancelled' : order.filledBuy >= order.amountBuy ? 'Filled' : 'Open';
+    const pct = order.amountBuy === 0n ? 0 : Number((order.filledBuy * 100n) / order.amountBuy);
+    const role = order.maker.toLowerCase() === userAddress.toLowerCase() ? 'Maker' : 'Taker';
+    return [
+      order.id.toString(),
+      role,
+      isETH(order.tokenSell) ? 'ETH' : order.tokenSell,
+      isETH(order.tokenBuy) ? 'ETH' : order.tokenBuy,
+      ethers.formatUnits(order.amountSell, 18),
+      ethers.formatUnits(order.amountBuy, 18),
+      `${pct}%`,
+      status,
+    ].join(',');
+  });
+  return [headers.join(','), ...rows].join('\n');
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -134,6 +155,7 @@ export default function UserOrders({
   const [withdrawing, setWithdrawing] = useState(false);
   const [sortField, setSortField] = useState<SortField>('id');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [confirmCancelId, setConfirmCancelId] = useState<bigint | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancellingRef = useRef(false);
 
@@ -359,6 +381,20 @@ export default function UserOrders({
     }
   }, [contractService, ethWithdrawable, withdrawing, fetchUserOrders]);
 
+  // ---- CSV export handler -------------------------------------------------
+
+  const handleExportCSV = useCallback(() => {
+    if (filteredOrders.length === 0) return;
+    const csv = generateOrdersCSV(filteredOrders, userAddress);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `fueki-orders-${activeTab}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [filteredOrders, userAddress, activeTab]);
+
   // ---- Status helpers -----------------------------------------------------
 
   function renderStatusBadge(order: Order) {
@@ -454,7 +490,7 @@ export default function UserOrders({
           >
             {withdrawing ? (
               <span className="flex items-center gap-1.5">
-                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
                 Withdrawing...
               </span>
             ) : (
@@ -464,11 +500,12 @@ export default function UserOrders({
         </div>
       )}
 
-      {/* ---- Filter tabs with ARIA semantics -------------------------------- */}
+      {/* ---- Filter tabs with ARIA semantics + CSV export -------------------- */}
+      <div className="mb-6 flex items-center gap-2 border-b border-white/[0.06]">
       <div
         role="tablist"
         aria-label="Order status filter"
-        className="mb-6 flex gap-0.5 sm:gap-1 border-b border-white/[0.06] px-0.5 sm:px-1 pb-0 overflow-x-auto"
+        className="flex flex-1 gap-0.5 sm:gap-1 px-0.5 sm:px-1 pb-0 overflow-x-auto"
       >
         {TABS.map((tab) => (
           <button
@@ -511,6 +548,25 @@ export default function UserOrders({
         ))}
       </div>
 
+      {/* CSV export button */}
+      {filteredOrders.length > 0 && (
+        <button
+          type="button"
+          onClick={handleExportCSV}
+          aria-label="Export orders as CSV"
+          title="Export as CSV"
+          className={clsx(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg mb-1',
+            'text-gray-500 hover:text-gray-300 hover:bg-white/[0.04]',
+            'transition-all',
+            'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none',
+          )}
+        >
+          <Download className="h-3.5 w-3.5" />
+        </button>
+      )}
+      </div>
+
       {/* ---- Tab panel ------------------------------------------------------ */}
       <div
         role="tabpanel"
@@ -527,12 +583,12 @@ export default function UserOrders({
                   key={i}
                   className="flex items-center gap-4 rounded-xl bg-white/[0.02] border border-white/[0.04] px-5 py-4"
                 >
-                  <div className="h-9 w-9 animate-pulse rounded-full bg-white/[0.04]" />
+                  <div className="h-9 w-9 animate-pulse motion-reduce:animate-none rounded-full bg-white/[0.04]" />
                   <div className="flex-1 space-y-2">
-                    <div className="h-3.5 w-28 animate-pulse rounded bg-white/[0.04]" />
-                    <div className="h-3 w-36 animate-pulse rounded bg-white/[0.04]" />
+                    <div className="h-3.5 w-28 animate-pulse motion-reduce:animate-none rounded bg-white/[0.04]" />
+                    <div className="h-3 w-36 animate-pulse motion-reduce:animate-none rounded bg-white/[0.04]" />
                   </div>
-                  <div className="h-6 w-16 animate-pulse rounded-full bg-white/[0.04]" />
+                  <div className="h-6 w-16 animate-pulse motion-reduce:animate-none rounded-full bg-white/[0.04]" />
                 </div>
               ))}
             </div>
@@ -753,31 +809,46 @@ export default function UserOrders({
                       {/* Actions */}
                       <td className="px-4 py-4 text-right">
                         {open && maker ? (
-                          <button
-                            type="button"
-                            onClick={() => handleCancelOrder(order.id)}
-                            disabled={isCancelling}
-                            aria-label={`Cancel order #${order.id.toString()}`}
-                            className={clsx(
-                              'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all',
-                              'focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
-                              isCancelling
-                                ? 'cursor-not-allowed bg-white/[0.02] text-gray-600'
-                                : 'border border-red-500/10 text-red-400 hover:border-red-500/20 hover:bg-red-500/5',
-                            )}
-                          >
-                            {isCancelling ? (
-                              <>
-                                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-                                <span className="sr-only">Cancelling order</span>
-                              </>
-                            ) : (
-                              <>
-                                <X className="h-3 w-3" aria-hidden="true" />
-                                Cancel Order
-                              </>
-                            )}
-                          </button>
+                          confirmCancelId === order.id ? (
+                            <div className="inline-flex items-center gap-1.5">
+                              <span className="text-[10px] text-amber-400 mr-1">Cancel?</span>
+                              <button
+                                type="button"
+                                onClick={() => { setConfirmCancelId(null); void handleCancelOrder(order.id); }}
+                                disabled={isCancelling}
+                                aria-label={`Confirm cancel order #${order.id.toString()}`}
+                                className="rounded-md bg-red-500/15 px-2.5 py-1.5 text-[10px] font-bold text-red-400 hover:bg-red-500/25 transition-colors"
+                              >
+                                {isCancelling ? (
+                                  <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                                ) : 'Yes'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmCancelId(null)}
+                                className="rounded-md bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-bold text-gray-400 hover:bg-white/[0.08] transition-colors"
+                              >
+                                No
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmCancelId(order.id)}
+                              disabled={isCancelling}
+                              aria-label={`Cancel order #${order.id.toString()}`}
+                              className={clsx(
+                                'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all',
+                                'focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+                                isCancelling
+                                  ? 'cursor-not-allowed bg-white/[0.02] text-gray-600'
+                                  : 'border border-red-500/10 text-red-400 hover:border-red-500/20 hover:bg-red-500/5',
+                              )}
+                            >
+                              <X className="h-3 w-3" aria-hidden="true" />
+                              Cancel
+                            </button>
+                          )
                         ) : (
                           <span className="text-xs text-gray-700">--</span>
                         )}
@@ -907,32 +978,49 @@ export default function UserOrders({
 
                   {/* Row 4: Cancel button for open orders (maker only) */}
                   {open && maker && (
-                    <button
-                      type="button"
-                      onClick={() => handleCancelOrder(order.id)}
-                      disabled={isCancelling}
-                      aria-label={`Cancel order #${order.id.toString()}`}
-                      className={clsx(
-                        'flex w-full items-center justify-center gap-2 rounded-xl py-3 px-4 text-xs font-semibold transition-all',
-                        'min-h-[44px]',
-                        'focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
-                        isCancelling
-                          ? 'cursor-not-allowed bg-white/[0.02] text-gray-600'
-                          : 'border border-red-500/10 text-red-400 hover:border-red-500/20 hover:bg-red-500/5',
-                      )}
-                    >
-                      {isCancelling ? (
-                        <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                          Cancelling...
-                        </>
-                      ) : (
-                        <>
-                          <X className="h-3.5 w-3.5" aria-hidden="true" />
-                          Cancel Order
-                        </>
-                      )}
-                    </button>
+                    confirmCancelId === order.id ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-amber-400">Cancel this order?</span>
+                        <button
+                          type="button"
+                          onClick={() => { setConfirmCancelId(null); void handleCancelOrder(order.id); }}
+                          disabled={isCancelling}
+                          className="flex-1 rounded-xl py-3 text-xs font-semibold bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors min-h-[44px]"
+                        >
+                          {isCancelling ? (
+                            <span className="flex items-center justify-center gap-1.5">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                              Cancelling...
+                            </span>
+                          ) : 'Confirm'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmCancelId(null)}
+                          className="flex-1 rounded-xl py-3 text-xs font-semibold bg-white/[0.04] text-gray-400 hover:bg-white/[0.08] transition-colors min-h-[44px]"
+                        >
+                          Keep
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmCancelId(order.id)}
+                        disabled={isCancelling}
+                        aria-label={`Cancel order #${order.id.toString()}`}
+                        className={clsx(
+                          'flex w-full items-center justify-center gap-2 rounded-xl py-3 px-4 text-xs font-semibold transition-all',
+                          'min-h-[44px]',
+                          'focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
+                          isCancelling
+                            ? 'cursor-not-allowed bg-white/[0.02] text-gray-600'
+                            : 'border border-red-500/10 text-red-400 hover:border-red-500/20 hover:bg-red-500/5',
+                        )}
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden="true" />
+                        Cancel Order
+                      </button>
+                    )
                   )}
                 </div>
               );
@@ -966,7 +1054,7 @@ export default function UserOrders({
       {/* Refresh indicator */}
       {loading && orders.length > 0 && (
         <div role="status" className="flex items-center justify-center gap-1.5 py-3 text-[11px] text-gray-600">
-          <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+          <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
           <span>Refreshing...</span>
         </div>
       )}

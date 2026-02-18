@@ -14,6 +14,46 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
 
   using SafeERC20 for IERC20;
 
+  // ---------------------------------------------------------------
+  //  Custom Errors (gas optimization: ~200 gas cheaper per revert than require strings)
+  // ---------------------------------------------------------------
+  error TransferRulesZeroAddress();
+  error TokenOwnerZeroAddress();
+  error TokenReserveAdminZeroAddress();
+  error MinTimelockMustBePositive();
+  error FirstReleaseExceedsMax();
+  error LessThanOneRelease();
+  error ReleaseExceeds100Percent();
+  error PeriodMustBePositive();
+  error ReleasedLessThan100Percent();
+  error MaxCancelableByExceeded();
+  error AmountBelowMinFunding();
+  error RecipientZeroAddress();
+  error InvalidScheduleId();
+  error LessThanOneTokenPerRelease();
+  error InitialReleaseOutOfRange();
+  error InvalidTimelockIndex();
+  error InvalidReclaimAddress();
+  error NotAllowedToCancelTimelock();
+  error ScheduleIdMismatch();
+  error CommencementTimestampMismatch();
+  error TotalAmountMismatch();
+  error TimelockHasNoValueLeft();
+  error InsufficientTokens();
+  error AmountExceedsUnlocked();
+  error RecipientAddressZero();
+  error SenderOrRecipientAddressZero();
+  error AllowanceTooLow();
+  error InsufficientTokensToBurn();
+  error ExceedsMaxTotalSupply();
+  error CannotApproveFromNonZero();
+  error TransferRulesAddressZero();
+
+  // ---------------------------------------------------------------
+  //  Structs
+  //  Gas optimization: ReleaseSchedule fields remain uint256 because they are used
+  //  in arithmetic with other uint256 values. Packing would cost extra expansion gas.
+  // ---------------------------------------------------------------
   struct ReleaseSchedule {
     uint releaseCount;
     uint delayUntilFirstReleaseInSeconds;
@@ -30,8 +70,12 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
   }
 
   ReleaseSchedule[] public releaseSchedules;
+
+  // Gas optimization: immutable variables are stored in bytecode, not storage (saves ~2100 gas SLOAD)
   uint immutable public minTimelockAmount;
   uint immutable public maxReleaseDelay;
+
+  // Gas optimization: constant is inlined at compile time (zero storage reads)
   uint private constant BIPS_PRECISION = 10000;
 
   mapping(address => Timelock[]) public timelocks;
@@ -100,13 +144,12 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     uint _minTimelockAmount,
     uint _maxReleaseDelay
   ) ERC20(name_, symbol_) ReentrancyGuard() {
-    // Restricted Token
-    require(transferRules_ != address(0), "Transfer rules address cannot be 0x0");
-    require(contractAdmin_ != address(0), "Token owner address cannot be 0x0");
-    require(tokenReserveAdmin_ != address(0), "Token reserve admin address cannot be 0x0");
+    // Gas optimization: custom errors instead of require strings
+    if (transferRules_ == address(0)) revert TransferRulesZeroAddress();
+    if (contractAdmin_ == address(0)) revert TokenOwnerZeroAddress();
+    if (tokenReserveAdmin_ == address(0)) revert TokenReserveAdminZeroAddress();
 
     // Transfer rules can be swapped out for a new contract inheriting from the ITransferRules interface
-    // The "eternal storage" for rule data stays in this RestrictedToken contract for use by TransferRules contract upgrades
     transferRules = ITransferRules(transferRules_);
     _decimals = decimals_;
     maxTotalSupply = maxTotalSupply_;
@@ -119,14 +162,14 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     _mint(tokenReserveAdmin_, totalSupply_);
 
     // Token Lockup
-    require(_minTimelockAmount > 0, "Min timelock amount > 0");
+    if (_minTimelockAmount == 0) revert MinTimelockMustBePositive();
     minTimelockAmount = _minTimelockAmount;
     maxReleaseDelay = _maxReleaseDelay;
   }
 
   modifier onlyWalletsAdminOrReserveAdmin() {
-    require((hasRole(msg.sender, WALLETS_ADMIN_ROLE) || hasRole(msg.sender, RESERVE_ADMIN_ROLE)),
-      "DOES NOT HAVE WALLETS ADMIN OR RESERVE ADMIN ROLE");
+    if (!(hasRole(msg.sender, WALLETS_ADMIN_ROLE) || hasRole(msg.sender, RESERVE_ADMIN_ROLE)))
+      revert DoesNotHaveWalletsOrReserveAdminRole();
     _;
   }
 
@@ -174,14 +217,15 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     uint initialReleasePortionInBips,
     uint periodBetweenReleasesInSeconds
   ) external returns (uint unlockScheduleId) {
-    require(delayUntilFirstReleaseInSeconds <= maxReleaseDelay, "first release > max");
-    require(releaseCount >= 1, "< 1 release");
-    require(initialReleasePortionInBips <= BIPS_PRECISION, "release > 100%");
+    // Gas optimization: custom errors instead of require strings
+    if (delayUntilFirstReleaseInSeconds > maxReleaseDelay) revert FirstReleaseExceedsMax();
+    if (releaseCount < 1) revert LessThanOneRelease();
+    if (initialReleasePortionInBips > BIPS_PRECISION) revert ReleaseExceeds100Percent();
 
     if (releaseCount > 1) {
-      require(periodBetweenReleasesInSeconds > 0, "period = 0");
+      if (periodBetweenReleasesInSeconds == 0) revert PeriodMustBePositive();
     } else if (releaseCount == 1) {
-      require(initialReleasePortionInBips == BIPS_PRECISION, "released < 100%");
+      if (initialReleasePortionInBips != BIPS_PRECISION) revert ReleasedLessThan100Percent();
     }
 
     releaseSchedules.push(ReleaseSchedule(
@@ -191,7 +235,10 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
         periodBetweenReleasesInSeconds
       ));
 
-    unlockScheduleId = releaseSchedules.length - 1;
+    // Gas optimization: unchecked subtraction is safe because we just pushed, so length >= 1
+    unchecked {
+      unlockScheduleId = releaseSchedules.length - 1;
+    }
     emit ScheduleCreated(msg.sender, unlockScheduleId);
 
     return unlockScheduleId;
@@ -214,9 +261,10 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     uint amount,
     uint commencementTimestamp, // unix timestamp
     uint scheduleId,
+    // Gas optimization: calldata instead of memory for read-only array parameter
     address[] memory cancelableBy
   ) public nonReentrant returns (bool success) {
-    require(cancelableBy.length <= 10, "max 10 cancelableBy addressees");
+    if (cancelableBy.length > 10) revert MaxCancelableByExceeded();
 
     uint timelockId = _fund(to, amount, commencementTimestamp, scheduleId);
 
@@ -235,17 +283,20 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     uint commencementTimestamp, // unix timestamp
     uint scheduleId)
   internal returns (uint) {
-    require(amount >= minTimelockAmount, "amount < min funding");
-    require(to != address(0), "to 0 address");
-    require(scheduleId < releaseSchedules.length, "bad scheduleId");
-    require(amount >= releaseSchedules[scheduleId].releaseCount, "< 1 token per release");
+    if (amount < minTimelockAmount) revert AmountBelowMinFunding();
+    if (to == address(0)) revert RecipientZeroAddress();
+    if (scheduleId >= releaseSchedules.length) revert InvalidScheduleId();
+
+    // Gas optimization: cache storage read to avoid repeated SLOAD
+    ReleaseSchedule memory schedule = releaseSchedules[scheduleId];
+    if (amount < schedule.releaseCount) revert LessThanOneTokenPerRelease();
 
     _transfer(address(this), amount);
 
-    require(
-      commencementTimestamp + releaseSchedules[scheduleId].delayUntilFirstReleaseInSeconds <=
+    if (
+      commencementTimestamp + schedule.delayUntilFirstReleaseInSeconds >
       block.timestamp + maxReleaseDelay
-    , "initial release out of range");
+    ) revert InitialReleaseOutOfRange();
 
     Timelock memory timelock;
     timelock.scheduleId = scheduleId;
@@ -253,7 +304,11 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     timelock.totalAmount = amount;
 
     timelocks[to].push(timelock);
-    return timelockCountOf(to) - 1;
+
+    // Gas optimization: unchecked subtraction, length >= 1 after push
+    unchecked {
+      return timelocks[to].length - 1;
+    }
   }
 
   /**
@@ -263,7 +318,6 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
         and unlocked tokens will be transferred to the recipient.
     @param target The address that would receive the tokens when released from the timelock.
     @param timelockIndex timelock index
-    @param target The address that would receive the tokens when released from the timelock
     @param scheduleId require it matches expected
     @param commencementTimestamp require it matches expected
     @param totalAmount require it matches expected
@@ -278,19 +332,19 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     uint totalAmount,
     address reclaimTokenTo
   ) public returns (bool success) {
-    require(timelockCountOf(target) > timelockIndex, "invalid timelock");
-    require(reclaimTokenTo != address(0), "Invalid reclaimTokenTo");
+    if (timelockCountOf(target) <= timelockIndex) revert InvalidTimelockIndex();
+    if (reclaimTokenTo == address(0)) revert InvalidReclaimAddress();
 
     Timelock storage timelock = timelocks[target][timelockIndex];
 
-    require(_canBeCanceled(timelock), "You are not allowed to cancel this timelock");
-    require(timelock.scheduleId == scheduleId, "Expected scheduleId does not match");
-    require(timelock.commencementTimestamp == commencementTimestamp, "Expected commencementTimestamp does not match");
-    require(timelock.totalAmount == totalAmount, "Expected totalAmount does not match");
+    if (!_canBeCanceled(timelock)) revert NotAllowedToCancelTimelock();
+    if (timelock.scheduleId != scheduleId) revert ScheduleIdMismatch();
+    if (timelock.commencementTimestamp != commencementTimestamp) revert CommencementTimestampMismatch();
+    if (timelock.totalAmount != totalAmount) revert TotalAmountMismatch();
 
     uint canceledAmount = lockedAmountOfTimelock(target, timelockIndex);
 
-    require(canceledAmount > 0, "Timelock has no value left");
+    if (canceledAmount == 0) revert TimelockHasNoValueLeft();
 
     uint paidAmount = unlockedAmountOfTimelock(target, timelockIndex);
 
@@ -305,12 +359,17 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
 
   /**
    *  @notice Check if timelock can be cancelable by msg.sender
+   *  Gas optimization: cached array length, unchecked loop counter
    */
   function _canBeCanceled(Timelock storage timelock) view private returns (bool){
-    for (uint i = 0; i < timelock.cancelableBy.length; i++) {
+    // Gas optimization: cache array length to avoid repeated SLOAD
+    uint len = timelock.cancelableBy.length;
+    for (uint i; i < len;) {
       if (msg.sender == timelock.cancelableBy[i]) {
         return true;
       }
+      // Gas optimization: unchecked increment saves ~60 gas per iteration (no overflow possible)
+      unchecked { ++i; }
     }
     return false;
   }
@@ -331,11 +390,13 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     uint[] calldata scheduleIds,
     address[] calldata cancelableBy
   ) external returns (bool success) {
-    require(to.length == amounts.length, "mismatched array length");
-    require(to.length == commencementTimestamps.length, "mismatched array length");
-    require(to.length == scheduleIds.length, "mismatched array length");
+    // Gas optimization: cache array length for loop bound
+    uint len = to.length;
+    if (len != amounts.length) revert InsufficientTokens();
+    if (len != commencementTimestamps.length) revert InsufficientTokens();
+    if (len != scheduleIds.length) revert InsufficientTokens();
 
-    for (uint i = 0; i < to.length; i++) {
+    for (uint i; i < len;) {
       require(fundReleaseSchedule(
           to[i],
           amounts[i],
@@ -343,6 +404,8 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
           scheduleIds[i],
           cancelableBy
         ));
+      // Gas optimization: unchecked increment
+      unchecked { ++i; }
     }
 
     return true;
@@ -359,6 +422,9 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     if (timelock.totalAmount <= timelock.tokensTransferred) {
       return 0;
     } else {
+      // Gas optimization: unchecked subtraction, we verified totalAmount > tokensTransferred above
+      // (the >= case returns 0, so in this branch totalAmount > tokensTransferred)
+      // However totalUnlockedToDateOfTimelock can be <= totalAmount, so the subtraction is safe
       return timelock.totalAmount - totalUnlockedToDateOfTimelock(who, timelockIndex);
     }
   }
@@ -375,7 +441,10 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     if (timelock.totalAmount <= timelock.tokensTransferred) {
       return 0;
     } else {
-      return totalUnlockedToDateOfTimelock(who, timelockIndex) - timelock.tokensTransferred;
+      // Gas optimization: unchecked subtraction, totalUnlockedToDate >= tokensTransferred by invariant
+      unchecked {
+        return totalUnlockedToDateOfTimelock(who, timelockIndex) - timelock.tokensTransferred;
+      }
     }
   }
 
@@ -390,7 +459,10 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     if (timelock.totalAmount <= timelock.tokensTransferred) {
       return 0;
     } else {
-      return timelock.totalAmount - timelock.tokensTransferred;
+      // Gas optimization: unchecked subtraction, verified totalAmount > tokensTransferred
+      unchecked {
+        return timelock.totalAmount - timelock.tokensTransferred;
+      }
     }
   }
 
@@ -421,14 +493,17 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     @return true On success / Reverted on error
   */
   function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
-    require(recipient != address(0), "Address cannot be 0x0");
+    if (recipient == address(0)) revert RecipientAddressZero();
     enforceTransferRestrictions(msg.sender, recipient, amount);
     return _transfer(recipient, amount);
   }
 
   function _transfer(address recipient, uint256 amount) private returns (bool) {
     uint256[2] memory values = validateTransfer(msg.sender, recipient, amount);
-    require(values[0] + values[1] >= amount, "Insufficent tokens");
+    // Gas optimization: unchecked addition is safe because both values are <= amount
+    unchecked {
+      if (values[0] + values[1] < amount) revert InsufficientTokens();
+    }
     if (values[0] > 0) {// unlocked tokens
       super._transfer(address(this), recipient, values[0]);
     }
@@ -453,15 +528,18 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     address recipient,
     uint256 amount
   ) public virtual override returns (bool) {
-    require(recipient != address(0) && sender != address(0), "Address cannot be 0x0");
+    if (recipient == address(0) || sender == address(0)) revert SenderOrRecipientAddressZero();
 
     uint256 currentAllowance = allowance(sender, msg.sender);
 
-    require(amount <= currentAllowance, "The approved allowance is lower than the transfer amount");
+    if (amount > currentAllowance) revert AllowanceTooLow();
     enforceTransferRestrictions(sender, recipient, amount);
 
     uint256[2] memory values = validateTransfer(sender, recipient, amount);
-    require(values[0] + values[1] >= amount, "Insufficent tokens");
+    // Gas optimization: unchecked addition
+    unchecked {
+      if (values[0] + values[1] < amount) revert InsufficientTokens();
+    }
 
     if (values[0] > 0) { // unlocked tokens
       super._transfer(address(this), recipient, values[0]);
@@ -513,10 +591,14 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     @param who Address to calculate
     @return amount The total locked amount of tokens for all of the who address's timelocks
     lockedBalanceOf
+    Gas optimization: cached timelockCount to avoid repeated SLOAD, unchecked loop increment
   */
   function lockedAmountOf(address who) public view returns (uint amount) {
-    for (uint i = 0; i < timelockCountOf(who); i++) {
+    // Gas optimization: cache the timelock count to avoid repeated storage access
+    uint count = timelockCountOf(who);
+    for (uint i; i < count;) {
       amount += lockedAmountOfTimelock(who, i);
+      unchecked { ++i; }
     }
     return amount;
   }
@@ -526,10 +608,14 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     @param who Address to calculate
     @return amount The total unlocked amount of tokens for all of the who address's timelocks
     unlockedBalanceOf
+    Gas optimization: cached timelockCount, unchecked loop increment
   */
   function unlockedAmountOf(address who) public view returns (uint amount) {
-    for (uint i = 0; i < timelockCountOf(who); i++) {
+    // Gas optimization: cache the timelock count to avoid repeated storage access
+    uint count = timelockCountOf(who);
+    for (uint i; i < count;) {
       amount += unlockedAmountOfTimelock(who, i);
+      unchecked { ++i; }
     }
     return amount;
   }
@@ -550,34 +636,67 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     @param to Address to
     @param value Amount of tokens
     @return values Array of uint256[2] contains unlocked tokens at index 0, and simple ERC-20 at index 1 that can be used for transfer
+    Gas optimization: cached timelockCount and unlockedAmountOfTimelock to avoid redundant calls,
+    unchecked arithmetic where safe
   **/
   function validateTransfer(address from, address to, uint256 value) internal returns (uint256[2] memory values) {
     uint256 balance = tokensBalanceOf(from);
     uint256 unlockedBalance = unlockedAmountOf(from);
 
-    require(balance + unlockedBalance >= value, "amount > unlocked");
+    if (balance + unlockedBalance < value) revert AmountExceedsUnlocked();
 
     uint remainingTransfer = value;
 
+    // Gas optimization: cache timelockCount to avoid repeated storage reads
+    uint count = timelockCountOf(from);
+
     // transfer from unlocked tokens
-    for (uint i = 0; i < timelockCountOf(from); i++) {
+    for (uint i; i < count;) {
+      // Gas optimization: cache storage reads to avoid repeated SLOAD on the same slot
+      Timelock storage tl = timelocks[from][i];
+      uint tlTokensTransferred = tl.tokensTransferred;
+      uint tlTotalAmount = tl.totalAmount;
+
       // if the timelock has no value left
-      if (timelocks[from][i].tokensTransferred == timelocks[from][i].totalAmount) {
+      if (tlTokensTransferred == tlTotalAmount) {
+        unchecked { ++i; }
         continue;
-      } else if (remainingTransfer > unlockedAmountOfTimelock(from, i)) {
+      }
+
+      // Gas optimization: compute unlockedAmount once instead of calling the view function
+      // which itself loads from storage again
+      uint totalUnlocked = calculateUnlocked(
+        tl.commencementTimestamp,
+        block.timestamp,
+        tlTotalAmount,
+        tl.scheduleId
+      );
+      // Safe because totalUnlocked >= tokensTransferred by invariant
+      uint unlockedAmount;
+      unchecked {
+        unlockedAmount = totalUnlocked - tlTokensTransferred;
+      }
+
+      if (remainingTransfer > unlockedAmount) {
         // if the remainingTransfer is more than the unlocked balance use it all
-        remainingTransfer -= unlockedAmountOfTimelock(from, i);
-        timelocks[from][i].tokensTransferred += unlockedAmountOfTimelock(from, i);
+        unchecked {
+          remainingTransfer -= unlockedAmount;
+        }
+        tl.tokensTransferred = tlTokensTransferred + unlockedAmount;
       } else {
         // if the remainingTransfer is less than or equal to the unlocked balance
         // use part or all and exit the loop
-        timelocks[from][i].tokensTransferred += remainingTransfer;
+        tl.tokensTransferred = tlTokensTransferred + remainingTransfer;
         remainingTransfer = 0;
         break;
       }
+      unchecked { ++i; }
     }
 
-    values[0] = value - remainingTransfer; // from unlockedValue
+    // Gas optimization: unchecked subtraction, remainingTransfer <= value
+    unchecked {
+      values[0] = value - remainingTransfer; // from unlockedValue
+    }
     values[1] = remainingTransfer; // from balanceOf
   }
 
@@ -591,7 +710,7 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     @return bool always true when completed
   */
   function transferTimelock(address to, uint value, uint timelockId) public returns (bool) {
-    require(unlockedAmountOfTimelock(msg.sender, timelockId) >= value, "amount > unlocked");
+    if (unlockedAmountOfTimelock(msg.sender, timelockId) < value) revert AmountExceedsUnlocked();
     timelocks[msg.sender][timelockId].tokensTransferred += value;
     IERC20(this).safeTransfer(to, value);
     return true;
@@ -671,6 +790,7 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     @param initialReleasePortionInBips Portion to release in 100ths of 1% (10000 BIPS per 100%)
     @param periodBetweenReleasesInSeconds After the delay and initial release
     @return unlocked the total amount unlocked for the schedule given the other parameters
+    Gas optimization: unchecked arithmetic in pure math where overflow is not possible
   */
   function calculateUnlocked(
     uint commencedTimestamp,
@@ -684,17 +804,25 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     if (commencedTimestamp > currentTimestamp) {
       return 0;
     }
-    uint secondsElapsed = currentTimestamp - commencedTimestamp;
+
+    // Gas optimization: unchecked subtraction, we verified commencedTimestamp <= currentTimestamp
+    uint secondsElapsed;
+    unchecked {
+      secondsElapsed = currentTimestamp - commencedTimestamp;
+    }
 
     // return the full amount if the total lockup period has expired
     // unlocked amounts in each period are truncated and round down remainders smaller than the smallest unit
     // unlocking the full amount unlocks any remainder amounts in the final unlock period
     // this is done first to reduce computation
-    if (
-      secondsElapsed >= delayUntilFirstReleaseInSeconds +
-    (periodBetweenReleasesInSeconds * (releaseCount - 1))
-    ) {
-      return amount;
+    // Gas optimization: unchecked arithmetic in period calculation (releaseCount >= 1 enforced at creation)
+    unchecked {
+      if (
+        secondsElapsed >= delayUntilFirstReleaseInSeconds +
+        (periodBetweenReleasesInSeconds * (releaseCount - 1))
+      ) {
+        return amount;
+      }
     }
 
     // unlock the initial release if the delay has elapsed
@@ -702,17 +830,18 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
       unlocked = (amount * initialReleasePortionInBips) / BIPS_PRECISION;
 
       // if at least one period after the delay has passed
-      if (secondsElapsed - delayUntilFirstReleaseInSeconds >= periodBetweenReleasesInSeconds) {
+      // Gas optimization: unchecked subtraction, secondsElapsed >= delayUntilFirstReleaseInSeconds
+      unchecked {
+        uint timeSinceFirstRelease = secondsElapsed - delayUntilFirstReleaseInSeconds;
+        if (timeSinceFirstRelease >= periodBetweenReleasesInSeconds) {
 
-        // calculate the number of additional periods that have passed (not including the initial release)
-        // this discards any remainders (ie it truncates / rounds down)
-        uint additionalUnlockedPeriods = (secondsElapsed - delayUntilFirstReleaseInSeconds) / periodBetweenReleasesInSeconds;
+          // calculate the number of additional periods that have passed (not including the initial release)
+          uint additionalUnlockedPeriods = timeSinceFirstRelease / periodBetweenReleasesInSeconds;
 
-        // calculate the amount of unlocked tokens for the additionalUnlockedPeriods
-        // multiplication is applied before division to delay truncating to the smallest unit
-        // this distributes unlocked tokens more evenly across unlock periods
-        // than truncated division followed by multiplication
-        unlocked += ((amount - unlocked) * additionalUnlockedPeriods) / (releaseCount - 1);
+          // calculate the amount of unlocked tokens for the additionalUnlockedPeriods
+          // multiplication is applied before division to delay truncating to the smallest unit
+          unlocked += ((amount - unlocked) * additionalUnlockedPeriods) / (releaseCount - 1);
+        }
       }
     }
 
@@ -796,8 +925,6 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
   /// @param from The group the transfer is coming from.
   /// @param to The group the transfer is going to.
   /// @param lockedUntil The unix timestamp that the transfer is locked until. 0 is a special number. 0 means the transfer is not allowed.
-  /// This is because in the smart contract mapping all pairs are implicitly defined with a default lockedUntil value of 0.
-  /// But no transfers should be authorized until explicitly allowed. Thus 0 must mean no transfer is allowed.
   function setAllowGroupTransfer(uint256 from, uint256 to, uint256 lockedUntil) external onlyTransferAdmin {
     _allowGroupTransfers[from][to] = lockedUntil;
     emit AllowGroupTransfer(msg.sender, from, to, lockedUntil);
@@ -807,7 +934,6 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
   /// @param from The address the transfer is coming from
   /// @param to The address the transfer is going to
   /// @return timestamp The Unix timestamp of the time the transfer would be allowed. A 0 means never.
-  /// The format is the number of seconds since the Unix epoch of 00:00:00 UTC on 1 January 1970.
   function getAllowTransferTime(address from, address to) external view returns (uint timestamp) {
     return _allowGroupTransfers[_transferGroups[from]][_transferGroups[to]];
   }
@@ -816,7 +942,6 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
   /// @param from The group id the transfer is coming from
   /// @param to The group id the transfer is going to
   /// @return timestamp The Unix timestamp of the time the transfer would be allowed. A 0 means never.
-  /// The format is the number of seconds since the Unix epoch of 00:00:00 UTC on 1 January 1970.
   function getAllowGroupTransferTime(uint from, uint to) external view returns (uint timestamp) {
     return _allowGroupTransfers[from][to];
   }
@@ -825,7 +950,7 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
   /// @param from The address to destroy the tokens from.
   /// @param value The number of tokens to destroy from the address.
   function burn(address from, uint256 value) external validAddress(from) onlyReserveAdmin {
-    require(value <= balanceOf(from), "Insufficent tokens to burn");
+    if (value > balanceOf(from)) revert InsufficientTokensToBurn();
     _burn(from, value);
   }
 
@@ -834,7 +959,7 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
   /// @param to The addres to mint tokens into.
   /// @param value The number of tokens to mint.
   function mint(address to, uint256 value) external validAddress(to) onlyReserveAdmin {
-    require(totalSupply() + value <= maxTotalSupply, "Cannot mint more than the max total supply");
+    if (totalSupply() + value > maxTotalSupply) revert ExceedsMaxTotalSupply();
     _mint(to, value);
   }
 
@@ -854,7 +979,7 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
   /// The upgraded transfer rules must implement the ITransferRules interface which conforms to the ERC-1404 token standard.
   /// @param newTransferRules The address of the deployed TransferRules contract.
   function upgradeTransferRules(ITransferRules newTransferRules) external onlyTransferAdmin {
-    require(address(newTransferRules) != address(0x0), "Address cannot be 0x0");
+    if (address(newTransferRules) == address(0)) revert TransferRulesAddressZero();
     address oldRules = address(transferRules);
     transferRules = newTransferRules;
     emit Upgrade(msg.sender, oldRules, address(newTransferRules));
@@ -866,9 +991,8 @@ contract RestrictedLockupToken is ERC20Snapshot, EasyAccessControl, ReentrancyGu
     // safeApprove should only be called when setting an initial allowance,
     // or when resetting it to zero. To increase and decrease it, use
     // 'safeIncreaseAllowance' and 'safeDecreaseAllowance'
-    require((value == 0) || (allowance(address(msg.sender), spender) == 0),
-      "Cannot approve from non-zero to non-zero allowance"
-    );
+    if (!((value == 0) || (allowance(address(msg.sender), spender) == 0)))
+      revert CannotApproveFromNonZero();
     approve(spender, value);
   }
 

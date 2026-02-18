@@ -15,6 +15,12 @@ import {
 import type { TradeHistory } from '../../types/index';
 import { formatAddress } from '../../lib/utils/helpers';
 import { getNetworkMetadata } from '../../contracts/addresses';
+import {
+  CARD_CLASSES,
+  CHART_HEADER_CLASSES,
+  EMPTY_STATE_CLASSES,
+  FILTER_PILL_CLASSES,
+} from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -220,28 +226,28 @@ export default function ActivityFeed({ trades, maxItems = 10, chainId }: Activit
   }, [trades]);
 
   return (
-    <div className="relative bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl p-6 sm:p-8 overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.2)]">
+    <div className={clsx(CARD_CLASSES.base, CARD_CLASSES.wrapper, CARD_CLASSES.shadow, 'p-6 sm:p-8')}>
       {/* Subtle gradient accent at top */}
-      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
+      <div className={CARD_CLASSES.gradientAccent} />
 
       {/* Header */}
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div className="flex items-center gap-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/[0.08]">
-            <Activity className="h-[18px] w-[18px] text-indigo-400" />
+          <div className={CHART_HEADER_CLASSES.icon}>
+            <Activity className={CHART_HEADER_CLASSES.iconSvg} />
           </div>
           <div>
-            <h3 className="text-[15px] font-semibold text-white tracking-tight">
+            <h3 className={CHART_HEADER_CLASSES.title}>
               Recent Activity
             </h3>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className={clsx(CHART_HEADER_CLASSES.subtitle, 'mt-0.5')}>
               Latest transactions across all types
             </p>
           </div>
         </div>
 
         {/* Filter pills */}
-        <div className="flex gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.04] overflow-x-auto">
+        <div className={clsx(FILTER_PILL_CLASSES.container, 'overflow-x-auto')}>
           {FILTERS.map((filter) => {
             const count = filterCounts[filter.key];
             const isActive = activeFilter === filter.key;
@@ -250,14 +256,15 @@ export default function ActivityFeed({ trades, maxItems = 10, chainId }: Activit
                 key={filter.key}
                 onClick={() => setActiveFilter(filter.key)}
                 className={clsx(
-                  'relative flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all duration-200 whitespace-nowrap',
+                  FILTER_PILL_CLASSES.pill,
+                  'flex items-center gap-1.5',
                   isActive
-                    ? 'text-white'
-                    : 'text-gray-500 hover:text-gray-300',
+                    ? FILTER_PILL_CLASSES.active
+                    : FILTER_PILL_CLASSES.inactive,
                 )}
               >
                 {isActive && (
-                  <div className="absolute inset-0 rounded-lg bg-indigo-500/20 border border-indigo-500/30" />
+                  <div className={FILTER_PILL_CLASSES.activeHighlight} />
                 )}
                 <span className="relative z-10">{filter.label}</span>
                 {count > 0 && (
@@ -279,16 +286,16 @@ export default function ActivityFeed({ trades, maxItems = 10, chainId }: Activit
       </div>
 
       {filteredItems.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl mb-4 bg-indigo-500/[0.06] border border-indigo-500/10">
+        <div className={EMPTY_STATE_CLASSES.container}>
+          <div className={clsx(EMPTY_STATE_CLASSES.iconBox, 'h-14 w-14 mb-4')}>
             <Clock className="h-6 w-6 text-gray-600" />
           </div>
-          <p className="text-sm font-medium text-gray-400">
+          <p className={EMPTY_STATE_CLASSES.title}>
             {activeFilter === 'all'
               ? 'No recent activity'
               : `No ${FILTERS.find((f) => f.key === activeFilter)?.label.toLowerCase() ?? ''} found`}
           </p>
-          <p className="text-xs text-gray-600 mt-2 max-w-[220px] leading-relaxed">
+          <p className={clsx(EMPTY_STATE_CLASSES.description, 'max-w-[220px]')}>
             {activeFilter === 'all'
               ? 'Your transactions will appear here once you start trading'
               : 'Try selecting a different filter to see more activity'}

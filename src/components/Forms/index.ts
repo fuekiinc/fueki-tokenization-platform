@@ -7,8 +7,11 @@ export {
   personalSchema,
   addressSchema,
   identitySchema,
+  getPasswordStrength,
+  PASSWORD_STRENGTH_CONFIG,
   SIGNUP_STEPS,
   COUNTRIES,
+  COUNTRY_PHONE_CODES,
   STEP_META,
 } from './signupSchemas';
 export type {
@@ -16,4 +19,5 @@ export type {
   PersonalValues,
   AddressValues,
   IdentityValues,
+  PasswordStrength,
 } from './signupSchemas';

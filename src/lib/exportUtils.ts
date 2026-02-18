@@ -1,8 +1,15 @@
 /**
  * Export Utilities
  *
- * Provides RFC 4180 compliant CSV generation and browser-print-based PDF
- * export. No external libraries are required.
+ * Provides RFC 4180 compliant CSV generation, JSON export, and
+ * browser-print-based PDF export. No external libraries are required.
+ *
+ * Features:
+ *   - CSV export with proper escaping (RFC 4180)
+ *   - JSON export with pretty-printing
+ *   - Date range filtering for exports
+ *   - Column selection for exports
+ *   - Browser print dialog for PDF generation
  */
 
 // ---------------------------------------------------------------------------
@@ -12,6 +19,17 @@
 export interface ColumnDef {
   key: string;
   label: string;
+}
+
+export interface ExportOptions {
+  /** Columns to include in the export. When omitted, all columns are included. */
+  columns?: ColumnDef[];
+  /** ISO date string or timestamp. Only include rows on or after this date. */
+  dateFrom?: string | number;
+  /** ISO date string or timestamp. Only include rows on or before this date. */
+  dateTo?: string | number;
+  /** The key in each row that holds the date/timestamp value (default: "timestamp"). */
+  dateKey?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -30,6 +48,57 @@ export function downloadBlob(blob: Blob, filename: string): void {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+// Date range filtering
+// ---------------------------------------------------------------------------
+
+/**
+ * Filter data rows by a date range.
+ *
+ * @param data - Array of row objects.
+ * @param options - Export options containing dateFrom, dateTo, and dateKey.
+ * @returns Filtered array of rows within the date range.
+ */
+export function filterByDateRange(
+  data: Record<string, unknown>[],
+  options?: Pick<ExportOptions, 'dateFrom' | 'dateTo' | 'dateKey'>,
+): Record<string, unknown>[] {
+  if (!options?.dateFrom && !options?.dateTo) return data;
+
+  const dateKey = options.dateKey ?? 'timestamp';
+  const from = options.dateFrom ? new Date(options.dateFrom).getTime() : -Infinity;
+  const to = options.dateTo ? new Date(options.dateTo).getTime() : Infinity;
+
+  return data.filter((row) => {
+    const rawValue = row[dateKey];
+    if (rawValue === undefined || rawValue === null) return false;
+
+    const rowDate = typeof rawValue === 'number'
+      ? rawValue
+      : new Date(String(rawValue)).getTime();
+
+    if (isNaN(rowDate)) return false;
+    return rowDate >= from && rowDate <= to;
+  });
+}
+
+/**
+ * Select specific columns from data rows. Returns new row objects
+ * containing only the specified keys.
+ */
+export function selectColumns(
+  data: Record<string, unknown>[],
+  columns: ColumnDef[],
+): Record<string, unknown>[] {
+  return data.map((row) => {
+    const selected: Record<string, unknown> = {};
+    for (const col of columns) {
+      selected[col.key] = resolveKey(row, col.key);
+    }
+    return selected;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -106,16 +175,53 @@ export function toCSVString(
  * @param filename - Base filename (without extension). A date suffix and
  *                   `.csv` extension are appended automatically.
  * @param columns  - Optional column definitions for ordering / labelling.
+ * @param options  - Optional date range filtering and column selection.
  */
 export function exportToCSV(
   data: Record<string, unknown>[],
   filename: string,
   columns?: ColumnDef[],
+  options?: ExportOptions,
 ): void {
-  const csv = toCSVString(data, columns);
+  let filtered = filterByDateRange(data, options);
+  const cols = options?.columns ?? columns;
+  if (cols) {
+    filtered = selectColumns(filtered, cols);
+  }
+
+  const csv = toCSVString(filtered, cols);
   const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   const fullFilename = `${filename}-${date}.csv`;
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  downloadBlob(blob, fullFilename);
+}
+
+// ---------------------------------------------------------------------------
+// JSON export
+// ---------------------------------------------------------------------------
+
+/**
+ * Export an array of objects as a formatted JSON file download.
+ *
+ * @param data     - Array of row objects
+ * @param filename - Base filename (without extension). A date suffix and
+ *                   `.json` extension are appended automatically.
+ * @param options  - Optional date range filtering and column selection.
+ */
+export function exportToJSON(
+  data: Record<string, unknown>[],
+  filename: string,
+  options?: ExportOptions,
+): void {
+  let filtered = filterByDateRange(data, options);
+  if (options?.columns) {
+    filtered = selectColumns(filtered, options.columns);
+  }
+
+  const json = JSON.stringify(filtered, null, 2);
+  const date = new Date().toISOString().slice(0, 10);
+  const fullFilename = `${filename}-${date}.json`;
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8;' });
   downloadBlob(blob, fullFilename);
 }
 
@@ -193,22 +299,30 @@ function escapeHTML(str: string): string {
  * @param filename - Title shown on the printed document
  * @param columns  - Optional column definitions. When omitted, headers are
  *                   derived from the union of all keys.
+ * @param options  - Optional date range filtering and column selection.
  */
 export function exportToPDF(
   data: Record<string, unknown>[],
   filename: string,
   columns?: ColumnDef[],
+  options?: ExportOptions,
 ): void {
+  let filtered = filterByDateRange(data, options);
   const cols: ColumnDef[] =
+    options?.columns ??
     columns ??
     Array.from(
-      data.reduce<Set<string>>((keys, row) => {
+      filtered.reduce<Set<string>>((keys, row) => {
         for (const k of Object.keys(row)) keys.add(k);
         return keys;
       }, new Set()),
     ).map((k) => ({ key: k, label: k }));
 
-  const html = buildPrintHTML(data, cols, filename);
+  if (options?.columns) {
+    filtered = selectColumns(filtered, options.columns);
+  }
+
+  const html = buildPrintHTML(filtered, cols, filename);
   const printWindow = window.open('', '_blank');
   if (!printWindow) return;
 

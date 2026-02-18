@@ -10,6 +10,13 @@ import clsx from 'clsx';
 import { PieChart as PieChartIcon } from 'lucide-react';
 import type { WrappedAsset } from '../../types/index';
 import { formatCurrency, formatPercent } from '../../lib/formatters';
+import {
+  CARD_CLASSES,
+  CHART_HEADER_CLASSES,
+  CHART_TOOLTIP_STYLE,
+  CHART_COLORS,
+  EMPTY_STATE_CLASSES,
+} from '../../lib/designTokens';
 import ChartSkeleton from '../DataViz/ChartSkeleton';
 
 // ---------------------------------------------------------------------------
@@ -29,21 +36,6 @@ interface ChartDatum {
 }
 
 // ---------------------------------------------------------------------------
-// Constants -- WCAG-compliant chart colors on dark backgrounds
-// ---------------------------------------------------------------------------
-
-const CHART_COLORS = [
-  '#818CF8', // Indigo 400  -- contrast 5.8:1 on #06070A
-  '#A78BFA', // Violet 400  -- contrast 6.2:1 on #06070A
-  '#34D399', // Emerald 400 -- contrast 8.6:1 on #06070A
-  '#FBBF24', // Amber 400   -- contrast 11.5:1 on #06070A
-  '#F87171', // Red 400     -- contrast 5.0:1 on #06070A
-  '#22D3EE', // Cyan 400    -- contrast 10.1:1 on #06070A
-  '#F472B6', // Pink 400    -- contrast 5.7:1 on #06070A
-  '#60A5FA', // Blue 400    -- contrast 6.1:1 on #06070A
-];
-
-// ---------------------------------------------------------------------------
 // Custom tooltip
 // ---------------------------------------------------------------------------
 
@@ -58,18 +50,7 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
   if (!data) return null;
 
   return (
-    <div
-      role="tooltip"
-      style={{
-        background: 'rgba(13, 15, 20, 0.92)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        borderRadius: 14,
-        padding: '14px 18px',
-        boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
-      }}
-    >
+    <div role="tooltip" style={CHART_TOOLTIP_STYLE}>
       <div className="flex items-center gap-2.5 mb-2">
         <span className="text-sm font-semibold text-white tracking-tight">
           {data.name}
@@ -158,32 +139,31 @@ export default function AssetAllocationChart({
     <div
       aria-label={`Asset allocation chart showing distribution of ${chartData.length} assets totalling ${formatCurrency(totalValue)}`}
       className={clsx(
-        'relative overflow-hidden rounded-2xl',
-        'bg-[#0D0F14]/80 backdrop-blur-xl',
-        'border border-white/[0.06]',
-        'p-7 sm:p-9',
+        CARD_CLASSES.base,
+        CARD_CLASSES.wrapper,
+        CARD_CLASSES.padding,
       )}
     >
       {/* Top gradient accent */}
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
+      <div className={CARD_CLASSES.gradientAccent} />
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/[0.08]">
-            <PieChartIcon className="h-[18px] w-[18px] text-indigo-400" aria-hidden="true" />
+      <div className={CHART_HEADER_CLASSES.container}>
+        <div className={CHART_HEADER_CLASSES.left}>
+          <div className={CHART_HEADER_CLASSES.icon}>
+            <PieChartIcon className={CHART_HEADER_CLASSES.iconSvg} aria-hidden="true" />
           </div>
           <div>
-            <h3 className="text-[15px] font-semibold text-white tracking-tight">
+            <h3 className={CHART_HEADER_CLASSES.title}>
               Asset Allocation
             </h3>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className={CHART_HEADER_CLASSES.subtitle}>
               Distribution by value
             </p>
           </div>
         </div>
         {chartData.length > 0 && (
-          <span className="text-xs text-gray-600 tabular-nums font-medium bg-white/[0.03] px-3 py-1.5 rounded-lg">
+          <span className={CHART_HEADER_CLASSES.counter}>
             {chartData.length} asset{chartData.length !== 1 ? 's' : ''}
           </span>
         )}
@@ -193,14 +173,14 @@ export default function AssetAllocationChart({
       <ChartDataSummary data={chartData} />
 
       {chartData.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl mb-5 bg-indigo-500/[0.06] border border-indigo-500/10">
-            <PieChartIcon className="h-7 w-7 text-gray-600" aria-hidden="true" />
+        <div className={EMPTY_STATE_CLASSES.container}>
+          <div className={EMPTY_STATE_CLASSES.iconBox}>
+            <PieChartIcon className={EMPTY_STATE_CLASSES.icon} aria-hidden="true" />
           </div>
-          <p className="text-sm font-medium text-gray-400">
+          <p className={EMPTY_STATE_CLASSES.title}>
             No assets to display
           </p>
-          <p className="text-xs text-gray-600 mt-2 max-w-[220px] leading-relaxed">
+          <p className={EMPTY_STATE_CLASSES.description}>
             Mint your first asset to see allocation data
           </p>
         </div>

@@ -1,14 +1,13 @@
 import clsx from 'clsx';
+import { CARD_CLASSES, SHIMMER_CLASSES, GRID_CLASSES } from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // Shared shimmer animation class
 // ---------------------------------------------------------------------------
 
-const SHIMMER =
-  'relative overflow-hidden bg-white/[0.04] before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_1.8s_ease-in-out_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/[0.06] before:to-transparent';
+const SHIMMER = SHIMMER_CLASSES.tailwind;
 
-const GLASS =
-  'bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl';
+const GLASS = CARD_CLASSES.base;
 
 // ---------------------------------------------------------------------------
 // StatCard skeleton -- matches StatsGrid card layout
@@ -155,7 +154,7 @@ export default function DashboardSkeleton() {
       </div>
 
       {/* Stats Row -- 4 cols desktop, 2 tablet, 1 mobile */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 sm:gap-6">
+      <div className={GRID_CLASSES.stats}>
         <StatCardSkeleton />
         <StatCardSkeleton />
         <StatCardSkeleton />
@@ -163,18 +162,18 @@ export default function DashboardSkeleton() {
       </div>
 
       {/* Charts Row */}
-      <div className="mt-8 grid grid-cols-1 gap-6 sm:mt-10 sm:gap-8 lg:grid-cols-2">
+      <div className={clsx(GRID_CLASSES.sectionGap, GRID_CLASSES.charts)}>
         <ChartSkeleton />
         <ChartSkeleton />
       </div>
 
       {/* Activity Feed -- full width */}
-      <div className="mt-8 sm:mt-10">
+      <div className={GRID_CLASSES.sectionGap}>
         <ActivitySkeleton />
       </div>
 
       {/* Quick Actions -- full width */}
-      <div className="mt-8 sm:mt-10">
+      <div className={GRID_CLASSES.sectionGap}>
         <QuickActionsSkeleton />
       </div>
     </div>

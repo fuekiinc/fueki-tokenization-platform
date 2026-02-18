@@ -154,7 +154,7 @@ function ProfileSection() {
       toast.success('Wallet address copied');
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error('Failed to copy address');
+      toast.error('Unable to copy address to clipboard. Please try again.');
     }
   }, [user?.walletAddress]);
 
@@ -282,7 +282,7 @@ function SecuritySection() {
       setShowNewPassword(false);
       setShowConfirmPassword(false);
     } catch (err: unknown) {
-      let message = 'Failed to change password';
+      let message = 'Unable to change your password. Please check your current password and try again.';
       if (
         err !== null &&
         typeof err === 'object' &&
@@ -553,7 +553,7 @@ function DangerZoneSection() {
       await apiClient.post('/api/auth/logout-all', {});
       toast.success('Signed out of all devices');
     } catch {
-      toast.error('Failed to sign out of all devices');
+      toast.error('Unable to sign out of all devices. Please try again later.');
     } finally {
       setIsLoggingOut(false);
     }

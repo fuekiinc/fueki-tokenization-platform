@@ -12,16 +12,22 @@ export interface AssetState {
   securityTokens: SecurityToken[];
   isLoadingSecurityTokens: boolean;
   securityTokensError: string | null;
+  /** ISO timestamp of the last successful asset fetch. */
+  lastFetchedAt: string | null;
+  /** ISO timestamp of the last successful security token fetch. */
+  lastTokensFetchedAt: string | null;
 }
 
 export interface AssetActions {
   // Wrapped assets
   setAssets: (assets: WrappedAsset[]) => void;
   addAsset: (asset: WrappedAsset) => void;
+  addAssetOptimistic: (asset: WrappedAsset, rollback: () => void) => () => void;
   updateAsset: (address: string, partial: Partial<WrappedAsset>) => void;
   removeAsset: (address: string) => void;
   setLoadingAssets: (loading: boolean) => void;
   setAssetsError: (error: string | null) => void;
+  batchUpdateAssets: (updates: Array<{ address: string; partial: Partial<WrappedAsset> }>) => void;
   // Security tokens
   setSecurityTokens: (tokens: SecurityToken[]) => void;
   addSecurityToken: (token: SecurityToken) => void;
@@ -29,6 +35,10 @@ export interface AssetActions {
   removeSecurityToken: (address: string) => void;
   setLoadingSecurityTokens: (loading: boolean) => void;
   setSecurityTokensError: (error: string | null) => void;
+  batchUpdateSecurityTokens: (updates: Array<{ address: string; partial: Partial<SecurityToken> }>) => void;
+  // Cache management
+  isCacheValid: (maxAgeMs?: number) => boolean;
+  isTokensCacheValid: (maxAgeMs?: number) => boolean;
 }
 
 export type AssetStore = AssetState & AssetActions;
@@ -56,6 +66,12 @@ export function getAssetFetchGeneration(): number {
 }
 
 // ---------------------------------------------------------------------------
+// Cache duration defaults
+// ---------------------------------------------------------------------------
+
+const DEFAULT_CACHE_MAX_AGE_MS = 30_000; // 30 seconds
+
+// ---------------------------------------------------------------------------
 // Initial state
 // ---------------------------------------------------------------------------
 
@@ -66,23 +82,44 @@ const initialAssetState: AssetState = {
   securityTokens: [],
   isLoadingSecurityTokens: false,
   securityTokensError: null,
+  lastFetchedAt: null,
+  lastTokensFetchedAt: null,
 };
 
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
 
-export const useAssetStore = create<AssetStore>()((set) => ({
+export const useAssetStore = create<AssetStore>()((set, get) => ({
   ...initialAssetState,
 
   // ---- Wrapped assets -------------------------------------------------------
 
-  setAssets: (assets) => set({ wrappedAssets: assets, assetsError: null }),
+  setAssets: (assets) =>
+    set({
+      wrappedAssets: assets,
+      assetsError: null,
+      lastFetchedAt: new Date().toISOString(),
+    }),
 
   addAsset: (asset) =>
     set((state) => ({
       wrappedAssets: [...state.wrappedAssets, asset],
     })),
+
+  addAssetOptimistic: (asset, rollback) => {
+    set((state) => ({
+      wrappedAssets: [...state.wrappedAssets, asset],
+    }));
+    return () => {
+      rollback();
+      set((state) => ({
+        wrappedAssets: state.wrappedAssets.filter(
+          (a) => a.address !== asset.address,
+        ),
+      }));
+    };
+  },
 
   updateAsset: (address, partial) =>
     set((state) => ({
@@ -98,12 +135,29 @@ export const useAssetStore = create<AssetStore>()((set) => ({
 
   setLoadingAssets: (loading) => set({ isLoadingAssets: loading }),
 
-  setAssetsError: (error) => set({ assetsError: error }),
+  setAssetsError: (error) => set({ assetsError: error, isLoadingAssets: false }),
+
+  batchUpdateAssets: (updates) =>
+    set((state) => {
+      const updateMap = new Map(
+        updates.map((u) => [u.address, u.partial]),
+      );
+      return {
+        wrappedAssets: state.wrappedAssets.map((a) => {
+          const partial = updateMap.get(a.address);
+          return partial ? { ...a, ...partial } : a;
+        }),
+      };
+    }),
 
   // ---- Security tokens ------------------------------------------------------
 
   setSecurityTokens: (tokens) =>
-    set({ securityTokens: tokens, securityTokensError: null }),
+    set({
+      securityTokens: tokens,
+      securityTokensError: null,
+      lastTokensFetchedAt: new Date().toISOString(),
+    }),
 
   addSecurityToken: (token) =>
     set((state) => ({
@@ -124,5 +178,44 @@ export const useAssetStore = create<AssetStore>()((set) => ({
 
   setLoadingSecurityTokens: (loading) => set({ isLoadingSecurityTokens: loading }),
 
-  setSecurityTokensError: (error) => set({ securityTokensError: error }),
+  setSecurityTokensError: (error) =>
+    set({ securityTokensError: error, isLoadingSecurityTokens: false }),
+
+  batchUpdateSecurityTokens: (updates) =>
+    set((state) => {
+      const updateMap = new Map(
+        updates.map((u) => [u.address, u.partial]),
+      );
+      return {
+        securityTokens: state.securityTokens.map((t) => {
+          const partial = updateMap.get(t.address);
+          return partial ? { ...t, ...partial } : t;
+        }),
+      };
+    }),
+
+  // ---- Cache management -----------------------------------------------------
+
+  isCacheValid: (maxAgeMs = DEFAULT_CACHE_MAX_AGE_MS) => {
+    const { lastFetchedAt } = get();
+    if (!lastFetchedAt) return false;
+    return Date.now() - new Date(lastFetchedAt).getTime() < maxAgeMs;
+  },
+
+  isTokensCacheValid: (maxAgeMs = DEFAULT_CACHE_MAX_AGE_MS) => {
+    const { lastTokensFetchedAt } = get();
+    if (!lastTokensFetchedAt) return false;
+    return Date.now() - new Date(lastTokensFetchedAt).getTime() < maxAgeMs;
+  },
 }));
+
+// ---------------------------------------------------------------------------
+// Selectors -- use with shallow comparison for performance
+// ---------------------------------------------------------------------------
+
+export const selectWrappedAssets = (state: AssetStore) => state.wrappedAssets;
+export const selectSecurityTokens = (state: AssetStore) => state.securityTokens;
+export const selectIsLoadingAssets = (state: AssetStore) => state.isLoadingAssets;
+export const selectIsLoadingSecurityTokens = (state: AssetStore) => state.isLoadingSecurityTokens;
+export const selectAssetsError = (state: AssetStore) => state.assetsError;
+export const selectSecurityTokensError = (state: AssetStore) => state.securityTokensError;

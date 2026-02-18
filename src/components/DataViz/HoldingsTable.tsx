@@ -23,6 +23,7 @@ import {
   formatPnLPercent,
 } from '../../lib/portfolioMetrics.ts';
 import type { AssetPerformance } from '../../lib/portfolioMetrics.ts';
+import { CARD_CLASSES } from '../../lib/designTokens';
 import ChartSkeleton from './ChartSkeleton.tsx';
 
 // ---------------------------------------------------------------------------
@@ -234,13 +235,12 @@ export default function HoldingsTable({
   return (
     <div
       className={clsx(
-        'relative overflow-hidden rounded-2xl',
-        'bg-[#0D0F14]/80 backdrop-blur-xl',
-        'border border-white/[0.06]',
+        CARD_CLASSES.base,
+        CARD_CLASSES.wrapper,
       )}
     >
       {/* Top gradient accent */}
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
+      <div className={CARD_CLASSES.gradientAccent} />
 
       {/* Responsive wrapper -- horizontal scroll on mobile */}
       <div className="overflow-x-auto">

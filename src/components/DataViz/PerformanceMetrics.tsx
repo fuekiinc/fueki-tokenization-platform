@@ -9,6 +9,7 @@ import {
 } from '../../lib/portfolioMetrics.ts';
 import type { PortfolioSummary } from '../../lib/portfolioMetrics.ts';
 import { formatCurrency } from '../../lib/formatters';
+import { CARD_CLASSES, GRID_CLASSES } from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -79,17 +80,15 @@ function SummaryCard({
   return (
     <div
       className={clsx(
-        'relative overflow-hidden rounded-2xl',
-        'bg-[#0D0F14]/80 backdrop-blur-xl',
-        'border border-white/[0.06]',
-        'p-7 sm:p-9',
-        'transition-all duration-300 ease-out',
-        'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
+        CARD_CLASSES.base,
+        CARD_CLASSES.wrapper,
+        CARD_CLASSES.padding,
+        CARD_CLASSES.hover,
       )}
       role="group"
       aria-label={ariaLabel}
     >
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
+      <div className={CARD_CLASSES.gradientAccent} />
 
       <div className="flex items-center gap-3">
         <div
@@ -146,7 +145,7 @@ export default function PerformanceMetrics({
 
   return (
     <div
-      className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8 lg:grid-cols-4 lg:gap-8"
+      className={GRID_CLASSES.stats}
       role="group"
       aria-label="Portfolio performance metrics"
     >

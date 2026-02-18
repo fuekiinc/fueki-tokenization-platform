@@ -178,6 +178,7 @@ export default function LiquidityPanel({
   // ---- Slippage tolerance (1% = 100 bps) ----------------------------------
 
   const SLIPPAGE_BPS = 100n; // 1%
+  const [removePercent, setRemovePercent] = useState(0);
 
   // ---- Pool share preview -------------------------------------------------
 
@@ -564,9 +565,20 @@ export default function LiquidityPanel({
 
           {/* Pool share preview */}
           {sharePreview !== null && (
-            <div className="flex items-center justify-between rounded-lg bg-purple-500/5 border border-purple-500/10 px-3 py-2 sm:px-4 sm:py-2.5 text-xs">
-              <span className="text-gray-400">Estimated Pool Share</span>
-              <span className="font-mono font-medium text-purple-400">{formatPercent(sharePreview)}</span>
+            <div className="rounded-lg bg-purple-500/5 border border-purple-500/10 px-3 py-2 sm:px-4 sm:py-2.5 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-400">Estimated Pool Share</span>
+                <span className="font-mono font-medium text-purple-400">{formatPercent(sharePreview)}</span>
+              </div>
+              {/* Impermanent loss estimate info */}
+              <div className="flex items-start gap-2 pt-1.5 border-t border-purple-500/10">
+                <AlertCircle className="h-3 w-3 shrink-0 mt-0.5 text-gray-500" />
+                <p className="text-[10px] leading-relaxed text-gray-500">
+                  Providing liquidity involves impermanent loss risk. If token prices diverge significantly
+                  from the ratio at deposit time, you may receive fewer tokens than if you had simply held them.
+                  Pool fees help offset this risk over time.
+                </p>
+              </div>
             </div>
           )}
 
@@ -634,6 +646,56 @@ export default function LiquidityPanel({
       {/* ---- REMOVE TAB ----------------------------------------------------- */}
       {tab === 'remove' && (
         <div role="tabpanel" id="liq-panel-remove" aria-labelledby="liq-tab-remove" className="space-y-4">
+          {/* Percentage slider */}
+          {lpBalance > 0n && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-xs text-gray-500">Remove Amount</label>
+                <span className="font-mono text-lg font-bold text-teal-400">{removePercent}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={removePercent}
+                onChange={(e) => {
+                  const pct = Number(e.target.value);
+                  setRemovePercent(pct);
+                  if (pct === 0) {
+                    setRemoveAmount('');
+                  } else {
+                    setRemoveAmount(ethers.formatUnits((lpBalance * BigInt(pct)) / 100n, 18));
+                  }
+                }}
+                className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-white/[0.06] accent-teal-500"
+                style={{
+                  background: `linear-gradient(to right, rgb(20, 184, 166) 0%, rgb(20, 184, 166) ${removePercent}%, rgba(255,255,255,0.06) ${removePercent}%, rgba(255,255,255,0.06) 100%)`,
+                }}
+              />
+              <div className="mt-2 flex gap-1.5">
+                {[25, 50, 75, 100].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => {
+                      setRemovePercent(pct);
+                      setRemoveAmount(ethers.formatUnits((lpBalance * BigInt(pct)) / 100n, 18));
+                    }}
+                    className={clsx(
+                      'flex-1 rounded-lg py-2 sm:py-1.5 text-[10px] font-semibold transition-colors min-h-[44px] sm:min-h-0',
+                      removePercent === pct
+                        ? 'bg-teal-500/15 text-teal-400 ring-1 ring-teal-500/30'
+                        : 'bg-white/[0.04] text-gray-500 hover:bg-teal-500/10 hover:text-teal-400',
+                    )}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="mb-1.5 block text-xs text-gray-500">LP Tokens to Remove</label>
             <input
@@ -643,7 +705,19 @@ export default function LiquidityPanel({
               value={removeAmount}
               onChange={(e) => {
                 const val = e.target.value;
-                if (/^[0-9]*\.?[0-9]*$/.test(val)) setRemoveAmount(val);
+                if (/^[0-9]*\.?[0-9]*$/.test(val)) {
+                  setRemoveAmount(val);
+                  // Sync percent slider
+                  if (lpBalance > 0n) {
+                    try {
+                      const parsed = val ? ethers.parseUnits(val, 18) : 0n;
+                      const pct = Number((parsed * 100n) / lpBalance);
+                      setRemovePercent(Math.min(pct, 100));
+                    } catch {
+                      setRemovePercent(0);
+                    }
+                  }
+                }
               }}
               className={clsx(
                 'w-full rounded-xl px-4 py-3 text-base font-semibold text-white font-mono',
@@ -660,27 +734,13 @@ export default function LiquidityPanel({
               {lpBalance > 0n && (
                 <button
                   type="button"
-                  onClick={() => setRemoveAmount(ethers.formatUnits(lpBalance, 18))}
+                  onClick={() => { setRemoveAmount(ethers.formatUnits(lpBalance, 18)); setRemovePercent(100); }}
                   className="rounded bg-teal-500/10 px-2 py-1 sm:py-0.5 text-[10px] font-bold uppercase text-teal-400 hover:bg-teal-500/20 min-h-[44px] sm:min-h-0"
                 >
                   Max
                 </button>
               )}
             </div>
-            {lpBalance > 0n && (
-              <div className="mt-2 flex gap-1.5">
-                {[25, 50, 75, 100].map((pct) => (
-                  <button
-                    key={pct}
-                    type="button"
-                    onClick={() => setRemoveAmount(ethers.formatUnits((lpBalance * BigInt(pct)) / 100n, 18))}
-                    className="flex-1 rounded-lg bg-white/[0.04] py-2 sm:py-1.5 text-[10px] font-semibold text-gray-500 hover:bg-teal-500/10 hover:text-teal-400 transition-colors min-h-[44px] sm:min-h-0"
-                  >
-                    {pct}%
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
           {/* Remove preview */}

@@ -27,6 +27,8 @@ import {
   Target,
   Focus,
   Info,
+  ChevronRight,
+  ChevronLeft,
 } from 'lucide-react';
 import { OrbitalContractService } from '../../lib/blockchain/orbitalContracts';
 import { parseContractError } from '../../lib/blockchain/contracts';
@@ -155,6 +157,16 @@ export default function CreatePoolForm({
   // ---- TX state -------------------------------------------------------------
 
   const [txStatus, setTxStatus] = useState<TxStatus>('idle');
+
+  // ---- Wizard step state ---------------------------------------------------
+
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+
+  const WIZARD_STEPS = [
+    { step: 1 as const, label: 'Tokens', description: 'Select pool tokens' },
+    { step: 2 as const, label: 'Configuration', description: 'Set concentration and fees' },
+    { step: 3 as const, label: 'Review & Create', description: 'Confirm and deploy' },
+  ];
 
   // ---- Load available tokens ------------------------------------------------
 
@@ -419,11 +431,74 @@ export default function CreatePoolForm({
     onPoolCreated,
   ]);
 
+  // ---- Wizard navigation helpers -------------------------------------------
+
+  const canAdvance = useMemo(() => {
+    switch (wizardStep) {
+      case 1:
+        return selectedTokens.length >= MIN_TOKENS;
+      case 2:
+        return true; // concentration + fee always have defaults
+      case 3:
+        return isValid;
+      default:
+        return false;
+    }
+  }, [wizardStep, selectedTokens.length, isValid]);
+
   // ---- Render ---------------------------------------------------------------
 
   return (
     <div className="space-y-6">
-      {/* ---- Token Selection ------------------------------------------------- */}
+      {/* ---- Step Indicators ------------------------------------------------- */}
+      <div className="flex items-center justify-between gap-2">
+        {WIZARD_STEPS.map(({ step, label }, i) => (
+          <div key={step} className="flex items-center flex-1 last:flex-initial">
+            <button
+              type="button"
+              onClick={() => {
+                // Only allow navigating to completed or current steps
+                if (step <= wizardStep) setWizardStep(step);
+              }}
+              className={clsx(
+                'flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-all',
+                'min-w-0',
+                wizardStep === step
+                  ? 'bg-indigo-500/15 text-indigo-400 ring-1 ring-indigo-500/25'
+                  : step < wizardStep
+                    ? 'bg-emerald-500/10 text-emerald-400 cursor-pointer hover:bg-emerald-500/15'
+                    : 'bg-white/[0.02] text-gray-600',
+              )}
+            >
+              <span
+                className={clsx(
+                  'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+                  wizardStep === step
+                    ? 'bg-indigo-500/25 text-indigo-400'
+                    : step < wizardStep
+                      ? 'bg-emerald-500/20 text-emerald-400'
+                      : 'bg-white/[0.06] text-gray-600',
+                )}
+              >
+                {step < wizardStep ? <Check className="h-3 w-3" /> : step}
+              </span>
+              <span className="hidden sm:inline truncate">{label}</span>
+            </button>
+            {i < WIZARD_STEPS.length - 1 && (
+              <div
+                className={clsx(
+                  'mx-2 h-px flex-1',
+                  step < wizardStep ? 'bg-emerald-500/30' : 'bg-white/[0.06]',
+                )}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* ---- Step 1: Token Selection ----------------------------------------- */}
+      {wizardStep === 1 && (
+      <>
       <div>
         <div className="flex items-center justify-between mb-3">
           <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
@@ -592,6 +667,29 @@ export default function CreatePoolForm({
         )}
       </div>
 
+      {/* Step 1 navigation */}
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => setWizardStep(2)}
+          disabled={!canAdvance}
+          className={clsx(
+            'flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-semibold transition-all',
+            canAdvance
+              ? 'bg-indigo-500/15 text-indigo-400 hover:bg-indigo-500/25 ring-1 ring-indigo-500/20'
+              : 'bg-white/[0.02] text-gray-600 cursor-not-allowed',
+          )}
+        >
+          Next: Configuration
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      </>
+      )}
+
+      {/* ---- Step 2: Configuration ------------------------------------------- */}
+      {wizardStep === 2 && (
+      <>
       {/* ---- Concentration Power --------------------------------------------- */}
       <div>
         <label className="mb-3 block text-xs font-semibold text-gray-400 uppercase tracking-wider">
@@ -655,8 +753,53 @@ export default function CreatePoolForm({
         </div>
         <p className="mt-2.5 flex items-center gap-1.5 text-[11px] leading-relaxed text-gray-500">
           <Info className="h-3 w-3 shrink-0 text-gray-600" />
-          2 = Standard | 4 = Moderate | 8 = High | 16 = Very High | 32 = Maximum concentration
+          Higher concentration focuses more liquidity near the equilibrium price, increasing capital efficiency.
         </p>
+
+        {/* Visual concentration explanation */}
+        <div className="mt-4 rounded-xl bg-[#0D0F14] border border-white/[0.06] p-4">
+          <span className="text-[10px] uppercase tracking-wider text-gray-500 mb-3 block">
+            Liquidity Distribution at {concentration}x
+          </span>
+          <div className="relative h-16 w-full rounded-lg bg-white/[0.02] overflow-hidden">
+            {/* Background grid */}
+            <div className="absolute inset-0 flex items-end justify-center">
+              {Array.from({ length: 21 }).map((_, i) => {
+                const center = 10;
+                const dist = Math.abs(i - center);
+                // Bell curve-like distribution, sharper with higher concentration
+                const spread = Math.max(1, 12 / Math.sqrt(concentration));
+                const heightPct = Math.max(5, 100 * Math.exp(-(dist * dist) / (2 * spread * spread)));
+                return (
+                  <div
+                    key={i}
+                    className="flex-1 mx-px"
+                    style={{ height: `${heightPct}%` }}
+                  >
+                    <div
+                      className={clsx(
+                        'h-full w-full rounded-t-sm',
+                        i === center
+                          ? 'bg-indigo-400/40'
+                          : dist <= spread
+                            ? 'bg-indigo-500/20'
+                            : 'bg-white/[0.03]',
+                      )}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            {/* Center line label */}
+            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-[9px] text-gray-600 pb-0.5">
+              equilibrium
+            </div>
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[10px] text-gray-600">
+            <span>Wide range</span>
+            <span>Concentrated</span>
+          </div>
+        </div>
       </div>
 
       {/* ---- Fee Tier -------------------------------------------------------- */}
@@ -665,25 +808,63 @@ export default function CreatePoolForm({
           Fee Tier
         </label>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {FEE_TIERS.map((tier) => (
-            <button
-              key={tier.bps}
-              type="button"
-              onClick={() => setFeeBps(tier.bps)}
-              className={clsx(
-                'rounded-xl px-4 py-3.5 text-center transition-all duration-200',
-                feeBps === tier.bps
-                  ? 'bg-indigo-500/15 ring-1 ring-indigo-500/30 text-indigo-400'
-                  : 'bg-[#0D0F14] border border-white/[0.06] text-gray-400 hover:border-white/[0.12]',
-              )}
-            >
-              <div className="text-sm font-bold font-mono">{tier.label}</div>
-              <div className="mt-1 text-[10px] text-gray-500">{tier.description}</div>
-            </button>
-          ))}
+          {FEE_TIERS.map((tier) => {
+            // Recommend fee tier based on concentration
+            const recommended =
+              (concentration >= 16 && tier.bps === 10) ||
+              (concentration >= 8 && concentration < 16 && tier.bps === 30) ||
+              (concentration >= 4 && concentration < 8 && tier.bps === 50) ||
+              (concentration < 4 && tier.bps === 100);
+            return (
+              <button
+                key={tier.bps}
+                type="button"
+                onClick={() => setFeeBps(tier.bps)}
+                className={clsx(
+                  'relative rounded-xl px-4 py-3.5 text-center transition-all duration-200',
+                  feeBps === tier.bps
+                    ? 'bg-indigo-500/15 ring-1 ring-indigo-500/30 text-indigo-400'
+                    : 'bg-[#0D0F14] border border-white/[0.06] text-gray-400 hover:border-white/[0.12]',
+                )}
+              >
+                {recommended && feeBps !== tier.bps && (
+                  <span className="absolute -top-1.5 right-2 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[8px] font-bold uppercase text-emerald-400 ring-1 ring-emerald-500/20">
+                    Suggested
+                  </span>
+                )}
+                <div className="text-sm font-bold font-mono">{tier.label}</div>
+                <div className="mt-1 text-[10px] text-gray-500">{tier.description}</div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
+      {/* Step 2 navigation */}
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setWizardStep(1)}
+          className="flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-semibold text-gray-500 hover:text-gray-300 hover:bg-white/[0.04] transition-all"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Back: Tokens
+        </button>
+        <button
+          type="button"
+          onClick={() => setWizardStep(3)}
+          className="flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-semibold bg-indigo-500/15 text-indigo-400 hover:bg-indigo-500/25 ring-1 ring-indigo-500/20 transition-all"
+        >
+          Next: Review
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      </>
+      )}
+
+      {/* ---- Step 3: Review & Create ----------------------------------------- */}
+      {wizardStep === 3 && (
+      <>
       {/* ---- LP Token Metadata ----------------------------------------------- */}
       <div>
         <label className="mb-3 block text-xs font-semibold text-gray-400 uppercase tracking-wider">
@@ -782,6 +963,18 @@ export default function CreatePoolForm({
         </p>
       </div>
 
+      {/* Step 3 back button */}
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => setWizardStep(2)}
+          className="flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-semibold text-gray-500 hover:text-gray-300 hover:bg-white/[0.04] transition-all"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Back: Configuration
+        </button>
+      </div>
+
       {/* ---- Create button --------------------------------------------------- */}
       <button
         type="button"
@@ -821,6 +1014,8 @@ export default function CreatePoolForm({
           </>
         )}
       </button>
+      </>
+      )}
     </div>
   );
 }

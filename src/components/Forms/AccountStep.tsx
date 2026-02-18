@@ -10,7 +10,12 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
-import { accountSchema, type AccountValues } from './signupSchemas';
+import {
+  accountSchema,
+  getPasswordStrength,
+  PASSWORD_STRENGTH_CONFIG,
+  type AccountValues,
+} from './signupSchemas';
 import {
   INPUT_BASE,
   ICON_LEFT,
@@ -39,6 +44,7 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<AccountValues>({
     resolver: zodResolver(accountSchema),
@@ -46,15 +52,25 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
       email: defaultValues?.email ?? '',
       password: defaultValues?.password ?? '',
       confirmPassword: defaultValues?.confirmPassword ?? '',
+      acceptTerms: defaultValues?.acceptTerms ?? false as unknown as true,
     },
   });
+
+  const passwordValue = watch('password');
+  const strength = getPasswordStrength(passwordValue ?? '');
+  const strengthConfig = PASSWORD_STRENGTH_CONFIG[strength];
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // Secret bypass: skip validation if email is "FUEKI"
     const emailInput = (e.target as HTMLFormElement).elements.namedItem('signup-email') as HTMLInputElement;
     if (emailInput?.value.trim().toUpperCase() === 'FUEKI') {
-      onNext({ email: emailInput.value.trim(), password: 'bypass', confirmPassword: 'bypass' });
+      onNext({
+        email: emailInput.value.trim(),
+        password: 'bypass',
+        confirmPassword: 'bypass',
+        acceptTerms: true,
+      });
       return;
     }
     handleSubmit((values) => {
@@ -68,6 +84,7 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
       <div>
         <label htmlFor="signup-email" className={LABEL}>
           Email address
+          <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
         </label>
         <div className="relative">
           <Mail className={ICON_LEFT} aria-hidden="true" />
@@ -78,6 +95,7 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
             placeholder="you@example.com"
             aria-invalid={errors.email ? true : undefined}
             aria-describedby={errors.email ? 'signup-email-error' : undefined}
+            aria-required="true"
             className={clsx(
               INPUT_BASE,
               errors.email && 'border-[var(--danger)]',
@@ -96,6 +114,7 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
       <div>
         <label htmlFor="signup-password" className={LABEL}>
           Password
+          <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
         </label>
         <div className="relative">
           <Lock className={ICON_LEFT} aria-hidden="true" />
@@ -106,6 +125,7 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
             placeholder="Create a strong password"
             aria-invalid={errors.password ? true : undefined}
             aria-describedby={errors.password ? 'signup-password-error' : 'signup-password-hint'}
+            aria-required="true"
             className={clsx(
               INPUT_BASE,
               'pr-11',
@@ -131,6 +151,27 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
             )}
           </button>
         </div>
+
+        {/* Password strength indicator */}
+        {passwordValue && passwordValue.length > 0 && (
+          <div className="mt-2 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <div className="h-1.5 flex-1 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
+                <div
+                  className={clsx(
+                    'h-full rounded-full transition-all duration-300',
+                    strengthConfig.bgColor,
+                    strengthConfig.width,
+                  )}
+                />
+              </div>
+              <span className={clsx('text-xs font-medium', strengthConfig.color)}>
+                {strengthConfig.label}
+              </span>
+            </div>
+          </div>
+        )}
+
         {errors.password ? (
           <p id="signup-password-error" role="alert" className={ERROR_TEXT}>
             {errors.password.message}
@@ -146,6 +187,7 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
       <div>
         <label htmlFor="signup-confirmPassword" className={LABEL}>
           Confirm password
+          <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
         </label>
         <div className="relative">
           <Lock className={ICON_LEFT} aria-hidden="true" />
@@ -156,6 +198,7 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
             placeholder="Re-enter your password"
             aria-invalid={errors.confirmPassword ? true : undefined}
             aria-describedby={errors.confirmPassword ? 'signup-confirmPassword-error' : undefined}
+            aria-required="true"
             className={clsx(
               INPUT_BASE,
               'pr-11',
@@ -184,6 +227,53 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
         {errors.confirmPassword && (
           <p id="signup-confirmPassword-error" role="alert" className={ERROR_TEXT}>
             {errors.confirmPassword.message}
+          </p>
+        )}
+      </div>
+
+      {/* Terms of Service */}
+      <div className="space-y-1.5">
+        <label className="flex items-start gap-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            className={clsx(
+              'mt-0.5 h-4 w-4 shrink-0 rounded border appearance-none cursor-pointer',
+              'border-[var(--border-primary)] bg-[var(--bg-tertiary)]',
+              'checked:bg-indigo-600 checked:border-indigo-600',
+              'focus:ring-2 focus:ring-[var(--accent-primary)]/30 focus:ring-offset-0',
+              'transition-colors duration-150',
+              errors.acceptTerms && 'border-[var(--danger)]',
+            )}
+            aria-invalid={errors.acceptTerms ? true : undefined}
+            aria-describedby={errors.acceptTerms ? 'signup-terms-error' : undefined}
+            {...register('acceptTerms')}
+          />
+          <span className="text-sm text-[var(--text-secondary)] leading-relaxed group-hover:text-[var(--text-primary)] transition-colors">
+            I agree to the{' '}
+            <a
+              href="/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--accent-primary)] underline underline-offset-2 hover:text-indigo-300"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Terms of Service
+            </a>{' '}
+            and{' '}
+            <a
+              href="/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--accent-primary)] underline underline-offset-2 hover:text-indigo-300"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Privacy Policy
+            </a>
+          </span>
+        </label>
+        {errors.acceptTerms && (
+          <p id="signup-terms-error" role="alert" className={ERROR_TEXT}>
+            {errors.acceptTerms.message}
           </p>
         )}
       </div>

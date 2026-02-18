@@ -6,6 +6,8 @@
  * every page and component.
  */
 
+import { formatUnits } from 'ethers';
+
 // ---------------------------------------------------------------------------
 // Currency
 // ---------------------------------------------------------------------------
@@ -25,12 +27,21 @@ export function formatCurrency(
   const num = typeof value === 'string' ? parseFloat(value) : value;
   if (!isFinite(num)) return '$0.00';
 
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num);
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(num);
+  } catch {
+    // Fallback for non-ISO currency codes (e.g. ETH, BTC)
+    const formatted = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(num);
+    return `${formatted} ${currency}`;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -58,6 +69,28 @@ export function formatTokenAmount(
   }).format(num);
 }
 
+/**
+ * Formats a raw wei/token amount using ethers formatUnits for proper
+ * big-number precision, then applies display formatting.
+ *
+ * @param weiValue - Raw token amount as bigint or decimal string (wei).
+ * @param unitDecimals - Token decimals (default 18).
+ * @param displayDecimals - Maximum display decimals (default 4).
+ * @returns e.g. "1,234.5678"
+ */
+export function formatWeiAmount(
+  weiValue: bigint | string,
+  unitDecimals: number = 18,
+  displayDecimals: number = 4,
+): string {
+  try {
+    const formatted = formatUnits(weiValue, unitDecimals);
+    return formatTokenAmount(formatted, displayDecimals);
+  } catch {
+    return '0';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Percentages
 // ---------------------------------------------------------------------------
@@ -78,6 +111,26 @@ export function formatPercent(value: number | string): string {
   }).format(num)}%`;
 }
 
+/**
+ * Formats a number as a signed percentage string (with +/- prefix).
+ *
+ * @param value - The percentage value.
+ * @returns e.g. "+12.35%", "-3.1%", "0%"
+ */
+export function formatSignedPercent(value: number | string): string {
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  if (!isFinite(num)) return '0%';
+
+  const formatted = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(num));
+
+  if (num > 0) return `+${formatted}%`;
+  if (num < 0) return `-${formatted}%`;
+  return `${formatted}%`;
+}
+
 // ---------------------------------------------------------------------------
 // Compact (abbreviated) numbers
 // ---------------------------------------------------------------------------
@@ -93,11 +146,12 @@ export function formatCompact(value: number | string): string {
   if (!isFinite(num)) return '0';
 
   const abs = Math.abs(num);
+  const sign = num < 0 ? '-' : '';
 
-  if (abs >= 1e12) return `${(num / 1e12).toFixed(2).replace(/\.?0+$/, '')}T`;
-  if (abs >= 1e9) return `${(num / 1e9).toFixed(2).replace(/\.?0+$/, '')}B`;
-  if (abs >= 1e6) return `${(num / 1e6).toFixed(2).replace(/\.?0+$/, '')}M`;
-  if (abs >= 1e3) return `${(num / 1e3).toFixed(2).replace(/\.?0+$/, '')}K`;
+  if (abs >= 1e12) return `${sign}${(abs / 1e12).toFixed(2).replace(/\.?0+$/, '')}T`;
+  if (abs >= 1e9) return `${sign}${(abs / 1e9).toFixed(2).replace(/\.?0+$/, '')}B`;
+  if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(2).replace(/\.?0+$/, '')}M`;
+  if (abs >= 1e3) return `${sign}${(abs / 1e3).toFixed(2).replace(/\.?0+$/, '')}K`;
 
   return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 0,
@@ -125,6 +179,39 @@ export function truncateAddress(address: string, chars: number = 4): string {
 // ---------------------------------------------------------------------------
 // Dates
 // ---------------------------------------------------------------------------
+
+/**
+ * Formats a date value intelligently -- uses relative format for recent
+ * dates and absolute format for older ones.
+ *
+ * @param date - Date object, timestamp (ms), or ISO string.
+ * @param relativeThresholdMs - Threshold in ms for relative formatting
+ *   (default 7 days). Dates older than this use absolute format.
+ * @returns e.g. "just now", "5m ago", "3h ago", "2d ago", "Feb 16, 2026"
+ */
+export function formatRelativeDate(
+  date: Date | number | string,
+  relativeThresholdMs: number = 7 * 24 * 60 * 60 * 1000,
+): string {
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return '';
+
+  const now = Date.now();
+  const diff = now - d.getTime();
+
+  if (diff < 0 || diff > relativeThresholdMs) {
+    return formatDate(d);
+  }
+
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
 /**
  * Formats a date value as a short human-readable string.

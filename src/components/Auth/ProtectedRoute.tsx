@@ -26,9 +26,14 @@ function hasFromPath(state: unknown): state is LocationStateWithFrom {
 
 function FullScreenLoader() {
   return (
-    <div className="gradient-bg-subtle min-h-screen flex items-center justify-center">
+    <div
+      className="gradient-bg-subtle min-h-screen flex items-center justify-center"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading application"
+    >
       <div className="flex flex-col items-center gap-4">
-        <Loader2 className="h-8 w-8 animate-spin text-[var(--accent-primary)]" />
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--accent-primary)]" aria-hidden="true" />
         <p className="text-sm text-[var(--text-muted)]">Loading...</p>
       </div>
     </div>

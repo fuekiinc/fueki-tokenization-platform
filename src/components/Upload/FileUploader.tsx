@@ -239,10 +239,14 @@ export default function FileUploader() {
       {/* ------------------------------------------------------------------ */}
       <div
         {...getRootProps()}
+        role="button"
+        aria-label="Upload document - drag and drop or click to browse"
+        tabIndex={isParsing ? -1 : 0}
         className={[
           'group relative flex cursor-pointer flex-col items-center justify-center',
           'rounded-2xl border-2 border-dashed p-10 sm:p-14',
           'transition-all duration-300 ease-out',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50',
           isDragActive
             ? 'border-indigo-500/40 bg-indigo-500/[0.06] shadow-[0_0_60px_-12px_rgba(99,102,241,0.2)]'
             : [
@@ -250,6 +254,7 @@ export default function FileUploader() {
                 'hover:border-white/[0.15]',
                 'hover:shadow-[0_0_40px_-12px_rgba(99,102,241,0.08)]',
               ].join(' '),
+          isParsing && 'opacity-50 cursor-not-allowed',
         ].join(' ')}
       >
         <input {...getInputProps()} />
@@ -289,7 +294,7 @@ export default function FileUploader() {
       {/* ------------------------------------------------------------------ */}
       {!selectedFile && !parsedDoc && (
         <div className="flex items-center justify-between px-1">
-          <div className="hidden flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             {FORMAT_BADGES.map((fmt) => (
               <span
                 key={fmt.label}
@@ -299,7 +304,7 @@ export default function FileUploader() {
               </span>
             ))}
           </div>
-          <span className="text-xs text-white-600">
+          <span className="text-xs text-gray-500 shrink-0 ml-3">
             Max 10 MB
           </span>
         </div>
@@ -353,7 +358,7 @@ export default function FileUploader() {
       {/* Parse error                                                        */}
       {/* ------------------------------------------------------------------ */}
       {parseError && (
-        <div className="animate-fade-in rounded-2xl border border-red-500/15 bg-red-500/[0.05] p-7">
+        <div className="animate-fade-in rounded-2xl border border-red-500/15 bg-red-500/[0.05] p-7" role="alert">
           <div className="flex items-start gap-4">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-500/10 ring-1 ring-red-500/20">
               <AlertCircle className="h-5 w-5 text-red-400" />
@@ -420,7 +425,7 @@ export default function FileUploader() {
       {/* Success state                                                      */}
       {/* ------------------------------------------------------------------ */}
       {parsedDoc && (
-        <div className="animate-fade-in space-y-4">
+        <div className="animate-fade-in space-y-4" role="status" aria-live="polite">
           {/* Success card */}
           <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.04] p-7">
             <div className="flex items-start gap-5">

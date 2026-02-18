@@ -104,6 +104,7 @@ export default function LiquidityPanel({
   // ---- Remove state ---------------------------------------------------------
 
   const [removeAmount, setRemoveAmount] = useState('');
+  const [removePercent, setRemovePercent] = useState(0);
 
   // ---- Slippage / TX --------------------------------------------------------
 
@@ -440,21 +441,22 @@ export default function LiquidityPanel({
         routerAddress,
       );
       if (lpAllowance < parsedRemoveAmount) {
-        toast.loading('Approving LP tokens...', { id: 'approve-lp' });
         const approveTx = await contractService.approveRouter(
           selectedPool.address,
           parsedRemoveAmount,
         );
+        txSubmittedToast(approveTx.hash, chainId ?? 31337, 'Approving LP tokens...');
         await contractService.waitForTransaction(approveTx);
-        toast.success('LP tokens approved', { id: 'approve-lp' });
+        txConfirmedToast(approveTx.hash, 'LP tokens approved');
       }
     } catch (err: unknown) {
-      toast.error(parseContractError(err), { id: 'approve-lp' });
+      toast.error(parseContractError(err));
       setTxStatus('idle');
       return;
     }
 
     setTxStatus('submitting');
+    let submittedRemoveHash: string | null = null;
     try {
       // Compute minAmounts using slippage tolerance applied to pro-rata share of reserves.
       const minAmounts = selectedPool.tokens.map((_, i) => {
@@ -466,15 +468,16 @@ export default function LiquidityPanel({
       });
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
 
-      toast.loading('Removing liquidity...', { id: 'remove-orbital-liq' });
       const tx = await contractService.removeLiquidity(
         selectedPool.address,
         parsedRemoveAmount,
         minAmounts,
         deadline,
       );
+      submittedRemoveHash = tx.hash;
+      txSubmittedToast(tx.hash, chainId ?? 31337, 'Removing liquidity...');
       await contractService.waitForTransaction(tx);
-      toast.success('Liquidity removed!', { id: 'remove-orbital-liq' });
+      txConfirmedToast(tx.hash, 'Liquidity removed!');
       setTxStatus('confirmed');
       setRemoveAmount('');
       onLiquidityChanged?.();
@@ -482,10 +485,14 @@ export default function LiquidityPanel({
       clearTimeout(statusTimerRef.current);
       statusTimerRef.current = setTimeout(() => setTxStatus('idle'), 2500);
     } catch (err: unknown) {
-      toast.error(parseContractError(err), { id: 'remove-orbital-liq' });
+      if (submittedRemoveHash) {
+        txFailedToast(submittedRemoveHash, parseContractError(err));
+      } else {
+        toast.error(parseContractError(err));
+      }
       setTxStatus('idle');
     }
-  }, [contractService, selectedPool, parsedRemoveAmount, slippageBps, txStatus, userAddress, onLiquidityChanged, fetchPools]);
+  }, [contractService, selectedPool, parsedRemoveAmount, slippageBps, txStatus, chainId, userAddress, onLiquidityChanged, fetchPools]);
 
   // ---- Render ---------------------------------------------------------------
 
@@ -598,7 +605,7 @@ export default function LiquidityPanel({
               )}
             >
               <Minus className="h-3.5 w-3.5" />
-              Remove
+              Remove Liquidity
             </button>
           </div>
 
@@ -810,7 +817,19 @@ export default function LiquidityPanel({
                     value={removeAmount}
                     onChange={(e) => {
                       const val = e.target.value;
-                      if (/^[0-9]*\.?[0-9]*$/.test(val)) setRemoveAmount(val);
+                      if (/^[0-9]*\.?[0-9]*$/.test(val)) {
+                        setRemoveAmount(val);
+                        // Sync slider
+                        if (lpBalance > 0n) {
+                          try {
+                            const parsed = val ? ethers.parseUnits(val, 18) : 0n;
+                            const pct = Number((parsed * 100n) / lpBalance);
+                            setRemovePercent(Math.min(100, Math.max(0, pct)));
+                          } catch {
+                            setRemovePercent(0);
+                          }
+                        }
+                      }
                     }}
                     className={clsx(
                       'flex-1 rounded-xl px-4 py-3 text-base font-semibold text-white font-mono',
@@ -823,7 +842,10 @@ export default function LiquidityPanel({
                   {lpBalance > 0n && (
                     <button
                       type="button"
-                      onClick={() => setRemoveAmount(ethers.formatUnits(lpBalance, 18))}
+                      onClick={() => {
+                        setRemoveAmount(ethers.formatUnits(lpBalance, 18));
+                        setRemovePercent(100);
+                      }}
                       className="rounded bg-teal-500/10 px-2.5 py-1.5 text-[10px] font-bold uppercase text-teal-400 hover:bg-teal-500/20 transition-colors"
                     >
                       Max
@@ -832,32 +854,62 @@ export default function LiquidityPanel({
                 </div>
               </div>
 
-              {/* Percentage shortcuts */}
+              {/* Percentage slider */}
               {lpBalance > 0n && (
-                <div className="flex gap-2">
-                  {[25, 50, 75, 100].map((pct) => (
-                    <button
-                      key={pct}
-                      type="button"
-                      onClick={() => {
-                        const amount = (lpBalance * BigInt(pct)) / 100n;
-                        setRemoveAmount(ethers.formatUnits(amount, 18));
-                      }}
-                      className={clsx(
-                        'flex-1 rounded-lg py-2 text-xs font-semibold transition-all',
-                        'bg-white/[0.03] text-gray-500 hover:text-gray-300 hover:bg-white/[0.06]',
-                      )}
-                    >
-                      {pct}%
-                    </button>
-                  ))}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-gray-500">Amount to remove</span>
+                    <span className="font-mono text-sm font-semibold text-teal-400">
+                      {removePercent}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={removePercent}
+                    onChange={(e) => {
+                      const pct = Number(e.target.value);
+                      setRemovePercent(pct);
+                      const amount = (lpBalance * BigInt(pct)) / 100n;
+                      setRemoveAmount(ethers.formatUnits(amount, 18));
+                    }}
+                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-teal-500"
+                    style={{
+                      background: `linear-gradient(to right, rgb(20 184 166 / 0.4) 0%, rgb(20 184 166 / 0.4) ${removePercent}%, rgba(255,255,255,0.06) ${removePercent}%, rgba(255,255,255,0.06) 100%)`,
+                    }}
+                  />
+
+                  {/* Percentage preset buttons */}
+                  <div className="flex gap-2">
+                    {[25, 50, 75, 100].map((pct) => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() => {
+                          setRemovePercent(pct);
+                          const amount = (lpBalance * BigInt(pct)) / 100n;
+                          setRemoveAmount(ethers.formatUnits(amount, 18));
+                        }}
+                        className={clsx(
+                          'flex-1 rounded-lg py-2 text-xs font-semibold transition-all',
+                          removePercent === pct
+                            ? 'bg-teal-500/15 text-teal-400 ring-1 ring-teal-500/25'
+                            : 'bg-white/[0.03] text-gray-500 hover:text-gray-300 hover:bg-white/[0.06]',
+                        )}
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
               {/* Remove preview */}
               {removePreview && (
                 <div className="space-y-2 rounded-xl bg-teal-500/5 border border-teal-500/10 px-4 py-3.5">
-                  <span className="text-xs font-semibold text-gray-400">You Will Receive</span>
+                  <span className="text-xs font-semibold text-gray-400">You Will Receive (estimated)</span>
                   {selectedPool.tokens.map((token, i) => (
                     <div
                       key={token.index}
@@ -869,6 +921,11 @@ export default function LiquidityPanel({
                       </span>
                     </div>
                   ))}
+                  <p className="pt-1.5 border-t border-teal-500/10 text-[10px] leading-relaxed text-gray-600">
+                    Amounts are proportional to pool reserves. Due to impermanent loss,
+                    withdrawals may return a different token ratio than your original deposit.
+                    Higher concentration pools ({selectedPool.concentration}x) amplify this effect.
+                  </p>
                 </div>
               )}
 
@@ -958,15 +1015,18 @@ export default function LiquidityPanel({
         <div className="flex flex-col items-center py-10 text-center">
           <Info className="mb-3 h-6 w-6 text-gray-600" />
           <p className="text-sm text-gray-400">Select a pool to manage liquidity</p>
+          <p className="mt-1 text-xs text-gray-600">
+            Choose from {pools.length} available pool{pools.length !== 1 ? 's' : ''} above
+          </p>
         </div>
       )}
 
       {!loadingPools && pools.length === 0 && (
         <div className="flex flex-col items-center py-10 text-center">
           <AlertCircle className="mb-3 h-6 w-6 text-gray-600" />
-          <p className="text-sm text-gray-400">No Orbital pools available</p>
+          <p className="text-sm text-gray-400">No Orbital pools available yet</p>
           <p className="mt-1 text-xs text-gray-600">
-            Create a pool first, then return here to provide liquidity
+            Create a new pool first, then return here to add or remove liquidity
           </p>
         </div>
       )}

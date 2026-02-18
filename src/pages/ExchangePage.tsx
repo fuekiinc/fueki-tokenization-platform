@@ -19,7 +19,7 @@ import { useWalletStore, getProvider } from '../store/walletStore.ts';
 import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
 import { ContractService } from '../lib/blockchain/contracts';
 import logger from '../lib/logger';
-import { getNetworkConfig } from '../contracts/addresses';
+import { getNetworkConfig, getNetworkMetadata } from '../contracts/addresses';
 import { formatAddress } from '../lib/utils/helpers';
 // Card is available in Common but not needed in this layout
 import OrderBook from '../components/Exchange/OrderBook';
@@ -115,6 +115,7 @@ export default function ExchangePage() {
     isConnected,
     connectWallet,
     isConnecting,
+    switchNetwork,
   } = useWallet();
   const wallet = useWalletStore((s) => s.wallet);
   const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
@@ -418,18 +419,39 @@ export default function ExchangePage() {
               Network Not Supported
             </h2>
             <p className="mx-auto max-w-sm text-sm leading-relaxed text-gray-400">
-              The exchange contracts are not deployed on the current network
-              {networkConfig ? ` (${networkConfig.name})` : ''}. Please switch to
-              a supported network such as Hardhat Local (31337).
+              The exchange contracts are not deployed on your current network.
+              Please switch to a supported network to start trading.
             </p>
 
-            {/* Network badge */}
-            {networkConfig && (
-              <div className="mt-8 inline-flex items-center gap-2.5 rounded-full bg-amber-500/10 px-5 py-2 text-xs font-medium text-amber-400 ring-1 ring-amber-500/20">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                {networkConfig.name}
-              </div>
-            )}
+            {/* Current network badge */}
+            {(() => {
+              const currentMeta = wallet.chainId ? getNetworkMetadata(wallet.chainId) : null;
+              const currentName = currentMeta?.name ?? (wallet.chainId ? `Unknown Network (${wallet.chainId})` : 'Unknown Network');
+              return (
+                <div className="mt-8 inline-flex items-center gap-2.5 rounded-full bg-amber-500/10 px-5 py-2.5 text-xs font-medium text-amber-400 ring-1 ring-amber-500/20">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  Connected to: {currentName}
+                </div>
+              );
+            })()}
+
+            {/* Switch network buttons */}
+            <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => void switchNetwork(1)}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-500/15 border border-indigo-500/25 px-6 py-3 text-sm font-semibold text-indigo-300 transition-all hover:bg-indigo-500/25 hover:text-indigo-200"
+              >
+                Switch to Ethereum Mainnet
+              </button>
+              <button
+                type="button"
+                onClick={() => void switchNetwork(31337)}
+                className="inline-flex items-center gap-2 rounded-xl bg-white/[0.04] border border-white/[0.08] px-6 py-3 text-sm font-medium text-gray-400 transition-all hover:bg-white/[0.08] hover:text-gray-300"
+              >
+                Hardhat Local
+              </button>
+            </div>
           </GlassCard>
         </div>
       </div>

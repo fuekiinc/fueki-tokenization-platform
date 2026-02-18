@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { ComponentErrorBoundary } from '../ErrorBoundary';
 import { useTheme } from '../../hooks/useTheme';
 import { getToasterProps } from '../../lib/toastConfig';
 
@@ -8,9 +9,12 @@ export default function AuthLayout() {
 
   return (
     <div className="gradient-bg-subtle min-h-screen flex flex-col overflow-x-hidden">
-      {/* Optional: Fueki branding watermark or subtle background elements */}
       <main className="flex-1 flex items-center justify-center px-4 py-12">
-        <Outlet />
+        {/* Wrap auth pages in a full-page boundary so login/signup
+            rendering errors show a recovery UI instead of a blank page. */}
+        <ComponentErrorBoundary name="AuthPage" variant="full-page">
+          <Outlet />
+        </ComponentErrorBoundary>
       </main>
 
       {/* Footer with links */}

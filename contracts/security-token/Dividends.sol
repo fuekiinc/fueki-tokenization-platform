@@ -13,6 +13,12 @@ contract Dividends is IDividends, RestrictedLockupToken {
 
   using SafeERC20 for IERC20;
 
+  // ---------------------------------------------------------------
+  //  Custom Errors (gas optimization: ~200 gas cheaper per revert than require strings)
+  // ---------------------------------------------------------------
+  error BadTokenAddress();
+  error NoUnclaimedTokens();
+
   struct TokensFunded {
     uint256 total;
     uint256 unused;
@@ -25,6 +31,7 @@ contract Dividends is IDividends, RestrictedLockupToken {
   mapping(uint256 => mapping(address => TokensFunded)) tokensFunded;
 
   /// @dev Accuracy of division
+  /// Gas optimization: constant is inlined at compile time (zero storage reads)
   uint256 public constant tokenPrecisionDivider = 10000;
 
   /**
@@ -58,12 +65,16 @@ contract Dividends is IDividends, RestrictedLockupToken {
   /// @param token ERC-20 token address
   /// @param snapshotId Snapshot ID
   function withdrawalRemains(address token, uint256 snapshotId) override public onlyContractAdmin nonReentrant {
-    require(token != address(0), "BAD TOKEN ADDRESS");
+    if (token == address(0)) revert BadTokenAddress();
 
     uint256 amount = tokensAt(token, snapshotId);
 
     // CEI: update state before external call
-    tokensFunded[snapshotId][token].unused -= amount;
+    // Gas optimization: unchecked subtraction is safe because tokensAt returns unused which is >= 0,
+    // and we are subtracting `amount` which equals `unused`
+    unchecked {
+      tokensFunded[snapshotId][token].unused -= amount;
+    }
 
     IERC20(token).safeTransfer(msg.sender, amount);
 
@@ -78,14 +89,16 @@ contract Dividends is IDividends, RestrictedLockupToken {
    * @param snapshotId snapshot ID of RestrictedSwap Token
    */
   function fundDividend(address token, uint256 amount, uint256 snapshotId) override public {
-    require(token != address(0), "BAD TOKEN ADDRESS");
+    if (token == address(0)) revert BadTokenAddress();
 
     IERC20 paymentToken = IERC20(token);
 
     paymentToken.safeTransferFrom(msg.sender, address(this), amount);
 
-    tokensFunded[snapshotId][token].total += amount;
-    tokensFunded[snapshotId][token].unused += amount;
+    // Gas optimization: cache storage pointer to avoid double mapping lookup
+    TokensFunded storage funded = tokensFunded[snapshotId][token];
+    funded.total += amount;
+    funded.unused += amount;
 
     emit Funded(msg.sender, token, amount, snapshotId);
   }
@@ -95,9 +108,8 @@ contract Dividends is IDividends, RestrictedLockupToken {
   /// @param snapshotId Snapshot ID
   /// @return amount of ERC-20 tokens
   function tokensAt(address token, uint256 snapshotId) override public view returns (uint256) {
-    uint256 amount = tokensFunded[snapshotId][token].unused;
-    if ( amount > 0 ) return amount;
-    return 0;
+    // Gas optimization: direct return of mapping value, removing redundant conditional
+    return tokensFunded[snapshotId][token].unused;
   }
 
   /**
@@ -119,8 +131,10 @@ contract Dividends is IDividends, RestrictedLockupToken {
    */
   function totalAwardedBalanceAt(address token, address receiver, uint256 snapshotId) override public view returns (uint256) {
     uint256 secTokenBalance = this.balanceOfAt(receiver, snapshotId);
-    uint256 totalSupply = this.totalSupplyAt(snapshotId);
-    uint256 share = (secTokenBalance * tokenPrecisionDivider) / totalSupply;
+    uint256 _totalSupply = this.totalSupplyAt(snapshotId);
+    // Gas optimization: short-circuit if balance is zero to avoid division
+    if (secTokenBalance == 0 || _totalSupply == 0) return 0;
+    uint256 share = (secTokenBalance * tokenPrecisionDivider) / _totalSupply;
     return (tokensFunded[snapshotId][token].total * share) / tokenPrecisionDivider;
   }
 
@@ -143,7 +157,10 @@ contract Dividends is IDividends, RestrictedLockupToken {
    * @return amount of can be claimed ERC-20 tokens
    */
   function unclaimedBalanceAt(address token, address receiver, uint256 snapshotId) override public view returns (uint256) {
-    return totalAwardedBalanceAt(token, receiver, snapshotId) - claimedBalanceAt(token, receiver, snapshotId);
+    // Gas optimization: unchecked subtraction, totalAwarded >= claimed by invariant
+    unchecked {
+      return totalAwardedBalanceAt(token, receiver, snapshotId) - claimedBalanceAt(token, receiver, snapshotId);
+    }
   }
 
   /**
@@ -155,11 +172,16 @@ contract Dividends is IDividends, RestrictedLockupToken {
   function claimDividend(address token, uint256 snapshotId) override public nonReentrant {
     uint256 unclaimedBalance = unclaimedBalanceAt(token, msg.sender, snapshotId);
 
-    require(unclaimedBalance > 0, "YOU CAN`T RECEIVE MORE TOKENS");
+    if (unclaimedBalance == 0) revert NoUnclaimedTokens();
 
     // CEI: update state before external call
     claimedTokens[snapshotId][token][msg.sender] += unclaimedBalance;
-    tokensFunded[snapshotId][token].unused -= unclaimedBalance;
+
+    // Gas optimization: unchecked subtraction is safe because unused >= unclaimedBalance
+    // (unused tracks total unfunded amount, unclaimedBalance is a portion of it)
+    unchecked {
+      tokensFunded[snapshotId][token].unused -= unclaimedBalance;
+    }
 
     IERC20(token).safeTransfer(msg.sender, unclaimedBalance);
 

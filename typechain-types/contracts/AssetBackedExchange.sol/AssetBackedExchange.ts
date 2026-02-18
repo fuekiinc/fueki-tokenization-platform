@@ -34,6 +34,7 @@ export declare namespace AssetBackedExchange {
     filledSell: BigNumberish;
     filledBuy: BigNumberish;
     cancelled: boolean;
+    deadline: BigNumberish;
   };
 
   export type OrderStructOutput = [
@@ -45,7 +46,8 @@ export declare namespace AssetBackedExchange {
     amountBuy: bigint,
     filledSell: bigint,
     filledBuy: bigint,
-    cancelled: boolean
+    cancelled: boolean,
+    deadline: bigint
   ] & {
     id: bigint;
     maker: string;
@@ -56,17 +58,24 @@ export declare namespace AssetBackedExchange {
     filledSell: bigint;
     filledBuy: bigint;
     cancelled: boolean;
+    deadline: bigint;
   };
 }
 
 export interface AssetBackedExchangeInterface extends Interface {
   getFunction(
     nameOrSignature:
+      | "EMERGENCY_TIMELOCK"
       | "ETH_ADDRESS"
+      | "MAX_SCAN_LIMIT"
+      | "acceptOwnership"
+      | "cancelEmergencyWithdraw"
       | "cancelOrder"
       | "createOrder"
       | "createOrderSellETH"
+      | "emergencyRequests"
       | "ethBalances"
+      | "executeEmergencyWithdraw"
       | "fillOrder"
       | "fillOrderWithETH"
       | "getActiveOrders(address,address)"
@@ -74,21 +83,52 @@ export interface AssetBackedExchangeInterface extends Interface {
       | "getOrder"
       | "getOrderCount"
       | "getUserOrders"
+      | "nextEmergencyId"
       | "nextOrderId"
+      | "owner"
+      | "pause"
+      | "paused"
+      | "pendingOwner"
+      | "requestEmergencyWithdraw"
+      | "transferOwnership"
+      | "unpause"
       | "withdrawEth"
   ): FunctionFragment;
 
   getEvent(
     nameOrSignatureOrTopic:
+      | "EmergencyWithdrawCancelled"
+      | "EmergencyWithdrawExecuted"
+      | "EmergencyWithdrawRequested"
       | "EthWithdrawn"
       | "OrderCancelled"
       | "OrderCreated"
       | "OrderFilled"
+      | "OwnershipTransferStarted"
+      | "OwnershipTransferred"
+      | "Paused"
+      | "Unpaused"
   ): EventFragment;
 
   encodeFunctionData(
+    functionFragment: "EMERGENCY_TIMELOCK",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "ETH_ADDRESS",
     values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "MAX_SCAN_LIMIT",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "acceptOwnership",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "cancelEmergencyWithdraw",
+    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "cancelOrder",
@@ -96,15 +136,23 @@ export interface AssetBackedExchangeInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "createOrder",
-    values: [AddressLike, AddressLike, BigNumberish, BigNumberish]
+    values: [AddressLike, AddressLike, BigNumberish, BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "createOrderSellETH",
-    values: [AddressLike, BigNumberish]
+    values: [AddressLike, BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "emergencyRequests",
+    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "ethBalances",
     values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "executeEmergencyWithdraw",
+    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "fillOrder",
@@ -135,16 +183,52 @@ export interface AssetBackedExchangeInterface extends Interface {
     values: [AddressLike]
   ): string;
   encodeFunctionData(
+    functionFragment: "nextEmergencyId",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "nextOrderId",
     values?: undefined
   ): string;
+  encodeFunctionData(functionFragment: "owner", values?: undefined): string;
+  encodeFunctionData(functionFragment: "pause", values?: undefined): string;
+  encodeFunctionData(functionFragment: "paused", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "pendingOwner",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "requestEmergencyWithdraw",
+    values: [AddressLike, BigNumberish, AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "transferOwnership",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(functionFragment: "unpause", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "withdrawEth",
     values?: undefined
   ): string;
 
   decodeFunctionResult(
+    functionFragment: "EMERGENCY_TIMELOCK",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "ETH_ADDRESS",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "MAX_SCAN_LIMIT",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "acceptOwnership",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "cancelEmergencyWithdraw",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -160,7 +244,15 @@ export interface AssetBackedExchangeInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "emergencyRequests",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "ethBalances",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "executeEmergencyWithdraw",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "fillOrder", data: BytesLike): Result;
@@ -186,13 +278,85 @@ export interface AssetBackedExchangeInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "nextEmergencyId",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "nextOrderId",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "pause", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "paused", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "pendingOwner",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "requestEmergencyWithdraw",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "transferOwnership",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "unpause", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "withdrawEth",
     data: BytesLike
   ): Result;
+}
+
+export namespace EmergencyWithdrawCancelledEvent {
+  export type InputTuple = [requestId: BigNumberish];
+  export type OutputTuple = [requestId: bigint];
+  export interface OutputObject {
+    requestId: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace EmergencyWithdrawExecutedEvent {
+  export type InputTuple = [requestId: BigNumberish];
+  export type OutputTuple = [requestId: bigint];
+  export interface OutputObject {
+    requestId: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace EmergencyWithdrawRequestedEvent {
+  export type InputTuple = [
+    requestId: BigNumberish,
+    token: AddressLike,
+    amount: BigNumberish,
+    recipient: AddressLike,
+    executeAfter: BigNumberish
+  ];
+  export type OutputTuple = [
+    requestId: bigint,
+    token: string,
+    amount: bigint,
+    recipient: string,
+    executeAfter: bigint
+  ];
+  export interface OutputObject {
+    requestId: bigint;
+    token: string;
+    amount: bigint;
+    recipient: string;
+    executeAfter: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace EthWithdrawnEvent {
@@ -228,7 +392,8 @@ export namespace OrderCreatedEvent {
     tokenSell: AddressLike,
     tokenBuy: AddressLike,
     amountSell: BigNumberish,
-    amountBuy: BigNumberish
+    amountBuy: BigNumberish,
+    deadline: BigNumberish
   ];
   export type OutputTuple = [
     orderId: bigint,
@@ -236,7 +401,8 @@ export namespace OrderCreatedEvent {
     tokenSell: string,
     tokenBuy: string,
     amountSell: bigint,
-    amountBuy: bigint
+    amountBuy: bigint,
+    deadline: bigint
   ];
   export interface OutputObject {
     orderId: bigint;
@@ -245,6 +411,7 @@ export namespace OrderCreatedEvent {
     tokenBuy: string;
     amountSell: bigint;
     amountBuy: bigint;
+    deadline: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -270,6 +437,59 @@ export namespace OrderFilledEvent {
     taker: string;
     fillAmountSell: bigint;
     fillAmountBuy: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace OwnershipTransferStartedEvent {
+  export type InputTuple = [
+    currentOwner: AddressLike,
+    pendingOwner: AddressLike
+  ];
+  export type OutputTuple = [currentOwner: string, pendingOwner: string];
+  export interface OutputObject {
+    currentOwner: string;
+    pendingOwner: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace OwnershipTransferredEvent {
+  export type InputTuple = [previousOwner: AddressLike, newOwner: AddressLike];
+  export type OutputTuple = [previousOwner: string, newOwner: string];
+  export interface OutputObject {
+    previousOwner: string;
+    newOwner: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace PausedEvent {
+  export type InputTuple = [by: AddressLike];
+  export type OutputTuple = [by: string];
+  export interface OutputObject {
+    by: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace UnpausedEvent {
+  export type InputTuple = [by: AddressLike];
+  export type OutputTuple = [by: string];
+  export interface OutputObject {
+    by: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -320,7 +540,19 @@ export interface AssetBackedExchange extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  EMERGENCY_TIMELOCK: TypedContractMethod<[], [bigint], "view">;
+
   ETH_ADDRESS: TypedContractMethod<[], [string], "view">;
+
+  MAX_SCAN_LIMIT: TypedContractMethod<[], [bigint], "view">;
+
+  acceptOwnership: TypedContractMethod<[], [void], "nonpayable">;
+
+  cancelEmergencyWithdraw: TypedContractMethod<
+    [requestId: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
 
   cancelOrder: TypedContractMethod<
     [orderId: BigNumberish],
@@ -333,19 +565,40 @@ export interface AssetBackedExchange extends BaseContract {
       tokenSell: AddressLike,
       tokenBuy: AddressLike,
       amountSell: BigNumberish,
-      amountBuy: BigNumberish
+      amountBuy: BigNumberish,
+      deadline: BigNumberish
     ],
     [bigint],
     "nonpayable"
   >;
 
   createOrderSellETH: TypedContractMethod<
-    [tokenBuy: AddressLike, amountBuy: BigNumberish],
+    [tokenBuy: AddressLike, amountBuy: BigNumberish, deadline: BigNumberish],
     [bigint],
     "payable"
   >;
 
+  emergencyRequests: TypedContractMethod<
+    [arg0: BigNumberish],
+    [
+      [string, bigint, string, bigint, boolean] & {
+        token: string;
+        amount: bigint;
+        recipient: string;
+        executeAfter: bigint;
+        executed: boolean;
+      }
+    ],
+    "view"
+  >;
+
   ethBalances: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+
+  executeEmergencyWithdraw: TypedContractMethod<
+    [requestId: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
 
   fillOrder: TypedContractMethod<
     [orderId: BigNumberish, fillAmountBuy: BigNumberish],
@@ -386,7 +639,31 @@ export interface AssetBackedExchange extends BaseContract {
 
   getUserOrders: TypedContractMethod<[user: AddressLike], [bigint[]], "view">;
 
+  nextEmergencyId: TypedContractMethod<[], [bigint], "view">;
+
   nextOrderId: TypedContractMethod<[], [bigint], "view">;
+
+  owner: TypedContractMethod<[], [string], "view">;
+
+  pause: TypedContractMethod<[], [void], "nonpayable">;
+
+  paused: TypedContractMethod<[], [boolean], "view">;
+
+  pendingOwner: TypedContractMethod<[], [string], "view">;
+
+  requestEmergencyWithdraw: TypedContractMethod<
+    [token: AddressLike, amount: BigNumberish, recipient: AddressLike],
+    [bigint],
+    "nonpayable"
+  >;
+
+  transferOwnership: TypedContractMethod<
+    [newOwner: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
+  unpause: TypedContractMethod<[], [void], "nonpayable">;
 
   withdrawEth: TypedContractMethod<[], [void], "nonpayable">;
 
@@ -395,8 +672,20 @@ export interface AssetBackedExchange extends BaseContract {
   ): T;
 
   getFunction(
+    nameOrSignature: "EMERGENCY_TIMELOCK"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
     nameOrSignature: "ETH_ADDRESS"
   ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "MAX_SCAN_LIMIT"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "acceptOwnership"
+  ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "cancelEmergencyWithdraw"
+  ): TypedContractMethod<[requestId: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "cancelOrder"
   ): TypedContractMethod<[orderId: BigNumberish], [void], "nonpayable">;
@@ -407,7 +696,8 @@ export interface AssetBackedExchange extends BaseContract {
       tokenSell: AddressLike,
       tokenBuy: AddressLike,
       amountSell: BigNumberish,
-      amountBuy: BigNumberish
+      amountBuy: BigNumberish,
+      deadline: BigNumberish
     ],
     [bigint],
     "nonpayable"
@@ -415,13 +705,31 @@ export interface AssetBackedExchange extends BaseContract {
   getFunction(
     nameOrSignature: "createOrderSellETH"
   ): TypedContractMethod<
-    [tokenBuy: AddressLike, amountBuy: BigNumberish],
+    [tokenBuy: AddressLike, amountBuy: BigNumberish, deadline: BigNumberish],
     [bigint],
     "payable"
   >;
   getFunction(
+    nameOrSignature: "emergencyRequests"
+  ): TypedContractMethod<
+    [arg0: BigNumberish],
+    [
+      [string, bigint, string, bigint, boolean] & {
+        token: string;
+        amount: bigint;
+        recipient: string;
+        executeAfter: bigint;
+        executed: boolean;
+      }
+    ],
+    "view"
+  >;
+  getFunction(
     nameOrSignature: "ethBalances"
   ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "executeEmergencyWithdraw"
+  ): TypedContractMethod<[requestId: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "fillOrder"
   ): TypedContractMethod<
@@ -465,12 +773,61 @@ export interface AssetBackedExchange extends BaseContract {
     nameOrSignature: "getUserOrders"
   ): TypedContractMethod<[user: AddressLike], [bigint[]], "view">;
   getFunction(
+    nameOrSignature: "nextEmergencyId"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
     nameOrSignature: "nextOrderId"
   ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "owner"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "pause"
+  ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "paused"
+  ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "pendingOwner"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "requestEmergencyWithdraw"
+  ): TypedContractMethod<
+    [token: AddressLike, amount: BigNumberish, recipient: AddressLike],
+    [bigint],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "transferOwnership"
+  ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "unpause"
+  ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "withdrawEth"
   ): TypedContractMethod<[], [void], "nonpayable">;
 
+  getEvent(
+    key: "EmergencyWithdrawCancelled"
+  ): TypedContractEvent<
+    EmergencyWithdrawCancelledEvent.InputTuple,
+    EmergencyWithdrawCancelledEvent.OutputTuple,
+    EmergencyWithdrawCancelledEvent.OutputObject
+  >;
+  getEvent(
+    key: "EmergencyWithdrawExecuted"
+  ): TypedContractEvent<
+    EmergencyWithdrawExecutedEvent.InputTuple,
+    EmergencyWithdrawExecutedEvent.OutputTuple,
+    EmergencyWithdrawExecutedEvent.OutputObject
+  >;
+  getEvent(
+    key: "EmergencyWithdrawRequested"
+  ): TypedContractEvent<
+    EmergencyWithdrawRequestedEvent.InputTuple,
+    EmergencyWithdrawRequestedEvent.OutputTuple,
+    EmergencyWithdrawRequestedEvent.OutputObject
+  >;
   getEvent(
     key: "EthWithdrawn"
   ): TypedContractEvent<
@@ -499,8 +856,69 @@ export interface AssetBackedExchange extends BaseContract {
     OrderFilledEvent.OutputTuple,
     OrderFilledEvent.OutputObject
   >;
+  getEvent(
+    key: "OwnershipTransferStarted"
+  ): TypedContractEvent<
+    OwnershipTransferStartedEvent.InputTuple,
+    OwnershipTransferStartedEvent.OutputTuple,
+    OwnershipTransferStartedEvent.OutputObject
+  >;
+  getEvent(
+    key: "OwnershipTransferred"
+  ): TypedContractEvent<
+    OwnershipTransferredEvent.InputTuple,
+    OwnershipTransferredEvent.OutputTuple,
+    OwnershipTransferredEvent.OutputObject
+  >;
+  getEvent(
+    key: "Paused"
+  ): TypedContractEvent<
+    PausedEvent.InputTuple,
+    PausedEvent.OutputTuple,
+    PausedEvent.OutputObject
+  >;
+  getEvent(
+    key: "Unpaused"
+  ): TypedContractEvent<
+    UnpausedEvent.InputTuple,
+    UnpausedEvent.OutputTuple,
+    UnpausedEvent.OutputObject
+  >;
 
   filters: {
+    "EmergencyWithdrawCancelled(uint256)": TypedContractEvent<
+      EmergencyWithdrawCancelledEvent.InputTuple,
+      EmergencyWithdrawCancelledEvent.OutputTuple,
+      EmergencyWithdrawCancelledEvent.OutputObject
+    >;
+    EmergencyWithdrawCancelled: TypedContractEvent<
+      EmergencyWithdrawCancelledEvent.InputTuple,
+      EmergencyWithdrawCancelledEvent.OutputTuple,
+      EmergencyWithdrawCancelledEvent.OutputObject
+    >;
+
+    "EmergencyWithdrawExecuted(uint256)": TypedContractEvent<
+      EmergencyWithdrawExecutedEvent.InputTuple,
+      EmergencyWithdrawExecutedEvent.OutputTuple,
+      EmergencyWithdrawExecutedEvent.OutputObject
+    >;
+    EmergencyWithdrawExecuted: TypedContractEvent<
+      EmergencyWithdrawExecutedEvent.InputTuple,
+      EmergencyWithdrawExecutedEvent.OutputTuple,
+      EmergencyWithdrawExecutedEvent.OutputObject
+    >;
+
+    "EmergencyWithdrawRequested(uint256,address,uint256,address,uint256)": TypedContractEvent<
+      EmergencyWithdrawRequestedEvent.InputTuple,
+      EmergencyWithdrawRequestedEvent.OutputTuple,
+      EmergencyWithdrawRequestedEvent.OutputObject
+    >;
+    EmergencyWithdrawRequested: TypedContractEvent<
+      EmergencyWithdrawRequestedEvent.InputTuple,
+      EmergencyWithdrawRequestedEvent.OutputTuple,
+      EmergencyWithdrawRequestedEvent.OutputObject
+    >;
+
     "EthWithdrawn(address,uint256)": TypedContractEvent<
       EthWithdrawnEvent.InputTuple,
       EthWithdrawnEvent.OutputTuple,
@@ -523,7 +941,7 @@ export interface AssetBackedExchange extends BaseContract {
       OrderCancelledEvent.OutputObject
     >;
 
-    "OrderCreated(uint256,address,address,address,uint256,uint256)": TypedContractEvent<
+    "OrderCreated(uint256,address,address,address,uint256,uint256,uint256)": TypedContractEvent<
       OrderCreatedEvent.InputTuple,
       OrderCreatedEvent.OutputTuple,
       OrderCreatedEvent.OutputObject
@@ -543,6 +961,50 @@ export interface AssetBackedExchange extends BaseContract {
       OrderFilledEvent.InputTuple,
       OrderFilledEvent.OutputTuple,
       OrderFilledEvent.OutputObject
+    >;
+
+    "OwnershipTransferStarted(address,address)": TypedContractEvent<
+      OwnershipTransferStartedEvent.InputTuple,
+      OwnershipTransferStartedEvent.OutputTuple,
+      OwnershipTransferStartedEvent.OutputObject
+    >;
+    OwnershipTransferStarted: TypedContractEvent<
+      OwnershipTransferStartedEvent.InputTuple,
+      OwnershipTransferStartedEvent.OutputTuple,
+      OwnershipTransferStartedEvent.OutputObject
+    >;
+
+    "OwnershipTransferred(address,address)": TypedContractEvent<
+      OwnershipTransferredEvent.InputTuple,
+      OwnershipTransferredEvent.OutputTuple,
+      OwnershipTransferredEvent.OutputObject
+    >;
+    OwnershipTransferred: TypedContractEvent<
+      OwnershipTransferredEvent.InputTuple,
+      OwnershipTransferredEvent.OutputTuple,
+      OwnershipTransferredEvent.OutputObject
+    >;
+
+    "Paused(address)": TypedContractEvent<
+      PausedEvent.InputTuple,
+      PausedEvent.OutputTuple,
+      PausedEvent.OutputObject
+    >;
+    Paused: TypedContractEvent<
+      PausedEvent.InputTuple,
+      PausedEvent.OutputTuple,
+      PausedEvent.OutputObject
+    >;
+
+    "Unpaused(address)": TypedContractEvent<
+      UnpausedEvent.InputTuple,
+      UnpausedEvent.OutputTuple,
+      UnpausedEvent.OutputObject
+    >;
+    Unpaused: TypedContractEvent<
+      UnpausedEvent.InputTuple,
+      UnpausedEvent.OutputTuple,
+      UnpausedEvent.OutputObject
     >;
   };
 }

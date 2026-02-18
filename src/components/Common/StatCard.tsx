@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import clsx from 'clsx';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { formatPercent } from '../../lib/formatters';
+import { CARD_CLASSES, TYPOGRAPHY } from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -75,17 +76,10 @@ export default function StatCard({
       role="group"
       aria-label={ariaLabel ?? title}
       className={clsx(
-        // Glass morphism surface
-        'relative overflow-hidden rounded-2xl',
-        'bg-[#0D0F14]/80 backdrop-blur-xl',
-        'border border-white/[0.06]',
-        // Spacious padding
-        'p-7 sm:p-9',
-        // Hover lift
-        'transition-all duration-300 ease-out',
-        'hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/20',
-        'hover:border-white/[0.10]',
-        // Prevent text overflow
+        CARD_CLASSES.base,
+        CARD_CLASSES.wrapper,
+        CARD_CLASSES.padding,
+        CARD_CLASSES.hover,
         'min-w-0',
         className,
       )}
@@ -104,13 +98,13 @@ export default function StatCard({
             {icon}
           </div>
         )}
-        <p className="min-w-0 truncate text-sm font-medium uppercase tracking-wider text-gray-400">
+        <p className={clsx('min-w-0 truncate', TYPOGRAPHY.statLabel)}>
           {title}
         </p>
       </div>
 
       {/* Value */}
-      <p className="mt-5 min-w-0 truncate text-2xl sm:text-3xl font-bold tracking-tight text-white">
+      <p className={clsx('mt-5 min-w-0 truncate', TYPOGRAPHY.statValue)}>
         {value}
       </p>
 

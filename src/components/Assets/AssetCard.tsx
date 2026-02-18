@@ -84,10 +84,19 @@ export default function AssetCard({
         'hover:shadow-[0_8px_40px_-8px_rgba(99,102,241,0.10)]',
         onSelect && 'cursor-pointer',
       )}
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      aria-label={onSelect ? `Select ${assetName}` : undefined}
       onClick={() => onSelect?.(asset)}
+      onKeyDown={(e) => {
+        if (onSelect && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          onSelect(asset);
+        }
+      }}
     >
       {/* Top gradient accent -- visible on hover */}
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent opacity-0 transition-opacity duration-200 group-hover:opacity-100" aria-hidden="true" />
 
       {/* Card body */}
       <div className="p-7 sm:p-9">
@@ -161,11 +170,12 @@ export default function AssetCard({
                 }}
                 className="flex items-center gap-1.5 min-w-0 ml-4 group/addr"
                 title={asset.address}
+                aria-label="Copy contract address"
               >
                 <span className="font-mono text-xs text-gray-500 truncate transition-colors group-hover/addr:text-gray-300">
                   {formatAddress(asset.address)}
                 </span>
-                <Copy className="h-3 w-3 shrink-0 text-gray-600 transition-colors group-hover/addr:text-gray-400" />
+                <Copy className="h-3 w-3 shrink-0 text-gray-600 transition-colors group-hover/addr:text-gray-400" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -178,13 +188,14 @@ export default function AssetCard({
               e.stopPropagation();
               onTransfer(asset);
             }}
+            aria-label={`Transfer ${assetName}`}
             className={clsx(
               'flex flex-1 items-center justify-center gap-1.5 rounded-xl px-4 py-2.5',
               'border border-indigo-500/10 bg-indigo-500/[0.06] text-xs font-medium text-indigo-400',
               'transition-all duration-200 hover:border-indigo-500/25 hover:bg-indigo-500/[0.12] hover:shadow-sm hover:shadow-indigo-500/10',
             )}
           >
-            <Send className="h-3.5 w-3.5" />
+            <Send className="h-3.5 w-3.5" aria-hidden="true" />
             Transfer
           </button>
           <button
@@ -192,13 +203,14 @@ export default function AssetCard({
               e.stopPropagation();
               onBurn(asset);
             }}
+            aria-label={`Burn ${assetName}`}
             className={clsx(
               'flex flex-1 items-center justify-center gap-1.5 rounded-xl px-4 py-2.5',
               'border border-red-500/10 bg-red-500/[0.06] text-xs font-medium text-red-400',
               'transition-all duration-200 hover:border-red-500/25 hover:bg-red-500/[0.12] hover:shadow-sm hover:shadow-red-500/10',
             )}
           >
-            <Flame className="h-3.5 w-3.5" />
+            <Flame className="h-3.5 w-3.5" aria-hidden="true" />
             Burn
           </button>
           <button
@@ -211,9 +223,9 @@ export default function AssetCard({
               'border border-white/[0.06] bg-white/[0.03] text-gray-500',
               'transition-all duration-200 hover:border-white/[0.10] hover:bg-white/[0.06] hover:text-gray-300',
             )}
-            title="View on Explorer"
+            aria-label={`View ${assetName} on block explorer`}
           >
-            <ExternalLink className="h-3.5 w-3.5" />
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </div>
 
@@ -280,9 +292,10 @@ function DetailRow({
             mono && 'font-mono',
           )}
           title={value}
+          aria-label={`Copy ${label}`}
         >
           <span className="truncate text-xs">{displayValue ?? value}</span>
-          <Copy className="h-3 w-3 shrink-0 text-gray-600 transition-colors group-hover/row:text-gray-400" />
+          <Copy className="h-3 w-3 shrink-0 text-gray-600 transition-colors group-hover/row:text-gray-400" aria-hidden="true" />
         </button>
       ) : (
         <span

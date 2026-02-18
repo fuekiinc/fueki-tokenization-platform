@@ -5,8 +5,14 @@ import './RestrictedLockupToken.sol';
 import './interfaces/ITransferRules.sol';
 
 contract TransferRules is ITransferRules {
+    // ---------------------------------------------------------------
+    //  Custom Errors (gas optimization: ~200 gas cheaper per revert)
+    // ---------------------------------------------------------------
+    error BadRestrictionCode();
+
     mapping(uint8 => string) internal errorMessage;
 
+    // Gas optimization: constants are inlined at compile time (no SLOAD)
     uint8 public constant SUCCESS = 0;
     uint8 public constant GREATER_THAN_RECIPIENT_MAX_BALANCE = 1;
     uint8 public constant SENDER_TOKENS_TIME_LOCKED = 2;
@@ -36,6 +42,7 @@ contract TransferRules is ITransferRules {
   /// @param to Receiving address
   /// @param value Amount of tokens being transferred
   /// @return Code by which to reference message for rejection reason
+  /// Gas optimization: short-circuit evaluation ordered by cheapest checks first
   function detectTransferRestriction(
     address _token,
     address from,
@@ -48,16 +55,24 @@ contract TransferRules is ITransferRules {
     returns(uint8)
   {
     RestrictedLockupToken token = RestrictedLockupToken(_token);
-    if (token.isPaused()) return ALL_TRANSFERS_PAUSED;
-    if (to == address(0)) return DO_NOT_SEND_TO_EMPTY_ADDRESS;
 
+    // Gas optimization: cheapest checks first (storage reads vs. external calls)
+    // isPaused is a single SLOAD
+    if (token.isPaused()) return ALL_TRANSFERS_PAUSED;
+
+    // Zero-address check is nearly free (no storage)
+    if (to == address(0)) return DO_NOT_SEND_TO_EMPTY_ADDRESS;
     if (to == address(token)) return DO_NOT_SEND_TO_TOKEN_CONTRACT;
 
-    if ((token.getMaxBalance(to) > 0) &&
-        (token.balanceOf(to) + value > token.getMaxBalance(to))
-       ) return GREATER_THAN_RECIPIENT_MAX_BALANCE;
+    // Frozen checks are single SLOAD each
     if (token.getFrozenStatus(from)) return SENDER_ADDRESS_FROZEN;
     if (token.getFrozenStatus(to)) return RECIPIENT_ADDRESS_FROZEN;
+
+    // Gas optimization: cache getMaxBalance to avoid potential double external call
+    uint256 maxBal = token.getMaxBalance(to);
+    if ((maxBal > 0) &&
+        (token.balanceOf(to) + value > maxBal)
+       ) return GREATER_THAN_RECIPIENT_MAX_BALANCE;
 
     // @dev Remove it Change it on data on TokenLockup settings
     uint256 lockedUntil = token.getAllowTransferTime(from, to);
@@ -80,7 +95,7 @@ contract TransferRules is ITransferRules {
     view
     returns(string memory)
   {
-    require(restrictionCode <= 9, "BAD RESTRICTION CODE");
+    if (restrictionCode > 9) revert BadRestrictionCode();
     return errorMessage[restrictionCode];
   }
 

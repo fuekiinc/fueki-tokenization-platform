@@ -12,16 +12,34 @@ contract RestrictedSwap is Dividends, IRestrictedSwap {
 
   using SafeERC20 for IERC20;
 
+  // ---------------------------------------------------------------
+  //  Custom Errors (gas optimization: ~200 gas cheaper per revert than require strings)
+  // ---------------------------------------------------------------
+  error InvalidRestrictedTokenAmount();
+  error InvalidQuoteTokenAmount();
+  error InvalidQuoteTokenAddress();
+  error InvalidQuoteTokenSender();
+  error InvalidRestrictedTokenSender();
+  error InsufficientRestrictedTokenBalance();
+  error SwapAlreadyCanceled();
+  error SwapAlreadyCompleted();
+  error NotAppropriateTokenSender();
+  error DepositAmountMismatch();
+  error SwapNotConfigured();
+  error OnlyConfiguratorCanCancel();
+  error SwapRecordNotExists();
+
   /// @dev swap number
-  uint256 public swapNumber = 0;
+  uint256 public swapNumber;
 
   /// @dev swap number => swap
   mapping(uint256 => Swap) private _swap;
 
-  modifier onlyValidSwap(uint256 swapNumber) {
-    Swap storage swap = _swap[swapNumber];
-    require(swap.status != SwapStatus.Canceled, "Already canceled");
-    require(swap.status != SwapStatus.Complete, "Already completed");
+  modifier onlyValidSwap(uint256 _swapNumber) {
+    // Gas optimization: cache storage read to avoid double SLOAD
+    SwapStatus status = _swap[_swapNumber].status;
+    if (status == SwapStatus.Canceled) revert SwapAlreadyCanceled();
+    if (status == SwapStatus.Complete) revert SwapAlreadyCompleted();
     _;
   }
 
@@ -65,9 +83,9 @@ contract RestrictedSwap is Dividends, IRestrictedSwap {
     uint256 quoteTokenAmount,
     SwapStatus configuror
   ) private {
-    require(restrictedTokenAmount > 0, "Invalid restricted token amount");
-    require(quoteTokenAmount > 0, "Invalid quote token amount");
-    require(quoteToken != address(0), "Invalid quote token address");
+    if (restrictedTokenAmount == 0) revert InvalidRestrictedTokenAmount();
+    if (quoteTokenAmount == 0) revert InvalidQuoteTokenAmount();
+    if (quoteToken == address(0)) revert InvalidQuoteTokenAddress();
 
     uint8 code = detectTransferRestriction(
       restrictedTokenSender,
@@ -91,7 +109,10 @@ contract RestrictedSwap is Dividends, IRestrictedSwap {
       // 0 == success
     }
 
-    swapNumber += 1;
+    // Gas optimization: pre-increment is cheaper than post-increment + avoids initializing to 0
+    unchecked {
+      ++swapNumber;
+    }
 
     Swap storage swap = _swap[swapNumber];
     swap.restrictedTokenSender = restrictedTokenSender;
@@ -124,9 +145,8 @@ contract RestrictedSwap is Dividends, IRestrictedSwap {
     address quoteTokenSender,
     uint256 quoteTokenAmount
   ) external override nonReentrant {
-    require(quoteTokenSender != address(0), "Invalid quote token sender");
-    require(balanceOf(msg.sender) >= restrictedTokenAmount, "Insufficient restricted token amount");
-
+    if (quoteTokenSender == address(0)) revert InvalidQuoteTokenSender();
+    if (balanceOf(msg.sender) < restrictedTokenAmount) revert InsufficientRestrictedTokenBalance();
 
     _configureSwap(
       msg.sender,
@@ -154,7 +174,7 @@ contract RestrictedSwap is Dividends, IRestrictedSwap {
     address quoteToken,
     uint256 quoteTokenAmount
   ) external override nonReentrant {
-    require(restrictedTokenSender != address(0), "Invalid restricted token sender");
+    if (restrictedTokenSender == address(0)) revert InvalidRestrictedTokenSender();
 
     _configureSwap(
       restrictedTokenSender,
@@ -171,106 +191,125 @@ contract RestrictedSwap is Dividends, IRestrictedSwap {
 
   /**
    *  @dev Complete swap with quote token
-   *  @param swapNumber swap number
+   *  @param _swapNumber swap number
    */
-  function completeSwapWithPaymentToken(uint256 swapNumber)
+  function completeSwapWithPaymentToken(uint256 _swapNumber)
   external
   override
   nonReentrant
-  onlyValidSwap(swapNumber)
+  onlyValidSwap(_swapNumber)
   {
-    Swap storage swap = _swap[swapNumber];
+    // Gas optimization: cache storage pointer and read fields once to avoid repeated SLOAD
+    Swap storage swap = _swap[_swapNumber];
 
-    require(swap.quoteTokenSender == msg.sender, "You are not appropriate token sender for this swap");
+    address _quoteTokenSender = swap.quoteTokenSender;
+    address _restrictedTokenSender = swap.restrictedTokenSender;
+    address _quoteToken = swap.quoteToken;
+    uint256 _quoteTokenAmount = swap.quoteTokenAmount;
+    uint256 _restrictedTokenAmount = swap.restrictedTokenAmount;
 
-    uint256 balanceBefore = IERC20(swap.quoteToken).balanceOf(swap.restrictedTokenSender);
-    IERC20(swap.quoteToken).safeTransferFrom(msg.sender, swap.restrictedTokenSender, swap.quoteTokenAmount);
-    uint256 balanceAfter = IERC20(swap.quoteToken).balanceOf(swap.restrictedTokenSender);
+    if (_quoteTokenSender != msg.sender) revert NotAppropriateTokenSender();
 
-    require(balanceBefore + swap.quoteTokenAmount == balanceAfter, "Deposit reverted for incorrect result of deposited amount");
+    uint256 balanceBefore = IERC20(_quoteToken).balanceOf(_restrictedTokenSender);
+    IERC20(_quoteToken).safeTransferFrom(msg.sender, _restrictedTokenSender, _quoteTokenAmount);
+    uint256 balanceAfter = IERC20(_quoteToken).balanceOf(_restrictedTokenSender);
+
+    if (balanceBefore + _quoteTokenAmount != balanceAfter) revert DepositAmountMismatch();
 
     swap.status = SwapStatus.Complete;
 
-    _transfer(address(this), swap.quoteTokenSender, swap.restrictedTokenAmount);
+    _transfer(address(this), _quoteTokenSender, _restrictedTokenAmount);
 
     emit SwapComplete(
-      swapNumber,
-      swap.restrictedTokenSender,
-      swap.restrictedTokenAmount,
-      swap.quoteTokenSender,
-      swap.quoteToken,
-      swap.quoteTokenAmount
+      _swapNumber,
+      _restrictedTokenSender,
+      _restrictedTokenAmount,
+      _quoteTokenSender,
+      _quoteToken,
+      _quoteTokenAmount
     );
   }
 
   /**
    *  @dev Complete swap with restricted token
-   *  @param swapNumber swap number
+   *  @param _swapNumber swap number
    */
-  function completeSwapWithRestrictedToken(uint256 swapNumber)
+  function completeSwapWithRestrictedToken(uint256 _swapNumber)
   external
   override
   nonReentrant
-  onlyValidSwap(swapNumber)
+  onlyValidSwap(_swapNumber)
   {
-    Swap storage swap = _swap[swapNumber];
+    // Gas optimization: cache storage pointer and read fields once to avoid repeated SLOAD
+    Swap storage swap = _swap[_swapNumber];
 
-    require(swap.restrictedTokenSender == msg.sender, "You are not appropriate token sender for this swap");
+    address _restrictedTokenSender = swap.restrictedTokenSender;
+    address _quoteTokenSender = swap.quoteTokenSender;
+    address _quoteToken = swap.quoteToken;
+    uint256 _quoteTokenAmount = swap.quoteTokenAmount;
+    uint256 _restrictedTokenAmount = swap.restrictedTokenAmount;
 
-    uint256 balanceBefore = IERC20(swap.quoteToken).balanceOf(swap.restrictedTokenSender);
-    IERC20(swap.quoteToken).safeTransfer(msg.sender, swap.quoteTokenAmount);
-    uint256 balanceAfter = IERC20(swap.quoteToken).balanceOf(swap.restrictedTokenSender);
+    if (_restrictedTokenSender != msg.sender) revert NotAppropriateTokenSender();
 
-    require(balanceBefore + swap.quoteTokenAmount == balanceAfter, "Deposit reverted for incorrect result of deposited amount");
+    uint256 balanceBefore = IERC20(_quoteToken).balanceOf(_restrictedTokenSender);
+    IERC20(_quoteToken).safeTransfer(msg.sender, _quoteTokenAmount);
+    uint256 balanceAfter = IERC20(_quoteToken).balanceOf(_restrictedTokenSender);
+
+    if (balanceBefore + _quoteTokenAmount != balanceAfter) revert DepositAmountMismatch();
 
     swap.status = SwapStatus.Complete;
 
-    _transfer(msg.sender, swap.quoteTokenSender, swap.restrictedTokenAmount);
+    _transfer(msg.sender, _quoteTokenSender, _restrictedTokenAmount);
 
     emit SwapComplete(
-      swapNumber,
-      swap.restrictedTokenSender,
-      swap.restrictedTokenAmount,
-      swap.quoteTokenSender,
-      swap.quoteToken,
-      swap.quoteTokenAmount
+      _swapNumber,
+      _restrictedTokenSender,
+      _restrictedTokenAmount,
+      _quoteTokenSender,
+      _quoteToken,
+      _quoteTokenAmount
     );
   }
 
   /**
    *  @dev cancel swap
-   *  @param swapNumber swap number
+   *  @param _swapNumber swap number
    */
-  function cancelSell(uint256 swapNumber)
+  function cancelSell(uint256 _swapNumber)
   external
   override
   nonReentrant
-  onlyValidSwap(swapNumber)
+  onlyValidSwap(_swapNumber)
   {
-    Swap storage swap = _swap[swapNumber];
+    // Gas optimization: cache storage reads
+    Swap storage swap = _swap[_swapNumber];
 
-    require(swap.restrictedTokenSender != address(0), "This swap is not configured");
-    require(swap.quoteTokenSender != address(0), "This swap is not configured");
+    address _restrictedTokenSender = swap.restrictedTokenSender;
+    address _quoteTokenSender = swap.quoteTokenSender;
 
-    if (swap.status == SwapStatus.SellConfigured) {
-      require(msg.sender == swap.restrictedTokenSender, "Only swap configurator can cancel the swap");
-      _transfer(address(this), swap.restrictedTokenSender, swap.restrictedTokenAmount);
-    } else if (swap.status == SwapStatus.BuyConfigured) {
-      require(msg.sender == swap.quoteTokenSender, "Only swap configurator can cancel the swap");
-      IERC20(swap.quoteToken).safeTransfer(swap.quoteTokenSender, swap.quoteTokenAmount);
+    if (_restrictedTokenSender == address(0)) revert SwapNotConfigured();
+    if (_quoteTokenSender == address(0)) revert SwapNotConfigured();
+
+    SwapStatus status = swap.status;
+    if (status == SwapStatus.SellConfigured) {
+      if (msg.sender != _restrictedTokenSender) revert OnlyConfiguratorCanCancel();
+      _transfer(address(this), _restrictedTokenSender, swap.restrictedTokenAmount);
+    } else if (status == SwapStatus.BuyConfigured) {
+      if (msg.sender != _quoteTokenSender) revert OnlyConfiguratorCanCancel();
+      IERC20(swap.quoteToken).safeTransfer(_quoteTokenSender, swap.quoteTokenAmount);
     }
 
     swap.status = SwapStatus.Canceled;
 
-    emit SwapCanceled(msg.sender, swapNumber);
+    emit SwapCanceled(msg.sender, _swapNumber);
   }
 
   /**
    * @dev Returns the swap status if exists
-   * @param swapNumber swap number
+   * @param _swapNumber swap number
    * @return SwapStatus status of the swap record
    */
-  function swapStatus(uint256 swapNumber)
+  function swapStatus(uint256 _swapNumber)
   external
   override
   view
@@ -278,7 +317,7 @@ contract RestrictedSwap is Dividends, IRestrictedSwap {
   returns
   (SwapStatus)
   {
-    require(_swap[swapNumber].restrictedTokenSender != address(0), "Swap record not exists");
-    return _swap[swapNumber].status;
+    if (_swap[_swapNumber].restrictedTokenSender == address(0)) revert SwapRecordNotExists();
+    return _swap[_swapNumber].status;
   }
 }

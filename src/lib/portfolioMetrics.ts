@@ -33,6 +33,16 @@ export interface AssetPerformance {
   hasCostData: boolean;
 }
 
+export interface AssetAllocation {
+  address: string;
+  symbol: string;
+  name: string;
+  /** Absolute dollar value of the position */
+  value: number;
+  /** Percentage of total portfolio value (0-100) */
+  percentage: number;
+}
+
 export interface PortfolioSummary {
   totalValue: number;
   totalCostBasis: number;
@@ -42,6 +52,8 @@ export interface PortfolioSummary {
   worstPerformer: AssetPerformance | null;
   /** Number of assets that have trade data for meaningful P&L */
   assetsWithCostData: number;
+  /** Asset allocation percentages, sorted by value descending */
+  allocations: AssetAllocation[];
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +262,39 @@ export function calculateAssetPerformance(
 }
 
 // ---------------------------------------------------------------------------
+// Asset allocation
+// ---------------------------------------------------------------------------
+
+/**
+ * Calculate the allocation percentages for each asset in the portfolio.
+ *
+ * @returns Array of allocations sorted by value descending.
+ */
+export function calculateAssetAllocations(
+  assets: WrappedAsset[],
+): AssetAllocation[] {
+  const withValues = assets.map((asset) => {
+    const balance = parseFloat(asset.balance || '0');
+    const price = deriveTokenPrice(asset);
+    return {
+      address: asset.address,
+      symbol: asset.symbol,
+      name: asset.name,
+      value: balance * price,
+    };
+  });
+
+  const totalValue = withValues.reduce((sum, a) => sum + a.value, 0);
+
+  return withValues
+    .map((a) => ({
+      ...a,
+      percentage: totalValue > 0 ? (a.value / totalValue) * 100 : 0,
+    }))
+    .sort((a, b) => b.value - a.value);
+}
+
+// ---------------------------------------------------------------------------
 // Portfolio-wide summary
 // ---------------------------------------------------------------------------
 
@@ -266,6 +311,7 @@ export function calculatePortfolioSummary(
       bestPerformer: null,
       worstPerformer: null,
       assetsWithCostData: 0,
+      allocations: [],
     };
   }
 
@@ -307,6 +353,9 @@ export function calculatePortfolioSummary(
     );
   }
 
+  // Asset allocations
+  const allocations = calculateAssetAllocations(assets);
+
   return {
     totalValue,
     totalCostBasis,
@@ -315,6 +364,7 @@ export function calculatePortfolioSummary(
     bestPerformer,
     worstPerformer,
     assetsWithCostData,
+    allocations,
   };
 }
 

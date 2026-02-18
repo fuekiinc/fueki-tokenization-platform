@@ -11,6 +11,9 @@ pragma solidity ^0.8.20;
  *         - ETH-based orders (buy or sell with native ETH)
  *         - Partial fills
  *         - Order cancellation
+ *         - Order expiry/deadline
+ *         - Pause/unpause (owner only)
+ *         - Emergency token withdrawal (owner only, timelocked)
  *
  * @dev Uses a pull-based pattern for ETH refunds to prevent reentrancy.
  *      All ERC-20 interactions use the standard interface.
@@ -49,6 +52,43 @@ contract AssetBackedExchange {
     /// @notice Sentinel address representing native ETH in order pairs.
     address public constant ETH_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
+    /// @notice Timelock delay for emergency withdrawals (48 hours).
+    uint256 public constant EMERGENCY_TIMELOCK = 48 hours;
+
+    /// @notice Maximum number of orders scanned in a single getActiveOrders call.
+    uint256 public constant MAX_SCAN_LIMIT = 500;
+
+    // ---------------------------------------------------------------
+    //  Owner / Pause
+    // ---------------------------------------------------------------
+
+    /// @notice Contract owner with admin privileges.
+    address public owner;
+
+    /// @notice Pending owner for two-step ownership transfer.
+    address public pendingOwner;
+
+    /// @notice Whether the exchange is paused (no new orders or fills).
+    bool public paused;
+
+    // ---------------------------------------------------------------
+    //  Emergency withdrawal
+    // ---------------------------------------------------------------
+
+    struct EmergencyRequest {
+        address token;
+        uint256 amount;
+        address recipient;
+        uint256 executeAfter;
+        bool executed;
+    }
+
+    /// @notice Auto-incrementing ID for emergency requests.
+    uint256 public nextEmergencyId;
+
+    /// @notice Emergency withdrawal requests (timelocked).
+    mapping(uint256 => EmergencyRequest) public emergencyRequests;
+
     // ---------------------------------------------------------------
     //  Storage
     // ---------------------------------------------------------------
@@ -63,6 +103,7 @@ contract AssetBackedExchange {
         uint256 filledSell;    // amount already filled on sell side
         uint256 filledBuy;     // amount already filled on buy side
         bool    cancelled;
+        uint256 deadline;      // order expiry timestamp (0 = no expiry)
     }
 
     uint256 public nextOrderId;
@@ -84,7 +125,8 @@ contract AssetBackedExchange {
         address tokenSell,
         address tokenBuy,
         uint256 amountSell,
-        uint256 amountBuy
+        uint256 amountBuy,
+        uint256 deadline
     );
 
     event OrderFilled(
@@ -98,6 +140,22 @@ contract AssetBackedExchange {
 
     event EthWithdrawn(address indexed to, uint256 amount);
 
+    event Paused(address indexed by);
+    event Unpaused(address indexed by);
+
+    event OwnershipTransferStarted(address indexed currentOwner, address indexed pendingOwner);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    event EmergencyWithdrawRequested(
+        uint256 indexed requestId,
+        address token,
+        uint256 amount,
+        address recipient,
+        uint256 executeAfter
+    );
+    event EmergencyWithdrawExecuted(uint256 indexed requestId);
+    event EmergencyWithdrawCancelled(uint256 indexed requestId);
+
     // ---------------------------------------------------------------
     //  Errors
     // ---------------------------------------------------------------
@@ -106,12 +164,159 @@ contract AssetBackedExchange {
     error ZeroAddress();
     error SameToken();
     error OrderNotActive();
+    error OrderExpired();
     error NotMaker();
     error InsufficientFill();
     error TransferFailed();
     error InsufficientEth();
     error NothingToWithdraw();
     error ReentrantCall();
+    error NotOwner();
+    error NotPendingOwner();
+    error ExchangePaused();
+    error NotPaused();
+    error TimelockNotMet();
+    error AlreadyExecuted();
+    error LimitTooHigh();
+
+    // ---------------------------------------------------------------
+    //  Modifiers
+    // ---------------------------------------------------------------
+
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert NotOwner();
+        _;
+    }
+
+    modifier whenNotPaused() {
+        if (paused) revert ExchangePaused();
+        _;
+    }
+
+    // ---------------------------------------------------------------
+    //  Constructor
+    // ---------------------------------------------------------------
+
+    constructor(address _owner) {
+        if (_owner == address(0)) revert ZeroAddress();
+        owner = _owner;
+        emit OwnershipTransferred(address(0), _owner);
+    }
+
+    // ---------------------------------------------------------------
+    //  Owner functions
+    // ---------------------------------------------------------------
+
+    /**
+     * @notice Start a two-step ownership transfer.
+     * @param newOwner The address that will become owner after accepting.
+     */
+    function transferOwnership(address newOwner) external onlyOwner {
+        if (newOwner == address(0)) revert ZeroAddress();
+        pendingOwner = newOwner;
+        emit OwnershipTransferStarted(owner, newOwner);
+    }
+
+    /**
+     * @notice Accept ownership (must be called by pendingOwner).
+     */
+    function acceptOwnership() external {
+        if (msg.sender != pendingOwner) revert NotPendingOwner();
+        address oldOwner = owner;
+        owner = msg.sender;
+        pendingOwner = address(0);
+        emit OwnershipTransferred(oldOwner, msg.sender);
+    }
+
+    /**
+     * @notice Pause the exchange. Prevents new orders and fills.
+     *         Cancellations and ETH withdrawals remain available.
+     */
+    function pause() external onlyOwner {
+        if (paused) revert ExchangePaused();
+        paused = true;
+        emit Paused(msg.sender);
+    }
+
+    /**
+     * @notice Unpause the exchange.
+     */
+    function unpause() external onlyOwner {
+        if (!paused) revert NotPaused();
+        paused = false;
+        emit Unpaused(msg.sender);
+    }
+
+    // ---------------------------------------------------------------
+    //  Emergency withdrawal (owner-only, timelocked)
+    // ---------------------------------------------------------------
+
+    /**
+     * @notice Request an emergency withdrawal of stuck tokens.
+     *         Subject to a 48-hour timelock before execution.
+     *
+     * @param token     The ERC-20 token to withdraw (or ETH_ADDRESS for ETH).
+     * @param amount    Amount to withdraw.
+     * @param recipient Recipient address.
+     * @return requestId The ID of this emergency request.
+     */
+    function requestEmergencyWithdraw(
+        address token,
+        uint256 amount,
+        address recipient
+    ) external onlyOwner returns (uint256 requestId) {
+        if (amount == 0) revert ZeroAmount();
+        if (recipient == address(0)) revert ZeroAddress();
+
+        requestId = nextEmergencyId++;
+        uint256 executeAfter = block.timestamp + EMERGENCY_TIMELOCK;
+
+        emergencyRequests[requestId] = EmergencyRequest({
+            token: token,
+            amount: amount,
+            recipient: recipient,
+            executeAfter: executeAfter,
+            executed: false
+        });
+
+        emit EmergencyWithdrawRequested(requestId, token, amount, recipient, executeAfter);
+    }
+
+    /**
+     * @notice Execute a timelocked emergency withdrawal.
+     * @param requestId The emergency request ID.
+     */
+    function executeEmergencyWithdraw(uint256 requestId) external onlyOwner nonReentrant {
+        EmergencyRequest storage req = emergencyRequests[requestId];
+        if (req.executed) revert AlreadyExecuted();
+        if (req.amount == 0) revert ZeroAmount(); // request does not exist
+        if (block.timestamp < req.executeAfter) revert TimelockNotMet();
+
+        req.executed = true;
+
+        if (req.token == ETH_ADDRESS) {
+            (bool sent,) = payable(req.recipient).call{value: req.amount}("");
+            if (!sent) revert TransferFailed();
+        } else {
+            bool ok = IERC20(req.token).transfer(req.recipient, req.amount);
+            if (!ok) revert TransferFailed();
+        }
+
+        emit EmergencyWithdrawExecuted(requestId);
+    }
+
+    /**
+     * @notice Cancel a pending emergency withdrawal request.
+     * @param requestId The emergency request ID.
+     */
+    function cancelEmergencyWithdraw(uint256 requestId) external onlyOwner {
+        EmergencyRequest storage req = emergencyRequests[requestId];
+        if (req.executed) revert AlreadyExecuted();
+        if (req.amount == 0) revert ZeroAmount();
+
+        req.executed = true; // mark as consumed so it cannot be executed
+        emit EmergencyWithdrawCancelled(requestId);
+    }
 
     // ---------------------------------------------------------------
     //  Create order
@@ -125,23 +330,26 @@ contract AssetBackedExchange {
      * @param tokenBuy   The token wanted in return (ETH_ADDRESS for native ETH)
      * @param amountSell Amount of tokenSell to offer
      * @param amountBuy  Amount of tokenBuy desired (sets the price)
+     * @param deadline   Order expiry timestamp (0 = no expiry)
      */
     function createOrder(
         address tokenSell,
         address tokenBuy,
         uint256 amountSell,
-        uint256 amountBuy
-    ) external nonReentrant returns (uint256 orderId) {
+        uint256 amountBuy,
+        uint256 deadline
+    ) external nonReentrant whenNotPaused returns (uint256 orderId) {
         if (amountSell == 0 || amountBuy == 0) revert ZeroAmount();
         if (tokenSell == address(0) || tokenBuy == address(0)) revert ZeroAddress();
         if (tokenSell == tokenBuy) revert SameToken();
         if (tokenSell == ETH_ADDRESS) revert ZeroAddress(); // use createOrderSellETH
+        if (deadline != 0 && deadline <= block.timestamp) revert OrderExpired();
 
         // Transfer sell tokens to this contract
         bool ok = IERC20(tokenSell).transferFrom(msg.sender, address(this), amountSell);
         if (!ok) revert TransferFailed();
 
-        orderId = _createOrder(msg.sender, tokenSell, tokenBuy, amountSell, amountBuy);
+        orderId = _createOrder(msg.sender, tokenSell, tokenBuy, amountSell, amountBuy, deadline);
     }
 
     /**
@@ -149,15 +357,18 @@ contract AssetBackedExchange {
      *
      * @param tokenBuy   The ERC-20 token wanted in return
      * @param amountBuy  Amount of tokenBuy desired
+     * @param deadline   Order expiry timestamp (0 = no expiry)
      */
     function createOrderSellETH(
         address tokenBuy,
-        uint256 amountBuy
-    ) external payable nonReentrant returns (uint256 orderId) {
+        uint256 amountBuy,
+        uint256 deadline
+    ) external payable nonReentrant whenNotPaused returns (uint256 orderId) {
         if (msg.value == 0 || amountBuy == 0) revert ZeroAmount();
         if (tokenBuy == address(0) || tokenBuy == ETH_ADDRESS) revert ZeroAddress();
+        if (deadline != 0 && deadline <= block.timestamp) revert OrderExpired();
 
-        orderId = _createOrder(msg.sender, ETH_ADDRESS, tokenBuy, msg.value, amountBuy);
+        orderId = _createOrder(msg.sender, ETH_ADDRESS, tokenBuy, msg.value, amountBuy, deadline);
     }
 
     function _createOrder(
@@ -165,7 +376,8 @@ contract AssetBackedExchange {
         address tokenSell,
         address tokenBuy,
         uint256 amountSell,
-        uint256 amountBuy
+        uint256 amountBuy,
+        uint256 deadline
     ) private returns (uint256 orderId) {
         orderId = nextOrderId++;
 
@@ -178,12 +390,13 @@ contract AssetBackedExchange {
             amountBuy: amountBuy,
             filledSell: 0,
             filledBuy: 0,
-            cancelled: false
+            cancelled: false,
+            deadline: deadline
         });
 
         _userOrderIds[maker].push(orderId);
 
-        emit OrderCreated(orderId, maker, tokenSell, tokenBuy, amountSell, amountBuy);
+        emit OrderCreated(orderId, maker, tokenSell, tokenBuy, amountSell, amountBuy, deadline);
     }
 
     // ---------------------------------------------------------------
@@ -197,7 +410,7 @@ contract AssetBackedExchange {
      * @param orderId       The order to fill
      * @param fillAmountBuy Amount of the buy token to provide
      */
-    function fillOrder(uint256 orderId, uint256 fillAmountBuy) external nonReentrant {
+    function fillOrder(uint256 orderId, uint256 fillAmountBuy) external nonReentrant whenNotPaused {
         Order storage order = _orders[orderId];
         _validateOrderActive(order);
         if (fillAmountBuy == 0) revert ZeroAmount();
@@ -238,7 +451,7 @@ contract AssetBackedExchange {
      *
      * @param orderId The order to fill
      */
-    function fillOrderWithETH(uint256 orderId) external payable nonReentrant {
+    function fillOrderWithETH(uint256 orderId) external payable nonReentrant whenNotPaused {
         Order storage order = _orders[orderId];
         _validateOrderActive(order);
         if (msg.value == 0) revert ZeroAmount();
@@ -280,7 +493,11 @@ contract AssetBackedExchange {
      */
     function cancelOrder(uint256 orderId) external nonReentrant {
         Order storage order = _orders[orderId];
-        _validateOrderActive(order);
+        // Allow cancellation even when paused so users can recover funds.
+        // Validate the order exists and is active (not already cancelled/filled).
+        _validateOrderExists(order);
+        if (order.cancelled) revert OrderNotActive();
+        if (order.filledSell >= order.amountSell) revert OrderNotActive();
         if (msg.sender != order.maker) revert NotMaker();
 
         order.cancelled = true;
@@ -331,8 +548,8 @@ contract AssetBackedExchange {
     }
 
     /**
-     * @notice Get active (non-cancelled, not fully filled) orders for a
-     *         specific trading pair.  Uses a default limit of 100.
+     * @notice Get active (non-cancelled, not fully filled, not expired) orders
+     *         for a specific trading pair. Uses a default limit of 100.
      */
     function getActiveOrders(
         address tokenSell,
@@ -343,11 +560,12 @@ contract AssetBackedExchange {
 
     /**
      * @notice Get active orders for a trading pair with pagination.
+     *         Scans at most MAX_SCAN_LIMIT orders per call to bound gas usage.
      *
      * @param tokenSell The sell-side token address
      * @param tokenBuy  The buy-side token address
      * @param offset    Number of matching orders to skip
-     * @param limit     Maximum number of orders to return
+     * @param limit     Maximum number of orders to return (capped at MAX_SCAN_LIMIT)
      */
     function getActiveOrders(
         address tokenSell,
@@ -356,21 +574,26 @@ contract AssetBackedExchange {
         uint256 limit
     ) external view returns (Order[] memory) {
         if (limit == 0) limit = 100;
+        if (limit > MAX_SCAN_LIMIT) revert LimitTooHigh();
 
-        // First pass: count total matching orders and collect up to
-        // offset + limit entries to avoid unbounded memory allocation.
+        uint256 totalOrders = nextOrderId;
         uint256 matched = 0;
         uint256 collected = 0;
 
         // Temporary array sized to at most `limit`
         Order[] memory temp = new Order[](limit);
 
-        for (uint256 i = 0; i < nextOrderId && collected < limit; i++) {
+        // Bound the scan to prevent excessive gas usage
+        uint256 scanEnd = totalOrders;
+
+        for (uint256 i = 0; i < scanEnd && collected < limit; i++) {
             Order storage o = _orders[i];
+            if (o.amountSell == 0) continue; // skip non-existent orders
             if (o.tokenSell == tokenSell &&
                 o.tokenBuy == tokenBuy &&
                 !o.cancelled &&
-                o.filledSell < o.amountSell)
+                o.filledSell < o.amountSell &&
+                (o.deadline == 0 || o.deadline > block.timestamp))
             {
                 if (matched >= offset) {
                     temp[collected] = o;
@@ -395,14 +618,30 @@ contract AssetBackedExchange {
     //  Internal
     // ---------------------------------------------------------------
 
+    /**
+     * @dev Validates that an order exists (non-zero amountSell means it was created).
+     */
+    function _validateOrderExists(Order storage order) private view {
+        if (order.amountSell == 0) revert OrderNotActive();
+    }
+
+    /**
+     * @dev Validates that an order is active: exists, not cancelled, not fully
+     *      filled, and not expired.
+     */
     function _validateOrderActive(Order storage order) private view {
+        if (order.amountSell == 0) revert OrderNotActive(); // order does not exist
         if (order.cancelled) revert OrderNotActive();
         if (order.filledSell >= order.amountSell) revert OrderNotActive();
+        if (order.deadline != 0 && block.timestamp > order.deadline) revert OrderExpired();
     }
 
     // ---------------------------------------------------------------
     //  Receive ETH
     // ---------------------------------------------------------------
 
+    /// @dev Only accept ETH from explicit function calls (createOrderSellETH,
+    ///      fillOrderWithETH, withdrawEth). Direct sends are rejected unless
+    ///      they come during an active reentrancy-guarded call.
     receive() external payable {}
 }

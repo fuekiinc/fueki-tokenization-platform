@@ -48,43 +48,85 @@ export declare namespace LiquidityPoolAMM {
     totalLiquidity: bigint;
     kLast: bigint;
   };
+
+  export type PriceObservationStruct = {
+    timestamp: BigNumberish;
+    price0CumulativeLast: BigNumberish;
+    price1CumulativeLast: BigNumberish;
+  };
+
+  export type PriceObservationStructOutput = [
+    timestamp: bigint,
+    price0CumulativeLast: bigint,
+    price1CumulativeLast: bigint
+  ] & {
+    timestamp: bigint;
+    price0CumulativeLast: bigint;
+    price1CumulativeLast: bigint;
+  };
 }
 
 export interface LiquidityPoolAMMInterface extends Interface {
   getFunction(
     nameOrSignature:
+      | "EMERGENCY_TIMELOCK"
       | "ETH_ADDRESS"
       | "FEE_DENOMINATOR"
       | "FEE_NUMERATOR"
       | "MINIMUM_LIQUIDITY"
+      | "acceptOwnership"
       | "addLiquidity"
       | "addLiquidityETH"
+      | "cancelEmergencyWithdraw"
       | "createPool"
+      | "emergencyRequests"
       | "ethBalances"
+      | "executeEmergencyWithdraw"
       | "getAmountOut"
       | "getLiquidityBalance"
       | "getPool"
       | "getPoolId"
+      | "getPriceObservation"
       | "liquidityBalances"
+      | "nextEmergencyId"
+      | "owner"
+      | "pause"
+      | "paused"
+      | "pendingOwner"
       | "pools"
+      | "priceObservations"
       | "quote"
       | "removeLiquidity"
       | "removeLiquidityETH"
+      | "requestEmergencyWithdraw"
       | "swap"
       | "swapETHForToken"
       | "swapTokenForETH"
+      | "transferOwnership"
+      | "unpause"
       | "withdrawEth"
   ): FunctionFragment;
 
   getEvent(
     nameOrSignatureOrTopic:
+      | "EmergencyWithdrawCancelled"
+      | "EmergencyWithdrawExecuted"
+      | "EmergencyWithdrawRequested"
       | "EthWithdrawn"
       | "LiquidityAdded"
       | "LiquidityRemoved"
+      | "OwnershipTransferStarted"
+      | "OwnershipTransferred"
+      | "Paused"
       | "PoolCreated"
       | "Swap"
+      | "Unpaused"
   ): EventFragment;
 
+  encodeFunctionData(
+    functionFragment: "EMERGENCY_TIMELOCK",
+    values?: undefined
+  ): string;
   encodeFunctionData(
     functionFragment: "ETH_ADDRESS",
     values?: undefined
@@ -102,6 +144,10 @@ export interface LiquidityPoolAMMInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "acceptOwnership",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "addLiquidity",
     values: [
       AddressLike,
@@ -116,15 +162,34 @@ export interface LiquidityPoolAMMInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "addLiquidityETH",
-    values: [AddressLike, BigNumberish, BigNumberish, BigNumberish]
+    values: [
+      AddressLike,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish
+    ]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "cancelEmergencyWithdraw",
+    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "createPool",
     values: [AddressLike, AddressLike]
   ): string;
   encodeFunctionData(
+    functionFragment: "emergencyRequests",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "ethBalances",
     values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "executeEmergencyWithdraw",
+    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "getAmountOut",
@@ -143,10 +208,29 @@ export interface LiquidityPoolAMMInterface extends Interface {
     values: [AddressLike, AddressLike]
   ): string;
   encodeFunctionData(
+    functionFragment: "getPriceObservation",
+    values: [AddressLike, AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "liquidityBalances",
     values: [BytesLike, AddressLike]
   ): string;
+  encodeFunctionData(
+    functionFragment: "nextEmergencyId",
+    values?: undefined
+  ): string;
+  encodeFunctionData(functionFragment: "owner", values?: undefined): string;
+  encodeFunctionData(functionFragment: "pause", values?: undefined): string;
+  encodeFunctionData(functionFragment: "paused", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "pendingOwner",
+    values?: undefined
+  ): string;
   encodeFunctionData(functionFragment: "pools", values: [BytesLike]): string;
+  encodeFunctionData(
+    functionFragment: "priceObservations",
+    values: [BytesLike]
+  ): string;
   encodeFunctionData(
     functionFragment: "quote",
     values: [AddressLike, AddressLike, BigNumberish]
@@ -173,6 +257,10 @@ export interface LiquidityPoolAMMInterface extends Interface {
     ]
   ): string;
   encodeFunctionData(
+    functionFragment: "requestEmergencyWithdraw",
+    values: [AddressLike, BigNumberish, AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "swap",
     values: [AddressLike, AddressLike, BigNumberish, BigNumberish, BigNumberish]
   ): string;
@@ -185,10 +273,19 @@ export interface LiquidityPoolAMMInterface extends Interface {
     values: [AddressLike, BigNumberish, BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "transferOwnership",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(functionFragment: "unpause", values?: undefined): string;
+  encodeFunctionData(
     functionFragment: "withdrawEth",
     values?: undefined
   ): string;
 
+  decodeFunctionResult(
+    functionFragment: "EMERGENCY_TIMELOCK",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "ETH_ADDRESS",
     data: BytesLike
@@ -206,6 +303,10 @@ export interface LiquidityPoolAMMInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "acceptOwnership",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "addLiquidity",
     data: BytesLike
   ): Result;
@@ -213,9 +314,21 @@ export interface LiquidityPoolAMMInterface extends Interface {
     functionFragment: "addLiquidityETH",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "cancelEmergencyWithdraw",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "createPool", data: BytesLike): Result;
   decodeFunctionResult(
+    functionFragment: "emergencyRequests",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "ethBalances",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "executeEmergencyWithdraw",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -229,10 +342,29 @@ export interface LiquidityPoolAMMInterface extends Interface {
   decodeFunctionResult(functionFragment: "getPool", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "getPoolId", data: BytesLike): Result;
   decodeFunctionResult(
+    functionFragment: "getPriceObservation",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "liquidityBalances",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "nextEmergencyId",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "pause", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "paused", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "pendingOwner",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "pools", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "priceObservations",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "quote", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "removeLiquidity",
@@ -240,6 +372,10 @@ export interface LiquidityPoolAMMInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "removeLiquidityETH",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "requestEmergencyWithdraw",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "swap", data: BytesLike): Result;
@@ -252,9 +388,66 @@ export interface LiquidityPoolAMMInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "transferOwnership",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "unpause", data: BytesLike): Result;
+  decodeFunctionResult(
     functionFragment: "withdrawEth",
     data: BytesLike
   ): Result;
+}
+
+export namespace EmergencyWithdrawCancelledEvent {
+  export type InputTuple = [requestId: BigNumberish];
+  export type OutputTuple = [requestId: bigint];
+  export interface OutputObject {
+    requestId: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace EmergencyWithdrawExecutedEvent {
+  export type InputTuple = [requestId: BigNumberish];
+  export type OutputTuple = [requestId: bigint];
+  export interface OutputObject {
+    requestId: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace EmergencyWithdrawRequestedEvent {
+  export type InputTuple = [
+    requestId: BigNumberish,
+    token: AddressLike,
+    amount: BigNumberish,
+    recipient: AddressLike,
+    executeAfter: BigNumberish
+  ];
+  export type OutputTuple = [
+    requestId: bigint,
+    token: string,
+    amount: bigint,
+    recipient: string,
+    executeAfter: bigint
+  ];
+  export interface OutputObject {
+    requestId: bigint;
+    token: string;
+    amount: bigint;
+    recipient: string;
+    executeAfter: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace EthWithdrawnEvent {
@@ -326,6 +519,47 @@ export namespace LiquidityRemovedEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
+export namespace OwnershipTransferStartedEvent {
+  export type InputTuple = [
+    currentOwner: AddressLike,
+    pendingOwner: AddressLike
+  ];
+  export type OutputTuple = [currentOwner: string, pendingOwner: string];
+  export interface OutputObject {
+    currentOwner: string;
+    pendingOwner: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace OwnershipTransferredEvent {
+  export type InputTuple = [previousOwner: AddressLike, newOwner: AddressLike];
+  export type OutputTuple = [previousOwner: string, newOwner: string];
+  export interface OutputObject {
+    previousOwner: string;
+    newOwner: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace PausedEvent {
+  export type InputTuple = [by: AddressLike];
+  export type OutputTuple = [by: string];
+  export interface OutputObject {
+    by: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
 export namespace PoolCreatedEvent {
   export type InputTuple = [
     poolId: BytesLike,
@@ -368,6 +602,18 @@ export namespace SwapEvent {
     tokenOut: string;
     amountIn: bigint;
     amountOut: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace UnpausedEvent {
+  export type InputTuple = [by: AddressLike];
+  export type OutputTuple = [by: string];
+  export interface OutputObject {
+    by: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -418,6 +664,8 @@ export interface LiquidityPoolAMM extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  EMERGENCY_TIMELOCK: TypedContractMethod<[], [bigint], "view">;
+
   ETH_ADDRESS: TypedContractMethod<[], [string], "view">;
 
   FEE_DENOMINATOR: TypedContractMethod<[], [bigint], "view">;
@@ -425,6 +673,8 @@ export interface LiquidityPoolAMM extends BaseContract {
   FEE_NUMERATOR: TypedContractMethod<[], [bigint], "view">;
 
   MINIMUM_LIQUIDITY: TypedContractMethod<[], [bigint], "view">;
+
+  acceptOwnership: TypedContractMethod<[], [void], "nonpayable">;
 
   addLiquidity: TypedContractMethod<
     [
@@ -444,12 +694,20 @@ export interface LiquidityPoolAMM extends BaseContract {
   addLiquidityETH: TypedContractMethod<
     [
       token: AddressLike,
-      amountToken: BigNumberish,
+      amountTokenDesired: BigNumberish,
+      amountTokenMin: BigNumberish,
+      amountETHMin: BigNumberish,
       minLiquidity: BigNumberish,
       deadline: BigNumberish
     ],
     [bigint],
     "payable"
+  >;
+
+  cancelEmergencyWithdraw: TypedContractMethod<
+    [requestId: BigNumberish],
+    [void],
+    "nonpayable"
   >;
 
   createPool: TypedContractMethod<
@@ -458,7 +716,27 @@ export interface LiquidityPoolAMM extends BaseContract {
     "nonpayable"
   >;
 
+  emergencyRequests: TypedContractMethod<
+    [arg0: BigNumberish],
+    [
+      [string, bigint, string, bigint, boolean] & {
+        token: string;
+        amount: bigint;
+        recipient: string;
+        executeAfter: bigint;
+        executed: boolean;
+      }
+    ],
+    "view"
+  >;
+
   ethBalances: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+
+  executeEmergencyWithdraw: TypedContractMethod<
+    [requestId: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
 
   getAmountOut: TypedContractMethod<
     [amountIn: BigNumberish, reserveIn: BigNumberish, reserveOut: BigNumberish],
@@ -484,11 +762,27 @@ export interface LiquidityPoolAMM extends BaseContract {
     "view"
   >;
 
+  getPriceObservation: TypedContractMethod<
+    [tokenA: AddressLike, tokenB: AddressLike],
+    [LiquidityPoolAMM.PriceObservationStructOutput],
+    "view"
+  >;
+
   liquidityBalances: TypedContractMethod<
     [arg0: BytesLike, arg1: AddressLike],
     [bigint],
     "view"
   >;
+
+  nextEmergencyId: TypedContractMethod<[], [bigint], "view">;
+
+  owner: TypedContractMethod<[], [string], "view">;
+
+  pause: TypedContractMethod<[], [void], "nonpayable">;
+
+  paused: TypedContractMethod<[], [boolean], "view">;
+
+  pendingOwner: TypedContractMethod<[], [string], "view">;
 
   pools: TypedContractMethod<
     [arg0: BytesLike],
@@ -500,6 +794,18 @@ export interface LiquidityPoolAMM extends BaseContract {
         reserve1: bigint;
         totalLiquidity: bigint;
         kLast: bigint;
+      }
+    ],
+    "view"
+  >;
+
+  priceObservations: TypedContractMethod<
+    [arg0: BytesLike],
+    [
+      [bigint, bigint, bigint] & {
+        timestamp: bigint;
+        price0CumulativeLast: bigint;
+        price1CumulativeLast: bigint;
       }
     ],
     "view"
@@ -536,6 +842,12 @@ export interface LiquidityPoolAMM extends BaseContract {
     "nonpayable"
   >;
 
+  requestEmergencyWithdraw: TypedContractMethod<
+    [token: AddressLike, amount: BigNumberish, recipient: AddressLike],
+    [bigint],
+    "nonpayable"
+  >;
+
   swap: TypedContractMethod<
     [
       tokenIn: AddressLike,
@@ -565,12 +877,23 @@ export interface LiquidityPoolAMM extends BaseContract {
     "nonpayable"
   >;
 
+  transferOwnership: TypedContractMethod<
+    [newOwner: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
+  unpause: TypedContractMethod<[], [void], "nonpayable">;
+
   withdrawEth: TypedContractMethod<[], [void], "nonpayable">;
 
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
   ): T;
 
+  getFunction(
+    nameOrSignature: "EMERGENCY_TIMELOCK"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "ETH_ADDRESS"
   ): TypedContractMethod<[], [string], "view">;
@@ -583,6 +906,9 @@ export interface LiquidityPoolAMM extends BaseContract {
   getFunction(
     nameOrSignature: "MINIMUM_LIQUIDITY"
   ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "acceptOwnership"
+  ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "addLiquidity"
   ): TypedContractMethod<
@@ -604,13 +930,18 @@ export interface LiquidityPoolAMM extends BaseContract {
   ): TypedContractMethod<
     [
       token: AddressLike,
-      amountToken: BigNumberish,
+      amountTokenDesired: BigNumberish,
+      amountTokenMin: BigNumberish,
+      amountETHMin: BigNumberish,
       minLiquidity: BigNumberish,
       deadline: BigNumberish
     ],
     [bigint],
     "payable"
   >;
+  getFunction(
+    nameOrSignature: "cancelEmergencyWithdraw"
+  ): TypedContractMethod<[requestId: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "createPool"
   ): TypedContractMethod<
@@ -619,8 +950,26 @@ export interface LiquidityPoolAMM extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "emergencyRequests"
+  ): TypedContractMethod<
+    [arg0: BigNumberish],
+    [
+      [string, bigint, string, bigint, boolean] & {
+        token: string;
+        amount: bigint;
+        recipient: string;
+        executeAfter: bigint;
+        executed: boolean;
+      }
+    ],
+    "view"
+  >;
+  getFunction(
     nameOrSignature: "ethBalances"
   ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "executeEmergencyWithdraw"
+  ): TypedContractMethod<[requestId: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "getAmountOut"
   ): TypedContractMethod<
@@ -650,12 +999,34 @@ export interface LiquidityPoolAMM extends BaseContract {
     "view"
   >;
   getFunction(
+    nameOrSignature: "getPriceObservation"
+  ): TypedContractMethod<
+    [tokenA: AddressLike, tokenB: AddressLike],
+    [LiquidityPoolAMM.PriceObservationStructOutput],
+    "view"
+  >;
+  getFunction(
     nameOrSignature: "liquidityBalances"
   ): TypedContractMethod<
     [arg0: BytesLike, arg1: AddressLike],
     [bigint],
     "view"
   >;
+  getFunction(
+    nameOrSignature: "nextEmergencyId"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "owner"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "pause"
+  ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "paused"
+  ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "pendingOwner"
+  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "pools"
   ): TypedContractMethod<
@@ -668,6 +1039,19 @@ export interface LiquidityPoolAMM extends BaseContract {
         reserve1: bigint;
         totalLiquidity: bigint;
         kLast: bigint;
+      }
+    ],
+    "view"
+  >;
+  getFunction(
+    nameOrSignature: "priceObservations"
+  ): TypedContractMethod<
+    [arg0: BytesLike],
+    [
+      [bigint, bigint, bigint] & {
+        timestamp: bigint;
+        price0CumulativeLast: bigint;
+        price1CumulativeLast: bigint;
       }
     ],
     "view"
@@ -707,6 +1091,13 @@ export interface LiquidityPoolAMM extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "requestEmergencyWithdraw"
+  ): TypedContractMethod<
+    [token: AddressLike, amount: BigNumberish, recipient: AddressLike],
+    [bigint],
+    "nonpayable"
+  >;
+  getFunction(
     nameOrSignature: "swap"
   ): TypedContractMethod<
     [
@@ -739,9 +1130,36 @@ export interface LiquidityPoolAMM extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "transferOwnership"
+  ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "unpause"
+  ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "withdrawEth"
   ): TypedContractMethod<[], [void], "nonpayable">;
 
+  getEvent(
+    key: "EmergencyWithdrawCancelled"
+  ): TypedContractEvent<
+    EmergencyWithdrawCancelledEvent.InputTuple,
+    EmergencyWithdrawCancelledEvent.OutputTuple,
+    EmergencyWithdrawCancelledEvent.OutputObject
+  >;
+  getEvent(
+    key: "EmergencyWithdrawExecuted"
+  ): TypedContractEvent<
+    EmergencyWithdrawExecutedEvent.InputTuple,
+    EmergencyWithdrawExecutedEvent.OutputTuple,
+    EmergencyWithdrawExecutedEvent.OutputObject
+  >;
+  getEvent(
+    key: "EmergencyWithdrawRequested"
+  ): TypedContractEvent<
+    EmergencyWithdrawRequestedEvent.InputTuple,
+    EmergencyWithdrawRequestedEvent.OutputTuple,
+    EmergencyWithdrawRequestedEvent.OutputObject
+  >;
   getEvent(
     key: "EthWithdrawn"
   ): TypedContractEvent<
@@ -764,6 +1182,27 @@ export interface LiquidityPoolAMM extends BaseContract {
     LiquidityRemovedEvent.OutputObject
   >;
   getEvent(
+    key: "OwnershipTransferStarted"
+  ): TypedContractEvent<
+    OwnershipTransferStartedEvent.InputTuple,
+    OwnershipTransferStartedEvent.OutputTuple,
+    OwnershipTransferStartedEvent.OutputObject
+  >;
+  getEvent(
+    key: "OwnershipTransferred"
+  ): TypedContractEvent<
+    OwnershipTransferredEvent.InputTuple,
+    OwnershipTransferredEvent.OutputTuple,
+    OwnershipTransferredEvent.OutputObject
+  >;
+  getEvent(
+    key: "Paused"
+  ): TypedContractEvent<
+    PausedEvent.InputTuple,
+    PausedEvent.OutputTuple,
+    PausedEvent.OutputObject
+  >;
+  getEvent(
     key: "PoolCreated"
   ): TypedContractEvent<
     PoolCreatedEvent.InputTuple,
@@ -777,8 +1216,48 @@ export interface LiquidityPoolAMM extends BaseContract {
     SwapEvent.OutputTuple,
     SwapEvent.OutputObject
   >;
+  getEvent(
+    key: "Unpaused"
+  ): TypedContractEvent<
+    UnpausedEvent.InputTuple,
+    UnpausedEvent.OutputTuple,
+    UnpausedEvent.OutputObject
+  >;
 
   filters: {
+    "EmergencyWithdrawCancelled(uint256)": TypedContractEvent<
+      EmergencyWithdrawCancelledEvent.InputTuple,
+      EmergencyWithdrawCancelledEvent.OutputTuple,
+      EmergencyWithdrawCancelledEvent.OutputObject
+    >;
+    EmergencyWithdrawCancelled: TypedContractEvent<
+      EmergencyWithdrawCancelledEvent.InputTuple,
+      EmergencyWithdrawCancelledEvent.OutputTuple,
+      EmergencyWithdrawCancelledEvent.OutputObject
+    >;
+
+    "EmergencyWithdrawExecuted(uint256)": TypedContractEvent<
+      EmergencyWithdrawExecutedEvent.InputTuple,
+      EmergencyWithdrawExecutedEvent.OutputTuple,
+      EmergencyWithdrawExecutedEvent.OutputObject
+    >;
+    EmergencyWithdrawExecuted: TypedContractEvent<
+      EmergencyWithdrawExecutedEvent.InputTuple,
+      EmergencyWithdrawExecutedEvent.OutputTuple,
+      EmergencyWithdrawExecutedEvent.OutputObject
+    >;
+
+    "EmergencyWithdrawRequested(uint256,address,uint256,address,uint256)": TypedContractEvent<
+      EmergencyWithdrawRequestedEvent.InputTuple,
+      EmergencyWithdrawRequestedEvent.OutputTuple,
+      EmergencyWithdrawRequestedEvent.OutputObject
+    >;
+    EmergencyWithdrawRequested: TypedContractEvent<
+      EmergencyWithdrawRequestedEvent.InputTuple,
+      EmergencyWithdrawRequestedEvent.OutputTuple,
+      EmergencyWithdrawRequestedEvent.OutputObject
+    >;
+
     "EthWithdrawn(address,uint256)": TypedContractEvent<
       EthWithdrawnEvent.InputTuple,
       EthWithdrawnEvent.OutputTuple,
@@ -812,6 +1291,39 @@ export interface LiquidityPoolAMM extends BaseContract {
       LiquidityRemovedEvent.OutputObject
     >;
 
+    "OwnershipTransferStarted(address,address)": TypedContractEvent<
+      OwnershipTransferStartedEvent.InputTuple,
+      OwnershipTransferStartedEvent.OutputTuple,
+      OwnershipTransferStartedEvent.OutputObject
+    >;
+    OwnershipTransferStarted: TypedContractEvent<
+      OwnershipTransferStartedEvent.InputTuple,
+      OwnershipTransferStartedEvent.OutputTuple,
+      OwnershipTransferStartedEvent.OutputObject
+    >;
+
+    "OwnershipTransferred(address,address)": TypedContractEvent<
+      OwnershipTransferredEvent.InputTuple,
+      OwnershipTransferredEvent.OutputTuple,
+      OwnershipTransferredEvent.OutputObject
+    >;
+    OwnershipTransferred: TypedContractEvent<
+      OwnershipTransferredEvent.InputTuple,
+      OwnershipTransferredEvent.OutputTuple,
+      OwnershipTransferredEvent.OutputObject
+    >;
+
+    "Paused(address)": TypedContractEvent<
+      PausedEvent.InputTuple,
+      PausedEvent.OutputTuple,
+      PausedEvent.OutputObject
+    >;
+    Paused: TypedContractEvent<
+      PausedEvent.InputTuple,
+      PausedEvent.OutputTuple,
+      PausedEvent.OutputObject
+    >;
+
     "PoolCreated(bytes32,address,address)": TypedContractEvent<
       PoolCreatedEvent.InputTuple,
       PoolCreatedEvent.OutputTuple,
@@ -832,6 +1344,17 @@ export interface LiquidityPoolAMM extends BaseContract {
       SwapEvent.InputTuple,
       SwapEvent.OutputTuple,
       SwapEvent.OutputObject
+    >;
+
+    "Unpaused(address)": TypedContractEvent<
+      UnpausedEvent.InputTuple,
+      UnpausedEvent.OutputTuple,
+      UnpausedEvent.OutputObject
+    >;
+    Unpaused: TypedContractEvent<
+      UnpausedEvent.InputTuple,
+      UnpausedEvent.OutputTuple,
+      UnpausedEvent.OutputObject
     >;
   };
 }

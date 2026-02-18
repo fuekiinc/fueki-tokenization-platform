@@ -19,6 +19,9 @@ import "./OrbitalMath.sol";
  *         - ERC-20 LP token for liquidity positions
  *         - Proportional add/remove liquidity
  *         - Single-sided swap execution
+ *         - Post-swap invariant verification
+ *         - Emergency pause mechanism
+ *         - TWAP oracle for price manipulation resistance
  *
  * @dev    Follows existing Fueki platform conventions: no OpenZeppelin imports,
  *         manual reentrancy guard, custom errors, inline ERC-20 implementation
@@ -82,6 +85,9 @@ contract OrbitalPool {
     /// @notice Whether the pool has been initialized with first liquidity.
     bool public initialized;
 
+    /// @notice Whether the pool is paused (emergency only).
+    bool public poolPaused;
+
     // ---------------------------------------------------------------
     //  LP Token State (ERC-20 inline)
     // ---------------------------------------------------------------
@@ -108,6 +114,18 @@ contract OrbitalPool {
 
     /// @notice Accumulated fees per token (not yet collected).
     uint256[] public accumulatedFees;
+
+    // ---------------------------------------------------------------
+    //  TWAP Oracle
+    // ---------------------------------------------------------------
+
+    /// @notice Timestamp of the last TWAP update.
+    uint256 public twapTimestamp;
+
+    /// @notice Cumulative normalized reserve sums for TWAP (per token).
+    ///         Off-chain consumers compute TWAP as:
+    ///         (cumulativeReserve[t2] - cumulativeReserve[t1]) / (t2 - t1)
+    uint256[] public cumulativeReserves;
 
     // ---------------------------------------------------------------
     //  Events
@@ -139,6 +157,9 @@ contract OrbitalPool {
         uint256[] amounts
     );
 
+    event PoolPausedEvent(address indexed by);
+    event PoolUnpausedEvent(address indexed by);
+
     // LP token events
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
@@ -148,6 +169,7 @@ contract OrbitalPool {
     // ---------------------------------------------------------------
 
     error NotFactory();
+    error NotFeeCollector();
     error AlreadyInitialized();
     error NotInitialized();
     error InvalidTokenCount();
@@ -166,6 +188,8 @@ contract OrbitalPool {
     error ReentrantCall();
     error DeadlineExpired();
     error InvariantViolated();
+    error PoolIsPaused();
+    error PoolNotPaused();
 
     // ---------------------------------------------------------------
     //  Modifiers
@@ -190,6 +214,11 @@ contract OrbitalPool {
 
     modifier checkDeadline(uint256 deadline) {
         if (block.timestamp > deadline) revert DeadlineExpired();
+        _;
+    }
+
+    modifier whenNotPaused() {
+        if (poolPaused) revert PoolIsPaused();
         _;
     }
 
@@ -251,9 +280,35 @@ contract OrbitalPool {
             tokens.push(_tokens[i]);
             reserves.push(0);
             accumulatedFees.push(0);
+            cumulativeReserves.push(0);
         }
 
+        twapTimestamp = block.timestamp;
         initialized = true;
+    }
+
+    // ---------------------------------------------------------------
+    //  Pause (factory-only for emergency)
+    // ---------------------------------------------------------------
+
+    /**
+     * @notice Pause the pool. Only callable by the factory (admin).
+     *         Prevents swaps and adding liquidity. Removing liquidity
+     *         remains available so users can exit.
+     */
+    function pause() external onlyFactory {
+        if (poolPaused) revert PoolIsPaused();
+        poolPaused = true;
+        emit PoolPausedEvent(msg.sender);
+    }
+
+    /**
+     * @notice Unpause the pool. Only callable by the factory (admin).
+     */
+    function unpause() external onlyFactory {
+        if (!poolPaused) revert PoolNotPaused();
+        poolPaused = false;
+        emit PoolUnpausedEvent(msg.sender);
     }
 
     // ---------------------------------------------------------------
@@ -276,20 +331,25 @@ contract OrbitalPool {
         uint256 amountIn,
         uint256 minAmountOut,
         uint256 deadline
-    ) external nonReentrant whenInitialized checkDeadline(deadline) returns (uint256 amountOut) {
+    ) external nonReentrant whenInitialized whenNotPaused checkDeadline(deadline) returns (uint256 amountOut) {
         if (tokenInIndex >= numTokens) revert InvalidTokenIndex();
         if (tokenOutIndex >= numTokens) revert InvalidTokenIndex();
         if (tokenInIndex == tokenOutIndex) revert SameToken();
         if (amountIn == 0) revert ZeroAmount();
 
+        // Update TWAP before modifying reserves
+        _updateTWAP();
+
         // Apply swap fee
         uint256 feeAmount = (amountIn * swapFeeBps) / FEE_DENOMINATOR;
         uint256 amountInAfterFee = amountIn - feeAmount;
 
-        // Compute normalized reserves
+        // Compute normalized reserves and snapshot invariant pre-swap
         uint256 n = numTokens;
         (uint256[] memory normalized, uint256 D) =
             OrbitalMath.normalizeReserves(reserves, n);
+
+        uint256 kBefore = OrbitalMath.computeInvariant(normalized, concentration);
 
         // Normalize the input amount
         uint256 dxNorm = (n * amountInAfterFee * WAD) / D;
@@ -314,6 +374,12 @@ contract OrbitalPool {
         reserves[tokenInIndex] += amountInAfterFee;
         reserves[tokenOutIndex] -= amountOut;
         accumulatedFees[tokenInIndex] += feeAmount;
+
+        // Verify post-swap invariant: K must not decrease
+        (uint256[] memory normalizedAfter,) =
+            OrbitalMath.normalizeReserves(reserves, n);
+        uint256 kAfter = OrbitalMath.computeInvariant(normalizedAfter, concentration);
+        if (kAfter < kBefore) revert InvariantViolated();
 
         // INTERACTIONS: transfer tokens after state is updated
         _safeTransferFrom(tokens[tokenInIndex], msg.sender, address(this), amountIn);
@@ -340,7 +406,7 @@ contract OrbitalPool {
         uint256[] calldata amounts,
         uint256 minLiquidity,
         uint256 deadline
-    ) external nonReentrant whenInitialized checkDeadline(deadline) returns (uint256 liquidity) {
+    ) external nonReentrant whenInitialized whenNotPaused checkDeadline(deadline) returns (uint256 liquidity) {
         uint256 n = numTokens;
         if (amounts.length != n) revert InvalidTokenCount();
 
@@ -348,6 +414,9 @@ contract OrbitalPool {
         for (uint256 i = 0; i < n; ++i) {
             if (amounts[i] == 0) revert ZeroAmount();
         }
+
+        // Update TWAP before modifying reserves
+        _updateTWAP();
 
         if (totalSupply == 0) {
             // First deposit: accept any ratio
@@ -374,6 +443,7 @@ contract OrbitalPool {
             // Find the minimum ratio across all tokens
             uint256 minRatio = type(uint256).max;
             for (uint256 i = 0; i < n; ++i) {
+                if (reserves[i] == 0) revert InsufficientLiquidity();
                 uint256 ratio = (amounts[i] * WAD) / reserves[i];
                 if (ratio < minRatio) minRatio = ratio;
             }
@@ -390,6 +460,7 @@ contract OrbitalPool {
             liquidity = (totalSupply * minRatio) / WAD;
         }
 
+        if (liquidity == 0) revert InsufficientLiquidity();
         if (liquidity < minLiquidity) revert InsufficientLiquidity();
         _mint(msg.sender, liquidity);
 
@@ -406,7 +477,8 @@ contract OrbitalPool {
 
     /**
      * @notice Remove liquidity from the pool, receiving proportional
-     *         amounts of all tokens.
+     *         amounts of all tokens. Available even when paused so users
+     *         can exit during emergencies.
      *
      * @param liquidity   Number of LP tokens to burn.
      * @param minAmounts  Minimum amounts of each token to receive.
@@ -533,6 +605,7 @@ contract OrbitalPool {
         uint256 tokenBIndex
     ) external view returns (uint256 price) {
         if (tokenAIndex >= numTokens || tokenBIndex >= numTokens) revert InvalidTokenIndex();
+        if (tokenAIndex == tokenBIndex) revert SameToken();
         if (reserves[tokenAIndex] == 0 || reserves[tokenBIndex] == 0) return 0;
 
         // Spot price = (rB / rA)^(p-1) for the superellipse
@@ -563,13 +636,23 @@ contract OrbitalPool {
         }
     }
 
+    /// @notice Get the cumulative reserve values for TWAP computation.
+    function getCumulativeReserves() external view returns (uint256[] memory) {
+        return cumulativeReserves;
+    }
+
+    /// @notice Get the timestamp of the last TWAP update.
+    function getTwapTimestamp() external view returns (uint256) {
+        return twapTimestamp;
+    }
+
     // ---------------------------------------------------------------
     //  Fee Collection
     // ---------------------------------------------------------------
 
     /// @notice Collect accumulated fees. Only callable by feeCollector.
     function collectFees() external nonReentrant {
-        if (msg.sender != feeCollector) revert NotFactory();
+        if (msg.sender != feeCollector) revert NotFeeCollector();
 
         uint256 n = numTokens;
         uint256[] memory collected = new uint256[](n);
@@ -635,6 +718,30 @@ contract OrbitalPool {
         unchecked { balanceOf[from] -= amount; }
         totalSupply -= amount;
         emit Transfer(from, address(0), amount);
+    }
+
+    // ---------------------------------------------------------------
+    //  Internal: TWAP Oracle
+    // ---------------------------------------------------------------
+
+    /**
+     * @dev Update cumulative reserves for TWAP. Each reserve is accumulated
+     *      weighted by the time elapsed since the last update. Off-chain
+     *      consumers compute time-weighted average reserves by taking the
+     *      difference of cumulative values divided by time delta.
+     */
+    function _updateTWAP() private {
+        uint256 timeElapsed = block.timestamp - twapTimestamp;
+        if (timeElapsed > 0) {
+            uint256 n = numTokens;
+            for (uint256 i = 0; i < n; ++i) {
+                // Overflow is intentional for cumulative accumulators
+                unchecked {
+                    cumulativeReserves[i] += reserves[i] * timeElapsed;
+                }
+            }
+            twapTimestamp = block.timestamp;
+        }
     }
 
     // ---------------------------------------------------------------

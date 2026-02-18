@@ -1,3 +1,18 @@
+/**
+ * Price history hook for chart rendering.
+ *
+ * Derives OHLCV candlestick data from the trade history stored in the
+ * tradeStore. When insufficient real trade data is available (fewer than
+ * 2 candles), a deterministic seed-based series is generated so that
+ * charts always render consistently for a given token pair.
+ *
+ * The seed series is reproducible: the same pair always yields the same
+ * chart regardless of when or how often the component mounts.
+ *
+ * Output is formatted for direct consumption by lightweight-charts or
+ * any other charting library that expects UTCTimestamp + OHLCV tuples.
+ */
+
 import { useMemo } from 'react';
 import { useTradeStore } from '../store/tradeStore';
 import type { TradeHistory } from '../types';
@@ -7,7 +22,8 @@ import type { TradeHistory } from '../types';
 // ---------------------------------------------------------------------------
 
 export interface CandlestickDataPoint {
-  time: number; // Unix timestamp in seconds (UTCTimestamp)
+  /** Unix timestamp in seconds (UTCTimestamp for lightweight-charts). */
+  time: number;
   open: number;
   high: number;
   low: number;
@@ -20,6 +36,8 @@ export type TimeInterval = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
 export interface PriceHistoryResult {
   data: CandlestickDataPoint[];
   isLoading: boolean;
+  /** True when the data is derived from real trades, false when seed-generated. */
+  isRealData: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -37,20 +55,15 @@ const INTERVAL_SECONDS: Record<TimeInterval, number> = {
 
 // ---------------------------------------------------------------------------
 // Deterministic seed-based price generator
-//
-// When there is insufficient trade data we produce a reproducible series
-// seeded by the two token addresses. The same pair always yields the same
-// chart regardless of when the component mounts.
 // ---------------------------------------------------------------------------
 
 /** Simple deterministic 32-bit hash (djb2 variant). */
 function hashString(str: string): number {
   let hash = 5381;
   for (let i = 0; i < str.length; i++) {
-    // (hash << 5) + hash + char
     hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0;
   }
-  return hash >>> 0; // ensure unsigned
+  return hash >>> 0;
 }
 
 /**
@@ -69,8 +82,8 @@ function mulberry32(seed: number): () => number {
 
 /**
  * Generate a deterministic candlestick series for a token pair.
- * The series starts at the beginning of the current day (UTC) minus enough
- * intervals to fill the requested count, and produces `count` candles.
+ * The series ends at the current interval boundary and produces
+ * `count` candles going backwards in time.
  */
 function generateSeedSeries(
   tokenSell: string,
@@ -83,13 +96,12 @@ function generateSeedSeries(
 
   const intervalSec = INTERVAL_SECONDS[interval];
   const now = Math.floor(Date.now() / 1000);
-  // Align the end time to the current interval boundary
   const endTime = Math.floor(now / intervalSec) * intervalSec;
   const startTime = endTime - (count - 1) * intervalSec;
 
-  // Derive a starting price from the seed (between 0.5 and 500)
+  // Derive a starting price from the seed (between 0.5 and 500).
   const basePrice = 0.5 + rand() * 499.5;
-  // Volatility factor: 1-5% per candle
+  // Volatility factor: 1-5% per candle.
   const volatility = 0.01 + rand() * 0.04;
 
   const data: CandlestickDataPoint[] = [];
@@ -98,18 +110,15 @@ function generateSeedSeries(
   for (let i = 0; i < count; i++) {
     const time = startTime + i * intervalSec;
 
-    // Random walk for this candle
     const change = (rand() - 0.5) * 2 * volatility * prevClose;
     const open = prevClose;
     const close = open + change;
 
-    // Wick extensions
     const wickUp = rand() * volatility * 0.5 * prevClose;
     const wickDown = rand() * volatility * 0.5 * prevClose;
     const high = Math.max(open, close) + wickUp;
     const low = Math.min(open, close) - wickDown;
 
-    // Volume: a seed-derived base volume with some variance
     const baseVolume = 100 + rand() * 9900;
     const volume = baseVolume * (0.5 + rand());
 
@@ -138,15 +147,13 @@ function tradesToCandles(
   tokenBuy: string,
   interval: TimeInterval,
 ): CandlestickDataPoint[] {
-  // Filter trades relevant to this pair (exchange type, matching asset addresses)
+  // Filter trades relevant to this pair.
   const relevantTrades = trades.filter((t) => {
     if (t.status !== 'confirmed') return false;
-    // Match trades where `from` or `to` match the pair tokens and type is exchange/swap
     const isExchangeType =
       t.type === 'exchange' || t.type === 'swap-eth' || t.type === 'swap-erc20';
     if (!isExchangeType) return false;
 
-    // The asset field contains the token address; match if it is one of the pair tokens
     const assetLower = t.asset.toLowerCase();
     const sellLower = tokenSell.toLowerCase();
     const buyLower = tokenBuy.toLowerCase();
@@ -157,14 +164,11 @@ function tradesToCandles(
 
   const intervalSec = INTERVAL_SECONDS[interval];
 
-  // Sort by timestamp ascending
+  // Sort by timestamp ascending.
   const sorted = [...relevantTrades].sort((a, b) => a.timestamp - b.timestamp);
 
-  // Group by interval bucket
-  const buckets = new Map<
-    number,
-    { prices: number[]; volumes: number[] }
-  >();
+  // Group by interval bucket.
+  const buckets = new Map<number, { prices: number[]; volumes: number[] }>();
 
   for (const trade of sorted) {
     const price = parseFloat(trade.amount);
@@ -177,14 +181,12 @@ function tradesToCandles(
       buckets.set(bucket, entry);
     }
     entry.prices.push(price);
-    entry.volumes.push(price); // Use price as proxy for volume when no separate volume field
+    entry.volumes.push(price);
   }
 
-  // Convert buckets to candle data
+  // Convert buckets to candle data.
   const candles: CandlestickDataPoint[] = [];
-  const sortedBuckets = Array.from(buckets.entries()).sort(
-    ([a], [b]) => a - b,
-  );
+  const sortedBuckets = Array.from(buckets.entries()).sort(([a], [b]) => a - b);
 
   for (const [time, { prices, volumes }] of sortedBuckets) {
     candles.push({
@@ -206,6 +208,14 @@ function tradesToCandles(
 
 const DEFAULT_CANDLE_COUNT = 100;
 
+/**
+ * Derive candlestick chart data for a trading pair.
+ *
+ * @param tokenSell  Address of the sell-side token.
+ * @param tokenBuy   Address of the buy-side token.
+ * @param interval   Candle time interval.
+ * @returns          Chart-ready OHLCV data, loading state, and data source flag.
+ */
 export function usePriceHistory(
   tokenSell: string,
   tokenBuy: string,
@@ -214,19 +224,22 @@ export function usePriceHistory(
   const tradeHistory = useTradeStore((s) => s.tradeHistory);
   const isLoadingTrades = useTradeStore((s) => s.isLoadingTrades);
 
-  const data = useMemo(() => {
-    if (!tokenSell || !tokenBuy) return [];
+  const result = useMemo<{ data: CandlestickDataPoint[]; isRealData: boolean }>(() => {
+    if (!tokenSell || !tokenBuy) return { data: [], isRealData: false };
 
-    // Attempt to derive candles from real trade history
+    // Attempt to derive candles from real trade history.
     const realCandles = tradesToCandles(tradeHistory, tokenSell, tokenBuy, interval);
 
     if (realCandles.length >= 2) {
-      return realCandles;
+      return { data: realCandles, isRealData: true };
     }
 
-    // Insufficient real data -- generate a deterministic seed series
-    return generateSeedSeries(tokenSell, tokenBuy, interval, DEFAULT_CANDLE_COUNT);
+    // Insufficient real data -- generate a deterministic seed series.
+    return {
+      data: generateSeedSeries(tokenSell, tokenBuy, interval, DEFAULT_CANDLE_COUNT),
+      isRealData: false,
+    };
   }, [tradeHistory, tokenSell, tokenBuy, interval]);
 
-  return { data, isLoading: isLoadingTrades };
+  return { data: result.data, isLoading: isLoadingTrades, isRealData: result.isRealData };
 }

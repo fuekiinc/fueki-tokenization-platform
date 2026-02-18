@@ -3,26 +3,12 @@ import { useState, useRef, useEffect } from 'react';
 import { useTradeStore } from '../../store/tradeStore.ts';
 import { useWallet } from '../../hooks/useWallet';
 import { formatAddress, copyToClipboard } from '../../lib/utils/helpers';
-import { formatTokenAmount } from '../../lib/formatters';
+import { formatTokenAmount, formatRelativeDate, formatDateTime } from '../../lib/formatters';
 import { getNetworkMetadata } from '../../contracts/addresses';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Compute a human-readable "time ago" string from a timestamp */
-function timeAgo(timestamp: number): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  const months = Math.floor(days / 30);
-  return `${months}mo ago`;
-}
 
 /** Status color config */
 const statusConfig = {
@@ -53,7 +39,7 @@ const statusConfig = {
 // CopyButton sub-component
 // ---------------------------------------------------------------------------
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -72,14 +58,13 @@ function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={handleCopy}
-      className="flex h-9 w-9 min-h-[44px] min-w-[44px] items-center justify-center rounded-lg bg-white/[0.04] border border-white/[0.06] text-gray-500 transition-all hover:bg-white/[0.08] hover:text-gray-300 focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]"
-      aria-label="Copy transaction hash"
-      title="Copy transaction hash"
+      className="flex h-9 w-9 min-h-[44px] min-w-[44px] items-center justify-center rounded-lg bg-white/[0.04] border border-white/[0.06] text-gray-500 transition-all hover:bg-white/[0.08] hover:text-gray-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]"
+      aria-label={copied ? `${label} copied` : `Copy ${label}`}
     >
       {copied ? (
-        <Check className="h-3 w-3 text-emerald-400" />
+        <Check className="h-3 w-3 text-emerald-400" aria-hidden="true" />
       ) : (
-        <Copy className="h-3 w-3" />
+        <Copy className="h-3 w-3" aria-hidden="true" />
       )}
     </button>
   );
@@ -107,95 +92,111 @@ export default function MintHistory() {
 
   if (mintTrades.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
+      <section aria-label="Minting history" className="flex flex-col items-center justify-center py-12 sm:py-20 text-center px-4">
         <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-gray-500/10 to-gray-600/10 border border-white/[0.06]">
-          <History className="h-7 w-7 text-gray-600" />
+          <History className="h-7 w-7 text-gray-600" aria-hidden="true" />
         </div>
-        <p className="text-sm font-semibold text-gray-400">
+        <h3 className="text-sm font-semibold text-gray-400">
           No minting activity yet
-        </p>
+        </h3>
         <p className="mt-2.5 max-w-xs text-sm text-gray-600 leading-relaxed">
-          When you mint wrapped assets, your transaction history will appear here
+          Upload a document and mint your first token to see your transaction history here
         </p>
-      </div>
+      </section>
     );
   }
 
   // ---- List ---------------------------------------------------------------
 
   return (
-    <div className="space-y-6">
-      {mintTrades.map((trade) => {
-        const status = statusConfig[trade.status] ?? statusConfig.pending;
+    <section aria-label="Minting history">
+      <h3 className="sr-only">Mint transaction history</h3>
 
-        return (
-          <div
-            key={trade.id}
-            className="group rounded-2xl bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] p-4 sm:p-7 transition-all duration-200 hover:bg-[#0D0F14] hover:border-white/[0.1]"
-          >
-            {/* Top row: Name + Symbol + Status */}
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-3">
-                  <span className="truncate text-sm font-semibold text-white">
-                    {trade.asset}
-                  </span>
-                  <span className="shrink-0 inline-flex items-center rounded-lg bg-indigo-500/10 px-2.5 py-0.5 text-[11px] font-bold text-indigo-400 ring-1 ring-inset ring-indigo-500/20 uppercase tracking-wide">
-                    {trade.assetSymbol}
-                  </span>
+      {/* Responsive: card list on mobile, structured data on all sizes */}
+      <div className="space-y-4 sm:space-y-6" role="list" aria-label={`${mintTrades.length} mint transaction${mintTrades.length !== 1 ? 's' : ''}`}>
+        {mintTrades.map((trade) => {
+          const status = statusConfig[trade.status] ?? statusConfig.pending;
+          const timeAgo = formatRelativeDate(trade.timestamp);
+          const fullDateTime = formatDateTime(trade.timestamp);
+
+          return (
+            <article
+              key={trade.id}
+              role="listitem"
+              className="group rounded-2xl bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] p-4 sm:p-7 transition-all duration-200 hover:bg-[#0D0F14] hover:border-white/[0.1]"
+              aria-label={`${trade.asset} (${trade.assetSymbol}): ${formatTokenAmount(trade.amount)} tokens - ${status.label}`}
+            >
+              {/* Top row: Name + Symbol + Status */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                    <span className="truncate text-sm font-semibold text-white">
+                      {trade.asset}
+                    </span>
+                    <span className="shrink-0 inline-flex items-center rounded-lg bg-indigo-500/10 px-2.5 py-0.5 text-[11px] font-bold text-indigo-400 ring-1 ring-inset ring-indigo-500/20 uppercase tracking-wide">
+                      {trade.assetSymbol}
+                    </span>
+                  </div>
+
+                  {/* Amount + Timestamp row */}
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-gray-500">
+                    <span className="font-medium text-gray-300 tabular-nums font-mono">
+                      {isNaN(Number(trade.amount))
+                        ? trade.amount
+                        : formatTokenAmount(trade.amount)}
+                    </span>
+                    <span className="text-gray-600">tokens minted</span>
+                    <span className="text-gray-700" aria-hidden="true">&middot;</span>
+                    <span className="inline-flex items-center gap-1.5 text-gray-500">
+                      <Clock className="h-3 w-3" aria-hidden="true" />
+                      <time dateTime={new Date(trade.timestamp).toISOString()} title={fullDateTime}>
+                        {timeAgo}
+                      </time>
+                    </span>
+                  </div>
                 </div>
 
-                {/* Amount + Timestamp row */}
-                <div className="mt-2.5 flex items-center gap-3 text-xs text-gray-500">
-                  <span className="font-medium text-gray-300 tabular-nums font-mono">
-                    {isNaN(Number(trade.amount))
-                      ? trade.amount
-                      : formatTokenAmount(trade.amount)}
-                  </span>
-                  <span className="text-gray-600">tokens minted</span>
-                  <span className="text-gray-700">&middot;</span>
-                  <span className="inline-flex items-center gap-1.5 text-gray-500">
-                    <Clock className="h-3 w-3" />
-                    {timeAgo(trade.timestamp)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Status badge */}
-              <span
-                className={`shrink-0 inline-flex items-center gap-1.5 rounded-full ${status.bg} px-3 py-1.5 text-[11px] font-semibold ${status.text} ring-1 ring-inset ${status.ring}`}
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${status.dot} ${trade.status === 'pending' ? 'animate-pulse motion-reduce:animate-none' : ''}`} />
-                {status.label}
-              </span>
-            </div>
-
-            {/* Bottom row: Tx hash with copy + explorer link */}
-            <div className="mt-4 flex items-center gap-3 pt-4 border-t border-white/[0.04]">
-              {blockExplorer ? (
-                <a
-                  href={`${blockExplorer}/tx/${trade.txHash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group inline-flex items-center gap-2 font-mono text-xs text-indigo-400 transition-colors hover:text-indigo-300 truncate"
-                  title={trade.txHash}
+                {/* Status badge -- includes text label, not just color */}
+                <span
+                  className={`shrink-0 inline-flex items-center gap-1.5 rounded-full ${status.bg} px-3 py-1.5 text-[11px] font-semibold ${status.text} ring-1 ring-inset ${status.ring}`}
+                  role="status"
+                  aria-label={`Transaction status: ${status.label}`}
                 >
-                  {formatAddress(trade.txHash)}
-                  <ExternalLink className="h-3 w-3 shrink-0 transition-transform group-hover:translate-x-0.5" />
-                </a>
-              ) : (
-                <span className="font-mono text-xs text-gray-500 truncate" title={trade.txHash}>
-                  {formatAddress(trade.txHash)}
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${status.dot} ${trade.status === 'pending' ? 'animate-pulse motion-reduce:animate-none' : ''}`}
+                    aria-hidden="true"
+                  />
+                  {status.label}
                 </span>
-              )}
-
-              <div className="flex items-center gap-2 ml-auto shrink-0">
-                <CopyButton text={trade.txHash} />
               </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+
+              {/* Bottom row: Tx hash with copy + explorer link */}
+              <div className="mt-4 flex items-center gap-3 pt-4 border-t border-white/[0.04]">
+                {blockExplorer ? (
+                  <a
+                    href={`${blockExplorer}/tx/${trade.txHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group/link inline-flex items-center gap-2 font-mono text-xs text-indigo-400 transition-colors hover:text-indigo-300 truncate min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-lg px-1"
+                    aria-label={`View transaction ${formatAddress(trade.txHash)} on block explorer (opens in new tab)`}
+                  >
+                    {formatAddress(trade.txHash)}
+                    <ExternalLink className="h-3 w-3 shrink-0 transition-transform group-hover/link:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
+                  </a>
+                ) : (
+                  <span className="font-mono text-xs text-gray-500 truncate" title={trade.txHash}>
+                    {formatAddress(trade.txHash)}
+                  </span>
+                )}
+
+                <div className="flex items-center gap-2 ml-auto shrink-0">
+                  <CopyButton text={trade.txHash} label="transaction hash" />
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }

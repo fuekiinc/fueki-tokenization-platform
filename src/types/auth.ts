@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 export type KYCStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
-export type DocumentType = 'drivers_license' | 'passport';
+export type DocumentType = 'drivers_license' | 'passport' | 'national_id';
 
 export interface User {
   id: string;

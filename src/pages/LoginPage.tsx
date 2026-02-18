@@ -199,6 +199,29 @@ export default function LoginPage() {
             )}
           </div>
 
+          {/* Remember me + Forgot password row */}
+          <div className="flex items-center justify-between pt-1">
+            <label className="flex items-center gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                className={clsx(
+                  'h-4 w-4 rounded border-[var(--border-primary)] bg-[var(--bg-tertiary)]',
+                  'text-indigo-600 focus:ring-2 focus:ring-indigo-500/20 focus:ring-offset-0',
+                  'transition-colors duration-150',
+                )}
+              />
+              <span className="text-sm text-[var(--text-muted)] group-hover:text-[var(--text-secondary)] transition-colors">
+                Remember me
+              </span>
+            </label>
+            <Link
+              to="/forgot-password"
+              className="text-sm font-medium text-[var(--accent-primary)] hover:text-indigo-300 transition-colors duration-150"
+            >
+              Forgot password?
+            </Link>
+          </div>
+
           {/* Submit */}
           <button
             type="submit"
@@ -214,7 +237,7 @@ export default function LoginPage() {
               'shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:shadow-indigo-500/30',
               'focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)]',
               'active:scale-[0.98]',
-              'mt-8',
+              'mt-4',
             )}
           >
             {isSubmitting ? (

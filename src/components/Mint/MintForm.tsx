@@ -12,7 +12,6 @@ import {
   Copy,
   Sparkles,
   ArrowRight,
-  ShieldCheck,
   RotateCcw,
   User,
   Check,
@@ -75,8 +74,6 @@ function formatNumberDisplay(value: string): string {
 // ---------------------------------------------------------------------------
 
 const inputClasses = INPUT_CLASSES.base;
-
-const labelClasses = INPUT_CLASSES.label;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -458,26 +455,26 @@ export default function MintForm({ document }: MintFormProps) {
 
   if (!isConnected) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
+      <section aria-label="Wallet connection required" className="flex flex-col items-center justify-center py-12 sm:py-20 text-center px-4">
         <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-white/[0.06]">
-          <Wallet className="h-7 w-7 text-indigo-400" />
+          <Wallet className="h-7 w-7 text-indigo-400" aria-hidden="true" />
         </div>
-        <p className="text-base font-semibold text-gray-200">
+        <h3 className="text-base font-semibold text-gray-200">
           Wallet not connected
-        </p>
+        </h3>
         <p className="mt-3 mb-8 max-w-xs text-sm text-gray-500 leading-relaxed">
           Connect your wallet to start minting tokenized assets from your uploaded documents
         </p>
         <button
           type="button"
           onClick={() => { void connectWallet(); }}
-          className="group relative inline-flex items-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 px-8 py-4 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all duration-200 hover:shadow-indigo-500/30 hover:brightness-110 active:scale-[0.98]"
+          className="group relative inline-flex items-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 px-8 py-4 min-h-[44px] text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all duration-200 hover:shadow-indigo-500/30 hover:brightness-110 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]"
         >
-          <Wallet className="h-4 w-4" />
+          <Wallet className="h-4 w-4" aria-hidden="true" />
           Connect Wallet
-          <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+          <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
         </button>
-      </div>
+      </section>
     );
   }
 
@@ -485,17 +482,17 @@ export default function MintForm({ document }: MintFormProps) {
 
   if (!document) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
+      <section aria-label="Document required" className="flex flex-col items-center justify-center py-12 sm:py-20 text-center px-4">
         <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-gray-500/10 to-gray-600/10 border border-white/[0.06]">
-          <FileText className="h-7 w-7 text-gray-500" />
+          <FileText className="h-7 w-7 text-gray-500" aria-hidden="true" />
         </div>
-        <p className="text-base font-semibold text-gray-200">
+        <h3 className="text-base font-semibold text-gray-200">
           No document loaded
-        </p>
+        </h3>
         <p className="mt-3 max-w-xs text-sm text-gray-500 leading-relaxed">
           Upload and parse a document first to mint a wrapped asset backed by its contents
         </p>
-      </div>
+      </section>
     );
   }
 
@@ -503,31 +500,31 @@ export default function MintForm({ document }: MintFormProps) {
 
   if (txState === 'pending') {
     return (
-      <div className="space-y-6">
+      <section aria-label="Transaction pending" aria-live="polite" className="space-y-6">
         {/* Shimmer progress bar */}
-        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/[0.04]">
-          <div className="absolute inset-0 h-full w-full rounded-full bg-gradient-to-r from-transparent via-indigo-500/60 to-transparent" style={{ animation: 'mint-shimmer 2s ease-in-out infinite' }} />
+        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/[0.04]" role="progressbar" aria-label="Transaction in progress">
+          <div className="absolute inset-0 h-full w-full rounded-full bg-gradient-to-r from-transparent via-indigo-500/60 to-transparent motion-reduce:hidden" style={{ animation: 'mint-shimmer 2s ease-in-out infinite' }} />
           <style>{`@keyframes mint-shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }`}</style>
         </div>
 
-        <div className="flex flex-col items-center justify-center py-14 text-center">
+        <div className="flex flex-col items-center justify-center py-10 sm:py-14 text-center px-4">
           <div className="relative mb-7">
-            <div className="absolute -inset-3 rounded-full bg-indigo-500/10 animate-ping motion-reduce:animate-none" />
+            <div className="absolute -inset-3 rounded-full bg-indigo-500/10 animate-ping motion-reduce:animate-none" aria-hidden="true" />
             <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/20">
-              <Loader2 className="h-7 w-7 animate-spin motion-reduce:animate-none text-indigo-400" />
+              <Loader2 className="h-7 w-7 animate-spin motion-reduce:animate-none text-indigo-400" aria-hidden="true" />
             </div>
           </div>
 
-          <p className="text-lg font-semibold text-white">
+          <h3 className="text-lg font-semibold text-white">
             Confirm in your wallet...
-          </p>
+          </h3>
           <p className="mt-3 max-w-sm text-sm text-gray-500 leading-relaxed">
             Your wallet will prompt you to sign the transaction. Please confirm to proceed with minting.
           </p>
 
           {txHash && (
             <div className="mt-8 inline-flex items-center gap-2.5 rounded-2xl bg-amber-500/[0.06] border border-amber-500/10 px-5 py-3">
-              <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none text-amber-400" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none text-amber-400" aria-hidden="true" />
               <span className="text-sm text-amber-300/90">
                 Tx submitted:{' '}
                 {blockExplorer ? (
@@ -535,7 +532,8 @@ export default function MintForm({ document }: MintFormProps) {
                     href={`${blockExplorer}/tx/${txHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="font-mono underline underline-offset-2 decoration-amber-500/30 hover:decoration-amber-400/60 transition-colors"
+                    className="font-mono underline underline-offset-2 decoration-amber-500/30 hover:decoration-amber-400/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 rounded"
+                    aria-label={`View transaction ${formatAddress(txHash)} on block explorer (opens in new tab)`}
                   >
                     {formatAddress(txHash)}
                   </a>
@@ -546,7 +544,7 @@ export default function MintForm({ document }: MintFormProps) {
             </div>
           )}
         </div>
-      </div>
+      </section>
     );
   }
 
@@ -554,17 +552,17 @@ export default function MintForm({ document }: MintFormProps) {
 
   if (txState === 'confirmed' && txHash) {
     return (
-      <div className="space-y-6">
+      <section aria-label="Minting successful" className="space-y-6">
         {/* Success card */}
-        <div className="relative overflow-hidden rounded-2xl border border-emerald-500/15 bg-gradient-to-br from-emerald-500/[0.05] to-emerald-600/[0.02] p-10 text-center">
+        <div className="relative overflow-hidden rounded-2xl border border-emerald-500/15 bg-gradient-to-br from-emerald-500/[0.05] to-emerald-600/[0.02] p-6 sm:p-10 text-center" role="status" aria-live="polite">
 
           {/* Subtle background glow */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 h-40 w-72 bg-emerald-500/[0.06] blur-[100px] rounded-full pointer-events-none" />
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 h-40 w-72 bg-emerald-500/[0.06] blur-[100px] rounded-full pointer-events-none" aria-hidden="true" />
 
           <div className="relative">
-            {/* Animated checkmark */}
+            {/* Checkmark */}
             <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
-              <CheckCircle2 className="h-8 w-8 text-emerald-400" />
+              <CheckCircle2 className="h-8 w-8 text-emerald-400" aria-hidden="true" />
             </div>
 
             <h3 className="text-xl font-bold text-emerald-300">
@@ -580,16 +578,17 @@ export default function MintForm({ document }: MintFormProps) {
 
             {/* Tx hash */}
             {txHash && (
-              <div className="mt-7 inline-flex items-center gap-3">
+              <div className="mt-7 inline-flex flex-wrap items-center justify-center gap-3">
                 {blockExplorer ? (
                   <a
                     href={`${blockExplorer}/tx/${txHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="group inline-flex items-center gap-2 rounded-xl bg-white/[0.04] border border-white/[0.06] px-5 py-2.5 text-sm font-medium text-indigo-400 transition-all hover:bg-white/[0.06] hover:border-indigo-500/20"
+                    className="group inline-flex items-center gap-2 rounded-xl bg-white/[0.04] border border-white/[0.06] px-5 py-2.5 min-h-[44px] text-sm font-medium text-indigo-400 transition-all hover:bg-white/[0.06] hover:border-indigo-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    aria-label={`View transaction ${formatAddress(txHash)} on block explorer (opens in new tab)`}
                   >
                     <span className="font-mono text-xs">{formatAddress(txHash)}</span>
-                    <ExternalLink className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                    <ExternalLink className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
                   </a>
                 ) : (
                   <span className="font-mono text-xs text-gray-500 break-all">
@@ -600,9 +599,10 @@ export default function MintForm({ document }: MintFormProps) {
                 <button
                   type="button"
                   onClick={() => { void copyToClipboard(txHash); toast.success('Copied!'); }}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.06] text-gray-500 transition-all hover:bg-white/[0.06] hover:text-gray-300"
+                  className="flex h-9 w-9 min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.06] text-gray-500 transition-all hover:bg-white/[0.06] hover:text-gray-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  aria-label="Copy transaction hash to clipboard"
                 >
-                  <Copy className="h-3.5 w-3.5" />
+                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               </div>
             )}
@@ -613,12 +613,12 @@ export default function MintForm({ document }: MintFormProps) {
         <button
           type="button"
           onClick={handleReset}
-          className="group flex w-full items-center justify-center gap-2.5 rounded-2xl border border-white/[0.06] bg-white/[0.02] px-6 py-4 text-sm font-semibold text-gray-300 transition-all duration-200 hover:bg-white/[0.04] hover:border-white/[0.1] hover:text-white"
+          className="group flex w-full items-center justify-center gap-2.5 rounded-2xl border border-white/[0.06] bg-white/[0.02] px-6 py-4 min-h-[44px] text-sm font-semibold text-gray-300 transition-all duration-200 hover:bg-white/[0.04] hover:border-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
-          <RotateCcw className="h-4 w-4 transition-transform group-hover:-rotate-45" />
+          <RotateCcw className="h-4 w-4 transition-transform group-hover:-rotate-45 motion-reduce:transition-none" aria-hidden="true" />
           Mint Another Asset
         </button>
-      </div>
+      </section>
     );
   }
 
@@ -626,13 +626,13 @@ export default function MintForm({ document }: MintFormProps) {
 
   if (txState === 'failed' && txError) {
     return (
-      <div className="space-y-6">
-        <div className="relative overflow-hidden rounded-2xl border border-red-500/15 bg-gradient-to-br from-red-500/[0.05] to-red-600/[0.02] p-10 text-center">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 h-40 w-72 bg-red-500/[0.06] blur-[100px] rounded-full pointer-events-none" />
+      <section aria-label="Transaction failed" className="space-y-6">
+        <div className="relative overflow-hidden rounded-2xl border border-red-500/15 bg-gradient-to-br from-red-500/[0.05] to-red-600/[0.02] p-6 sm:p-10 text-center" role="alert">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 h-40 w-72 bg-red-500/[0.06] blur-[100px] rounded-full pointer-events-none" aria-hidden="true" />
 
           <div className="relative">
             <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-red-500/20 to-red-600/10 border border-red-500/20 shadow-lg shadow-red-500/10">
-              <AlertCircle className="h-8 w-8 text-red-400" />
+              <AlertCircle className="h-8 w-8 text-red-400" aria-hidden="true" />
             </div>
 
             <h3 className="text-xl font-bold text-red-300">
@@ -647,12 +647,12 @@ export default function MintForm({ document }: MintFormProps) {
         <button
           type="button"
           onClick={handleReset}
-          className="group flex w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 px-6 py-4 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all duration-200 hover:shadow-indigo-500/30 hover:brightness-110 active:scale-[0.98]"
+          className="group flex w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 px-6 py-4 min-h-[44px] text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all duration-200 hover:shadow-indigo-500/30 hover:brightness-110 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]"
         >
-          <RotateCcw className="h-4 w-4 transition-transform group-hover:-rotate-45" />
+          <RotateCcw className="h-4 w-4 transition-transform group-hover:-rotate-45 motion-reduce:transition-none" aria-hidden="true" />
           Try Again
         </button>
-      </div>
+      </section>
     );
   }
 
@@ -673,32 +673,37 @@ export default function MintForm({ document }: MintFormProps) {
     !amountExceedsDocValue;
 
   return (
-    <div className="space-y-6">
+    <form
+      className="space-y-6"
+      onSubmit={(e) => { e.preventDefault(); void handleMint(); }}
+      aria-label="Mint wrapped asset token"
+      noValidate
+    >
 
       {/* ---- Unsupported network banner ---- */}
       {isConnected && chainId && !networkSupported && (
-        <div className="rounded-2xl border border-amber-500/15 bg-amber-500/[0.05] p-6">
+        <div className="rounded-2xl border border-amber-500/15 bg-amber-500/[0.05] p-4 sm:p-6" role="alert">
           <div className="flex items-start gap-4">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 ring-1 ring-amber-500/20">
-              <AlertTriangle className="h-5 w-5 text-amber-400" />
+              <AlertTriangle className="h-5 w-5 text-amber-400" aria-hidden="true" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-amber-300">Unsupported Network</p>
               <p className="mt-1.5 text-sm leading-relaxed text-amber-400/60">
                 Contracts are not deployed on {networkName}. Switch to a supported network to mint tokens.
               </p>
-              <div className="mt-4 flex items-center gap-3">
+              <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
                   onClick={() => void switchNetwork(1)}
-                  className="rounded-xl bg-indigo-500/15 border border-indigo-500/25 px-4 py-2 text-xs font-semibold text-indigo-300 transition-all hover:bg-indigo-500/25 hover:text-indigo-200"
+                  className="rounded-xl bg-indigo-500/15 border border-indigo-500/25 px-4 py-2 min-h-[44px] text-xs font-semibold text-indigo-300 transition-all hover:bg-indigo-500/25 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                 >
                   Switch to Ethereum
                 </button>
                 <button
                   type="button"
                   onClick={() => void switchNetwork(31337)}
-                  className="rounded-xl bg-white/[0.04] border border-white/[0.08] px-4 py-2 text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.08] hover:text-gray-300"
+                  className="rounded-xl bg-white/[0.04] border border-white/[0.08] px-4 py-2 min-h-[44px] text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.08] hover:text-gray-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                 >
                   Hardhat Local
                 </button>
@@ -812,7 +817,8 @@ export default function MintForm({ document }: MintFormProps) {
                 <button
                   type="button"
                   onClick={() => setMintAmount(String(document.totalValue))}
-                  className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-indigo-400 transition-all hover:bg-indigo-500/20 hover:text-indigo-300"
+                  className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 min-h-[44px] text-[10px] font-semibold uppercase tracking-wide text-indigo-400 transition-all hover:bg-indigo-500/20 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  aria-label={`Set maximum amount: ${document.totalValue} ${document.currency}`}
                 >
                   Max
                 </button>
@@ -876,9 +882,10 @@ export default function MintForm({ document }: MintFormProps) {
                 <button
                   type="button"
                   onClick={() => { setRecipient(address); setRecipientManuallyEdited(false); setRecipientPasteStatus('idle'); }}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-3 py-1.5 text-xs font-medium text-indigo-400 transition-all hover:bg-indigo-500/15 hover:text-indigo-300"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-3 py-1.5 min-h-[44px] text-xs font-medium text-indigo-400 transition-all hover:bg-indigo-500/15 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  aria-label={`Use connected wallet address: ${formatAddress(address)}`}
                 >
-                  <User className="h-3 w-3" />
+                  <User className="h-3 w-3" aria-hidden="true" />
                   Use my address
                 </button>
               )}
@@ -966,37 +973,41 @@ export default function MintForm({ document }: MintFormProps) {
         return (
           <>
             <button
-              type="button"
-              onClick={() => { void handleMint(); }}
+              type="submit"
               disabled={isDisabled}
-              className="group relative flex w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 px-6 py-4 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-all duration-200 hover:shadow-indigo-500/30 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:shadow-none disabled:hover:brightness-100 disabled:active:scale-100"
+              aria-disabled={isDisabled}
+              aria-label={isDisabled ? buttonDisabledReason : 'Mint token'}
+              className="group relative flex w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 px-6 py-4 min-h-[44px] text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-all duration-200 hover:shadow-indigo-500/30 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:shadow-none disabled:hover:brightness-100 disabled:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]"
             >
               {/* Button shimmer effect */}
-              <div className="absolute inset-0 overflow-hidden rounded-2xl">
+              <div className="absolute inset-0 overflow-hidden rounded-2xl motion-reduce:hidden" aria-hidden="true">
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.06] to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
               </div>
 
               {isSubmitting ? (
                 <>
-                  <Loader2 className="relative h-4.5 w-4.5 animate-spin motion-reduce:animate-none" />
+                  <Loader2 className="relative h-4.5 w-4.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
                   <span className="relative">Submitting...</span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="relative h-4.5 w-4.5" />
+                  <Sparkles className="relative h-4.5 w-4.5" aria-hidden="true" />
                   <span className="relative">{buttonDisabledReason || buttonLabel}</span>
                 </>
               )}
             </button>
 
             {!canSubmit && !isSubmitting && buttonDisabledReason && (
-              <p className={`text-center text-xs ${amountExceedsDocValue ? 'text-red-400' : 'text-gray-600'}`}>
+              <p
+                className={`text-center text-xs ${amountExceedsDocValue ? 'text-red-400' : 'text-gray-600'}`}
+                role={amountExceedsDocValue ? 'alert' : undefined}
+              >
                 {buttonDisabledReason}
               </p>
             )}
           </>
         );
       })()}
-    </div>
+    </form>
   );
 }

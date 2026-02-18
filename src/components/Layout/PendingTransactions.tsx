@@ -127,6 +127,8 @@ export default function PendingTransactions() {
   const [pendingTxs, setPendingTxs] = useState<PendingTransaction[]>([]);
   const [resolvedTxs, setResolvedTxs] = useState<ResolvedTransaction[]>([]);
   const [isChecking, setIsChecking] = useState(false);
+  /** Consecutive check failures -- displayed as a warning in the dropdown. */
+  const [checkErrorCount, setCheckErrorCount] = useState(0);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
@@ -171,6 +173,9 @@ export default function PendingTransactions() {
     try {
       const result = await checkPendingTransactions(provider);
 
+      // Reset error counter on a successful check.
+      setCheckErrorCount(0);
+
       // Update pending list with what is still pending.
       setPendingTxs(result.stillPending);
 
@@ -208,6 +213,7 @@ export default function PendingTransactions() {
       }
     } catch (err) {
       logger.error('[PendingTransactions] status check failed:', err);
+      setCheckErrorCount((prev) => prev + 1);
     } finally {
       setIsChecking(false);
     }
@@ -340,6 +346,18 @@ export default function PendingTransactions() {
               <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-500" />
             )}
           </div>
+
+          {/* Network error warning (shown after 2+ consecutive failures) */}
+          {checkErrorCount >= 2 && (
+            <div className="mx-3 mt-2 flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+              <svg className="h-4 w-4 shrink-0 text-amber-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+              </svg>
+              <span className="text-xs text-amber-400">
+                Unable to check transaction status. Network may be unavailable.
+              </span>
+            </div>
+          )}
 
           {/* List */}
           <div className="max-h-[320px] overflow-y-auto scrollbar-thin">

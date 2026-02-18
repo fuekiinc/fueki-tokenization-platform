@@ -1,4 +1,5 @@
 import clsx from 'clsx';
+import { CARD_CLASSES, SHIMMER_CLASSES } from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -127,12 +128,12 @@ function TableSkeleton({ rows }: { rows: number }) {
 
 function StatSkeleton() {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-7 sm:p-9">
+    <div className={clsx(CARD_CLASSES.base, CARD_CLASSES.wrapper, CARD_CLASSES.padding)}>
       <div className="flex items-center gap-3">
-        <div className="shimmer h-10 w-10 rounded-xl" />
-        <div className="shimmer h-3 w-20 rounded" />
+        <div className={clsx(SHIMMER_CLASSES.css, 'h-10 w-10 rounded-xl')} />
+        <div className={clsx(SHIMMER_CLASSES.css, 'h-3 w-20 rounded')} />
       </div>
-      <div className="shimmer mt-5 h-8 w-32 rounded" />
+      <div className={clsx(SHIMMER_CLASSES.css, 'mt-5 h-8 w-32 rounded')} />
     </div>
   );
 }
@@ -152,9 +153,8 @@ export default function ChartSkeleton({
       role="status"
       aria-label="Loading chart data"
       className={clsx(
-        'relative overflow-hidden rounded-2xl',
-        'bg-[#0D0F14]/80 backdrop-blur-xl',
-        'border border-white/[0.06]',
+        CARD_CLASSES.base,
+        CARD_CLASSES.wrapper,
         className,
       )}
     >

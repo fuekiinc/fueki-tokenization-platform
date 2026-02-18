@@ -26,22 +26,30 @@ import type {
 export interface OrbitalRouterInterface extends Interface {
   getFunction(
     nameOrSignature:
+      | "MAX_HOPS"
       | "addLiquidity"
       | "getAmountOut"
       | "getAmountOutMultiHop"
       | "orbitalFactory"
+      | "owner"
+      | "recoverDust"
       | "removeLiquidity"
       | "swap"
       | "swapMultiHop"
+      | "transferOwnership"
   ): FunctionFragment;
 
   getEvent(
     nameOrSignatureOrTopic:
+      | "DustRecovered"
       | "LiquidityAdded"
       | "LiquidityRemoved"
+      | "MultiHopSwapExecuted"
+      | "OwnershipTransferred"
       | "SwapExecuted"
   ): EventFragment;
 
+  encodeFunctionData(functionFragment: "MAX_HOPS", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "addLiquidity",
     values: [AddressLike, BigNumberish[], BigNumberish, BigNumberish]
@@ -57,6 +65,11 @@ export interface OrbitalRouterInterface extends Interface {
   encodeFunctionData(
     functionFragment: "orbitalFactory",
     values?: undefined
+  ): string;
+  encodeFunctionData(functionFragment: "owner", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "recoverDust",
+    values: [AddressLike, AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "removeLiquidity",
@@ -83,7 +96,12 @@ export interface OrbitalRouterInterface extends Interface {
       BigNumberish
     ]
   ): string;
+  encodeFunctionData(
+    functionFragment: "transferOwnership",
+    values: [AddressLike]
+  ): string;
 
+  decodeFunctionResult(functionFragment: "MAX_HOPS", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "addLiquidity",
     data: BytesLike
@@ -100,6 +118,11 @@ export interface OrbitalRouterInterface extends Interface {
     functionFragment: "orbitalFactory",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "recoverDust",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "removeLiquidity",
     data: BytesLike
@@ -109,6 +132,28 @@ export interface OrbitalRouterInterface extends Interface {
     functionFragment: "swapMultiHop",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "transferOwnership",
+    data: BytesLike
+  ): Result;
+}
+
+export namespace DustRecoveredEvent {
+  export type InputTuple = [
+    token: AddressLike,
+    to: AddressLike,
+    amount: BigNumberish
+  ];
+  export type OutputTuple = [token: string, to: string, amount: bigint];
+  export interface OutputObject {
+    token: string;
+    to: string;
+    amount: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace LiquidityAddedEvent {
@@ -140,6 +185,50 @@ export namespace LiquidityRemovedEvent {
     sender: string;
     pool: string;
     lpBurned: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace MultiHopSwapExecutedEvent {
+  export type InputTuple = [
+    sender: AddressLike,
+    tokenIn: AddressLike,
+    tokenOut: AddressLike,
+    amountIn: BigNumberish,
+    amountOut: BigNumberish,
+    hops: BigNumberish
+  ];
+  export type OutputTuple = [
+    sender: string,
+    tokenIn: string,
+    tokenOut: string,
+    amountIn: bigint,
+    amountOut: bigint,
+    hops: bigint
+  ];
+  export interface OutputObject {
+    sender: string;
+    tokenIn: string;
+    tokenOut: string;
+    amountIn: bigint;
+    amountOut: bigint;
+    hops: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace OwnershipTransferredEvent {
+  export type InputTuple = [previousOwner: AddressLike, newOwner: AddressLike];
+  export type OutputTuple = [previousOwner: string, newOwner: string];
+  export interface OutputObject {
+    previousOwner: string;
+    newOwner: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -221,6 +310,8 @@ export interface OrbitalRouter extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  MAX_HOPS: TypedContractMethod<[], [bigint], "view">;
+
   addLiquidity: TypedContractMethod<
     [
       pool: AddressLike,
@@ -250,6 +341,14 @@ export interface OrbitalRouter extends BaseContract {
   >;
 
   orbitalFactory: TypedContractMethod<[], [string], "view">;
+
+  owner: TypedContractMethod<[], [string], "view">;
+
+  recoverDust: TypedContractMethod<
+    [token: AddressLike, to: AddressLike, amount: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
 
   removeLiquidity: TypedContractMethod<
     [
@@ -287,10 +386,19 @@ export interface OrbitalRouter extends BaseContract {
     "nonpayable"
   >;
 
+  transferOwnership: TypedContractMethod<
+    [newOwner: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
   ): T;
 
+  getFunction(
+    nameOrSignature: "MAX_HOPS"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "addLiquidity"
   ): TypedContractMethod<
@@ -325,6 +433,16 @@ export interface OrbitalRouter extends BaseContract {
   getFunction(
     nameOrSignature: "orbitalFactory"
   ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "owner"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "recoverDust"
+  ): TypedContractMethod<
+    [token: AddressLike, to: AddressLike, amount: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "removeLiquidity"
   ): TypedContractMethod<
@@ -364,7 +482,17 @@ export interface OrbitalRouter extends BaseContract {
     [bigint],
     "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "transferOwnership"
+  ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
 
+  getEvent(
+    key: "DustRecovered"
+  ): TypedContractEvent<
+    DustRecoveredEvent.InputTuple,
+    DustRecoveredEvent.OutputTuple,
+    DustRecoveredEvent.OutputObject
+  >;
   getEvent(
     key: "LiquidityAdded"
   ): TypedContractEvent<
@@ -380,6 +508,20 @@ export interface OrbitalRouter extends BaseContract {
     LiquidityRemovedEvent.OutputObject
   >;
   getEvent(
+    key: "MultiHopSwapExecuted"
+  ): TypedContractEvent<
+    MultiHopSwapExecutedEvent.InputTuple,
+    MultiHopSwapExecutedEvent.OutputTuple,
+    MultiHopSwapExecutedEvent.OutputObject
+  >;
+  getEvent(
+    key: "OwnershipTransferred"
+  ): TypedContractEvent<
+    OwnershipTransferredEvent.InputTuple,
+    OwnershipTransferredEvent.OutputTuple,
+    OwnershipTransferredEvent.OutputObject
+  >;
+  getEvent(
     key: "SwapExecuted"
   ): TypedContractEvent<
     SwapExecutedEvent.InputTuple,
@@ -388,6 +530,17 @@ export interface OrbitalRouter extends BaseContract {
   >;
 
   filters: {
+    "DustRecovered(address,address,uint256)": TypedContractEvent<
+      DustRecoveredEvent.InputTuple,
+      DustRecoveredEvent.OutputTuple,
+      DustRecoveredEvent.OutputObject
+    >;
+    DustRecovered: TypedContractEvent<
+      DustRecoveredEvent.InputTuple,
+      DustRecoveredEvent.OutputTuple,
+      DustRecoveredEvent.OutputObject
+    >;
+
     "LiquidityAdded(address,address,uint256)": TypedContractEvent<
       LiquidityAddedEvent.InputTuple,
       LiquidityAddedEvent.OutputTuple,
@@ -408,6 +561,28 @@ export interface OrbitalRouter extends BaseContract {
       LiquidityRemovedEvent.InputTuple,
       LiquidityRemovedEvent.OutputTuple,
       LiquidityRemovedEvent.OutputObject
+    >;
+
+    "MultiHopSwapExecuted(address,address,address,uint256,uint256,uint256)": TypedContractEvent<
+      MultiHopSwapExecutedEvent.InputTuple,
+      MultiHopSwapExecutedEvent.OutputTuple,
+      MultiHopSwapExecutedEvent.OutputObject
+    >;
+    MultiHopSwapExecuted: TypedContractEvent<
+      MultiHopSwapExecutedEvent.InputTuple,
+      MultiHopSwapExecutedEvent.OutputTuple,
+      MultiHopSwapExecutedEvent.OutputObject
+    >;
+
+    "OwnershipTransferred(address,address)": TypedContractEvent<
+      OwnershipTransferredEvent.InputTuple,
+      OwnershipTransferredEvent.OutputTuple,
+      OwnershipTransferredEvent.OutputObject
+    >;
+    OwnershipTransferred: TypedContractEvent<
+      OwnershipTransferredEvent.InputTuple,
+      OwnershipTransferredEvent.OutputTuple,
+      OwnershipTransferredEvent.OutputObject
     >;
 
     "SwapExecuted(address,address,address,address,uint256,uint256)": TypedContractEvent<

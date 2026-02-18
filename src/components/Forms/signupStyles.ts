@@ -10,6 +10,7 @@ export const INPUT_BASE = clsx(
   'rounded-xl px-4 py-3 pl-11',
   'outline-none transition-all duration-200',
   'focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)]',
+  'disabled:opacity-50 disabled:cursor-not-allowed',
 );
 
 export const INPUT_NO_ICON = clsx(
@@ -18,6 +19,7 @@ export const INPUT_NO_ICON = clsx(
   'rounded-xl px-4 py-3',
   'outline-none transition-all duration-200',
   'focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)]',
+  'disabled:opacity-50 disabled:cursor-not-allowed',
 );
 
 export const SELECT_BASE = clsx(
@@ -26,6 +28,7 @@ export const SELECT_BASE = clsx(
   'rounded-xl px-4 py-3 pl-11',
   'outline-none transition-all duration-200 appearance-none',
   'focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)]',
+  'disabled:opacity-50 disabled:cursor-not-allowed',
 );
 
 export const ICON_LEFT =
@@ -44,6 +47,8 @@ export const CONTINUE_BUTTON = clsx(
   'rounded-xl px-4 py-3',
   'transition-all duration-200',
   'shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-primary)]',
+  'disabled:opacity-50 disabled:cursor-not-allowed',
 );
 
 export const BACK_BUTTON = clsx(
@@ -53,4 +58,6 @@ export const BACK_BUTTON = clsx(
   'hover:border-[var(--border-hover)]',
   'font-semibold rounded-xl px-5 py-3',
   'transition-all duration-200',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-primary)]',
+  'disabled:opacity-50 disabled:cursor-not-allowed',
 );

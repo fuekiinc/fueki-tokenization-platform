@@ -10,11 +10,13 @@ import "./OrbitalFactory.sol";
  *
  *         Provides convenience functions for:
  *         - Token-address-based swaps (resolve token indices automatically)
- *         - Multi-hop swaps through multiple pools
+ *         - Multi-hop swaps through multiple pools (max 4 hops)
  *         - Simplified liquidity management
  *         - Automatic token approvals
+ *         - Dust recovery
  *
  * @dev    Stateless router -- does not hold any tokens between calls.
+ *         All pool addresses are validated against the factory registry.
  */
 
 interface IERC20Router {
@@ -42,11 +44,21 @@ contract OrbitalRouter {
     }
 
     // ---------------------------------------------------------------
+    //  Constants
+    // ---------------------------------------------------------------
+
+    /// @notice Maximum number of hops in a multi-hop swap to bound gas usage.
+    uint256 public constant MAX_HOPS = 4;
+
+    // ---------------------------------------------------------------
     //  Storage
     // ---------------------------------------------------------------
 
-    /// @notice The OrbitalFactory used to look up pools.
+    /// @notice The OrbitalFactory used to look up and validate pools.
     OrbitalFactory public immutable orbitalFactory;
+
+    /// @notice Router owner (can recover dust tokens).
+    address public owner;
 
     // ---------------------------------------------------------------
     //  Events
@@ -61,6 +73,15 @@ contract OrbitalRouter {
         uint256 amountOut
     );
 
+    event MultiHopSwapExecuted(
+        address indexed sender,
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOut,
+        uint256 hops
+    );
+
     event LiquidityAdded(
         address indexed sender,
         address indexed pool,
@@ -73,6 +94,14 @@ contract OrbitalRouter {
         uint256 lpBurned
     );
 
+    event DustRecovered(
+        address indexed token,
+        address indexed to,
+        uint256 amount
+    );
+
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
     // ---------------------------------------------------------------
     //  Errors
     // ---------------------------------------------------------------
@@ -80,18 +109,63 @@ contract OrbitalRouter {
     error PoolNotFound();
     error TokenNotInPool();
     error ZeroAmount();
+    error ZeroAddress();
     error SlippageExceeded();
     error TransferFailed();
     error DeadlineExpired();
     error InvalidPath();
+    error TooManyHops();
     error InsufficientAllowance();
+    error NotOwner();
+
+    // ---------------------------------------------------------------
+    //  Modifiers
+    // ---------------------------------------------------------------
+
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert NotOwner();
+        _;
+    }
 
     // ---------------------------------------------------------------
     //  Constructor
     // ---------------------------------------------------------------
 
-    constructor(address _factory) {
+    constructor(address _factory, address _owner) {
+        if (_factory == address(0) || _owner == address(0)) revert ZeroAddress();
         orbitalFactory = OrbitalFactory(_factory);
+        owner = _owner;
+        emit OwnershipTransferred(address(0), _owner);
+    }
+
+    // ---------------------------------------------------------------
+    //  Owner Functions
+    // ---------------------------------------------------------------
+
+    /**
+     * @notice Transfer router ownership.
+     * @param newOwner The new owner address.
+     */
+    function transferOwnership(address newOwner) external onlyOwner {
+        if (newOwner == address(0)) revert ZeroAddress();
+        address oldOwner = owner;
+        owner = newOwner;
+        emit OwnershipTransferred(oldOwner, newOwner);
+    }
+
+    /**
+     * @notice Recover dust tokens stuck in the router.
+     *         Only callable by owner.
+     * @param token The ERC-20 token to recover.
+     * @param to    Recipient address.
+     * @param amount Amount to recover.
+     */
+    function recoverDust(address token, address to, uint256 amount) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
+
+        _safeTransfer(token, to, amount);
+        emit DustRecovered(token, to, amount);
     }
 
     // ---------------------------------------------------------------
@@ -119,6 +193,7 @@ contract OrbitalRouter {
     ) external nonReentrant returns (uint256 amountOut) {
         if (block.timestamp > deadline) revert DeadlineExpired();
         if (amountIn == 0) revert ZeroAmount();
+        if (pool == address(0) || tokenIn == address(0) || tokenOut == address(0)) revert ZeroAddress();
 
         OrbitalPool orbPool = OrbitalPool(pool);
 
@@ -151,6 +226,7 @@ contract OrbitalRouter {
 
     /**
      * @notice Execute a multi-hop swap through a series of pools.
+     *         Maximum 4 hops to prevent gas griefing.
      *
      * @param pools         Array of pool addresses to route through.
      * @param tokenPath     Array of token addresses defining the path.
@@ -169,8 +245,17 @@ contract OrbitalRouter {
     ) external nonReentrant returns (uint256 amountOut) {
         if (block.timestamp > deadline) revert DeadlineExpired();
         if (pools.length == 0) revert InvalidPath();
+        if (pools.length > MAX_HOPS) revert TooManyHops();
         if (tokenPath.length != pools.length + 1) revert InvalidPath();
         if (amountIn == 0) revert ZeroAmount();
+
+        // Validate no zero addresses in path
+        for (uint256 i = 0; i < tokenPath.length; ++i) {
+            if (tokenPath[i] == address(0)) revert ZeroAddress();
+        }
+        for (uint256 i = 0; i < pools.length; ++i) {
+            if (pools[i] == address(0)) revert ZeroAddress();
+        }
 
         // Transfer initial tokens from user
         _safeTransferFrom(tokenPath[0], msg.sender, address(this), amountIn);
@@ -195,7 +280,7 @@ contract OrbitalRouter {
                 tokenInIndex,
                 tokenOutIndex,
                 currentAmount,
-                0, // No intermediate slippage check
+                0, // No intermediate slippage check; final check below
                 deadline
             );
         }
@@ -206,6 +291,15 @@ contract OrbitalRouter {
         _safeTransfer(tokenPath[tokenPath.length - 1], msg.sender, currentAmount);
 
         amountOut = currentAmount;
+
+        emit MultiHopSwapExecuted(
+            msg.sender,
+            tokenPath[0],
+            tokenPath[tokenPath.length - 1],
+            amountIn,
+            amountOut,
+            pools.length
+        );
     }
 
     // ---------------------------------------------------------------
@@ -228,6 +322,7 @@ contract OrbitalRouter {
         uint256 deadline
     ) external nonReentrant returns (uint256 liquidity) {
         if (block.timestamp > deadline) revert DeadlineExpired();
+        if (pool == address(0)) revert ZeroAddress();
 
         OrbitalPool orbPool = OrbitalPool(pool);
         uint256 n = orbPool.numTokens();
@@ -267,6 +362,7 @@ contract OrbitalRouter {
     ) external nonReentrant returns (uint256[] memory amounts) {
         if (block.timestamp > deadline) revert DeadlineExpired();
         if (liquidity == 0) revert ZeroAmount();
+        if (pool == address(0)) revert ZeroAddress();
 
         OrbitalPool orbPool = OrbitalPool(pool);
 
@@ -301,6 +397,7 @@ contract OrbitalRouter {
         address tokenOut,
         uint256 amountIn
     ) external view returns (uint256 amountOut, uint256 feeAmount) {
+        if (pool == address(0)) revert ZeroAddress();
         OrbitalPool orbPool = OrbitalPool(pool);
         uint256 tokenInIndex = orbPool.getTokenIndex(tokenIn);
         uint256 tokenOutIndex = orbPool.getTokenIndex(tokenOut);
@@ -319,13 +416,18 @@ contract OrbitalRouter {
         uint256 amountIn
     ) external view returns (uint256 amountOut) {
         if (pools.length == 0) revert InvalidPath();
+        if (pools.length > MAX_HOPS) revert TooManyHops();
         if (tokenPath.length != pools.length + 1) revert InvalidPath();
 
         uint256 currentAmount = amountIn;
         for (uint256 i = 0; i < pools.length; ++i) {
+            if (pools[i] == address(0)) revert ZeroAddress();
             OrbitalPool orbPool = OrbitalPool(pools[i]);
             uint256 tokenInIndex = orbPool.getTokenIndex(tokenPath[i]);
             uint256 tokenOutIndex = orbPool.getTokenIndex(tokenPath[i + 1]);
+
+            if (tokenInIndex >= orbPool.numTokens()) revert TokenNotInPool();
+            if (tokenOutIndex >= orbPool.numTokens()) revert TokenNotInPool();
 
             (currentAmount,) = orbPool.getAmountOut(tokenInIndex, tokenOutIndex, currentAmount);
         }

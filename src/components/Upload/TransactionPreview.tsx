@@ -60,18 +60,23 @@ function SortButton({
   field,
   label,
   sortField,
+  sortDirection,
   onToggle,
 }: {
   field: SortField;
   label: string;
   sortField: SortField;
+  sortDirection: SortDirection;
   onToggle: (field: SortField) => void;
 }) {
   const isActive = sortField === field;
+  const dirLabel = isActive ? (sortDirection === 'asc' ? 'ascending' : 'descending') : '';
   return (
     <button
       type="button"
       onClick={() => onToggle(field)}
+      aria-label={`Sort by ${label}${dirLabel ? `, currently ${dirLabel}` : ''}`}
+      aria-sort={isActive ? (sortDirection === 'asc' ? 'ascending' : 'descending') : undefined}
       className={[
         'inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider transition-colors',
         isActive
@@ -84,6 +89,7 @@ function SortButton({
         className={`h-3 w-3 transition-colors ${
           isActive ? 'text-indigo-400' : 'text-gray-700'
         }`}
+        aria-hidden="true"
       />
     </button>
   );
@@ -169,13 +175,13 @@ export default function TransactionPreview() {
                   Type
                 </th>
                 <th className="px-5 py-3.5">
-                  <SortButton field="amount" label="Amount" sortField={sortField} onToggle={toggleSort} />
+                  <SortButton field="amount" label="Amount" sortField={sortField} sortDirection={sortDirection} onToggle={toggleSort} />
                 </th>
                 <th className="px-5 py-3.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                   Currency
                 </th>
                 <th className="px-5 py-3.5">
-                  <SortButton field="date" label="Date" sortField={sortField} onToggle={toggleSort} />
+                  <SortButton field="date" label="Date" sortField={sortField} sortDirection={sortDirection} onToggle={toggleSort} />
                 </th>
                 <th className="px-5 py-3.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                   Description
@@ -249,9 +255,10 @@ export default function TransactionPreview() {
         <button
           type="button"
           onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+          aria-label={`Show ${Math.min(PAGE_SIZE, sortedTransactions.length - visibleCount)} more transactions`}
           className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/[0.06] bg-white/[0.02] px-5 py-3.5 text-xs font-semibold text-gray-400 transition-all hover:border-white/[0.12] hover:bg-white/[0.04] hover:text-gray-300"
         >
-          <ChevronDown className="h-3.5 w-3.5" />
+          <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
           Show more ({sortedTransactions.length - visibleCount} remaining)
         </button>
       )}

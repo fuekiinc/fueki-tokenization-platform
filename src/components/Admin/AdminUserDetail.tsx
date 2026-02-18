@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import clsx from 'clsx';
+import toast from 'react-hot-toast';
 import {
   X,
   Mail,
@@ -10,8 +11,18 @@ import {
   User,
   MapPin,
   AlertTriangle,
+  Check,
+  XCircle,
+  Loader2,
+  Clock,
+  Copy,
 } from 'lucide-react';
-import { getUserDetail } from '../../lib/api/admin';
+import {
+  getUserDetail,
+  approveKYC,
+  rejectKYC,
+  updateUserRole,
+} from '../../lib/api/admin';
 import type { UserDetail } from '../../lib/api/admin';
 import Badge from '../Common/Badge';
 import Spinner from '../Common/Spinner';
@@ -37,6 +48,19 @@ function kycBadgeVariant(
   }
 }
 
+function roleBadgeVariant(
+  role: string,
+): 'success' | 'warning' | 'danger' | 'default' | 'primary' | 'info' {
+  switch (role) {
+    case 'super_admin':
+      return 'danger';
+    case 'admin':
+      return 'primary';
+    default:
+      return 'default';
+  }
+}
+
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return date.toLocaleDateString('en-US', {
@@ -48,6 +72,26 @@ function formatDate(dateStr: string): string {
   });
 }
 
+function formatRelativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  const diffMins = Math.floor(diffMs / 60_000);
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHrs = Math.floor(diffMins / 60);
+  if (diffHrs < 24) return `${diffHrs}h ago`;
+  const diffDays = Math.floor(diffHrs / 24);
+  if (diffDays < 30) return `${diffDays}d ago`;
+  return formatDate(dateStr);
+}
+
+function copyToClipboard(text: string) {
+  void navigator.clipboard.writeText(text).then(() => {
+    toast.success('Copied to clipboard');
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Detail row
 // ---------------------------------------------------------------------------
@@ -56,19 +100,336 @@ function DetailRow({
   icon: Icon,
   label,
   value,
+  copiable,
 }: {
   icon: React.ElementType;
   label: string;
   value: React.ReactNode;
+  copiable?: string;
 }) {
   return (
     <div className="flex items-start gap-3 py-3">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
           {label}
         </p>
-        <div className="mt-1 text-sm text-white">{value}</div>
+        <div className="mt-1 flex items-center gap-2 text-sm text-white">
+          {value}
+          {copiable && (
+            <button
+              type="button"
+              onClick={() => copyToClipboard(copiable)}
+              className="shrink-0 text-gray-600 transition-colors hover:text-gray-400"
+              aria-label={`Copy ${label}`}
+            >
+              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// KYC Action Panel
+// ---------------------------------------------------------------------------
+
+function KYCActionPanel({
+  userId,
+  kycStatus,
+  onActionComplete,
+}: {
+  userId: string;
+  kycStatus: string;
+  onActionComplete: () => void;
+}) {
+  const [action, setAction] = useState<'approve' | 'reject' | null>(null);
+  const [reason, setReason] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (kycStatus !== 'pending') return null;
+
+  const handleSubmit = async () => {
+    if (!action) return;
+    setIsSubmitting(true);
+    try {
+      if (action === 'approve') {
+        await approveKYC(userId, reason || undefined);
+        toast.success('KYC approved successfully');
+      } else {
+        if (!reason.trim()) {
+          toast.error('Please provide a reason for rejection');
+          setIsSubmitting(false);
+          return;
+        }
+        await rejectKYC(userId, reason);
+        toast.success('KYC rejected');
+      }
+      setAction(null);
+      setReason('');
+      onActionComplete();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Action failed';
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!action) {
+    return (
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
+          KYC Review Actions
+        </h3>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => setAction('approve')}
+            className={clsx(
+              'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3',
+              'bg-emerald-500/10 text-sm font-medium text-emerald-400',
+              'border border-emerald-500/20 transition-all duration-200',
+              'hover:bg-emerald-500/20 hover:border-emerald-500/30',
+            )}
+          >
+            <Check className="h-4 w-4" aria-hidden="true" />
+            Approve KYC
+          </button>
+          <button
+            type="button"
+            onClick={() => setAction('reject')}
+            className={clsx(
+              'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3',
+              'bg-red-500/10 text-sm font-medium text-red-400',
+              'border border-red-500/20 transition-all duration-200',
+              'hover:bg-red-500/20 hover:border-red-500/30',
+            )}
+          >
+            <XCircle className="h-4 w-4" aria-hidden="true" />
+            Reject KYC
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
+        {action === 'approve' ? 'Approve KYC' : 'Reject KYC'}
+      </h3>
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 space-y-3">
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder={
+            action === 'approve'
+              ? 'Optional notes for approval...'
+              : 'Reason for rejection (required)...'
+          }
+          rows={3}
+          className={clsx(
+            'w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3',
+            'text-sm text-white placeholder-gray-500',
+            'focus:outline-none focus:ring-1',
+            action === 'approve'
+              ? 'focus:border-emerald-500/40 focus:ring-emerald-500/20'
+              : 'focus:border-red-500/40 focus:ring-red-500/20',
+            'resize-none',
+          )}
+          aria-label={action === 'approve' ? 'Approval notes' : 'Rejection reason'}
+        />
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setAction(null);
+              setReason('');
+            }}
+            disabled={isSubmitting}
+            className={clsx(
+              'rounded-xl px-4 py-2.5 text-sm font-medium',
+              'bg-white/[0.04] text-gray-300 transition-colors hover:bg-white/[0.08]',
+              'disabled:opacity-50 disabled:cursor-not-allowed',
+            )}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => { void handleSubmit(); }}
+            disabled={isSubmitting || (action === 'reject' && !reason.trim())}
+            className={clsx(
+              'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors',
+              action === 'approve'
+                ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                : 'bg-red-500/20 text-red-400 hover:bg-red-500/30',
+              'disabled:opacity-50 disabled:cursor-not-allowed',
+            )}
+          >
+            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+            {action === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Role Management
+// ---------------------------------------------------------------------------
+
+function RoleManagement({
+  userId,
+  currentRole,
+  onRoleChanged,
+}: {
+  userId: string;
+  currentRole: string;
+  onRoleChanged: () => void;
+}) {
+  const [isUpdating, setIsUpdating] = useState(false);
+  const roles = ['user', 'admin', 'super_admin'] as const;
+
+  const handleRoleChange = async (newRole: string) => {
+    if (newRole === currentRole) return;
+    setIsUpdating(true);
+    try {
+      await updateUserRole(userId, newRole);
+      toast.success(`Role updated to ${newRole.replace('_', ' ')}`);
+      onRoleChanged();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update role';
+      toast.error(message);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
+        Role Management
+      </h3>
+      <div className="flex gap-2">
+        {roles.map((role) => (
+          <button
+            key={role}
+            type="button"
+            onClick={() => { void handleRoleChange(role); }}
+            disabled={isUpdating || role === currentRole}
+            className={clsx(
+              'flex-1 rounded-xl px-3 py-2.5 text-xs font-medium transition-all duration-200',
+              'border',
+              role === currentRole
+                ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-400 cursor-default'
+                : 'border-white/[0.06] bg-white/[0.02] text-gray-400 hover:bg-white/[0.06] hover:text-white',
+              isUpdating && 'opacity-50 cursor-not-allowed',
+            )}
+            aria-pressed={role === currentRole}
+          >
+            {isUpdating && role !== currentRole ? (
+              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              role.replace('_', ' ')
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Activity Timeline
+// ---------------------------------------------------------------------------
+
+function ActivityTimeline({ user }: { user: UserDetail }) {
+  // Build timeline entries from the available data
+  const events: { label: string; date: string; icon: React.ElementType; variant: string }[] = [];
+
+  events.push({
+    label: 'Account created',
+    date: user.createdAt,
+    icon: User,
+    variant: 'text-indigo-400 bg-indigo-500/10',
+  });
+
+  if (user.walletAddress) {
+    events.push({
+      label: 'Wallet connected',
+      date: user.updatedAt,
+      icon: Wallet,
+      variant: 'text-violet-400 bg-violet-500/10',
+    });
+  }
+
+  if (user.kycData?.submittedAt) {
+    events.push({
+      label: 'KYC submitted',
+      date: user.kycData.submittedAt,
+      icon: FileCheck,
+      variant: 'text-amber-400 bg-amber-500/10',
+    });
+  }
+
+  if (user.kycData?.reviewedAt) {
+    const isApproved = user.kycStatus === 'approved';
+    events.push({
+      label: isApproved ? 'KYC approved' : 'KYC rejected',
+      date: user.kycData.reviewedAt,
+      icon: isApproved ? Check : XCircle,
+      variant: isApproved
+        ? 'text-emerald-400 bg-emerald-500/10'
+        : 'text-red-400 bg-red-500/10',
+    });
+  }
+
+  // Sort by date descending (most recent first)
+  events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  if (events.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
+        Activity Timeline
+      </h3>
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2">
+        {events.map((event, idx) => {
+          const Icon = event.icon;
+          return (
+            <div
+              key={`${event.label}-${event.date}`}
+              className={clsx(
+                'flex items-center gap-3 py-3',
+                idx < events.length - 1 && 'border-b border-white/[0.04]',
+              )}
+            >
+              <div
+                className={clsx(
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                  event.variant,
+                )}
+              >
+                <Icon className="h-4 w-4" aria-hidden="true" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-white">{event.label}</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <Clock className="h-3 w-3 text-gray-600" aria-hidden="true" />
+                  <p className="text-xs text-gray-500" title={formatDate(event.date)}>
+                    {formatRelativeTime(event.date)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -119,16 +480,28 @@ export default function AdminUserDetail({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  // Trap focus within the panel
+  useEffect(() => {
+    const previousActiveElement = document.activeElement as HTMLElement | null;
+    return () => {
+      previousActiveElement?.focus();
+    };
+  }, []);
+
   return (
     <>
       {/* Backdrop */}
       <div
         className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Slide-over panel */}
-      <div
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label="User details"
         className={clsx(
           'fixed inset-y-0 right-0 z-50 w-full max-w-lg overflow-y-auto',
           'border-l border-white/[0.06] bg-[#0D0F14]/95 backdrop-blur-xl',
@@ -146,12 +519,13 @@ export default function AdminUserDetail({
           <h2 className="text-lg font-semibold text-white">User Details</h2>
           <button
             onClick={onClose}
+            aria-label="Close panel"
             className={clsx(
               'rounded-xl p-2 text-gray-500 transition-all duration-200',
               'hover:bg-white/[0.06] hover:text-white',
             )}
           >
-            <X className="h-5 w-5" />
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
@@ -163,7 +537,7 @@ export default function AdminUserDetail({
             </div>
           ) : error ? (
             <div className="flex flex-col items-center gap-4 py-16">
-              <AlertTriangle className="h-8 w-8 text-amber-400" />
+              <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
               <p className="text-sm text-gray-400">{error}</p>
               <button
                 onClick={() => void fetchUser()}
@@ -180,19 +554,13 @@ export default function AdminUserDetail({
                   Account
                 </h3>
                 <div className="divide-y divide-white/[0.04] rounded-xl border border-white/[0.06] bg-white/[0.02] px-4">
-                  <DetailRow icon={Mail} label="Email" value={user.email} />
+                  <DetailRow icon={Mail} label="Email" value={user.email} copiable={user.email} />
                   <DetailRow
                     icon={Shield}
                     label="Role"
                     value={
                       <Badge
-                        variant={
-                          user.role === 'super_admin'
-                            ? 'danger'
-                            : user.role === 'admin'
-                              ? 'primary'
-                              : 'default'
-                        }
+                        variant={roleBadgeVariant(user.role)}
                         size="sm"
                       >
                         {user.role.replace('_', ' ')}
@@ -215,9 +583,10 @@ export default function AdminUserDetail({
                   <DetailRow
                     icon={Wallet}
                     label="Wallet"
+                    copiable={user.walletAddress ?? undefined}
                     value={
                       user.walletAddress ? (
-                        <span className="font-mono text-xs">
+                        <span className="font-mono text-xs break-all">
                           {user.walletAddress}
                         </span>
                       ) : (
@@ -237,6 +606,20 @@ export default function AdminUserDetail({
                   />
                 </div>
               </div>
+
+              {/* Role management */}
+              <RoleManagement
+                userId={user.id}
+                currentRole={user.role}
+                onRoleChanged={() => { void fetchUser(); }}
+              />
+
+              {/* KYC review actions */}
+              <KYCActionPanel
+                userId={user.id}
+                kycStatus={user.kycStatus}
+                onActionComplete={() => { void fetchUser(); }}
+              />
 
               {/* KYC data */}
               {user.kycData && (
@@ -281,24 +664,41 @@ export default function AdminUserDetail({
                       <DetailRow
                         icon={FileCheck}
                         label="Review Notes"
-                        value={user.kycData.reviewNotes}
+                        value={
+                          <span className="text-gray-300 italic">
+                            {user.kycData.reviewNotes}
+                          </span>
+                        }
                       />
                     )}
                   </div>
                 </div>
               )}
 
+              {/* Activity Timeline */}
+              <ActivityTimeline user={user} />
+
               {/* ID */}
               <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                 <p className="text-xs text-gray-500">User ID</p>
-                <p className="mt-1 break-all font-mono text-xs text-gray-400">
-                  {user.id}
-                </p>
+                <div className="mt-1 flex items-center gap-2">
+                  <p className="break-all font-mono text-xs text-gray-400">
+                    {user.id}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(user.id)}
+                    className="shrink-0 text-gray-600 transition-colors hover:text-gray-400"
+                    aria-label="Copy user ID"
+                  >
+                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
             </div>
           ) : null}
         </div>
-      </div>
+      </aside>
     </>
   );
 }

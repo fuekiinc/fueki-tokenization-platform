@@ -539,22 +539,43 @@ export default function OrderBook({
             )}
           </div>
 
-          {/* Spread indicator */}
-          <div className="my-1 flex items-center justify-center gap-4 border-y border-white/[0.06] px-5 py-4">
+          {/* Spread indicator + Midpoint price */}
+          <div className="my-1 border-y border-white/[0.06] px-5 py-4">
             {spread ? (
-              <>
-                <span className="font-mono text-sm font-semibold text-white">
-                  {formatPrice(spread.value)}
-                </span>
-                <span className="rounded-md bg-white/[0.06] px-2 py-1 font-mono text-[11px] text-gray-400 border border-white/[0.04]">
-                  {formatPercent(spread.percent)}
-                </span>
-                <span className="text-[10px] font-medium uppercase tracking-wider text-gray-600">
-                  Spread
-                </span>
-              </>
+              <div className="flex flex-col items-center gap-2">
+                {/* Midpoint price */}
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-base font-bold text-white tabular-nums">
+                    {formatPrice(
+                      (computeRowData(sellOrders[0], 'sell').priceDisplay +
+                        computeRowData(buyOrders[0], 'buy').priceDisplay) / 2,
+                    )}
+                  </span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-gray-500">
+                    Mid
+                  </span>
+                </div>
+                {/* Spread info */}
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-[11px] text-gray-400 tabular-nums">
+                    {formatPrice(spread.value)} spread
+                  </span>
+                  <span className={clsx(
+                    'rounded-md px-2 py-0.5 font-mono text-[10px] border',
+                    spread.percent < 1
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                      : spread.percent < 5
+                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                        : 'bg-red-500/10 text-red-400 border-red-500/20',
+                  )}>
+                    {formatPercent(spread.percent)}
+                  </span>
+                </div>
+              </div>
             ) : (
-              <span className="text-xs text-gray-600">--</span>
+              <div className="flex items-center justify-center">
+                <span className="text-xs text-gray-600">--</span>
+              </div>
             )}
           </div>
 

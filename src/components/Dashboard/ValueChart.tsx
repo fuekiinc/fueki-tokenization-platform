@@ -13,6 +13,14 @@ import { TrendingUp, BarChart3 } from 'lucide-react';
 import type { TradeHistory } from '../../types/index';
 import { formatCurrency } from '../../lib/utils/helpers';
 import { formatCompact, formatPercent } from '../../lib/formatters';
+import {
+  CARD_CLASSES,
+  CHART_HEADER_CLASSES,
+  CHART_TOOLTIP_STYLE,
+  CHART_AXIS,
+  EMPTY_STATE_CLASSES,
+  FILTER_PILL_CLASSES,
+} from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -114,17 +122,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   if (entry == null || !Number.isFinite(entry.value)) return null;
 
   return (
-    <div
-      style={{
-        background: 'rgba(13, 15, 20, 0.92)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        borderRadius: 14,
-        padding: '14px 18px',
-        boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)',
-      }}
-    >
+    <div style={CHART_TOOLTIP_STYLE}>
       <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-1.5">
         {label}
       </p>
@@ -171,19 +169,19 @@ export default function ValueChart({ tradeHistory }: ValueChartProps) {
   }, [dataPoints]);
 
   return (
-    <div className="relative bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl p-8 sm:p-11 overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.2)]">
+    <div className={clsx(CARD_CLASSES.base, CARD_CLASSES.wrapper, CARD_CLASSES.shadow, 'p-8 sm:p-11')}>
       {/* Subtle gradient accent at top */}
-      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
+      <div className={CARD_CLASSES.gradientAccent} />
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/[0.08]">
-            <BarChart3 className="h-[18px] w-[18px] text-indigo-400" />
+      <div className={CHART_HEADER_CLASSES.container}>
+        <div className={CHART_HEADER_CLASSES.left}>
+          <div className={CHART_HEADER_CLASSES.icon}>
+            <BarChart3 className={CHART_HEADER_CLASSES.iconSvg} />
           </div>
           <div>
             <div className="flex items-center gap-3">
-              <h3 className="text-[15px] font-semibold text-white tracking-tight">
+              <h3 className={CHART_HEADER_CLASSES.title}>
                 Portfolio Value
               </h3>
               {periodChange !== null && (
@@ -200,27 +198,27 @@ export default function ValueChart({ tradeHistory }: ValueChartProps) {
                 </span>
               )}
             </div>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className={CHART_HEADER_CLASSES.subtitle}>
               Cumulative value over time
             </p>
           </div>
         </div>
 
         {/* Time range pills */}
-        <div className="flex gap-1 p-1.5 rounded-xl bg-white/[0.04] border border-white/[0.04]">
+        <div className={FILTER_PILL_CLASSES.containerWide}>
           {TIME_RANGES.map((r) => (
             <button
               key={r}
               onClick={() => setRange(r)}
               className={clsx(
-                'relative rounded-lg px-4 py-2 text-[11px] font-semibold transition-all duration-200',
+                FILTER_PILL_CLASSES.pillWide,
                 r === range
-                  ? 'text-white'
-                  : 'text-gray-500 hover:text-gray-300',
+                  ? FILTER_PILL_CLASSES.active
+                  : FILTER_PILL_CLASSES.inactive,
               )}
             >
               {r === range && (
-                <div className="absolute inset-0 rounded-lg bg-indigo-500/20 border border-indigo-500/30" />
+                <div className={FILTER_PILL_CLASSES.activeHighlight} />
               )}
               <span className="relative z-10">{r}</span>
             </button>
@@ -229,14 +227,14 @@ export default function ValueChart({ tradeHistory }: ValueChartProps) {
       </div>
 
       {dataPoints.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl mb-5 bg-indigo-500/[0.06] border border-indigo-500/10">
-            <TrendingUp className="h-7 w-7 text-gray-600" />
+        <div className={EMPTY_STATE_CLASSES.container}>
+          <div className={EMPTY_STATE_CLASSES.iconBox}>
+            <TrendingUp className={EMPTY_STATE_CLASSES.icon} />
           </div>
-          <p className="text-sm font-medium text-gray-400">
+          <p className={EMPTY_STATE_CLASSES.title}>
             No value data for this period
           </p>
-          <p className="text-xs text-gray-600 mt-2 max-w-[240px] leading-relaxed">
+          <p className={EMPTY_STATE_CLASSES.description}>
             Confirmed transactions will appear here as your portfolio grows
           </p>
         </div>
@@ -257,21 +255,21 @@ export default function ValueChart({ tradeHistory }: ValueChartProps) {
               </linearGradient>
             </defs>
             <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="rgba(255, 255, 255, 0.03)"
+              strokeDasharray={CHART_AXIS.grid.strokeDasharray}
+              stroke={CHART_AXIS.grid.stroke}
               vertical={false}
             />
             <XAxis
               dataKey="date"
-              tick={{ fill: '#6B7280', fontSize: 11 }}
-              axisLine={{ stroke: 'rgba(255, 255, 255, 0.05)' }}
+              tick={CHART_AXIS.tick}
+              axisLine={CHART_AXIS.axisLine}
               tickLine={false}
               dy={10}
               tickMargin={4}
             />
             <YAxis
               tickFormatter={formatYAxis}
-              tick={{ fill: '#6B7280', fontSize: 11 }}
+              tick={CHART_AXIS.tick}
               axisLine={false}
               tickLine={false}
               width={58}
@@ -279,11 +277,7 @@ export default function ValueChart({ tradeHistory }: ValueChartProps) {
             />
             <Tooltip
               content={<CustomTooltip />}
-              cursor={{
-                stroke: 'rgba(99, 102, 241, 0.3)',
-                strokeWidth: 1,
-                strokeDasharray: '4 4',
-              }}
+              cursor={CHART_AXIS.cursor}
               wrapperStyle={{ outline: 'none' }}
             />
             <Area

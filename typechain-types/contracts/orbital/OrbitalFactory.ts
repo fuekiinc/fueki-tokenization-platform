@@ -26,6 +26,7 @@ import type {
 export interface OrbitalFactoryInterface extends Interface {
   getFunction(
     nameOrSignature:
+      | "acceptAdmin"
       | "admin"
       | "createPool"
       | "defaultFeeCollector"
@@ -33,22 +34,35 @@ export interface OrbitalFactoryInterface extends Interface {
       | "getAllPools"
       | "getPool"
       | "getPoolAtIndex"
+      | "getPools"
       | "getPoolsForToken"
+      | "isRegisteredPool"
+      | "pausePool"
+      | "pendingAdmin"
       | "poolsByKey"
       | "setAdmin"
       | "setDefaultFeeCollector"
       | "setDefaultSwapFee"
       | "totalPools"
+      | "transferAdmin"
+      | "unpausePool"
   ): FunctionFragment;
 
   getEvent(
     nameOrSignatureOrTopic:
+      | "AdminTransferStarted"
       | "AdminUpdated"
       | "DefaultFeeCollectorUpdated"
       | "DefaultSwapFeeUpdated"
       | "PoolCreated"
+      | "PoolPaused"
+      | "PoolUnpaused"
   ): EventFragment;
 
+  encodeFunctionData(
+    functionFragment: "acceptAdmin",
+    values?: undefined
+  ): string;
   encodeFunctionData(functionFragment: "admin", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "createPool",
@@ -75,8 +89,24 @@ export interface OrbitalFactoryInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "getPools",
+    values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "getPoolsForToken",
     values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "isRegisteredPool",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "pausePool",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "pendingAdmin",
+    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "poolsByKey",
@@ -98,7 +128,19 @@ export interface OrbitalFactoryInterface extends Interface {
     functionFragment: "totalPools",
     values?: undefined
   ): string;
+  encodeFunctionData(
+    functionFragment: "transferAdmin",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "unpausePool",
+    values: [AddressLike]
+  ): string;
 
+  decodeFunctionResult(
+    functionFragment: "acceptAdmin",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "admin", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "createPool", data: BytesLike): Result;
   decodeFunctionResult(
@@ -118,8 +160,18 @@ export interface OrbitalFactoryInterface extends Interface {
     functionFragment: "getPoolAtIndex",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "getPools", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "getPoolsForToken",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "isRegisteredPool",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "pausePool", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "pendingAdmin",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "poolsByKey", data: BytesLike): Result;
@@ -133,6 +185,30 @@ export interface OrbitalFactoryInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "totalPools", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "transferAdmin",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "unpausePool",
+    data: BytesLike
+  ): Result;
+}
+
+export namespace AdminTransferStartedEvent {
+  export type InputTuple = [
+    currentAdmin: AddressLike,
+    pendingAdmin: AddressLike
+  ];
+  export type OutputTuple = [currentAdmin: string, pendingAdmin: string];
+  export interface OutputObject {
+    currentAdmin: string;
+    pendingAdmin: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace AdminUpdatedEvent {
@@ -200,6 +276,32 @@ export namespace PoolCreatedEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
+export namespace PoolPausedEvent {
+  export type InputTuple = [pool: AddressLike, by: AddressLike];
+  export type OutputTuple = [pool: string, by: string];
+  export interface OutputObject {
+    pool: string;
+    by: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace PoolUnpausedEvent {
+  export type InputTuple = [pool: AddressLike, by: AddressLike];
+  export type OutputTuple = [pool: string, by: string];
+  export interface OutputObject {
+    pool: string;
+    by: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
 export interface OrbitalFactory extends BaseContract {
   connect(runner?: ContractRunner | null): OrbitalFactory;
   waitForDeployment(): Promise<this>;
@@ -243,6 +345,8 @@ export interface OrbitalFactory extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  acceptAdmin: TypedContractMethod<[], [void], "nonpayable">;
+
   admin: TypedContractMethod<[], [string], "view">;
 
   createPool: TypedContractMethod<
@@ -271,11 +375,23 @@ export interface OrbitalFactory extends BaseContract {
 
   getPoolAtIndex: TypedContractMethod<[index: BigNumberish], [string], "view">;
 
+  getPools: TypedContractMethod<
+    [offset: BigNumberish, limit: BigNumberish],
+    [string[]],
+    "view"
+  >;
+
   getPoolsForToken: TypedContractMethod<
     [token: AddressLike],
     [string[]],
     "view"
   >;
+
+  isRegisteredPool: TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
+
+  pausePool: TypedContractMethod<[pool: AddressLike], [void], "nonpayable">;
+
+  pendingAdmin: TypedContractMethod<[], [string], "view">;
 
   poolsByKey: TypedContractMethod<[arg0: BytesLike], [string], "view">;
 
@@ -295,10 +411,21 @@ export interface OrbitalFactory extends BaseContract {
 
   totalPools: TypedContractMethod<[], [bigint], "view">;
 
+  transferAdmin: TypedContractMethod<
+    [_newAdmin: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
+  unpausePool: TypedContractMethod<[pool: AddressLike], [void], "nonpayable">;
+
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
   ): T;
 
+  getFunction(
+    nameOrSignature: "acceptAdmin"
+  ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "admin"
   ): TypedContractMethod<[], [string], "view">;
@@ -335,8 +462,24 @@ export interface OrbitalFactory extends BaseContract {
     nameOrSignature: "getPoolAtIndex"
   ): TypedContractMethod<[index: BigNumberish], [string], "view">;
   getFunction(
+    nameOrSignature: "getPools"
+  ): TypedContractMethod<
+    [offset: BigNumberish, limit: BigNumberish],
+    [string[]],
+    "view"
+  >;
+  getFunction(
     nameOrSignature: "getPoolsForToken"
   ): TypedContractMethod<[token: AddressLike], [string[]], "view">;
+  getFunction(
+    nameOrSignature: "isRegisteredPool"
+  ): TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "pausePool"
+  ): TypedContractMethod<[pool: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "pendingAdmin"
+  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "poolsByKey"
   ): TypedContractMethod<[arg0: BytesLike], [string], "view">;
@@ -352,7 +495,20 @@ export interface OrbitalFactory extends BaseContract {
   getFunction(
     nameOrSignature: "totalPools"
   ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "transferAdmin"
+  ): TypedContractMethod<[_newAdmin: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "unpausePool"
+  ): TypedContractMethod<[pool: AddressLike], [void], "nonpayable">;
 
+  getEvent(
+    key: "AdminTransferStarted"
+  ): TypedContractEvent<
+    AdminTransferStartedEvent.InputTuple,
+    AdminTransferStartedEvent.OutputTuple,
+    AdminTransferStartedEvent.OutputObject
+  >;
   getEvent(
     key: "AdminUpdated"
   ): TypedContractEvent<
@@ -381,8 +537,33 @@ export interface OrbitalFactory extends BaseContract {
     PoolCreatedEvent.OutputTuple,
     PoolCreatedEvent.OutputObject
   >;
+  getEvent(
+    key: "PoolPaused"
+  ): TypedContractEvent<
+    PoolPausedEvent.InputTuple,
+    PoolPausedEvent.OutputTuple,
+    PoolPausedEvent.OutputObject
+  >;
+  getEvent(
+    key: "PoolUnpaused"
+  ): TypedContractEvent<
+    PoolUnpausedEvent.InputTuple,
+    PoolUnpausedEvent.OutputTuple,
+    PoolUnpausedEvent.OutputObject
+  >;
 
   filters: {
+    "AdminTransferStarted(address,address)": TypedContractEvent<
+      AdminTransferStartedEvent.InputTuple,
+      AdminTransferStartedEvent.OutputTuple,
+      AdminTransferStartedEvent.OutputObject
+    >;
+    AdminTransferStarted: TypedContractEvent<
+      AdminTransferStartedEvent.InputTuple,
+      AdminTransferStartedEvent.OutputTuple,
+      AdminTransferStartedEvent.OutputObject
+    >;
+
     "AdminUpdated(address,address)": TypedContractEvent<
       AdminUpdatedEvent.InputTuple,
       AdminUpdatedEvent.OutputTuple,
@@ -425,6 +606,28 @@ export interface OrbitalFactory extends BaseContract {
       PoolCreatedEvent.InputTuple,
       PoolCreatedEvent.OutputTuple,
       PoolCreatedEvent.OutputObject
+    >;
+
+    "PoolPaused(address,address)": TypedContractEvent<
+      PoolPausedEvent.InputTuple,
+      PoolPausedEvent.OutputTuple,
+      PoolPausedEvent.OutputObject
+    >;
+    PoolPaused: TypedContractEvent<
+      PoolPausedEvent.InputTuple,
+      PoolPausedEvent.OutputTuple,
+      PoolPausedEvent.OutputObject
+    >;
+
+    "PoolUnpaused(address,address)": TypedContractEvent<
+      PoolUnpausedEvent.InputTuple,
+      PoolUnpausedEvent.OutputTuple,
+      PoolUnpausedEvent.OutputObject
+    >;
+    PoolUnpaused: TypedContractEvent<
+      PoolUnpausedEvent.InputTuple,
+      PoolUnpausedEvent.OutputTuple,
+      PoolUnpausedEvent.OutputObject
     >;
   };
 }

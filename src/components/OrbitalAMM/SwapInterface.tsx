@@ -98,13 +98,20 @@ export default function SwapInterface({
   const [slippageBps, setSlippageBps] = useState(50); // 0.5%
   const [txStatus, setTxStatus] = useState<TxStatus>('idle');
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
+  const [showSwapReview, setShowSwapReview] = useState(false);
+  const [quoteCountdown, setQuoteCountdown] = useState(15);
+  const [customSlippage, setCustomSlippage] = useState('');
 
   // ---- Timer ref for status reset -------------------------------------------
 
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   useEffect(() => {
-    return () => { clearTimeout(statusTimerRef.current); };
+    return () => {
+      clearTimeout(statusTimerRef.current);
+      clearInterval(refreshIntervalRef.current);
+    };
   }, []);
 
   // ---- Derived values -------------------------------------------------------
@@ -315,6 +322,53 @@ export default function SwapInterface({
     };
   }, [contractService, selectedPool, tokenIn, tokenOut, parsedAmountIn]);
 
+  // ---- Auto-refresh quotes every 15 seconds ---------------------------------
+
+  useEffect(() => {
+    if (!contractService || !selectedPool || !tokenIn || !tokenOut || parsedAmountIn === 0n) {
+      setQuoteCountdown(15);
+      clearInterval(refreshIntervalRef.current);
+      return;
+    }
+
+    setQuoteCountdown(15);
+    refreshIntervalRef.current = setInterval(() => {
+      setQuoteCountdown((prev) => {
+        if (prev <= 1) {
+          // Re-fetch quote
+          void (async () => {
+            try {
+              const result = await contractService.getPoolAmountOut(
+                selectedPool.address,
+                tokenIn.index,
+                tokenOut.index,
+                parsedAmountIn,
+              );
+              setQuoteOut(result.amountOut);
+              setFeeAmount(result.feeAmount);
+            } catch {
+              // keep existing quote
+            }
+          })();
+          return 15;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(refreshIntervalRef.current);
+  }, [contractService, selectedPool, tokenIn, tokenOut, parsedAmountIn]);
+
+  // ---- Price impact severity classification ---------------------------------
+
+  const priceImpactSeverity = useMemo(() => {
+    if (priceImpact === null) return 'none' as const;
+    if (priceImpact >= 10) return 'blocking' as const;
+    if (priceImpact >= 5) return 'high' as const;
+    if (priceImpact >= 1) return 'medium' as const;
+    return 'low' as const;
+  }, [priceImpact]);
+
   // ---- Pool selection -------------------------------------------------------
 
   const handleSelectPool = useCallback(
@@ -445,6 +499,7 @@ export default function SwapInterface({
     parsedAmountIn === 0n ||
     quoteOut === 0n ||
     !!insufficientBalance ||
+    priceImpactSeverity === 'blocking' ||
     (txStatus !== 'idle' && txStatus !== 'confirmed');
 
   // ---- Render ---------------------------------------------------------------
@@ -694,7 +749,7 @@ export default function SwapInterface({
                 </span>
               </div>
 
-              {/* Price impact */}
+              {/* Price impact with severity styling */}
               {priceImpact !== null && (
                 <div className="flex items-center justify-between text-xs">
                   <span className="flex items-center gap-1.5 text-gray-500">
@@ -703,16 +758,30 @@ export default function SwapInterface({
                   </span>
                   <span
                     className={clsx(
-                      'font-mono',
-                      priceImpact < 1
-                        ? 'text-emerald-400'
-                        : priceImpact < 5
-                          ? 'text-amber-400'
-                          : 'text-red-400',
+                      'font-mono font-medium',
+                      priceImpactSeverity === 'low' ? 'text-emerald-400' :
+                      priceImpactSeverity === 'medium' ? 'text-amber-400' :
+                      priceImpactSeverity === 'high' ? 'text-red-400' :
+                      priceImpactSeverity === 'blocking' ? 'text-red-500 font-bold' :
+                      'text-gray-400',
                     )}
                   >
                     ~{formatPercent(priceImpact)}
                   </span>
+                </div>
+              )}
+
+              {/* Price impact warning banners */}
+              {priceImpactSeverity === 'blocking' && (
+                <div className="flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2.5 text-[11px] text-red-400 font-medium">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  Price impact exceeds 10%. This swap would result in a significant loss.
+                </div>
+              )}
+              {priceImpactSeverity === 'high' && (
+                <div className="flex items-center gap-2 rounded-lg bg-red-500/5 border border-red-500/15 px-3 py-2 text-[11px] text-red-400">
+                  <AlertCircle className="h-3 w-3 shrink-0" />
+                  High price impact. Consider a smaller trade.
                 </div>
               )}
 
@@ -742,24 +811,73 @@ export default function SwapInterface({
 
               {/* Slippage settings */}
               {showSlippageSettings && (
-                <div className="mt-2 flex gap-2 pt-2 border-t border-white/[0.04]">
-                  {[10, 50, 100, 200].map((bps) => (
-                    <button
-                      key={bps}
-                      type="button"
-                      onClick={() => setSlippageBps(bps)}
-                      className={clsx(
-                        'flex-1 rounded-lg py-2 text-xs font-semibold transition-all',
-                        slippageBps === bps
-                          ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30'
-                          : 'bg-white/[0.03] text-gray-500 hover:text-gray-300 hover:bg-white/[0.06]',
-                      )}
-                    >
-                      {formatPercent(bps / 100)}
-                    </button>
-                  ))}
+                <div className="mt-2 space-y-2 pt-2 border-t border-white/[0.04]">
+                  <div className="flex gap-2">
+                    {[10, 50, 100, 200].map((bps) => (
+                      <button
+                        key={bps}
+                        type="button"
+                        onClick={() => {
+                          setSlippageBps(bps);
+                          setCustomSlippage('');
+                        }}
+                        className={clsx(
+                          'flex-1 rounded-lg py-2 text-xs font-semibold transition-all',
+                          slippageBps === bps && !customSlippage
+                            ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/30'
+                            : 'bg-white/[0.03] text-gray-500 hover:text-gray-300 hover:bg-white/[0.06]',
+                        )}
+                      >
+                        {formatPercent(bps / 100)}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Custom slippage input */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-gray-500">Custom:</span>
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="e.g. 0.3"
+                        value={customSlippage}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (/^[0-9]*\.?[0-9]*$/.test(val)) {
+                            setCustomSlippage(val);
+                            const parsed = parseFloat(val);
+                            if (!isNaN(parsed) && parsed > 0 && parsed <= 50) {
+                              setSlippageBps(Math.round(parsed * 100));
+                            }
+                          }
+                        }}
+                        className={clsx(
+                          'w-full rounded-lg px-3 py-1.5 pr-7 text-xs font-mono text-white',
+                          'bg-white/[0.03] border border-white/[0.06]',
+                          'placeholder:text-gray-600',
+                          'focus:border-white/[0.12] focus:outline-none',
+                          'transition-all',
+                        )}
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-500">%</span>
+                    </div>
+                  </div>
+                  {slippageBps >= 200 && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      High slippage may result in an unfavorable trade.
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* Auto-refresh countdown */}
+              <div className="flex items-center justify-between text-[10px] text-gray-600 pt-1">
+                <span>Quote auto-refreshes</span>
+                <span className="font-mono tabular-nums">
+                  {quoteCountdown}s
+                </span>
+              </div>
             </div>
           )}
 
@@ -772,10 +890,75 @@ export default function SwapInterface({
             </span>
           </div>
 
+          {/* Swap review panel */}
+          {showSwapReview && parsedAmountIn > 0n && quoteOut > 0n && tokenIn && tokenOut && (
+            <div className="rounded-xl bg-indigo-500/5 border border-indigo-500/15 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-300">Swap Review</span>
+                <button
+                  type="button"
+                  onClick={() => setShowSwapReview(false)}
+                  className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors"
+                >
+                  Edit
+                </button>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-500">You pay</span>
+                <span className="font-mono text-white">
+                  {amountIn} {tokenIn.symbol}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-500">You receive</span>
+                <span className="font-mono text-emerald-400">
+                  {formatBalance(quoteOut, 18, 6)} {tokenOut.symbol}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-500">Min. received</span>
+                <span className="font-mono text-gray-400">
+                  {formatBalance(minAmountOut, 18, 6)} {tokenOut.symbol}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-500">Slippage tolerance</span>
+                <span className="font-mono text-gray-400">
+                  {formatPercent(slippageBps / 100)}
+                </span>
+              </div>
+              {priceImpact !== null && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-500">Price impact</span>
+                  <span
+                    className={clsx(
+                      'font-mono font-medium',
+                      priceImpactSeverity === 'low' ? 'text-emerald-400' :
+                      priceImpactSeverity === 'medium' ? 'text-amber-400' :
+                      'text-red-400',
+                    )}
+                  >
+                    ~{formatPercent(priceImpact)}
+                  </span>
+                </div>
+              )}
+              <p className="text-[10px] text-gray-600 leading-relaxed pt-1 border-t border-white/[0.04]">
+                Output is estimated. You will receive at least the minimum amount or the transaction will revert.
+              </p>
+            </div>
+          )}
+
           {/* Swap button */}
           <button
             type="button"
-            onClick={handleSwap}
+            onClick={() => {
+              if (!showSwapReview && !swapDisabled && parsedAmountIn > 0n && quoteOut > 0n) {
+                setShowSwapReview(true);
+              } else if (showSwapReview) {
+                void handleSwap();
+                setShowSwapReview(false);
+              }
+            }}
             disabled={swapDisabled}
             className={clsx(
               'flex w-full items-center justify-center gap-2 rounded-xl py-4 text-sm font-semibold transition-all',
@@ -800,6 +983,8 @@ export default function SwapInterface({
                 <Check className="h-4 w-4" />
                 Swap Complete!
               </>
+            ) : priceImpactSeverity === 'blocking' ? (
+              'Price Impact Too High'
             ) : insufficientBalance ? (
               'Insufficient Balance'
             ) : parsedAmountIn === 0n ? (
@@ -807,7 +992,7 @@ export default function SwapInterface({
             ) : (
               <>
                 <ArrowDownUp className="h-4 w-4" />
-                Swap Tokens
+                {showSwapReview ? 'Confirm Swap' : 'Review Swap'}
               </>
             )}
           </button>

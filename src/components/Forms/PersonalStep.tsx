@@ -3,6 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import {
   User,
   Calendar,
+  Phone,
   ArrowRight,
   ArrowLeft,
 } from 'lucide-react';
@@ -43,6 +44,7 @@ export default function PersonalStep({ defaultValues, onNext, onBack }: Personal
       firstName: defaultValues?.firstName ?? '',
       lastName: defaultValues?.lastName ?? '',
       dateOfBirth: defaultValues?.dateOfBirth ?? '',
+      phone: defaultValues?.phone ?? '',
     },
   });
 
@@ -52,66 +54,74 @@ export default function PersonalStep({ defaultValues, onNext, onBack }: Personal
 
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-5">
-      {/* First Name */}
-      <div>
-        <label htmlFor="signup-firstName" className={LABEL}>
-          First name
-        </label>
-        <div className="relative">
-          <User className={ICON_LEFT} aria-hidden="true" />
-          <input
-            id="signup-firstName"
-            type="text"
-            autoComplete="given-name"
-            placeholder="Enter your first name"
-            aria-invalid={errors.firstName ? true : undefined}
-            aria-describedby={errors.firstName ? 'signup-firstName-error' : undefined}
-            className={clsx(
-              INPUT_BASE,
-              errors.firstName && 'border-[var(--danger)]',
-            )}
-            {...register('firstName')}
-          />
+      {/* Name row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* First Name */}
+        <div>
+          <label htmlFor="signup-firstName" className={LABEL}>
+            First name
+            <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
+          </label>
+          <div className="relative">
+            <User className={ICON_LEFT} aria-hidden="true" />
+            <input
+              id="signup-firstName"
+              type="text"
+              autoComplete="given-name"
+              placeholder="Enter your first name"
+              aria-invalid={errors.firstName ? true : undefined}
+              aria-describedby={errors.firstName ? 'signup-firstName-error' : undefined}
+              aria-required="true"
+              className={clsx(
+                INPUT_BASE,
+                errors.firstName && 'border-[var(--danger)]',
+              )}
+              {...register('firstName')}
+            />
+          </div>
+          {errors.firstName && (
+            <p id="signup-firstName-error" role="alert" className={ERROR_TEXT}>
+              {errors.firstName.message}
+            </p>
+          )}
         </div>
-        {errors.firstName && (
-          <p id="signup-firstName-error" role="alert" className={ERROR_TEXT}>
-            {errors.firstName.message}
-          </p>
-        )}
-      </div>
 
-      {/* Last Name */}
-      <div>
-        <label htmlFor="signup-lastName" className={LABEL}>
-          Last name
-        </label>
-        <div className="relative">
-          <User className={ICON_LEFT} aria-hidden="true" />
-          <input
-            id="signup-lastName"
-            type="text"
-            autoComplete="family-name"
-            placeholder="Enter your last name"
-            aria-invalid={errors.lastName ? true : undefined}
-            aria-describedby={errors.lastName ? 'signup-lastName-error' : undefined}
-            className={clsx(
-              INPUT_BASE,
-              errors.lastName && 'border-[var(--danger)]',
-            )}
-            {...register('lastName')}
-          />
+        {/* Last Name */}
+        <div>
+          <label htmlFor="signup-lastName" className={LABEL}>
+            Last name
+            <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
+          </label>
+          <div className="relative">
+            <User className={ICON_LEFT} aria-hidden="true" />
+            <input
+              id="signup-lastName"
+              type="text"
+              autoComplete="family-name"
+              placeholder="Enter your last name"
+              aria-invalid={errors.lastName ? true : undefined}
+              aria-describedby={errors.lastName ? 'signup-lastName-error' : undefined}
+              aria-required="true"
+              className={clsx(
+                INPUT_BASE,
+                errors.lastName && 'border-[var(--danger)]',
+              )}
+              {...register('lastName')}
+            />
+          </div>
+          {errors.lastName && (
+            <p id="signup-lastName-error" role="alert" className={ERROR_TEXT}>
+              {errors.lastName.message}
+            </p>
+          )}
         </div>
-        {errors.lastName && (
-          <p id="signup-lastName-error" role="alert" className={ERROR_TEXT}>
-            {errors.lastName.message}
-          </p>
-        )}
       </div>
 
       {/* Date of Birth */}
       <div>
         <label htmlFor="signup-dateOfBirth" className={LABEL}>
           Date of birth
+          <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
         </label>
         <div className="relative">
           <Calendar className={ICON_LEFT} aria-hidden="true" />
@@ -121,6 +131,7 @@ export default function PersonalStep({ defaultValues, onNext, onBack }: Personal
             autoComplete="bday"
             aria-invalid={errors.dateOfBirth ? true : undefined}
             aria-describedby={errors.dateOfBirth ? 'signup-dateOfBirth-error' : 'signup-dateOfBirth-hint'}
+            aria-required="true"
             className={clsx(
               INPUT_BASE,
               '[color-scheme:dark]',
@@ -136,6 +147,41 @@ export default function PersonalStep({ defaultValues, onNext, onBack }: Personal
         ) : (
           <p id="signup-dateOfBirth-hint" className="mt-1.5 text-xs text-[var(--text-muted)]">
             You must be at least 18 years old.
+          </p>
+        )}
+      </div>
+
+      {/* Phone Number */}
+      <div>
+        <label htmlFor="signup-phone" className={LABEL}>
+          Phone number
+          <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
+        </label>
+        <div className="relative">
+          <Phone className={ICON_LEFT} aria-hidden="true" />
+          <input
+            id="signup-phone"
+            type="tel"
+            autoComplete="tel"
+            inputMode="tel"
+            placeholder="+12125551234"
+            aria-invalid={errors.phone ? true : undefined}
+            aria-describedby={errors.phone ? 'signup-phone-error' : 'signup-phone-hint'}
+            aria-required="true"
+            className={clsx(
+              INPUT_BASE,
+              errors.phone && 'border-[var(--danger)]',
+            )}
+            {...register('phone')}
+          />
+        </div>
+        {errors.phone ? (
+          <p id="signup-phone-error" role="alert" className={ERROR_TEXT}>
+            {errors.phone.message}
+          </p>
+        ) : (
+          <p id="signup-phone-hint" className="mt-1.5 text-xs text-[var(--text-muted)]">
+            Include your country code (e.g., +1 for US/Canada).
           </p>
         )}
       </div>

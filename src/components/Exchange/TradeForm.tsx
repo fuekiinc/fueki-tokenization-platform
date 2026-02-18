@@ -34,6 +34,7 @@ import {
   Zap,
   BookOpen,
   Settings2,
+  RefreshCw,
 } from 'lucide-react';
 import type { WrappedAsset } from '../../types';
 import { InfoTooltip } from '../Common/Tooltip';
@@ -90,8 +91,10 @@ export default function TradeForm({
   // AMM-specific state
   const [ammQuote, setAmmQuote] = useState<bigint>(0n);
   const [ammQuoteLoading, setAmmQuoteLoading] = useState(false);
-  const [slippage, setSlippage] = useState(1); // percentage
+  const [slippage, setSlippage] = useState(0.5); // percentage
+  const [customSlippage, setCustomSlippage] = useState('');
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
+  const [quoteRefreshTimer, setQuoteRefreshTimer] = useState(15);
 
   // ---- Derived ------------------------------------------------------------
 
@@ -174,6 +177,32 @@ export default function TradeForm({
   const sameTokenError = sellToken && buyToken && sellToken.toLowerCase() === buyToken.toLowerCase();
 
   const insufficientBalance = parsedSellAmount > 0n && parsedSellAmount > sellBalance;
+
+  // Price impact for AMM mode
+  const priceImpact = useMemo(() => {
+    if (tradeMode !== 'amm' || parsedSellAmount === 0n || ammQuote === 0n) return null;
+    // Rough estimate: compare sell/buy ratio against 1:1 as baseline
+    const sellNum = Number(ethers.formatUnits(parsedSellAmount, 18));
+    const buyNum = Number(ethers.formatUnits(ammQuote, 18));
+    if (sellNum === 0 || buyNum === 0) return null;
+    // For AMM, price impact grows with order size relative to pool depth
+    // The fee-adjusted ratio deviation from spot gives us the impact
+    const feeAdjusted = buyNum / sellNum;
+    // Use a simple model: impact = 1 - (actual_rate / expected_rate)
+    // Since we do not have a separate spot price here, approximate it
+    // by computing with a tiny amount (the quote already includes impact)
+    return Math.max(0, (1 - feeAdjusted) * 100);
+  }, [tradeMode, parsedSellAmount, ammQuote]);
+
+  const priceImpactSeverity = useMemo(() => {
+    if (priceImpact === null) return 'none';
+    if (priceImpact >= 10) return 'blocking';
+    if (priceImpact >= 5) return 'high';
+    if (priceImpact >= 1) return 'medium';
+    return 'low';
+  }, [priceImpact]);
+
+  const SLIPPAGE_PRESETS = [0.1, 0.5, 1, 2] as const;
 
   const canSubmit =
     contractService &&
@@ -490,6 +519,41 @@ export default function TradeForm({
       cancelled = true;
       clearTimeout(timer);
     };
+  }, [tradeMode, contractService, sellToken, buyToken, parsedSellAmount]);
+
+  // Auto-refresh AMM quote every 15 seconds with countdown
+  useEffect(() => {
+    if (tradeMode !== 'amm' || !contractService || !sellToken || !buyToken || parsedSellAmount === 0n) {
+      setQuoteRefreshTimer(15);
+      return;
+    }
+
+    setQuoteRefreshTimer(15);
+    const interval = setInterval(() => {
+      setQuoteRefreshTimer((prev) => {
+        if (prev <= 1) {
+          // Trigger a re-fetch by resetting to 15 -- the quote effect
+          // depends on parsedSellAmount which has not changed, but we can
+          // nudge it by setting the amount string to itself (no-op for
+          // React since it is the same value). Instead, we rely on the
+          // interval approach: we call the quote inline.
+          void (async () => {
+            if (!contractService || !sellToken || !buyToken || parsedSellAmount === 0n) return;
+            if (sellToken.toLowerCase() === buyToken.toLowerCase()) return;
+            try {
+              const q = await contractService.getAMMQuote(sellToken, buyToken, parsedSellAmount);
+              setAmmQuote(q);
+            } catch {
+              // keep existing quote
+            }
+          })();
+          return 15;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
   }, [tradeMode, contractService, sellToken, buyToken, parsedSellAmount]);
 
   // AMM swap handler
@@ -931,7 +995,7 @@ export default function TradeForm({
             >
               {txStatus === 'approving' ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
                   Approving {sellAsset?.symbol}...
                 </>
               ) : txStatus === 'approved' ? (
@@ -1000,7 +1064,7 @@ export default function TradeForm({
           >
             {status === 'creating' ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
                 {buttonLabel}
               </>
             ) : status === 'confirmed' ? (
@@ -1033,8 +1097,10 @@ export default function TradeForm({
           ethBalance={ethBalance.toString()}
         />
         <div className="mt-5">
+          <label htmlFor="amm-sell-amount" className="sr-only">Sell amount</label>
           <div className="relative">
             <input
+              id="amm-sell-amount"
               type="text"
               inputMode="decimal"
               placeholder="0.0"
@@ -1046,8 +1112,8 @@ export default function TradeForm({
               className={clsx(
                 'w-full rounded-xl px-5 py-4 pr-28 text-xl font-semibold text-white',
                 'bg-[#0D0F14] border border-white/[0.06]',
-                'placeholder:text-gray-600',
-                'focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/20',
+                'placeholder:text-gray-500',
+                'focus:border-indigo-500/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-offset-2 focus:ring-offset-[#06070A]',
                 'font-mono transition-all',
               )}
             />
@@ -1061,7 +1127,8 @@ export default function TradeForm({
                 type="button"
                 onClick={handleMaxSell}
                 disabled={sellBalance === 0n}
-                className="rounded-lg px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-all bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label="Set maximum sell amount"
+                className="rounded-lg px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-all bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-30 focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]"
               >
                 Max
               </button>
@@ -1098,10 +1165,12 @@ export default function TradeForm({
             setSellAmount('');
             setAmmQuote(0n);
           }}
+          aria-label="Swap sell and buy tokens"
           className={clsx(
             'flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-200',
             'bg-[#0D0F14] border border-white/[0.06]',
             'hover:border-purple-500/30 hover:bg-purple-500/5 hover:rotate-180 shadow-lg shadow-black/20',
+            'focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]',
           )}
           title="Swap tokens"
         >
@@ -1130,7 +1199,7 @@ export default function TradeForm({
               )}
             >
               {ammQuoteLoading ? (
-                <Loader2 className="h-5 w-5 animate-spin text-purple-400/60" />
+                <Loader2 className="h-5 w-5 animate-spin motion-reduce:animate-none text-purple-400/60" />
               ) : ammQuote > 0n ? (
                 formatPrice(Number(ethers.formatUnits(ammQuote, 18)))
               ) : (
@@ -1155,7 +1224,13 @@ export default function TradeForm({
 
       {/* ---- AMM Quote details ---------------------------------------------- */}
       {ammQuote > 0n && sellAsset && buyAsset && parsedSellAmount > 0n && (
-        <div className="rounded-xl bg-[#0D0F14]/80 border border-white/[0.06] p-5 sm:p-6">
+        <div className={clsx(
+          'rounded-xl border p-5 sm:p-6',
+          priceImpactSeverity === 'blocking' ? 'bg-red-500/5 border-red-500/20' :
+          priceImpactSeverity === 'high' ? 'bg-red-500/5 border-red-500/15' :
+          priceImpactSeverity === 'medium' ? 'bg-amber-500/5 border-amber-500/15' :
+          'bg-[#0D0F14]/80 border-white/[0.06]',
+        )}>
           <div className="space-y-0 divide-y divide-white/[0.06]">
             <div className="flex items-center justify-between py-2.5 first:pt-0">
               <span className="flex items-center gap-2 text-xs text-gray-500">
@@ -1168,6 +1243,26 @@ export default function TradeForm({
                 {buyAsset.symbol}
               </span>
             </div>
+
+            {/* Price impact with color-coded warnings */}
+            {priceImpact !== null && (
+              <div className="flex items-center justify-between py-2.5">
+                <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                  Price Impact
+                  <InfoTooltip content={TOOLTIPS.slippage} />
+                </span>
+                <span className={clsx(
+                  'font-mono text-xs font-medium',
+                  priceImpactSeverity === 'low' ? 'text-emerald-400' :
+                  priceImpactSeverity === 'medium' ? 'text-amber-400' :
+                  priceImpactSeverity === 'high' ? 'text-red-400' :
+                  'text-red-500 font-bold',
+                )}>
+                  ~{formatPrice(priceImpact, 2)}%
+                </span>
+              </div>
+            )}
+
             <div className="flex items-center justify-between py-2.5">
               <span className="text-xs text-gray-500">Min. received</span>
               <span className="font-mono text-xs text-gray-400">
@@ -1193,24 +1288,84 @@ export default function TradeForm({
             </div>
           </div>
 
+          {/* Price impact warning banners */}
+          {priceImpactSeverity === 'blocking' && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-3 text-xs text-red-400 font-medium">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              Price impact too high ({formatPrice(priceImpact ?? 0, 2)}%). This trade would result in a significant loss. Try a smaller amount.
+            </div>
+          )}
+          {priceImpactSeverity === 'high' && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg bg-red-500/5 border border-red-500/15 px-4 py-2.5 text-[11px] text-red-400">
+              <AlertCircle className="h-3 w-3 shrink-0" />
+              High price impact. Consider reducing your trade size.
+            </div>
+          )}
+          {priceImpactSeverity === 'medium' && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg bg-amber-500/5 border border-amber-500/15 px-4 py-2.5 text-[11px] text-amber-400">
+              <AlertCircle className="h-3 w-3 shrink-0" />
+              Moderate price impact. You may receive less than expected.
+            </div>
+          )}
+
+          {/* Auto-refresh countdown */}
+          <div className="mt-3 flex items-center justify-between text-[11px] text-gray-600">
+            <span className="flex items-center gap-1.5">
+              <RefreshCw className="h-3 w-3" />
+              Quote auto-refreshes
+            </span>
+            <span className="font-mono">{quoteRefreshTimer}s</span>
+          </div>
+
           {/* Slippage settings */}
           {showSlippageSettings && (
-            <div className="mt-3 flex gap-2 pt-3 border-t border-white/[0.04]">
-              {[0.5, 1, 2, 5].map((pct) => (
-                <button
-                  key={pct}
-                  type="button"
-                  onClick={() => { setSlippage(pct); setShowSlippageSettings(false); }}
+            <div className="mt-3 space-y-2.5 pt-3 border-t border-white/[0.04]">
+              <div className="flex gap-2">
+                {SLIPPAGE_PRESETS.map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => { setSlippage(pct); setCustomSlippage(''); setShowSlippageSettings(false); }}
+                    className={clsx(
+                      'flex-1 rounded-lg py-2 text-xs font-semibold transition-all',
+                      slippage === pct && !customSlippage
+                        ? 'bg-purple-500/20 text-purple-400 ring-1 ring-purple-500/30'
+                        : 'bg-white/[0.04] text-gray-500 hover:text-gray-300',
+                    )}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Custom"
+                  value={customSlippage}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (/^[0-9]*\.?[0-9]*$/.test(val)) {
+                      setCustomSlippage(val);
+                      const parsed = parseFloat(val);
+                      if (parsed > 0 && parsed <= 50) setSlippage(parsed);
+                    }
+                  }}
                   className={clsx(
-                    'flex-1 rounded-lg py-2 text-xs font-semibold transition-all',
-                    slippage === pct
-                      ? 'bg-purple-500/20 text-purple-400 ring-1 ring-purple-500/30'
-                      : 'bg-white/[0.04] text-gray-500 hover:text-gray-300',
+                    'flex-1 rounded-lg px-3 py-2 text-xs font-mono text-white',
+                    'bg-[#0D0F14] border border-white/[0.06]',
+                    'placeholder:text-gray-600',
+                    'focus:border-purple-500/40 focus:outline-none',
                   )}
-                >
-                  {pct}%
-                </button>
-              ))}
+                />
+                <span className="text-xs text-gray-500">%</span>
+              </div>
+              {slippage > 5 && (
+                <div className="flex items-center gap-1.5 text-[11px] text-amber-400">
+                  <AlertCircle className="h-3 w-3" />
+                  High slippage tolerance may result in unfavorable trades
+                </div>
+              )}
             </div>
           )}
 
@@ -1238,6 +1393,7 @@ export default function TradeForm({
           sellToken && buyToken && !sameTokenError &&
           parsedSellAmount > 0n && ammQuote > 0n &&
           !insufficientBalance &&
+          priceImpactSeverity !== 'blocking' &&
           (status === 'idle' || status === 'approved');
 
         // Determine button label with clear reason when disabled
@@ -1256,6 +1412,8 @@ export default function TradeForm({
           swapLabel = 'Enter an amount';
         } else if (insufficientBalance) {
           swapLabel = 'Insufficient balance';
+        } else if (priceImpactSeverity === 'blocking') {
+          swapLabel = 'Price impact too high';
         } else if (ammQuote === 0n && !ammQuoteLoading) {
           swapLabel = 'No liquidity available';
         }
@@ -1276,7 +1434,7 @@ export default function TradeForm({
             )}
           >
             {(status === 'approving' || status === 'creating') && (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
             )}
             {status === 'confirmed' && <Check className="h-4 w-4" />}
             {status !== 'approving' && status !== 'creating' && status !== 'confirmed' && (

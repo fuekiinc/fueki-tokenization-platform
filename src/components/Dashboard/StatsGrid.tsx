@@ -11,6 +11,7 @@ import {
 import type { WrappedAsset, ExchangeOrder, TradeHistory } from '../../types';
 import { formatCurrency } from '../../lib/utils/helpers';
 import { formatPercent } from '../../lib/formatters';
+import { CARD_CLASSES, GRID_CLASSES } from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -85,9 +86,10 @@ function StatCard({ label, value, change, icon, accentColor }: StatCardProps) {
   return (
     <div
       className={clsx(
-        'relative bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl p-6 overflow-hidden',
-        'hover:border-white/[0.12] hover:shadow-lg hover:shadow-black/20',
-        'transition-all duration-300 group',
+        CARD_CLASSES.base,
+        CARD_CLASSES.wrapper,
+        CARD_CLASSES.hover,
+        'p-6 group',
       )}
     >
       {/* Gradient accent line at top */}
@@ -167,7 +169,7 @@ export default function StatsGrid({
   const portfolioChange = compute24hChange(tradeHistory, totalValueLocked);
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 sm:gap-6">
+    <div className={GRID_CLASSES.stats}>
       <StatCard
         label="Portfolio Value"
         value={formatCurrency(totalValueLocked)}

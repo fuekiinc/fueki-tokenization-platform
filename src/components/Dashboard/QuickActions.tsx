@@ -7,13 +7,7 @@ import {
   ArrowRight,
   Zap,
 } from 'lucide-react';
-
-// ---------------------------------------------------------------------------
-// Glass morphism shared tokens
-// ---------------------------------------------------------------------------
-
-const GLASS =
-  'bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl';
+import { CARD_CLASSES } from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // QuickAction item
@@ -38,11 +32,9 @@ function QuickAction({
     <button
       onClick={onClick}
       className={clsx(
-        GLASS,
+        CARD_CLASSES.base,
+        CARD_CLASSES.hover,
         'group relative flex w-full items-center gap-5 overflow-hidden p-5 text-left sm:p-7',
-        'hover:border-white/[0.12] hover:shadow-lg hover:shadow-black/20',
-        'hover:-translate-y-0.5',
-        'transition-all duration-300',
       )}
     >
       {/* Hover glow */}
@@ -86,7 +78,7 @@ export default function QuickActions() {
   const navigate = useNavigate();
 
   return (
-    <div className={clsx(GLASS, 'p-7 sm:p-9')}>
+    <div className={clsx(CARD_CLASSES.base, CARD_CLASSES.padding)}>
       <div className="mb-10 flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10">
           <Zap className="h-5 w-5 text-amber-400" />

@@ -1147,9 +1147,9 @@ export default function PortfolioPage() {
                 aria-label="Search assets"
                 className={clsx(
                   'w-full rounded-xl border border-white/[0.06] bg-white/[0.03] py-3.5 pl-12 pr-4',
-                  'text-sm text-white placeholder-gray-600',
+                  'text-sm text-white placeholder-gray-500',
                   'transition-all duration-200',
-                  'focus:border-indigo-500/40 focus:bg-white/[0.05] focus:outline-none focus:ring-1 focus:ring-indigo-500/40',
+                  'focus:border-indigo-500/40 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-indigo-500/40',
                 )}
               />
             </div>
@@ -1403,7 +1403,7 @@ export default function PortfolioPage() {
                 aria-invalid={transferError?.includes('recipient') || transferError?.includes('address') ? true : undefined}
                 className={clsx(
                   'w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3.5',
-                  'font-mono text-sm text-white placeholder-gray-600',
+                  'font-mono text-sm text-white placeholder-gray-500',
                   'transition-all duration-200',
                   'focus:border-indigo-500/40 focus:bg-white/[0.05] focus:outline-none focus:ring-1 focus:ring-indigo-500/40',
                   'disabled:cursor-not-allowed disabled:opacity-40',
@@ -1432,7 +1432,7 @@ export default function PortfolioPage() {
                   disabled={transferLoading}
                   className={clsx(
                     'w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3.5 pr-20',
-                    'text-sm text-white placeholder-gray-600',
+                    'text-sm text-white placeholder-gray-500',
                     'transition-all duration-200',
                     'focus:border-indigo-500/40 focus:bg-white/[0.05] focus:outline-none focus:ring-1 focus:ring-indigo-500/40',
                     'disabled:cursor-not-allowed disabled:opacity-40',
@@ -1543,7 +1543,7 @@ export default function PortfolioPage() {
                   disabled={burnLoading}
                   className={clsx(
                     'w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3.5 pr-20',
-                    'text-sm text-white placeholder-gray-600',
+                    'text-sm text-white placeholder-gray-500',
                     'transition-all duration-200',
                     'focus:border-red-500/40 focus:bg-white/[0.05] focus:outline-none focus:ring-1 focus:ring-red-500/40',
                     'disabled:cursor-not-allowed disabled:opacity-40',

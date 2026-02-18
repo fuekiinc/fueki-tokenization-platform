@@ -6,6 +6,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { INPUT_CLASSES } from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -18,16 +19,17 @@ export interface FormFieldProps {
   hint?: string;
   required?: boolean;
   children: ReactNode;
+  className?: string;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function FormField({ label, htmlFor, error, hint, required, children }: FormFieldProps) {
+export function FormField({ label, htmlFor, error, hint, required, children, className }: FormFieldProps) {
   return (
-    <div className="space-y-2">
-      <label htmlFor={htmlFor} className="block text-sm font-medium text-gray-300">
+    <div className={className ?? 'space-y-2'}>
+      <label htmlFor={htmlFor} className={INPUT_CLASSES.label}>
         {label}
         {required && <span className="text-red-400 ml-1">*</span>}
       </label>

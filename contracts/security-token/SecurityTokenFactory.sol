@@ -36,6 +36,7 @@ contract SecurityTokenFactory {
     }
 
     /// @notice The external deployer contract that creates child contracts.
+    /// Gas optimization: immutable saves ~2100 gas per access vs storage read
     SecurityTokenDeployer private immutable _deployer;
 
     /// @notice Ordered list of every security token ever created.
@@ -68,13 +69,15 @@ contract SecurityTokenFactory {
     );
 
     // ---------------------------------------------------------------
-    //  Errors
+    //  Errors (gas optimization: custom errors are ~200 gas cheaper than require strings)
     // ---------------------------------------------------------------
 
     error ZeroSupply();
     error EmptyName();
     error EmptySymbol();
     error MaxSupplyTooLow();
+    error TokenNotFound();
+    error IndexOutOfBounds();
 
     // ---------------------------------------------------------------
     //  Constructor
@@ -185,11 +188,14 @@ contract SecurityTokenFactory {
     // ---------------------------------------------------------------
 
     /// @notice Return every security token created by `user`.
+    /// Gas optimization: cached array length, unchecked loop increment
     function getUserTokens(address user) external view returns (address[] memory) {
         uint256[] memory indices = _userTokens[user];
-        address[] memory result = new address[](indices.length);
-        for (uint256 i = 0; i < indices.length; i++) {
+        uint256 len = indices.length;
+        address[] memory result = new address[](len);
+        for (uint256 i; i < len;) {
             result[i] = _allTokens[indices[i]].tokenAddress;
+            unchecked { ++i; }
         }
         return result;
     }
@@ -201,13 +207,13 @@ contract SecurityTokenFactory {
 
     /// @notice Return full details of a security token by its address.
     function getTokenDetails(address tokenAddress) external view returns (SecurityToken memory) {
-        require(_tokenExists[tokenAddress], "Token not found");
+        if (!_tokenExists[tokenAddress]) revert TokenNotFound();
         return _allTokens[_tokenIndex[tokenAddress]];
     }
 
     /// @notice Return the security token at a given index.
     function getTokenAtIndex(uint256 index) external view returns (SecurityToken memory) {
-        require(index < _allTokens.length, "Index out of bounds");
+        if (index >= _allTokens.length) revert IndexOutOfBounds();
         return _allTokens[index];
     }
 

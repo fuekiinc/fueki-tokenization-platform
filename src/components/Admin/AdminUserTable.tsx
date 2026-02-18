@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import clsx from 'clsx';
+import toast from 'react-hot-toast';
 import {
   Search,
   ChevronLeft,
@@ -96,9 +97,11 @@ function RoleDropdown({
     setIsUpdating(true);
     try {
       await updateUserRole(userId, newRole);
+      toast.success(`Role updated to ${newRole.replace('_', ' ')}`);
       onRoleChanged();
-    } catch {
-      // Error handled silently -- the user will see the role unchanged
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update role';
+      toast.error(message);
     } finally {
       setIsUpdating(false);
       setIsOpen(false);
@@ -235,12 +238,13 @@ export default function AdminUserTable() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
         {/* Search */}
         <div className="relative flex-1">
-          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" aria-hidden="true" />
           <input
-            type="text"
+            type="search"
             placeholder="Search by email..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search users by email"
             className={clsx(
               'w-full rounded-xl border border-white/[0.06] bg-white/[0.03] py-2.5 pl-10 pr-4',
               'text-sm text-white placeholder-gray-500',
@@ -251,10 +255,11 @@ export default function AdminUserTable() {
 
         {/* Role filter */}
         <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-gray-500" />
+          <Filter className="h-4 w-4 text-gray-500" aria-hidden="true" />
           <select
             value={roleFilter}
             onChange={(e) => handleRoleFilterChange(e.target.value)}
+            aria-label="Filter by role"
             className={clsx(
               'rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2.5',
               'text-sm text-white',
@@ -273,6 +278,7 @@ export default function AdminUserTable() {
         <select
           value={kycFilter}
           onChange={(e) => handleKycFilterChange(e.target.value)}
+          aria-label="Filter by KYC status"
           className={clsx(
             'rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2.5',
             'text-sm text-white',
@@ -296,7 +302,7 @@ export default function AdminUserTable() {
           </div>
         ) : error ? (
           <div className="flex flex-col items-center gap-4 py-16">
-            <AlertTriangle className="h-8 w-8 text-amber-400" />
+            <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
             <p className="text-sm text-gray-400">{error}</p>
             <button
               onClick={() => void fetchUsers()}
@@ -392,6 +398,7 @@ export default function AdminUserTable() {
                   <button
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page <= 1}
+                    aria-label="Previous page"
                     className={clsx(
                       'rounded-lg p-2 transition-colors',
                       page <= 1
@@ -399,13 +406,14 @@ export default function AdminUserTable() {
                         : 'text-gray-300 hover:bg-white/[0.06]',
                     )}
                   >
-                    <ChevronLeft className="h-4 w-4" />
+                    <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                   </button>
                   <button
                     onClick={() =>
                       setPage((p) => Math.min(data.totalPages, p + 1))
                     }
                     disabled={page >= data.totalPages}
+                    aria-label="Next page"
                     className={clsx(
                       'rounded-lg p-2 transition-colors',
                       page >= data.totalPages
@@ -413,7 +421,7 @@ export default function AdminUserTable() {
                         : 'text-gray-300 hover:bg-white/[0.06]',
                     )}
                   >
-                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
               </div>
