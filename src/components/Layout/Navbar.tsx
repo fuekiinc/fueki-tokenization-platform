@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { NavLink, Link, useLocation } from 'react-router-dom';
+import { NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X, ChevronDown, ExternalLink, Copy, LogOut, Check } from 'lucide-react';
 import clsx from 'clsx';
 import { useWallet } from '../../hooks/useWallet';
 import { useWalletStore } from '../../store/walletStore.ts';
+import { useAuthStore } from '../../store/authStore';
 import { formatTokenAmount } from '../../lib/formatters';
 import ThemeToggle from './ThemeToggle';
 import PendingTransactions from './PendingTransactions';
@@ -338,7 +339,7 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
   const [showDetails, setShowDetails] = useState(false);
   const [copied, setCopied] = useState(false);
   const detailsRef = useRef<HTMLDivElement>(null);
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     return () => { clearTimeout(copyTimerRef.current); };
@@ -712,6 +713,12 @@ function MobileSlideOver({
             </p>
             <ThemeToggle />
           </div>
+
+          {/* Separator */}
+          <div className="my-6 border-t border-white/[0.04]" />
+
+          {/* Logout (mobile) */}
+          <LogoutButton compact />
         </div>
 
         {/* Footer */}
@@ -722,6 +729,40 @@ function MobileSlideOver({
         </div>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// LogoutButton
+// ---------------------------------------------------------------------------
+
+function LogoutButton({ compact = false }: { compact?: boolean }) {
+  const navigate = useNavigate();
+  const logout = useAuthStore((s) => s.logout);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  if (!isAuthenticated) return null;
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => void handleLogout()}
+      className={clsx(
+        'flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium',
+        'transition-all duration-150',
+        'border-red-500/20 bg-red-500/[0.06] text-red-400',
+        'hover:border-red-500/30 hover:bg-red-500/10',
+        compact && 'w-full',
+      )}
+    >
+      <LogOut className="h-4 w-4" />
+      <span>Log Out</span>
+    </button>
   );
 }
 
@@ -825,6 +866,11 @@ export default function Navbar() {
               {/* Desktop wallet */}
               <div className="hidden sm:block">
                 <WalletButton />
+              </div>
+
+              {/* Desktop logout */}
+              <div className="hidden sm:block">
+                <LogoutButton />
               </div>
 
               {/* Mobile hamburger */}

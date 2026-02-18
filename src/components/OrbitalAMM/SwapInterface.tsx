@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { OrbitalContractService } from '../../lib/blockchain/orbitalContracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
-import { formatTokenAmount, formatPercent, formatPrice } from '../../lib/formatters';
+import { formatPercent, formatPrice } from '../../lib/formatters';
 import { InfoTooltip } from '../Common/Tooltip';
 import { TOOLTIPS } from '../../lib/tooltipContent';
 
@@ -99,7 +99,7 @@ export default function SwapInterface({
 
   // ---- Timer ref for status reset -------------------------------------------
 
-  const statusTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     return () => { clearTimeout(statusTimerRef.current); };

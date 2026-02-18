@@ -151,7 +151,6 @@ export function calculateCostBasis(
   }
 
   if (totalBought <= 0) return 0;
-  const avgCost = totalCost / totalBought;
 
   // Second pass: reduce cost basis for sells
   for (const trade of relevantTrades) {

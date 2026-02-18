@@ -48,7 +48,7 @@ type GlassPanelProps<T extends ElementType = 'div'> = GlassPanelOwnProps<T> &
  * </GlassPanel>
  * ```
  */
-const GlassPanel = forwardRef<HTMLElement, GlassPanelProps>(function GlassPanel(
+const GlassPanel = forwardRef<HTMLDivElement, GlassPanelProps>(function GlassPanel(
   { as, padding = 'p-6', className, children, ...rest },
   ref,
 ) {

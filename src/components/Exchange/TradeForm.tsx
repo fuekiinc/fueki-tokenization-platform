@@ -472,18 +472,6 @@ export default function TradeForm({
     };
   }, [tradeMode, contractService, sellToken, buyToken, parsedSellAmount]);
 
-  // AMM price impact
-  const ammPriceImpact = useMemo(() => {
-    if (tradeMode !== 'amm' || ammQuote === 0n || parsedSellAmount === 0n) return null;
-    // Get the spot rate without fee from reserves
-    // Impact = 1 - (actualOutput / spotOutput)
-    // We approximate: spotOutput = (amountIn * reserveOut / reserveIn)
-    // For now just show the effective rate vs the quote
-    const effectiveRate = Number(ethers.formatUnits(ammQuote, 18)) / Number(ethers.formatUnits(parsedSellAmount, 18));
-    // We can't easily get reserves here, so show effective rate info
-    return effectiveRate;
-  }, [tradeMode, ammQuote, parsedSellAmount]);
-
   // AMM swap handler
   const handleAMMSwap = useCallback(async () => {
     if (!contractService || !sellToken || !buyToken || parsedSellAmount === 0n || ammQuote === 0n) return;
@@ -1198,7 +1186,7 @@ export default function TradeForm({
           <button
             type="button"
             onClick={handleAMMSwap}
-            disabled={!canSwap || status === 'creating' || status === 'confirmed'}
+            disabled={!canSwap || (status as string) === 'creating' || (status as string) === 'confirmed'}
             className={clsx(
               'flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-semibold transition-all',
               status === 'creating' || status === 'approving'

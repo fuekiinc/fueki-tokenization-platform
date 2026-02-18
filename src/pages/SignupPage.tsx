@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Shield } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -26,13 +26,18 @@ import type {
 
 export default function SignupPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const authRegister = useAuthStore((s) => s.register);
   const uploadDocument = useAuthStore((s) => s.uploadDocument);
   const submitKYC = useAuthStore((s) => s.submitKYC);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  // If already authenticated (redirected from login with KYC not submitted), skip account step
+  const initialStep = isAuthenticated && (location.state as any)?.step === 'kyc' ? 1 : 0;
 
   // ---- Wizard state ---------------------------------------------------------
 
-  const [currentStep, setCurrentStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState(initialStep);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Cross-step data storage
@@ -157,7 +162,12 @@ export default function SignupPage() {
       return;
     }
 
-    if (!accountData || !personalData || !addressData) {
+    if (!isAuthenticated && !accountData) {
+      toast.error('Some required fields from an earlier step are missing. Please go back and complete all fields.');
+      return;
+    }
+
+    if (!personalData || !addressData) {
       toast.error('Some required fields from an earlier step are missing. Please go back and complete all fields.');
       return;
     }
@@ -165,11 +175,13 @@ export default function SignupPage() {
     setIsSubmitting(true);
 
     try {
-      // 1. Register the account
-      await authRegister({
-        email: accountData.email,
-        password: accountData.password,
-      });
+      // 1. Register the account (skip if already authenticated, e.g. KYC re-submission)
+      if (!isAuthenticated && accountData) {
+        await authRegister({
+          email: accountData.email,
+          password: accountData.password,
+        });
+      }
 
       // 2. Upload the identity document
       await uploadDocument(documentFile, identityValues.documentType);
@@ -198,7 +210,7 @@ export default function SignupPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [accountData, personalData, addressData, documentFile, authRegister, uploadDocument, submitKYC, navigate]);
+  }, [isAuthenticated, accountData, personalData, addressData, documentFile, authRegister, uploadDocument, submitKYC, navigate]);
 
   // ---- Step renderers -------------------------------------------------------
 

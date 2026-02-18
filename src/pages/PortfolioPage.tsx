@@ -33,7 +33,7 @@ import { useAssetStore } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
 import { Modal, Button, EmptyState } from '../components/Common/index.ts';
 import { formatBalance, formatAddress, copyToClipboard } from '../lib/utils/helpers.ts';
-import { formatCurrency, formatTokenAmount, truncateAddress } from '../lib/formatters.ts';
+import { formatCurrency, formatTokenAmount } from '../lib/formatters.ts';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses.ts';
 import {
   calculateAssetPerformance,

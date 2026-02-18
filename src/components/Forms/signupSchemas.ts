@@ -69,7 +69,7 @@ export const identitySchema = z.object({
     .min(1, 'Enter your Social Security Number')
     .regex(/^\d{3}-?\d{2}-?\d{4}$/, 'Enter a valid SSN in the format 000-00-0000'),
   documentType: z.enum(['drivers_license', 'passport'], {
-    required_error: 'Select a document type',
+    message: 'Select a document type',
   }),
 });
 

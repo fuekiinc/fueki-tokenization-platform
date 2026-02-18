@@ -55,7 +55,7 @@ const statusConfig = {
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     return () => { clearTimeout(timerRef.current); };

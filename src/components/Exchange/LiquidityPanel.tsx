@@ -22,7 +22,7 @@ import {
   Fuel,
 } from 'lucide-react';
 import type { WrappedAsset } from '../../types';
-import { ContractService, ETH_SENTINEL, isETH } from '../../lib/blockchain/contracts';
+import { ContractService, isETH } from '../../lib/blockchain/contracts';
 import type { Pool } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
@@ -71,8 +71,6 @@ export default function LiquidityPanel({
   const tokenAIsETH = isETH(tokenA);
   const tokenBIsETH = isETH(tokenB);
   const sameTokenError = tokenA && tokenB && tokenA.toLowerCase() === tokenB.toLowerCase();
-  const poolExists = pool !== null && pool.totalLiquidity > 0n;
-
   // ---- Resolve chainId on mount -------------------------------------------
 
   useEffect(() => {

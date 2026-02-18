@@ -256,9 +256,9 @@ export default function TokenSelector({
         // Use a public provider for read-only lookup. window.ethereum may not
         // be available, so fall back to a basic JsonRpcProvider.
         let provider: ethers.Provider;
-        if (typeof window !== 'undefined' && (window as Record<string, unknown>).ethereum) {
+        if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).ethereum) {
           provider = new ethers.BrowserProvider(
-            (window as Record<string, unknown>).ethereum as ethers.Eip1193Provider,
+            (window as unknown as Record<string, unknown>).ethereum as ethers.Eip1193Provider,
           );
         } else {
           // Fallback -- this will likely fail but gives a clear error message
@@ -629,7 +629,7 @@ export default function TokenSelector({
                         <span className="font-semibold">{asset.symbol}</span>
                         {/* Verification badge */}
                         {verified && !isFromAddressSearch ? (
-                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-blue-400" title="Verified token" />
+                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-blue-400" aria-label="Verified token" />
                         ) : isFromAddressSearch ? (
                           <span className="flex items-center gap-0.5" title="Unverified - found by address">
                             <AlertTriangle className="h-3 w-3 shrink-0 text-amber-400/70" />

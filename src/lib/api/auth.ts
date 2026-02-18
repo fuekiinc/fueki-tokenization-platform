@@ -64,7 +64,7 @@ export async function uploadDocument(
   documentType: string,
 ): Promise<DocumentUploadResponse> {
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append('document', file);
   formData.append('documentType', documentType);
 
   const response = await apiClient.post<DocumentUploadResponse>(

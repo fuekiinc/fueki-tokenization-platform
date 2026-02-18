@@ -25,7 +25,7 @@ import { useTradeStore } from '../../store/tradeStore.ts';
 import { useAssetStore } from '../../store/assetStore.ts';
 import { getProvider } from '../../store/walletStore.ts';
 import { formatAddress, generateId, copyToClipboard } from '../../lib/utils/helpers';
-import { formatTokenAmount, formatCurrency, truncateAddress } from '../../lib/formatters';
+import { formatTokenAmount } from '../../lib/formatters';
 import { getNetworkConfig, getNetworkMetadata } from '../../contracts/addresses';
 import type { ParsedDocument, TradeHistory } from '../../types';
 

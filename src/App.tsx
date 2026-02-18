@@ -5,21 +5,31 @@ import AuthLayout from './components/Layout/AuthLayout'
 import ProtectedRoute, { AuthRedirect } from './components/Auth/ProtectedRoute'
 import { useAuthStore } from './store/authStore'
 
+// Auto-reload on stale chunk after deploy (avoids "Failed to fetch dynamically imported module")
+function lazyWithRetry(factory: () => Promise<{ default: React.ComponentType<any> }>) {
+  return lazy(() =>
+    factory().catch(() => {
+      window.location.reload();
+      return new Promise(() => {}); // never resolves; page is reloading
+    })
+  );
+}
+
 // Lazy-load all page components for better initial bundle size
-const DashboardPage = lazy(() => import('./pages/DashboardPage'))
-const MintPage = lazy(() => import('./pages/MintPage'))
-const PortfolioPage = lazy(() => import('./pages/PortfolioPage'))
-const ExchangePage = lazy(() => import('./pages/ExchangePage'))
-const OrbitalAMMPage = lazy(() => import('./pages/OrbitalAMMPage'))
-const LoginPage = lazy(() => import('./pages/LoginPage'))
-const SignupPage = lazy(() => import('./pages/SignupPage'))
-const PendingApprovalPage = lazy(() => import('./pages/PendingApprovalPage'))
-const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
-const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
-const SettingsPage = lazy(() => import('./pages/SettingsPage'))
-const AdminPage = lazy(() => import('./pages/AdminPage'))
-const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
-const ExplorePage = lazy(() => import('./pages/ExplorePage'))
+const DashboardPage = lazyWithRetry(() => import('./pages/DashboardPage'))
+const MintPage = lazyWithRetry(() => import('./pages/MintPage'))
+const PortfolioPage = lazyWithRetry(() => import('./pages/PortfolioPage'))
+const ExchangePage = lazyWithRetry(() => import('./pages/ExchangePage'))
+const OrbitalAMMPage = lazyWithRetry(() => import('./pages/OrbitalAMMPage'))
+const LoginPage = lazyWithRetry(() => import('./pages/LoginPage'))
+const SignupPage = lazyWithRetry(() => import('./pages/SignupPage'))
+const PendingApprovalPage = lazyWithRetry(() => import('./pages/PendingApprovalPage'))
+const ForgotPasswordPage = lazyWithRetry(() => import('./pages/ForgotPasswordPage'))
+const ResetPasswordPage = lazyWithRetry(() => import('./pages/ResetPasswordPage'))
+const SettingsPage = lazyWithRetry(() => import('./pages/SettingsPage'))
+const AdminPage = lazyWithRetry(() => import('./pages/AdminPage'))
+const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'))
+const ExplorePage = lazyWithRetry(() => import('./pages/ExplorePage'))
 
 function PageLoader() {
   return (

@@ -40,7 +40,10 @@ export const config = {
   },
 
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: (process.env.CORS_ORIGIN || 'http://localhost:5173')
+      .split(',')
+      .map((o) => o.trim().replace(/\/+$/, ''))
+      .filter(Boolean),
   },
 
   // Google Cloud Storage for KYC document uploads
@@ -60,6 +63,12 @@ export const config = {
 
   // Frontend URL (used for building links in emails)
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+
+  // Admin email addresses (comma-separated) for KYC review notifications
+  adminEmails: (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim()).filter(Boolean),
+
+  // Backend URL (used for building action links in admin emails)
+  backendUrl: process.env.BACKEND_URL || 'http://localhost:8080',
 
   // Local upload fallback (dev only, not used on Cloud Run)
   upload: {

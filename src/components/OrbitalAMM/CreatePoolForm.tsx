@@ -135,7 +135,7 @@ export default function CreatePoolForm({
   // ---- Available tokens ------------------------------------------------------
 
   const [availableTokens, setAvailableTokens] = useState<AvailableToken[]>([]);
-  const [loadingTokens, setLoadingTokens] = useState(false);
+  const [, setLoadingTokens] = useState(false);
 
   // ---- Pool configuration ---------------------------------------------------
 

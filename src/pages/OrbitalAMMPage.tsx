@@ -124,8 +124,8 @@ export default function OrbitalAMMPage() {
 
   // ---- Timer refs for cleanup -----------------------------------------------
 
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const tabTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const tabTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     return () => {

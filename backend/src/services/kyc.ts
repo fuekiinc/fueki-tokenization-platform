@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { encrypt } from './encryption';
 import { saveEncryptedDocument } from './storage';
+import { sendKYCReviewEmail } from './email';
 
 const prisma = new PrismaClient();
 
@@ -48,9 +49,27 @@ export async function submitKYC(input: KYCInput) {
   });
 
   // Update user KYC status to pending
-  await prisma.user.update({
+  const user = await prisma.user.update({
     where: { id: input.userId },
     data: { kycStatus: 'pending' },
+  });
+
+  // Send admin notification email (fire-and-forget)
+  sendKYCReviewEmail({
+    userId: input.userId,
+    userEmail: user.email,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    dateOfBirth: input.dateOfBirth,
+    addressLine1: input.addressLine1,
+    city: input.city,
+    state: input.state,
+    zipCode: input.zipCode,
+    country: input.country,
+    documentType: input.documentType,
+    submittedAt: new Date().toISOString(),
+  }).catch((err) => {
+    console.error('Failed to send KYC review email:', err);
   });
 
   return kycData;

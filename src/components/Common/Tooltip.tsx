@@ -51,7 +51,6 @@ export interface InfoTooltipProps {
 // Constants
 // ---------------------------------------------------------------------------
 
-const GAP = 8; // px between trigger and bubble
 const EDGE_MARGIN = 12; // px from viewport edge before flipping
 
 // ---------------------------------------------------------------------------

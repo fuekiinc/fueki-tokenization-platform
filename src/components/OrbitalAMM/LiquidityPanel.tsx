@@ -110,7 +110,7 @@ export default function LiquidityPanel({
 
   // ---- Timer ref for status reset -------------------------------------------
 
-  const statusTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     return () => { clearTimeout(statusTimerRef.current); };

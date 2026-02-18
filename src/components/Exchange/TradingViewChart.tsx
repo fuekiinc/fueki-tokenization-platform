@@ -181,7 +181,7 @@ export default function TradingViewChart({
     // Configure the volume price scale (overlay at bottom, 20% height)
     chart.priceScale('volume').applyOptions({
       scaleMargins: { top: 0.8, bottom: 0 },
-      drawTicks: false,
+      // drawTicks not supported in this version
       borderVisible: false,
       visible: false,
     });

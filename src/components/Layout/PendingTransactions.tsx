@@ -128,7 +128,7 @@ export default function PendingTransactions() {
   const [isChecking, setIsChecking] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval>>();
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const resolvedTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );

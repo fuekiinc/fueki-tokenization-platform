@@ -77,3 +77,15 @@ model PasswordResetToken {
   @@index([token])
   @@index([userId])
 }
+
+model AdminActionToken {
+  id        String   @id @default(uuid())
+  userId    String   // the KYC applicant
+  action    String   // "approve" or "reject"
+  token     String   @unique
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+}

@@ -363,4 +363,86 @@ router.put('/kyc/:userId/reject', adminOnly, async (req: Request, res: Response)
   }
 });
 
+// ---------------------------------------------------------------------------
+// GET /api/admin/kyc/action/:token — One-click approve/reject from email
+// ---------------------------------------------------------------------------
+
+router.get('/kyc/action/:token', async (req: Request, res: Response) => {
+  try {
+    const token = req.params.token as string;
+
+    const actionToken = await prisma.adminActionToken.findUnique({
+      where: { token },
+    });
+
+    if (!actionToken) {
+      res.status(404).send(renderActionPage('Invalid Link', 'This action link is invalid or has already been used.', false));
+      return;
+    }
+
+    if (actionToken.used) {
+      res.status(400).send(renderActionPage('Already Used', 'This action has already been processed.', false));
+      return;
+    }
+
+    if (actionToken.expiresAt < new Date()) {
+      res.status(400).send(renderActionPage('Link Expired', 'This action link has expired. Please review the KYC submission from the admin panel.', false));
+      return;
+    }
+
+    // Perform the action
+    if (actionToken.action === 'approve') {
+      await approveKYC(actionToken.userId, 'Approved via email');
+    } else {
+      await rejectKYC(actionToken.userId, 'Rejected via email');
+    }
+
+    // Mark token as used
+    await prisma.adminActionToken.update({
+      where: { id: actionToken.id },
+      data: { used: true },
+    });
+
+    // Also mark the opposite token as used (so the other button can't be clicked)
+    await prisma.adminActionToken.updateMany({
+      where: {
+        userId: actionToken.userId,
+        action: actionToken.action === 'approve' ? 'reject' : 'approve',
+        used: false,
+      },
+      data: { used: true },
+    });
+
+    const title = actionToken.action === 'approve' ? 'KYC Approved' : 'KYC Rejected';
+    const message = actionToken.action === 'approve'
+      ? 'The user has been approved and can now access the platform.'
+      : 'The user has been rejected. They will be notified to re-submit.';
+
+    res.send(renderActionPage(title, message, true));
+  } catch (err) {
+    console.error('KYC action error:', err);
+    res.status(500).send(renderActionPage('Error', 'Something went wrong processing this action. Please try again or use the admin panel.', false));
+  }
+});
+
+function renderActionPage(title: string, message: string, success: boolean): string {
+  const color = success ? '#059669' : '#dc2626';
+  const icon = success ? '&#10003;' : '&#10007;';
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title} - Fueki</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;">
+  <div style="background:#fff;border-radius:12px;padding:48px;max-width:480px;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,0.1);">
+    <div style="width:64px;height:64px;border-radius:50%;background:${color};color:#fff;font-size:32px;line-height:64px;margin:0 auto 24px;">${icon}</div>
+    <h1 style="margin:0 0 12px;color:#1a1a2e;font-size:24px;">${title}</h1>
+    <p style="margin:0;color:#51545e;font-size:16px;line-height:1.6;">${message}</p>
+  </div>
+</body>
+</html>`;
+}
+
 export default router;

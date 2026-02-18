@@ -83,7 +83,7 @@ function estimateTVL(reserves: bigint[]): string {
 
 export default function PoolList({
   contractService,
-  userAddress,
+  userAddress: _userAddress,
   onSelectPool,
 }: PoolListProps) {
   const [pools, setPools] = useState<PoolData[]>([]);
