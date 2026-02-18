@@ -28,7 +28,7 @@ function PieSkeleton({ height }: { height: number }) {
       className="flex flex-col items-center justify-center"
       style={{ height }}
     >
-      {/* Donut ring placeholder */}
+      {/* Donut ring skeleton */}
       <div
         className="shimmer rounded-full"
         style={{
@@ -76,16 +76,16 @@ function BarSkeleton({ height }: { height: number }) {
 function LineSkeleton({ height }: { height: number }) {
   return (
     <div className="relative overflow-hidden px-6 pb-6 pt-4" style={{ height }}>
-      {/* Y-axis placeholders */}
+      {/* Y-axis labels */}
       <div className="absolute left-6 top-4 bottom-6 flex flex-col justify-between">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="shimmer h-2.5 w-10 rounded" />
         ))}
       </div>
-      {/* Chart area placeholder */}
+      {/* Chart area skeleton */}
       <div className="ml-14 h-full">
         <div className="shimmer h-full w-full rounded-lg opacity-40" />
-        {/* X-axis placeholders */}
+        {/* X-axis labels */}
         <div className="mt-3 flex justify-between">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="shimmer h-2.5 w-10 rounded" />

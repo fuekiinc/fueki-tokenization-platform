@@ -26,6 +26,7 @@ import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatCompact, formatPercent, formatTokenAmount } from '../../lib/formatters';
 import { InfoTooltip } from '../Common/Tooltip';
 import { TOOLTIPS } from '../../lib/tooltipContent';
+import logger from '../../lib/logger';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -132,7 +133,7 @@ export default function PoolList({
               symbol: info.symbol,
             });
           } catch (err) {
-            console.error(`Failed to load pool ${addr}:`, err);
+            logger.error(`Failed to load pool ${addr}:`, err);
           }
         }),
       );
@@ -148,7 +149,7 @@ export default function PoolList({
 
       setPools(poolDataList);
     } catch (err) {
-      console.error('Failed to fetch pools:', err);
+      logger.error('Failed to fetch pools:', err);
       toast.error('Failed to load Orbital pools');
     } finally {
       setLoading(false);

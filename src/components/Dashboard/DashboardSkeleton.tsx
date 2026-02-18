@@ -11,24 +11,22 @@ const GLASS =
   'bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl';
 
 // ---------------------------------------------------------------------------
-// StatCard skeleton
+// StatCard skeleton -- matches StatsGrid card layout
 // ---------------------------------------------------------------------------
 
 function StatCardSkeleton() {
   return (
-    <div className={clsx(GLASS, 'p-7 sm:p-9')}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          {/* Title */}
-          <div className={clsx('h-4 w-24 rounded-md', SHIMMER)} />
-          {/* Value */}
-          <div className={clsx('mt-4 h-8 w-32 rounded-lg', SHIMMER)} />
-          {/* Change badge */}
-          <div className={clsx('mt-4 h-5 w-20 rounded-full', SHIMMER)} />
-        </div>
-        {/* Icon container */}
-        <div className={clsx('h-12 w-12 shrink-0 rounded-xl', SHIMMER)} />
+    <div className={clsx(GLASS, 'p-6')}>
+      <div className="flex items-center justify-between mb-3">
+        {/* Label */}
+        <div className={clsx('h-3 w-24 rounded-md', SHIMMER)} />
+        {/* Icon */}
+        <div className={clsx('h-8 w-8 shrink-0 rounded-lg', SHIMMER)} />
       </div>
+      {/* Value */}
+      <div className={clsx('h-7 w-32 rounded-lg', SHIMMER)} />
+      {/* Change badge */}
+      <div className={clsx('mt-2 h-4 w-20 rounded-md', SHIMMER)} />
     </div>
   );
 }
@@ -63,7 +61,7 @@ function ChartSkeleton() {
 
 function ActivityItemSkeleton() {
   return (
-    <div className="flex items-center gap-4 py-5">
+    <div className="flex items-center gap-4 py-4">
       <div className={clsx('h-10 w-10 shrink-0 rounded-xl', SHIMMER)} />
       <div className="flex-1 min-w-0">
         <div className={clsx('h-4 w-40 rounded-md', SHIMMER)} />
@@ -76,17 +74,26 @@ function ActivityItemSkeleton() {
 
 function ActivitySkeleton() {
   return (
-    <div className={clsx(GLASS, 'p-8 sm:p-11')}>
-      {/* Header */}
-      <div className="flex items-center gap-4 mb-10">
-        <div className={clsx('h-10 w-10 rounded-xl', SHIMMER)} />
-        <div>
-          <div className={clsx('h-4 w-32 rounded-md', SHIMMER)} />
-          <div className={clsx('mt-2 h-3 w-24 rounded-md', SHIMMER)} />
+    <div className={clsx(GLASS, 'p-6 sm:p-8')}>
+      {/* Header with filter pills */}
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <div className={clsx('h-10 w-10 rounded-xl', SHIMMER)} />
+          <div>
+            <div className={clsx('h-4 w-32 rounded-md', SHIMMER)} />
+            <div className={clsx('mt-2 h-3 w-48 rounded-md', SHIMMER)} />
+          </div>
+        </div>
+        {/* Filter pills skeleton */}
+        <div className="flex gap-1 p-1 rounded-xl bg-white/[0.03]">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className={clsx('h-7 w-14 rounded-lg', SHIMMER)} />
+          ))}
         </div>
       </div>
       {/* Activity items */}
       <div className="divide-y divide-white/[0.04]">
+        <ActivityItemSkeleton />
         <ActivityItemSkeleton />
         <ActivityItemSkeleton />
         <ActivityItemSkeleton />
@@ -133,7 +140,7 @@ export default function DashboardSkeleton() {
   return (
     <div className="w-full animate-fade-in">
       {/* Page Header */}
-      <div className="mb-12 sm:mb-10">
+      <div className="mb-8 sm:mb-10">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
             <div className={clsx('h-9 w-48 rounded-lg', SHIMMER)} />
@@ -144,11 +151,11 @@ export default function DashboardSkeleton() {
             <div className={clsx('h-10 w-32 rounded-xl', SHIMMER)} />
           </div>
         </div>
-        <div className="mt-10 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
+        <div className="mt-8 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
       </div>
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-1 gap-6 pl-4 sm:grid-cols-2 lg:grid-cols-4 sm:gap-12 overflow-hidden">
+      {/* Stats Row -- 4 cols desktop, 2 tablet, 1 mobile */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 sm:gap-6">
         <StatCardSkeleton />
         <StatCardSkeleton />
         <StatCardSkeleton />
@@ -156,16 +163,18 @@ export default function DashboardSkeleton() {
       </div>
 
       {/* Charts Row */}
-      <div className="mt-12 grid grid-cols-1 gap-8 sm:mt-16 sm:gap-10 lg:grid-cols-2">
+      <div className="mt-8 grid grid-cols-1 gap-6 sm:mt-10 sm:gap-8 lg:grid-cols-2">
         <ChartSkeleton />
         <ChartSkeleton />
       </div>
 
-      {/* Activity + Quick Actions */}
-      <div className="mt-12 grid grid-cols-1 gap-8 sm:mt-16 sm:gap-10 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <ActivitySkeleton />
-        </div>
+      {/* Activity Feed -- full width */}
+      <div className="mt-8 sm:mt-10">
+        <ActivitySkeleton />
+      </div>
+
+      {/* Quick Actions -- full width */}
+      <div className="mt-8 sm:mt-10">
         <QuickActionsSkeleton />
       </div>
     </div>

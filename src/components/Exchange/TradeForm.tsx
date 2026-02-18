@@ -39,11 +39,13 @@ import type { WrappedAsset } from '../../types';
 import { InfoTooltip } from '../Common/Tooltip';
 import { TOOLTIPS } from '../../lib/tooltipContent';
 import { useTradeStore } from '../../store/tradeStore.ts';
-import { ContractService, ETH_SENTINEL, isETH } from '../../lib/blockchain/contracts';
+import { ContractService, ETH_SENTINEL, isETH, parseContractError } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPrice, formatTokenAmount } from '../../lib/formatters';
+import { txSubmittedToast, txConfirmedToast, txFailedToast } from '../../lib/utils/txToast';
 import TokenSelector from './TokenSelector';
+import logger from '../../lib/logger';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -250,8 +252,8 @@ export default function TradeForm({
           }
         }
       } catch (err) {
-        console.error('Failed to load token balances:', err);
-        toast.error('Failed to load token balances');
+        logger.error('Failed to load token balances:', err);
+        toast.error('Unable to load token balances. Check your connection and try again.');
       }
     }
 
@@ -259,7 +261,11 @@ export default function TradeForm({
     return () => {
       cancelled = true;
     };
-  }, [contractService, sellToken, sellIsETH, txStatus, chainId]);
+  // NOTE: chainId intentionally excluded -- it is resolved inside the effect
+  // and including it would cause a re-fetch loop (setChainId -> dep change ->
+  // re-run -> setChainId ...).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contractService, sellToken, sellIsETH, txStatus]);
 
   // ---- Set chainId on mount -----------------------------------------------
 
@@ -279,8 +285,8 @@ export default function TradeForm({
           setEthBalance(nativeBal);
         }
       } catch (error) {
-        console.error('Failed to resolve chain info:', error);
-        toast.error('Failed to load chain info');
+        logger.error('Failed to resolve chain info:', error);
+        toast.error('Unable to detect your network. Please check your wallet connection.');
       }
     }
     void resolveChain();
@@ -315,16 +321,20 @@ export default function TradeForm({
         parsedSellAmount,
       );
       setTxHash(tx.hash);
-      toast.loading('Approving token spend...', { id: 'approve' });
+      const currentChainId = chainId ?? 31337;
+      txSubmittedToast(tx.hash, currentChainId, 'Approving token spend...');
 
       await contractService.waitForTransaction(tx);
       setTxStatus('approved');
-      toast.success('Token approved for exchange', { id: 'approve' });
+      txConfirmedToast(tx.hash, 'Token approved for exchange');
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Approval transaction failed';
-      console.error('Approve failed:', err);
-      toast.error(message, { id: 'approve' });
+      logger.error('Approve failed:', err);
+      const errMsg = parseContractError(err);
+      if (txHash) {
+        txFailedToast(txHash, errMsg);
+      } else {
+        toast.error(errMsg);
+      }
       setTxStatus('idle');
     }
   }, [contractService, sellToken, parsedSellAmount, txStatus, sellIsETH]);
@@ -341,17 +351,17 @@ export default function TradeForm({
     }
 
     if (sameTokenError) {
-      toast.error('Sell and buy tokens must be different');
+      toast.error('You cannot swap a token for itself. Please select a different buy token.');
       return;
     }
 
     if (needsApproval) {
-      toast.error('Please approve the sell token first');
+      toast.error('Token approval required. Please approve your sell token before placing the order.');
       return;
     }
 
     if (insufficientBalance) {
-      toast.error('Insufficient balance');
+      toast.error('Insufficient balance to complete this order. Try a smaller amount.');
       return;
     }
 
@@ -360,6 +370,11 @@ export default function TradeForm({
 
     setTxStatus('creating');
     setTxHash(null);
+
+    // Track tx hash locally so the catch block can reference it even though
+    // React state updates are asynchronous.
+    let submittedHash: string | null = null;
+    const currentChainId = chainId ?? 31337;
 
     try {
       let tx: ethers.ContractTransactionResponse;
@@ -381,12 +396,13 @@ export default function TradeForm({
         );
       }
 
+      submittedHash = tx.hash;
       setTxHash(tx.hash);
-      toast.loading('Creating order...', { id: 'create-order' });
+      txSubmittedToast(tx.hash, currentChainId, 'Creating order...');
 
       await contractService.waitForTransaction(tx);
       setTxStatus('confirmed');
-      toast.success('Order created successfully!', { id: 'create-order' });
+      txConfirmedToast(tx.hash, 'Order created successfully!');
 
       // Record trade in store so dashboard updates immediately
       const sellSym = sellIsETH ? 'ETH' : (assets.find((a) => a.address === sellToken)?.symbol ?? formatAddress(sellToken!));
@@ -413,10 +429,13 @@ export default function TradeForm({
         onOrderCreated();
       }, 2000);
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to create order';
-      console.error('Create order failed:', err);
-      toast.error(message, { id: 'create-order' });
+      logger.error('Create order failed:', err);
+      const errMsg = parseContractError(err);
+      if (submittedHash) {
+        txFailedToast(submittedHash, errMsg);
+      } else {
+        toast.error(errMsg);
+      }
       setTxStatus('idle');
     }
   }, [
@@ -431,6 +450,7 @@ export default function TradeForm({
     txStatus,
     sellIsETH,
     buyIsETH,
+    chainId,
     onOrderCreated,
     addTrade,
     assets,
@@ -494,12 +514,12 @@ export default function TradeForm({
           try {
             const approveTx = await contractService.approveAMM(sellToken, parsedSellAmount);
             setTxHash(approveTx.hash);
-            toast.loading('Approving token for AMM...', { id: 'amm-approve' });
+            txSubmittedToast(approveTx.hash, currentChainId, 'Approving token for AMM...');
             await contractService.waitForTransaction(approveTx);
-            toast.success('Token approved for AMM', { id: 'amm-approve' });
+            txConfirmedToast(approveTx.hash, 'Token approved for AMM');
             setTxStatus('approved');
           } catch (err: unknown) {
-            toast.error(err instanceof Error ? err.message : 'Approval failed', { id: 'amm-approve' });
+            toast.error(parseContractError(err), { id: 'amm-approve' });
             setTxStatus('idle');
             return;
           }
@@ -513,6 +533,9 @@ export default function TradeForm({
     // Calculate min output with slippage
     const minOut = ammQuote - (ammQuote * BigInt(Math.round(slippage * 10)) / 1000n);
 
+    const swapChainId = chainId ?? 31337;
+    let submittedSwapHash: string | null = null;
+
     try {
       let tx: ethers.ContractTransactionResponse;
 
@@ -524,11 +547,12 @@ export default function TradeForm({
         tx = await contractService.swapAMM(sellToken, buyToken, parsedSellAmount, minOut);
       }
 
+      submittedSwapHash = tx.hash;
       setTxHash(tx.hash);
-      toast.loading('Swapping via AMM...', { id: 'amm-swap' });
+      txSubmittedToast(tx.hash, swapChainId, 'Swapping via AMM...');
       await contractService.waitForTransaction(tx);
       setTxStatus('confirmed');
-      toast.success('Swap completed!', { id: 'amm-swap' });
+      txConfirmedToast(tx.hash, 'Swap completed!');
 
       // Record AMM swap in store so dashboard updates immediately
       const swapSellSym = sellIsETH ? 'ETH' : (assets.find((a) => a.address === sellToken)?.symbol ?? formatAddress(sellToken!));
@@ -554,7 +578,12 @@ export default function TradeForm({
         onOrderCreated();
       }, 2000);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Swap failed', { id: 'amm-swap' });
+      const errMsg = parseContractError(err);
+      if (submittedSwapHash) {
+        txFailedToast(submittedSwapHash, errMsg);
+      } else {
+        toast.error(errMsg);
+      }
       setTxStatus('idle');
     }
   }, [contractService, sellToken, buyToken, parsedSellAmount, ammQuote, slippage, txStatus, sellIsETH, buyIsETH, chainId, onOrderCreated, addTrade, assets, sellAmount]);
@@ -652,7 +681,9 @@ export default function TradeForm({
 
         <div className="mt-5">
           <div className="relative">
+            <label htmlFor="sell-amount" className="sr-only">Sell amount</label>
             <input
+              id="sell-amount"
               type="text"
               inputMode="decimal"
               placeholder="0.0"
@@ -664,8 +695,8 @@ export default function TradeForm({
               className={clsx(
                 'w-full rounded-xl px-5 py-4 pr-28 text-xl font-semibold text-white',
                 'bg-[#0D0F14] border border-white/[0.06]',
-                'placeholder:text-gray-600',
-                'focus:border-white/[0.12] focus:outline-none focus:ring-1 focus:ring-white/[0.08]',
+                'placeholder:text-gray-500',
+                'focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/20',
                 'font-mono transition-all',
               )}
             />
@@ -679,8 +710,10 @@ export default function TradeForm({
                 type="button"
                 onClick={handleMaxSell}
                 disabled={sellBalance === 0n}
+                aria-label="Set maximum sell amount"
                 className={clsx(
                   'rounded-lg px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-all',
+                  'focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]',
                   isBuy
                     ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
                     : 'bg-red-500/10 text-red-400 hover:bg-red-500/20',
@@ -733,10 +766,12 @@ export default function TradeForm({
             setSellAmount(buyAmount);
             setBuyAmount(tmpAmount);
           }}
+          aria-label="Swap sell and buy tokens"
           className={clsx(
             'flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-200',
             'bg-[#0D0F14] border border-white/[0.06]',
             'hover:border-indigo-500/30 hover:bg-indigo-500/5 hover:rotate-180 shadow-lg shadow-black/20',
+            'focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]',
           )}
           title="Swap tokens"
         >
@@ -757,7 +792,9 @@ export default function TradeForm({
 
         <div className="mt-5">
           <div className="relative">
+            <label htmlFor="buy-amount" className="sr-only">Buy amount</label>
             <input
+              id="buy-amount"
               type="text"
               inputMode="decimal"
               placeholder="0.0"
@@ -769,8 +806,8 @@ export default function TradeForm({
               className={clsx(
                 'w-full rounded-xl px-5 py-4 pr-20 text-xl font-semibold text-white',
                 'bg-[#0D0F14] border border-white/[0.06]',
-                'placeholder:text-gray-600',
-                'focus:border-white/[0.12] focus:outline-none focus:ring-1 focus:ring-white/[0.08]',
+                'placeholder:text-gray-500',
+                'focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/20',
                 'font-mono transition-all',
               )}
             />
@@ -912,6 +949,29 @@ export default function TradeForm({
       {/* ---- Create order button ------------------------------------------- */}
       {(() => {
         const status = txStatus as TxStatus;
+
+        // Determine the button label with a clear reason when disabled
+        let buttonLabel = isBuy ? 'Place Buy Order' : 'Place Sell Order';
+        if (sellIsETH) buttonLabel += ' (ETH)';
+
+        if (status === 'creating') {
+          buttonLabel = 'Creating Order...';
+        } else if (status === 'confirmed') {
+          buttonLabel = 'Order Created!';
+        } else if (!sellToken) {
+          buttonLabel = 'Select sell token';
+        } else if (!buyToken) {
+          buttonLabel = 'Select buy token';
+        } else if (parsedSellAmount === 0n) {
+          buttonLabel = 'Enter sell amount';
+        } else if (insufficientBalance) {
+          buttonLabel = 'Insufficient balance';
+        } else if (parsedBuyAmount === 0n) {
+          buttonLabel = 'Enter buy amount';
+        } else if (needsApproval) {
+          buttonLabel = `Approve ${sellAsset?.symbol ?? 'token'} first`;
+        }
+
         return (
           <button
             type="button"
@@ -941,18 +1001,15 @@ export default function TradeForm({
             {status === 'creating' ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Creating Order...
+                {buttonLabel}
               </>
             ) : status === 'confirmed' ? (
               <>
                 <Check className="h-4 w-4" />
-                Order Created!
+                {buttonLabel}
               </>
             ) : (
-              <>
-                {isBuy ? 'Place Buy Order' : 'Place Sell Order'}
-                {sellIsETH && ' (ETH)'}
-              </>
+              buttonLabel
             )}
           </button>
         );
@@ -990,7 +1047,7 @@ export default function TradeForm({
                 'w-full rounded-xl px-5 py-4 pr-28 text-xl font-semibold text-white',
                 'bg-[#0D0F14] border border-white/[0.06]',
                 'placeholder:text-gray-600',
-                'focus:border-white/[0.12] focus:outline-none focus:ring-1 focus:ring-white/[0.08]',
+                'focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/20',
                 'font-mono transition-all',
               )}
             />
@@ -1182,6 +1239,27 @@ export default function TradeForm({
           parsedSellAmount > 0n && ammQuote > 0n &&
           !insufficientBalance &&
           (status === 'idle' || status === 'approved');
+
+        // Determine button label with clear reason when disabled
+        let swapLabel = 'Swap Tokens';
+        if (status === 'approving') {
+          swapLabel = 'Approving...';
+        } else if (status === 'creating') {
+          swapLabel = 'Swapping...';
+        } else if (status === 'confirmed') {
+          swapLabel = 'Swap Complete!';
+        } else if (!sellToken) {
+          swapLabel = 'Select sell token';
+        } else if (!buyToken) {
+          swapLabel = 'Select buy token';
+        } else if (parsedSellAmount === 0n) {
+          swapLabel = 'Enter an amount';
+        } else if (insufficientBalance) {
+          swapLabel = 'Insufficient balance';
+        } else if (ammQuote === 0n && !ammQuoteLoading) {
+          swapLabel = 'No liquidity available';
+        }
+
         return (
           <button
             type="button"
@@ -1197,15 +1275,14 @@ export default function TradeForm({
               'disabled:cursor-not-allowed disabled:opacity-40',
             )}
           >
-            {status === 'approving' ? (
-              <><Loader2 className="h-4 w-4 animate-spin" /> Approving...</>
-            ) : status === 'creating' ? (
-              <><Loader2 className="h-4 w-4 animate-spin" /> Swapping...</>
-            ) : status === 'confirmed' ? (
-              <><Check className="h-4 w-4" /> Swap Complete!</>
-            ) : (
-              <><Zap className="h-4 w-4" /> Swap via AMM</>
+            {(status === 'approving' || status === 'creating') && (
+              <Loader2 className="h-4 w-4 animate-spin" />
             )}
+            {status === 'confirmed' && <Check className="h-4 w-4" />}
+            {status !== 'approving' && status !== 'creating' && status !== 'confirmed' && (
+              <Zap className="h-4 w-4" />
+            )}
+            {swapLabel}
           </button>
         );
       })()}

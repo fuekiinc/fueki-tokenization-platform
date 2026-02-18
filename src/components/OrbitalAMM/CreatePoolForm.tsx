@@ -29,8 +29,10 @@ import {
   Info,
 } from 'lucide-react';
 import { OrbitalContractService } from '../../lib/blockchain/orbitalContracts';
+import { parseContractError } from '../../lib/blockchain/contracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPercent } from '../../lib/formatters';
+import logger from '../../lib/logger';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -182,7 +184,7 @@ export default function CreatePoolForm({
               balance,
             });
           } catch (err) {
-            console.error(`Failed to load token ${addr}:`, err);
+            logger.error(`Failed to load token ${addr}:`, err);
             // Still include with fallback data
             tokens.push({
               address: addr,
@@ -354,9 +356,7 @@ export default function CreatePoolForm({
             toast.success(`${token.symbol} approved`, { id: `approve-create-${token.symbol}` });
           }
         } catch (err: unknown) {
-          toast.error(
-            err instanceof Error ? err.message : `Failed to approve ${token.symbol}`,
-          );
+          toast.error(parseContractError(err));
           setTxStatus('idle');
           return;
         }
@@ -393,10 +393,7 @@ export default function CreatePoolForm({
           await contractService.waitForTransaction(liqTx);
           toast.success('Initial liquidity added!', { id: 'initial-liq' });
         } catch (liqErr: unknown) {
-          toast.error(
-            liqErr instanceof Error ? liqErr.message : 'Pool created but failed to add initial liquidity',
-            { id: 'initial-liq' },
-          );
+          toast.error(parseContractError(liqErr), { id: 'initial-liq' });
         }
       }
 
@@ -404,10 +401,7 @@ export default function CreatePoolForm({
       onPoolCreated?.();
       setTimeout(() => setTxStatus('idle'), 3000);
     } catch (err: unknown) {
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to create pool',
-        { id: 'create-orbital' },
-      );
+      toast.error(parseContractError(err), { id: 'create-orbital' });
       setTxStatus('idle');
     }
   }, [

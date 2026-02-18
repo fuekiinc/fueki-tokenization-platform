@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import logger from '../lib/logger';
 import { showError } from '../lib/errorUtils';
 import clsx from 'clsx';
 import {
@@ -29,7 +30,7 @@ import { ethers } from 'ethers';
 import { ContractService } from '../lib/blockchain/contracts.ts';
 import { useWallet } from '../hooks/useWallet.ts';
 import { getProvider } from '../store/walletStore.ts';
-import { useAssetStore } from '../store/assetStore.ts';
+import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
 import { Modal, Button, EmptyState } from '../components/Common/index.ts';
 import { formatBalance, formatAddress, copyToClipboard } from '../lib/utils/helpers.ts';
@@ -48,6 +49,8 @@ import PortfolioValueChart from '../components/Charts/PortfolioValueChart.tsx';
 import HoldingsTable from '../components/DataViz/HoldingsTable.tsx';
 import TransactionHistory from '../components/DataViz/TransactionHistory.tsx';
 import PerformanceMetrics from '../components/DataViz/PerformanceMetrics.tsx';
+import { ComponentErrorBoundary } from '../components/ErrorBoundary';
+import { ErrorState } from '../components/Common/StateDisplays';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -147,7 +150,7 @@ function SkeletonCard() {
     <div
       role="status"
       aria-label="Loading asset card"
-      className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-7 sm:p-9"
+      className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-4 sm:p-7 md:p-9"
     >
       <span className="sr-only">Loading asset...</span>
       <div className="flex items-start gap-4">
@@ -182,7 +185,7 @@ function SkeletonStatCard() {
     <div
       role="status"
       aria-label="Loading stat"
-      className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-7 sm:p-9"
+      className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-4 sm:p-7 md:p-9"
     >
       <span className="sr-only">Loading...</span>
       <div className="flex items-center gap-3">
@@ -303,7 +306,7 @@ function AssetGridCard({
       {/* Top gradient hover line */}
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" aria-hidden="true" />
 
-      <div className="p-7 sm:p-9">
+      <div className="p-4 sm:p-7 md:p-9">
         {/* Header row */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
@@ -331,7 +334,7 @@ function AssetGridCard({
           {docType && (
             <span
               className={clsx(
-                'inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide',
+                'inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide',
                 getDocBadgeClasses(asset.documentType ?? ''),
               )}
             >
@@ -443,7 +446,7 @@ function AssetGridCard({
             }}
             aria-label={`View ${asset.name} on block explorer`}
             className={clsx(
-              'flex items-center justify-center rounded-xl px-3.5 py-3',
+              'flex items-center justify-center rounded-xl px-3.5 py-3 min-h-[44px] min-w-[44px]',
               'border border-white/[0.06] bg-white/[0.03] text-gray-500',
               'transition-all duration-200 hover:border-white/[0.10] hover:bg-white/[0.06] hover:text-gray-300',
               'focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1 focus-visible:ring-offset-[#0D0F14]',
@@ -505,6 +508,7 @@ export default function PortfolioPage() {
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [expandedAsset, setExpandedAsset] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // ---- Grid virtualizer ref ------------------------------------------------
 
@@ -533,12 +537,18 @@ export default function PortfolioPage() {
     if (!isConnected || !address || !chainId) return;
 
     const provider = getProvider();
-    if (!provider) return;
+    if (!provider) {
+      setFetchError('Wallet provider not available. Please reconnect your wallet.');
+      return;
+    }
 
+    setFetchError(null);
+    const gen = nextAssetFetchGeneration();
     setLoadingAssets(true);
     try {
       const service = new ContractService(provider, chainId);
       const assetAddresses = await service.getUserAssets(address);
+      if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
 
       const assets: WrappedAsset[] = await Promise.all(
         assetAddresses.map(async (addr) => {
@@ -556,11 +566,13 @@ export default function PortfolioPage() {
           };
         }),
       );
+      if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
 
       setAssets(assets);
     } catch (err) {
-      console.error('Failed to fetch portfolio assets:', err);
+      logger.error('Failed to fetch portfolio assets:', err);
       showError(err, 'Failed to load portfolio');
+      setFetchError('Failed to load portfolio data. Please try again.');
     } finally {
       setLoadingAssets(false);
     }
@@ -887,6 +899,19 @@ export default function PortfolioPage() {
     );
   }
 
+  // ---- Error state (failed to load portfolio) ------------------------------
+
+  if (fetchError && !isLoadingAssets && wrappedAssets.length === 0) {
+    return (
+      <div className="w-full pt-12">
+        <ErrorState
+          message={fetchError}
+          onRetry={() => void fetchAssets()}
+        />
+      </div>
+    );
+  }
+
   // ---- Connected -----------------------------------------------------------
 
   const portfolioValue = computePortfolioValue(wrappedAssets);
@@ -980,7 +1005,7 @@ export default function PortfolioPage() {
                 'relative overflow-hidden rounded-2xl',
                 'bg-[#0D0F14]/80 backdrop-blur-xl',
                 'border border-white/[0.06]',
-                'p-7 sm:p-9',
+                'p-4 sm:p-7 md:p-9',
                 'transition-all duration-300 ease-out',
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
@@ -1007,7 +1032,7 @@ export default function PortfolioPage() {
                 'relative overflow-hidden rounded-2xl',
                 'bg-[#0D0F14]/80 backdrop-blur-xl',
                 'border border-white/[0.06]',
-                'p-7 sm:p-9',
+                'p-4 sm:p-7 md:p-9',
                 'transition-all duration-300 ease-out',
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
@@ -1033,7 +1058,7 @@ export default function PortfolioPage() {
                 'relative overflow-hidden rounded-2xl',
                 'bg-[#0D0F14]/80 backdrop-blur-xl',
                 'border border-white/[0.06]',
-                'p-7 sm:p-9',
+                'p-4 sm:p-7 md:p-9',
                 'transition-all duration-300 ease-out',
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
@@ -1059,7 +1084,7 @@ export default function PortfolioPage() {
                 'relative overflow-hidden rounded-2xl',
                 'bg-[#0D0F14]/80 backdrop-blur-xl',
                 'border border-white/[0.06]',
-                'p-7 sm:p-9',
+                'p-4 sm:p-7 md:p-9',
                 'transition-all duration-300 ease-out',
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
@@ -1105,7 +1130,7 @@ export default function PortfolioPage() {
         <div
           className={clsx(
             'rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 backdrop-blur-xl',
-            'p-7 sm:p-9',
+            'p-4 sm:p-7 md:p-9',
           )}
         >
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
@@ -1198,6 +1223,7 @@ export default function PortfolioPage() {
       {/* ================================================================== */}
       {/* Asset Display -- Grid or Table                                     */}
       {/* ================================================================== */}
+      <ComponentErrorBoundary name="AssetList">
       {viewMode === 'list' ? (
         /* Table view using the HoldingsTable sub-component */
         <div className="mb-12 sm:mb-16">
@@ -1315,6 +1341,7 @@ export default function PortfolioPage() {
           </div>
         </div>
       )}
+      </ComponentErrorBoundary>
 
       {/* ================================================================== */}
       {/* Transaction History Section                                        */}

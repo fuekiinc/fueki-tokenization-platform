@@ -28,6 +28,7 @@ import {
 import type { PendingTransaction } from '../../lib/transactionRecovery';
 import { useWalletStore, getProvider } from '../../store/walletStore';
 import { SUPPORTED_NETWORKS } from '../../contracts/addresses';
+import logger from '../../lib/logger';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -206,7 +207,7 @@ export default function PendingTransactions() {
         }
       }
     } catch (err) {
-      console.error('[PendingTransactions] status check failed:', err);
+      logger.error('[PendingTransactions] status check failed:', err);
     } finally {
       setIsChecking(false);
     }

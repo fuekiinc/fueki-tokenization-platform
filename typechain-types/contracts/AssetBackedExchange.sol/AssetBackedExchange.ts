@@ -69,7 +69,8 @@ export interface AssetBackedExchangeInterface extends Interface {
       | "ethBalances"
       | "fillOrder"
       | "fillOrderWithETH"
-      | "getActiveOrders"
+      | "getActiveOrders(address,address)"
+      | "getActiveOrders(address,address,uint256,uint256)"
       | "getOrder"
       | "getOrderCount"
       | "getUserOrders"
@@ -114,8 +115,12 @@ export interface AssetBackedExchangeInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "getActiveOrders",
+    functionFragment: "getActiveOrders(address,address)",
     values: [AddressLike, AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getActiveOrders(address,address,uint256,uint256)",
+    values: [AddressLike, AddressLike, BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "getOrder",
@@ -164,7 +169,11 @@ export interface AssetBackedExchangeInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "getActiveOrders",
+    functionFragment: "getActiveOrders(address,address)",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "getActiveOrders(address,address,uint256,uint256)",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "getOrder", data: BytesLike): Result;
@@ -350,8 +359,19 @@ export interface AssetBackedExchange extends BaseContract {
     "payable"
   >;
 
-  getActiveOrders: TypedContractMethod<
+  "getActiveOrders(address,address)": TypedContractMethod<
     [tokenSell: AddressLike, tokenBuy: AddressLike],
+    [AssetBackedExchange.OrderStructOutput[]],
+    "view"
+  >;
+
+  "getActiveOrders(address,address,uint256,uint256)": TypedContractMethod<
+    [
+      tokenSell: AddressLike,
+      tokenBuy: AddressLike,
+      offset: BigNumberish,
+      limit: BigNumberish
+    ],
     [AssetBackedExchange.OrderStructOutput[]],
     "view"
   >;
@@ -413,9 +433,21 @@ export interface AssetBackedExchange extends BaseContract {
     nameOrSignature: "fillOrderWithETH"
   ): TypedContractMethod<[orderId: BigNumberish], [void], "payable">;
   getFunction(
-    nameOrSignature: "getActiveOrders"
+    nameOrSignature: "getActiveOrders(address,address)"
   ): TypedContractMethod<
     [tokenSell: AddressLike, tokenBuy: AddressLike],
+    [AssetBackedExchange.OrderStructOutput[]],
+    "view"
+  >;
+  getFunction(
+    nameOrSignature: "getActiveOrders(address,address,uint256,uint256)"
+  ): TypedContractMethod<
+    [
+      tokenSell: AddressLike,
+      tokenBuy: AddressLike,
+      offset: BigNumberish,
+      limit: BigNumberish
+    ],
     [AssetBackedExchange.OrderStructOutput[]],
     "view"
   >;

@@ -9,9 +9,10 @@ import {
   Layers,
 } from 'lucide-react';
 import { ethers } from 'ethers';
+import logger from '../lib/logger';
 import { showError } from '../lib/errorUtils';
 import { useWalletStore, getProvider } from '../store/walletStore.ts';
-import { useAssetStore } from '../store/assetStore.ts';
+import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
 import { useExchangeStore } from '../store/exchangeStore.ts';
 import { useWallet } from '../hooks/useWallet';
@@ -20,22 +21,24 @@ import { formatAddress, copyToClipboard } from '../lib/utils/helpers';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
 
 // Dashboard sub-components
-import AssetGrid from '../components/Dashboard/AssetGrid';
+import StatsGrid from '../components/Dashboard/StatsGrid';
 import RecentActivity from '../components/Dashboard/RecentActivity';
 import QuickActions from '../components/Dashboard/QuickActions';
 import PortfolioChart from '../components/Dashboard/PortfolioChart';
 import ValueChart from '../components/Dashboard/ValueChart';
 import DashboardSkeleton from '../components/Dashboard/DashboardSkeleton';
+import { ErrorState } from '../components/Common/StateDisplays';
+import { ComponentErrorBoundary } from '../components/ErrorBoundary';
+import { CARD_CLASSES } from '../lib/designTokens';
 
 // ---------------------------------------------------------------------------
-// Shared glass morphism style tokens
+// Shared glass morphism style tokens (from design system)
 // ---------------------------------------------------------------------------
 
-const GLASS =
-  'bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl';
+const GLASS = CARD_CLASSES.base;
 
 const GLASS_HOVER =
-  'hover:border-white/[0.12] hover:shadow-lg hover:shadow-black/20 transition-all duration-300';
+  'hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20 transition-all duration-300';
 
 // ---------------------------------------------------------------------------
 // Feature card for the not-connected hero
@@ -59,7 +62,7 @@ function FeatureCard({
       className={clsx(
         GLASS,
         GLASS_HOVER,
-        'group relative overflow-hidden p-10 text-center',
+        'group relative overflow-hidden p-6 sm:p-10 text-center',
       )}
     >
       {/* Background glow */}
@@ -79,7 +82,7 @@ function FeatureCard({
         >
           <Icon className="h-7 w-7" style={{ color: gradientFrom }} />
         </div>
-        <h3 className="mb-3 text-lg font-semibold text-white">{title}</h3>
+        <h2 className="mb-3 text-lg font-semibold text-white">{title}</h2>
         <p className="text-sm leading-relaxed text-gray-400">{description}</p>
       </div>
     </div>
@@ -113,6 +116,8 @@ export default function DashboardPage() {
 
   // Track whether the initial data fetch is still in progress
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  // Track critical load failure for inline error display
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // ---- Data fetching -------------------------------------------------------
 
@@ -128,6 +133,8 @@ export default function DashboardPage() {
   }, [tradeHistory]);
 
   const fetchData = useCallback(async () => {
+    setLoadError(null);
+
     if (!isConnected || !address || !chainId) {
       setIsInitialLoading(false);
       return;
@@ -136,6 +143,7 @@ export default function DashboardPage() {
     const provider = getProvider();
     if (!provider) {
       setIsInitialLoading(false);
+      setLoadError('Wallet provider not available. Please reconnect your wallet.');
       return;
     }
 
@@ -145,13 +153,16 @@ export default function DashboardPage() {
     } catch (error) {
       showError(error, 'Failed to initialize contracts');
       setIsInitialLoading(false);
+      setLoadError('Failed to initialize contracts. Please check your network connection.');
       return;
     }
 
     // Fetch assets
+    const gen = nextAssetFetchGeneration();
     setLoadingAssets(true);
     try {
       const totalAssetCount = await service.getTotalAssets();
+      if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
       if (totalAssetCount === 0n) {
         setAssets([]);
       } else {
@@ -161,6 +172,7 @@ export default function DashboardPage() {
         } catch (error) {
           showError(error, 'Failed to fetch your assets');
         }
+        if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
 
         const knownAddresses = new Set<string>([
           ...userAssetAddresses,
@@ -186,10 +198,11 @@ export default function DashboardPage() {
                 originalValue: details.originalValue.toString(),
               });
             } catch (error) {
-              console.warn(`Skipping asset ${addr}:`, error);
+              logger.warn(`Skipping asset ${addr}:`, error);
             }
           }),
         );
+        if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
         setAssets(assetList);
       }
     } catch (error) {
@@ -369,7 +382,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ---- Hero content ---- */}
-        <div className="relative z-10 flex flex-col items-center justify-center px-8 py-28 text-center sm:px-12 lg:py-36">
+        <div className="relative z-10 flex flex-col items-center justify-center px-4 py-16 text-center sm:px-8 md:px-12 md:py-28 lg:py-36">
           <div className="mb-4 flex items-center gap-2.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600">
               <Layers className="h-5 w-5 text-white" />
@@ -383,7 +396,7 @@ export default function DashboardPage() {
             Institutional-Grade Asset Tokenization
           </p>
 
-          <h1 className="mx-auto max-w-3xl text-4xl font-extrabold leading-tight text-white sm:text-5xl lg:text-6xl">
+          <h1 className="mx-auto max-w-3xl text-3xl font-extrabold leading-tight text-white sm:text-4xl md:text-5xl lg:text-6xl">
             Tokenize, Trade &{' '}
             <span className="bg-gradient-to-r from-blue-400 via-violet-400 to-cyan-400 bg-clip-text text-transparent">
               Verify
@@ -396,7 +409,7 @@ export default function DashboardPage() {
             decentralized exchange. Every action is transparent and on-chain.
           </p>
 
-          <div className="mx-auto mt-24 grid w-full max-w-4xl grid-cols-1 gap-8 sm:grid-cols-3 sm:gap-10">
+          <div className="mx-auto mt-12 sm:mt-24 grid w-full max-w-4xl grid-cols-1 gap-5 sm:grid-cols-3 sm:gap-10">
             <FeatureCard
               icon={FileText}
               title="Tokenize Assets"
@@ -452,6 +465,19 @@ export default function DashboardPage() {
     return <DashboardSkeleton />;
   }
 
+  // ---- Error state (data failed to load) -----------------------------------
+
+  if (loadError && wrappedAssets.length === 0) {
+    return (
+      <div className="w-full pt-12">
+        <ErrorState
+          message={loadError}
+          onRetry={() => void fetchData()}
+        />
+      </div>
+    );
+  }
+
   // ---- Connected state -----------------------------------------------------
 
   const networkName = getNetworkName(chainId);
@@ -461,7 +487,7 @@ export default function DashboardPage() {
       {/* ================================================================== */}
       {/* Page Header -- Vercel / Linear style: title left, wallet right    */}
       {/* ================================================================== */}
-      <div className="mb-12 sm:mb-10">
+      <div className="mb-8 sm:mb-10">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           {/* Left: title + subtitle */}
           <div className="min-w-0">
@@ -501,7 +527,7 @@ export default function DashboardPage() {
               )}
             >
               <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="absolute inline-flex h-full w-full animate-ping motion-reduce:animate-none rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
               </span>
               <span className="text-sm font-medium text-gray-300">
@@ -527,36 +553,45 @@ export default function DashboardPage() {
         </div>
 
         {/* Separator line */}
-        <div className="mt-10 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
+        <div className="mt-8 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
       </div>
 
       {/* ================================================================== */}
-      {/* Stats Row -- 4 cards in a spacious grid                           */}
+      {/* Stats Row -- 4 metric cards (4 col desktop, 2 tablet, 1 mobile)  */}
       {/* ================================================================== */}
-      <AssetGrid
-        wrappedAssets={wrappedAssets}
-        userOrders={userOrders}
-        tradeHistory={tradeHistory}
-      />
+      <ComponentErrorBoundary name="StatsGrid">
+        <StatsGrid
+          wrappedAssets={wrappedAssets}
+          userOrders={userOrders}
+          tradeHistory={tradeHistory}
+        />
+      </ComponentErrorBoundary>
 
       {/* ================================================================== */}
-      {/* Charts Row -- two columns with generous spacing                   */}
+      {/* Charts Row -- two columns side by side                            */}
       {/* ================================================================== */}
-      <div className="mt-12 grid grid-cols-1 gap-8 sm:mt-16 sm:gap-10 lg:grid-cols-2">
-        <PortfolioChart assets={wrappedAssets} />
-        <ValueChart tradeHistory={tradeHistory} />
+      <div className="mt-8 grid grid-cols-1 gap-6 sm:mt-10 sm:gap-8 lg:grid-cols-2">
+        <ComponentErrorBoundary name="PortfolioChart">
+          <PortfolioChart assets={wrappedAssets} />
+        </ComponentErrorBoundary>
+        <ComponentErrorBoundary name="ValueChart">
+          <ValueChart tradeHistory={tradeHistory} />
+        </ComponentErrorBoundary>
       </div>
 
       {/* ================================================================== */}
-      {/* Activity + Quick Actions                                          */}
+      {/* Activity feed -- full width below charts                          */}
       {/* ================================================================== */}
-      <div className="mt-12 grid grid-cols-1 gap-8 sm:mt-16 sm:gap-10 lg:grid-cols-3">
-        {/* Activity feed -- takes 2/3 width on large screens */}
-        <div className="lg:col-span-2">
-          <RecentActivity trades={tradeHistory} />
-        </div>
+      <div className="mt-8 sm:mt-10">
+        <ComponentErrorBoundary name="ActivityFeed">
+          <RecentActivity trades={tradeHistory} chainId={chainId} />
+        </ComponentErrorBoundary>
+      </div>
 
-        {/* Quick actions sidebar */}
+      {/* ================================================================== */}
+      {/* Quick Actions -- full width at bottom                             */}
+      {/* ================================================================== */}
+      <div className="mt-8 sm:mt-10">
         <QuickActions />
       </div>
     </div>

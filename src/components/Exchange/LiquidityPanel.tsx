@@ -22,11 +22,12 @@ import {
   Fuel,
 } from 'lucide-react';
 import type { WrappedAsset } from '../../types';
-import { ContractService, isETH } from '../../lib/blockchain/contracts';
+import { ContractService, isETH, parseContractError } from '../../lib/blockchain/contracts';
 import type { Pool } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPercent, formatPrice } from '../../lib/formatters';
+import { txSubmittedToast, txConfirmedToast, txFailedToast } from '../../lib/utils/txToast';
 import TokenSelector from './TokenSelector';
 
 // ---------------------------------------------------------------------------
@@ -174,6 +175,10 @@ export default function LiquidityPanel({
     } catch { return 0n; }
   }, [removeAmount]);
 
+  // ---- Slippage tolerance (1% = 100 bps) ----------------------------------
+
+  const SLIPPAGE_BPS = 100n; // 1%
+
   // ---- Pool share preview -------------------------------------------------
 
   const sharePreview = useMemo(() => {
@@ -209,15 +214,16 @@ export default function LiquidityPanel({
   const handleCreatePool = useCallback(async () => {
     if (!contractService || !tokenA || !tokenB) return;
     setTxStatus('submitting');
+    const liqChainId = chainId ?? 31337;
     try {
       const tx = await contractService.createPool(tokenA, tokenB);
-      toast.loading('Creating pool...', { id: 'create-pool' });
+      txSubmittedToast(tx.hash, liqChainId, 'Creating pool...');
       await contractService.waitForTransaction(tx);
-      toast.success('Pool created!', { id: 'create-pool' });
+      txConfirmedToast(tx.hash, 'Pool created!');
       setTxStatus('confirmed');
       setTimeout(() => { setTxStatus('idle'); onLiquidityChanged(); }, 2000);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create pool', { id: 'create-pool' });
+      toast.error(parseContractError(err), { id: 'create-pool' });
       setTxStatus('idle');
     }
   }, [contractService, tokenA, tokenB, onLiquidityChanged]);
@@ -229,19 +235,21 @@ export default function LiquidityPanel({
     const config = chainId ? getNetworkConfig(chainId) : null;
     const ammAddress = config?.ammAddress;
 
+    const liqChainId = chainId ?? 31337;
+
     // Approve tokenA if not ETH
     if (!tokenAIsETH && ammAddress) {
       setTxStatus('approving-a');
       try {
         const allowA = await contractService.getAssetAllowance(tokenA, userAddress, ammAddress);
         if (allowA < parsedAmountA) {
-          const tx = await contractService.approveAMM(tokenA, parsedAmountA);
-          toast.loading('Approving token A...', { id: 'approve-a' });
-          await contractService.waitForTransaction(tx);
-          toast.success('Token A approved', { id: 'approve-a' });
+          const approveTxA = await contractService.approveAMM(tokenA, parsedAmountA);
+          txSubmittedToast(approveTxA.hash, liqChainId, `Approving ${tokenLabel(tokenA)}...`);
+          await contractService.waitForTransaction(approveTxA);
+          txConfirmedToast(approveTxA.hash, `${tokenLabel(tokenA)} approved for pool`);
         }
       } catch (err: unknown) {
-        toast.error(err instanceof Error ? err.message : 'Approval failed', { id: 'approve-a' });
+        toast.error(parseContractError(err));
         setTxStatus('idle');
         return;
       }
@@ -253,13 +261,13 @@ export default function LiquidityPanel({
       try {
         const allowB = await contractService.getAssetAllowance(tokenB, userAddress, ammAddress);
         if (allowB < parsedAmountB) {
-          const tx = await contractService.approveAMM(tokenB, parsedAmountB);
-          toast.loading('Approving token B...', { id: 'approve-b' });
-          await contractService.waitForTransaction(tx);
-          toast.success('Token B approved', { id: 'approve-b' });
+          const approveTxB = await contractService.approveAMM(tokenB, parsedAmountB);
+          txSubmittedToast(approveTxB.hash, liqChainId, `Approving ${tokenLabel(tokenB)}...`);
+          await contractService.waitForTransaction(approveTxB);
+          txConfirmedToast(approveTxB.hash, `${tokenLabel(tokenB)} approved for pool`);
         }
       } catch (err: unknown) {
-        toast.error(err instanceof Error ? err.message : 'Approval failed', { id: 'approve-b' });
+        toast.error(parseContractError(err));
         setTxStatus('idle');
         return;
       }
@@ -267,53 +275,85 @@ export default function LiquidityPanel({
 
     // Add liquidity
     setTxStatus('submitting');
+    let submittedAddHash: string | null = null;
     try {
+      // Calculate minimum LP tokens with slippage protection
+      let expectedLp = 0n;
+      if (pool && pool.totalLiquidity > 0n && pool.reserve0 > 0n && pool.reserve1 > 0n) {
+        const lp0 = (parsedAmountA * pool.totalLiquidity) / pool.reserve0;
+        const lp1 = (parsedAmountB * pool.totalLiquidity) / pool.reserve1;
+        expectedLp = lp0 < lp1 ? lp0 : lp1;
+      }
+      const minLiquidity = expectedLp - (expectedLp * SLIPPAGE_BPS) / 10000n;
+
       let tx;
       if (tokenAIsETH) {
-        tx = await contractService.addLiquidityETH(tokenB, parsedAmountB, 0n, parsedAmountA);
+        tx = await contractService.addLiquidityETH(tokenB, parsedAmountB, minLiquidity, parsedAmountA);
       } else if (tokenBIsETH) {
-        tx = await contractService.addLiquidityETH(tokenA, parsedAmountA, 0n, parsedAmountB);
+        tx = await contractService.addLiquidityETH(tokenA, parsedAmountA, minLiquidity, parsedAmountB);
       } else {
-        tx = await contractService.addLiquidity(tokenA, tokenB, parsedAmountA, parsedAmountB, 0n);
+        tx = await contractService.addLiquidity(tokenA, tokenB, parsedAmountA, parsedAmountB, minLiquidity);
       }
-      toast.loading('Adding liquidity...', { id: 'add-liq' });
+      submittedAddHash = tx.hash;
+      txSubmittedToast(tx.hash, liqChainId, 'Adding liquidity...');
       await contractService.waitForTransaction(tx);
-      toast.success('Liquidity added!', { id: 'add-liq' });
+      txConfirmedToast(tx.hash, 'Liquidity added!');
       setTxStatus('confirmed');
       setAmountA('');
       setAmountB('');
       setTimeout(() => { setTxStatus('idle'); onLiquidityChanged(); }, 2000);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add liquidity', { id: 'add-liq' });
+      if (submittedAddHash) {
+        txFailedToast(submittedAddHash, parseContractError(err));
+      } else {
+        toast.error(parseContractError(err));
+      }
       setTxStatus('idle');
     }
-  }, [contractService, tokenA, tokenB, parsedAmountA, parsedAmountB, tokenAIsETH, tokenBIsETH, userAddress, chainId, txStatus, onLiquidityChanged]);
+  }, [contractService, tokenA, tokenB, parsedAmountA, parsedAmountB, tokenAIsETH, tokenBIsETH, userAddress, chainId, txStatus, onLiquidityChanged, tokenLabel]);
 
   const handleRemoveLiquidity = useCallback(async () => {
     if (!contractService || !tokenA || !tokenB || parsedRemoveAmount === 0n) return;
     if (txStatus !== 'idle') return;
 
+    const liqChainId = chainId ?? 31337;
     setTxStatus('submitting');
+    let submittedRemoveHash: string | null = null;
     try {
+      // Calculate minimum output amounts with slippage protection
+      let expectedA = 0n;
+      let expectedB = 0n;
+      if (pool && pool.totalLiquidity > 0n) {
+        expectedA = (parsedRemoveAmount * pool.reserve0) / pool.totalLiquidity;
+        expectedB = (parsedRemoveAmount * pool.reserve1) / pool.totalLiquidity;
+      }
+      const minA = expectedA - (expectedA * SLIPPAGE_BPS) / 10000n;
+      const minB = expectedB - (expectedB * SLIPPAGE_BPS) / 10000n;
+
       let tx;
       if (tokenAIsETH) {
-        tx = await contractService.removeLiquidityETH(tokenB, parsedRemoveAmount, 0n, 0n);
+        tx = await contractService.removeLiquidityETH(tokenB, parsedRemoveAmount, minB, minA);
       } else if (tokenBIsETH) {
-        tx = await contractService.removeLiquidityETH(tokenA, parsedRemoveAmount, 0n, 0n);
+        tx = await contractService.removeLiquidityETH(tokenA, parsedRemoveAmount, minA, minB);
       } else {
-        tx = await contractService.removeLiquidity(tokenA, tokenB, parsedRemoveAmount, 0n, 0n);
+        tx = await contractService.removeLiquidity(tokenA, tokenB, parsedRemoveAmount, minA, minB);
       }
-      toast.loading('Removing liquidity...', { id: 'remove-liq' });
+      submittedRemoveHash = tx.hash;
+      txSubmittedToast(tx.hash, liqChainId, 'Removing liquidity...');
       await contractService.waitForTransaction(tx);
-      toast.success('Liquidity removed!', { id: 'remove-liq' });
+      txConfirmedToast(tx.hash, 'Liquidity removed!');
       setTxStatus('confirmed');
       setRemoveAmount('');
       setTimeout(() => { setTxStatus('idle'); onLiquidityChanged(); }, 2000);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove liquidity', { id: 'remove-liq' });
+      if (submittedRemoveHash) {
+        txFailedToast(submittedRemoveHash, parseContractError(err));
+      } else {
+        toast.error(parseContractError(err));
+      }
       setTxStatus('idle');
     }
-  }, [contractService, tokenA, tokenB, parsedRemoveAmount, tokenAIsETH, tokenBIsETH, txStatus, onLiquidityChanged]);
+  }, [contractService, tokenA, tokenB, parsedRemoveAmount, tokenAIsETH, tokenBIsETH, txStatus, chainId, onLiquidityChanged]);
 
   // ---- Render -------------------------------------------------------------
 
@@ -337,7 +377,7 @@ export default function LiquidityPanel({
           )}
         >
           <Plus className="h-3.5 w-3.5" />
-          Add
+          Add Liquidity
         </button>
         <button
           type="button"
@@ -355,7 +395,7 @@ export default function LiquidityPanel({
           )}
         >
           <Minus className="h-3.5 w-3.5" />
-          Remove
+          Remove Liquidity
         </button>
       </div>
 
@@ -438,7 +478,9 @@ export default function LiquidityPanel({
         <div role="tabpanel" id="liq-panel-add" aria-labelledby="liq-tab-add" className="space-y-4">
           {/* Amount A */}
           <div>
-            <label className="mb-1.5 block text-xs text-gray-500">Amount A</label>
+            <label className="mb-1.5 block text-xs text-gray-500">
+              Amount A {tokenA ? `(${tokenLabel(tokenA)})` : ''}
+            </label>
             <input
               type="text"
               inputMode="decimal"
@@ -454,18 +496,29 @@ export default function LiquidityPanel({
                 'placeholder:text-gray-600',
                 'focus:border-white/[0.12] focus:outline-none focus:ring-1 focus:ring-white/[0.08]',
                 'transition-all',
+                parsedAmountA > 0n && parsedAmountA > balanceA && 'border-red-500/50 focus:border-red-500/70 focus:ring-red-500/20',
               )}
             />
             {tokenA && (
-              <div className="mt-1.5 text-[11px] text-gray-500">
-                Balance: <span className="font-mono text-gray-400">{formatBalance(balanceA, 18, 6)}</span>
+              <div className="mt-1.5 flex items-center justify-between text-[11px]">
+                <span className="text-gray-500">
+                  Balance: <span className="font-mono text-gray-400">{formatBalance(balanceA, 18, 6)}</span>
+                </span>
+                {parsedAmountA > 0n && parsedAmountA > balanceA && (
+                  <span className="flex items-center gap-1 text-red-400">
+                    <AlertCircle className="h-3 w-3" />
+                    Insufficient balance
+                  </span>
+                )}
               </div>
             )}
           </div>
 
           {/* Amount B */}
           <div>
-            <label className="mb-1.5 block text-xs text-gray-500">Amount B</label>
+            <label className="mb-1.5 block text-xs text-gray-500">
+              Amount B {tokenB ? `(${tokenLabel(tokenB)})` : ''}
+            </label>
             <input
               type="text"
               inputMode="decimal"
@@ -481,14 +534,33 @@ export default function LiquidityPanel({
                 'placeholder:text-gray-600',
                 'focus:border-white/[0.12] focus:outline-none focus:ring-1 focus:ring-white/[0.08]',
                 'transition-all',
+                parsedAmountB > 0n && parsedAmountB > balanceB && 'border-red-500/50 focus:border-red-500/70 focus:ring-red-500/20',
               )}
             />
             {tokenB && (
-              <div className="mt-1.5 text-[11px] text-gray-500">
-                Balance: <span className="font-mono text-gray-400">{formatBalance(balanceB, 18, 6)}</span>
+              <div className="mt-1.5 flex items-center justify-between text-[11px]">
+                <span className="text-gray-500">
+                  Balance: <span className="font-mono text-gray-400">{formatBalance(balanceB, 18, 6)}</span>
+                </span>
+                {parsedAmountB > 0n && parsedAmountB > balanceB && (
+                  <span className="flex items-center gap-1 text-red-400">
+                    <AlertCircle className="h-3 w-3" />
+                    Insufficient balance
+                  </span>
+                )}
               </div>
             )}
           </div>
+
+          {/* Pool ratio hint when adding to existing pool */}
+          {pool && pool.reserve0 > 0n && pool.reserve1 > 0n && (
+            <div className="flex items-center justify-between rounded-lg bg-indigo-500/5 border border-indigo-500/10 px-3 py-2 sm:px-4 sm:py-2.5 text-xs">
+              <span className="text-gray-400">Current Pool Ratio</span>
+              <span className="font-mono text-indigo-400">
+                1 {tokenLabel(pool.token0)} = {formatPrice(Number(pool.reserve1) / Number(pool.reserve0))} {tokenLabel(pool.token1)}
+              </span>
+            </div>
+          )}
 
           {/* Pool share preview */}
           {sharePreview !== null && (
@@ -507,10 +579,10 @@ export default function LiquidityPanel({
           )}
 
           {/* Add liquidity button */}
-          <button
-            type="button"
-            onClick={handleAddLiquidity}
-            disabled={
+          {(() => {
+            const insufficientA = parsedAmountA > 0n && parsedAmountA > balanceA;
+            const insufficientB = parsedAmountB > 0n && parsedAmountB > balanceB;
+            const isDisabled =
               !contractService ||
               !tokenA ||
               !tokenB ||
@@ -518,28 +590,44 @@ export default function LiquidityPanel({
               pool === null ||
               parsedAmountA === 0n ||
               parsedAmountB === 0n ||
-              (txStatus !== 'idle' && txStatus !== 'confirmed')
-            }
-            className={clsx(
-              'flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-semibold transition-all min-h-[44px]',
-              txStatus === 'confirmed'
-                ? 'bg-emerald-500/20 text-emerald-400'
-                : 'bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-[0_0_20px_rgba(168,85,247,0.15)] hover:shadow-[0_0_30px_rgba(168,85,247,0.25)]',
-              'disabled:cursor-not-allowed disabled:opacity-40',
-            )}
-          >
-            {txStatus === 'approving-a' ? (
-              <><Loader2 className="h-4 w-4 animate-spin" /> Approving Token A...</>
-            ) : txStatus === 'approving-b' ? (
-              <><Loader2 className="h-4 w-4 animate-spin" /> Approving Token B...</>
-            ) : txStatus === 'submitting' ? (
-              <><Loader2 className="h-4 w-4 animate-spin" /> Adding Liquidity...</>
-            ) : txStatus === 'confirmed' ? (
-              <><Check className="h-4 w-4" /> Liquidity Added!</>
-            ) : (
-              <><Droplets className="h-4 w-4" /> Add Liquidity</>
-            )}
-          </button>
+              insufficientA ||
+              insufficientB ||
+              (txStatus !== 'idle' && txStatus !== 'confirmed');
+
+            // Determine button label with clear reason
+            let addLabel = 'Add Liquidity';
+            if (txStatus === 'approving-a') addLabel = 'Approving Token A...';
+            else if (txStatus === 'approving-b') addLabel = 'Approving Token B...';
+            else if (txStatus === 'submitting') addLabel = 'Adding Liquidity...';
+            else if (txStatus === 'confirmed') addLabel = 'Liquidity Added!';
+            else if (!tokenA || !tokenB) addLabel = 'Select both tokens';
+            else if (pool === null) addLabel = 'Create pool first';
+            else if (parsedAmountA === 0n || parsedAmountB === 0n) addLabel = 'Enter amounts';
+            else if (insufficientA) addLabel = `Insufficient ${tokenLabel(tokenA)} balance`;
+            else if (insufficientB) addLabel = `Insufficient ${tokenLabel(tokenB)} balance`;
+
+            return (
+              <button
+                type="button"
+                onClick={handleAddLiquidity}
+                disabled={isDisabled}
+                className={clsx(
+                  'flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-semibold transition-all min-h-[44px]',
+                  txStatus === 'confirmed'
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : 'bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-[0_0_20px_rgba(168,85,247,0.15)] hover:shadow-[0_0_30px_rgba(168,85,247,0.25)]',
+                  'disabled:cursor-not-allowed disabled:opacity-40',
+                )}
+              >
+                {(txStatus === 'approving-a' || txStatus === 'approving-b' || txStatus === 'submitting') && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                {txStatus === 'confirmed' && <Check className="h-4 w-4" />}
+                {txStatus === 'idle' && <Droplets className="h-4 w-4" />}
+                {addLabel}
+              </button>
+            );
+          })()}
         </div>
       )}
 
@@ -638,10 +726,22 @@ export default function LiquidityPanel({
               <><Loader2 className="h-4 w-4 animate-spin" /> Removing...</>
             ) : txStatus === 'confirmed' ? (
               <><Check className="h-4 w-4" /> Removed!</>
+            ) : parsedRemoveAmount === 0n ? (
+              'Enter amount to remove'
+            ) : parsedRemoveAmount > lpBalance ? (
+              'Exceeds LP balance'
             ) : (
               <><Minus className="h-4 w-4" /> Remove Liquidity</>
             )}
           </button>
+
+          {/* Exceeds LP balance inline warning */}
+          {parsedRemoveAmount > 0n && parsedRemoveAmount > lpBalance && (
+            <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2.5 text-xs text-red-400" role="alert">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              Amount exceeds your LP balance.
+            </div>
+          )}
         </div>
       )}
     </div>

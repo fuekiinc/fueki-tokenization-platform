@@ -50,7 +50,7 @@ const FEATURES: FeatureCard[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Market overview placeholder items
+// Market overview items
 // ---------------------------------------------------------------------------
 
 interface MarketItem {
@@ -171,7 +171,7 @@ export default function ExplorePage() {
         </section>
 
         {/* ---------------------------------------------------------------- */}
-        {/* Market Overview (placeholder structure)                           */}
+        {/* Market Overview                                                    */}
         {/* ---------------------------------------------------------------- */}
         <section className="px-4 py-12 sm:py-16 max-w-5xl mx-auto">
           <h2 className="text-2xl sm:text-3xl font-bold text-[var(--text-primary)] text-center mb-4">

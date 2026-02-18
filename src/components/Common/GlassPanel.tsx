@@ -1,6 +1,7 @@
 import { forwardRef } from 'react';
 import type { ElementType, ComponentPropsWithRef } from 'react';
 import clsx from 'clsx';
+import { CARD_CLASSES } from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -15,7 +16,7 @@ import clsx from 'clsx';
 interface GlassPanelOwnProps<T extends ElementType = 'div'> {
   /** The element type to render. Defaults to `'div'`. */
   as?: T;
-  /** Tailwind padding class(es). Defaults to `'p-6'`. */
+  /** Tailwind padding class(es). Defaults to `'p-7 sm:p-9'`. */
   padding?: string;
   /** Additional CSS class names merged via clsx. */
   className?: string;
@@ -32,9 +33,9 @@ type GlassPanelProps<T extends ElementType = 'div'> = GlassPanelOwnProps<T> &
 /**
  * Reusable glass-morphism panel that matches the platform's design system.
  *
- * Uses the same visual treatment found on LoginPage and SignupPage cards:
- *   - Semi-transparent secondary background with backdrop blur
- *   - Primary border, generous rounding, and a deep shadow
+ * Uses the same visual treatment found across all pages:
+ *   - Semi-transparent secondary background (#0D0F14/80) with backdrop blur
+ *   - Primary border (white/[0.06]), consistent rounded-2xl, and a deep shadow
  *
  * @example
  * ```tsx
@@ -49,7 +50,7 @@ type GlassPanelProps<T extends ElementType = 'div'> = GlassPanelOwnProps<T> &
  * ```
  */
 const GlassPanel = forwardRef<HTMLDivElement, GlassPanelProps>(function GlassPanel(
-  { as, padding = 'p-6', className, children, ...rest },
+  { as, padding = 'p-7 sm:p-9', className, children, ...rest },
   ref,
 ) {
   const Component: ElementType = as ?? 'div';
@@ -58,9 +59,8 @@ const GlassPanel = forwardRef<HTMLDivElement, GlassPanelProps>(function GlassPan
     <Component
       ref={ref}
       className={clsx(
-        'bg-[var(--bg-secondary)]/80 backdrop-blur-2xl',
-        'border border-[var(--border-primary)]',
-        'rounded-3xl shadow-2xl shadow-black/20',
+        CARD_CLASSES.base,
+        CARD_CLASSES.shadow,
         padding,
         className,
       )}

@@ -1,5 +1,6 @@
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
+import logger from '../../lib/logger';
 
 // ---------------------------------------------------------------------------
 // Props & State
@@ -54,8 +55,7 @@ export class ComponentErrorBoundary extends Component<
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     const label = this.props.name ? ` [${this.props.name}]` : '';
-    // In production, send this to an error tracking service (Sentry, Datadog).
-    console.error(
+    logger.error(
       `ComponentErrorBoundary${label} caught an error:`,
       error,
       info.componentStack,

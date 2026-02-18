@@ -37,9 +37,10 @@ class ErrorBoundary extends Component<{ children: ReactNode }, EBState> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    // In production, this should send to an error tracking service
-    // (e.g. Sentry, Datadog) rather than just logging to console.
-    console.error('React ErrorBoundary caught:', error, info)
+    datadogRum.addError(error, {
+      source: 'ErrorBoundary',
+      componentStack: info.componentStack ?? '',
+    });
   }
 
   private handleRetry = () => {

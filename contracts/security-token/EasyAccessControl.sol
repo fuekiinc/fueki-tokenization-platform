@@ -63,12 +63,12 @@ contract EasyAccessControl {
     @param role bitmask of role/roles to revoke
   **/
   function revokeRole(address addr, uint8 role) public validRole(role) validAddress(addr) onlyContractAdmin  {
-    require(hasRole(addr, role), "CAN NOT REVOKE ROLE");
+    require((admins[addr] & role) == role, "Address does not have specified roles");
     if ( role & CONTRACT_ADMIN_ROLE > 0 ) {
       require( contractAdminCount > 1, "Must have at least one contract admin" );
       contractAdminCount--;
     }
-    admins[addr] ^= role;
+    admins[addr] &= ~role;
     emit RoleChange(msg.sender, addr, role, false);
   }
 

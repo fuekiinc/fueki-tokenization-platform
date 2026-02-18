@@ -26,10 +26,13 @@ import {
   Wallet,
 } from 'lucide-react';
 import { OrbitalContractService } from '../../lib/blockchain/orbitalContracts';
+import { parseContractError } from '../../lib/blockchain/contracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPercent } from '../../lib/formatters';
+import { txSubmittedToast, txConfirmedToast, txFailedToast } from '../../lib/utils/txToast';
 import { InfoTooltip } from '../Common/Tooltip';
 import { TOOLTIPS } from '../../lib/tooltipContent';
+import logger from '../../lib/logger';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -108,6 +111,25 @@ export default function LiquidityPanel({
   const [showSlippage, setShowSlippage] = useState(false);
   const [txStatus, setTxStatus] = useState<TxStatus>('idle');
 
+  // ---- Chain ID for txToast explorer links -----------------------------------
+
+  const [chainId, setChainId] = useState<number | null>(null);
+
+  useEffect(() => {
+    async function resolveChainId() {
+      if (!contractService) return;
+      try {
+        const signer = await contractService.getSigner();
+        const provider = signer.provider;
+        if (provider) {
+          const network = await provider.getNetwork();
+          setChainId(Number(network.chainId));
+        }
+      } catch { /* ignore */ }
+    }
+    void resolveChainId();
+  }, [contractService]);
+
   // ---- Timer ref for status reset -------------------------------------------
 
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -154,7 +176,7 @@ export default function LiquidityPanel({
               swapFeeBps: Number(info.swapFeeBps),
             });
           } catch (err) {
-            console.error(`Failed to load pool ${addr}:`, err);
+            logger.error(`Failed to load pool ${addr}:`, err);
           }
         }),
       );
@@ -171,8 +193,8 @@ export default function LiquidityPanel({
         }
       }
     } catch (err) {
-      console.error('Failed to load pools:', err);
-      toast.error('Failed to load liquidity pools');
+      logger.error('Failed to load pools:', err);
+      toast.error('Unable to load liquidity pools. Check your connection and try again.');
     } finally {
       setLoadingPools(false);
     }
@@ -300,6 +322,8 @@ export default function LiquidityPanel({
     if (!contractService || !selectedPool || !anyAddAmount) return;
     if (txStatus !== 'idle' && txStatus !== 'confirmed') return;
 
+    const orbChainId = chainId ?? 31337;
+
     // 1. Approve all tokens for the ROUTER (which does transferFrom)
     setTxStatus('approving');
     const routerAddress = contractService.getRouterAddress();
@@ -315,19 +339,16 @@ export default function LiquidityPanel({
           routerAddress,
         );
         if (allowance < amount) {
-          const toastId = `approve-${token.symbol}`;
-          toast.loading(`Approving ${token.symbol}...`, { id: toastId });
-          const tx = await contractService.approveRouter(
+          const approveTx = await contractService.approveRouter(
             token.address,
             amount,
           );
-          await contractService.waitForTransaction(tx);
-          toast.success(`${token.symbol} approved`, { id: toastId });
+          txSubmittedToast(approveTx.hash, orbChainId, `Approving ${token.symbol}...`);
+          await contractService.waitForTransaction(approveTx);
+          txConfirmedToast(approveTx.hash, `${token.symbol} approved`);
         }
       } catch (err: unknown) {
-        toast.error(
-          err instanceof Error ? err.message : `Failed to approve ${token.symbol}`,
-        );
+        toast.error(parseContractError(err));
         setTxStatus('idle');
         return;
       }
@@ -335,6 +356,7 @@ export default function LiquidityPanel({
 
     // 2. Add liquidity
     setTxStatus('submitting');
+    let submittedAddHash: string | null = null;
     try {
       const amounts = parsedAddAmounts.map((a) => (a > 0n ? a : 0n));
 
@@ -364,15 +386,16 @@ export default function LiquidityPanel({
 
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
 
-      toast.loading('Adding liquidity...', { id: 'add-orbital-liq' });
       const tx = await contractService.addLiquidity(
         selectedPool.address,
         amounts,
         minLiquidity,
         deadline,
       );
+      submittedAddHash = tx.hash;
+      txSubmittedToast(tx.hash, orbChainId, 'Adding liquidity...');
       await contractService.waitForTransaction(tx);
-      toast.success('Liquidity added!', { id: 'add-orbital-liq' });
+      txConfirmedToast(tx.hash, 'Liquidity added!');
       setTxStatus('confirmed');
       setAddAmounts(selectedPool.tokens.map(() => ''));
       onLiquidityChanged?.();
@@ -381,10 +404,11 @@ export default function LiquidityPanel({
       clearTimeout(statusTimerRef.current);
       statusTimerRef.current = setTimeout(() => setTxStatus('idle'), 2500);
     } catch (err: unknown) {
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to add liquidity',
-        { id: 'add-orbital-liq' },
-      );
+      if (submittedAddHash) {
+        txFailedToast(submittedAddHash, parseContractError(err));
+      } else {
+        toast.error(parseContractError(err));
+      }
       setTxStatus('idle');
     }
   }, [
@@ -425,10 +449,7 @@ export default function LiquidityPanel({
         toast.success('LP tokens approved', { id: 'approve-lp' });
       }
     } catch (err: unknown) {
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to approve LP tokens',
-        { id: 'approve-lp' },
-      );
+      toast.error(parseContractError(err), { id: 'approve-lp' });
       setTxStatus('idle');
       return;
     }
@@ -461,10 +482,7 @@ export default function LiquidityPanel({
       clearTimeout(statusTimerRef.current);
       statusTimerRef.current = setTimeout(() => setTxStatus('idle'), 2500);
     } catch (err: unknown) {
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to remove liquidity',
-        { id: 'remove-orbital-liq' },
-      );
+      toast.error(parseContractError(err), { id: 'remove-orbital-liq' });
       setTxStatus('idle');
     }
   }, [contractService, selectedPool, parsedRemoveAmount, slippageBps, txStatus, userAddress, onLiquidityChanged, fetchPools]);
@@ -567,7 +585,7 @@ export default function LiquidityPanel({
               )}
             >
               <Plus className="h-3.5 w-3.5" />
-              Add
+              Add Liquidity
             </button>
             <button
               type="button"

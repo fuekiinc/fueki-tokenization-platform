@@ -62,9 +62,10 @@ contract Dividends is IDividends, RestrictedLockupToken {
 
     uint256 amount = tokensAt(token, snapshotId);
 
-    IERC20(token).safeTransfer(msg.sender, amount);
-
+    // CEI: update state before external call
     tokensFunded[snapshotId][token].unused -= amount;
+
+    IERC20(token).safeTransfer(msg.sender, amount);
 
     emit Withdrawn(msg.sender, token, amount, snapshotId);
   }
@@ -156,11 +157,11 @@ contract Dividends is IDividends, RestrictedLockupToken {
 
     require(unclaimedBalance > 0, "YOU CAN`T RECEIVE MORE TOKENS");
 
-    IERC20(token).safeTransfer(msg.sender, unclaimedBalance);
-
+    // CEI: update state before external call
     claimedTokens[snapshotId][token][msg.sender] += unclaimedBalance;
-
     tokensFunded[snapshotId][token].unused -= unclaimedBalance;
+
+    IERC20(token).safeTransfer(msg.sender, unclaimedBalance);
 
     emit Claimed(msg.sender, token, unclaimedBalance, snapshotId);
   }

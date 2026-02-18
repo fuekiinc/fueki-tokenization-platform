@@ -422,7 +422,7 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
       {showDetails && (
         <div
           className={clsx(
-            'absolute z-50 mt-2 w-80 origin-top-right rounded-2xl shadow-2xl',
+            'absolute z-50 mt-2 w-[calc(100vw-2rem)] sm:w-80 origin-top-right rounded-2xl shadow-2xl',
             'border border-white/[0.06] bg-[#0D0F14]/95 backdrop-blur-xl',
             'animate-scale-in',
             compact ? 'left-0 right-0 w-full' : 'right-0',
@@ -794,7 +794,7 @@ export default function Navbar() {
           'border-b border-white/[0.04]',
         )}
       >
-        <div className="mx-auto max-w-[1920px] px-8 sm:px-12 lg:px-20 xl:px-32">
+        <div className="mx-auto max-w-[1920px] px-4 sm:px-8 md:px-12 lg:px-20 xl:px-32">
           <div className="flex h-20 items-center justify-between">
 
             {/* ---- Left: Logo + Nav Links ---- */}
@@ -878,7 +878,7 @@ export default function Navbar() {
                 type="button"
                 onClick={() => setMobileMenuOpen((prev) => !prev)}
                 className={clsx(
-                  'rounded-xl p-2.5 transition-all duration-200 lg:hidden',
+                  'rounded-xl p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center transition-all duration-200 lg:hidden',
                   'text-gray-400 hover:bg-white/[0.06] hover:text-white',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50',
                 )}

@@ -129,7 +129,13 @@ library OrbitalMath {
     ///         wadSqrt(x) = sqrt(x * WAD) so that wadSqrt(4e18) = 2e18.
     function wadSqrt(uint256 x) internal pure returns (uint256) {
         if (x == 0) return 0;
-        return sqrt(x * WAD);
+        // Safe path: x * WAD won't overflow
+        if (x <= type(uint256).max / WAD) {
+            return sqrt(x * WAD);
+        }
+        // Large x path: sqrt(x * WAD) = sqrt(x) * sqrt(WAD)
+        // sqrt(1e18) = 1e9
+        return sqrt(x) * 1e9;
     }
 
     /// @notice Compute x^(1/2) in WAD.

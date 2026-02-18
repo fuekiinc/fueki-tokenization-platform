@@ -212,13 +212,14 @@ export default function LoginPage() {
               'transition-all duration-200',
               'disabled:opacity-50 disabled:cursor-not-allowed',
               'shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:shadow-indigo-500/30',
+              'focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-secondary)]',
               'active:scale-[0.98]',
               'mt-8',
             )}
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <Loader2 className="h-5 w-5 animate-spin motion-reduce:animate-none" />
                 <span>Signing in...</span>
               </>
             ) : (

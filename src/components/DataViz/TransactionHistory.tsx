@@ -175,7 +175,7 @@ export default function TransactionHistory({
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
 
       {/* Header */}
-      <div className="flex items-center justify-between px-7 py-5 sm:px-9 border-b border-white/[0.06]">
+      <div className="flex items-center justify-between px-4 py-4 sm:px-7 sm:py-5 md:px-9 border-b border-white/[0.06]">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/10 border border-indigo-500/[0.08]">
             <Clock className="h-4 w-4 text-indigo-400" aria-hidden="true" />
@@ -195,7 +195,7 @@ export default function TransactionHistory({
           <div
             key={trade.id}
             role="listitem"
-            className="flex items-center gap-4 px-7 py-5 sm:px-9 border-b border-white/[0.04] last:border-b-0 transition-colors hover:bg-white/[0.02]"
+            className="flex items-center gap-3 sm:gap-4 px-4 py-4 sm:px-7 sm:py-5 md:px-9 border-b border-white/[0.04] last:border-b-0 transition-colors hover:bg-white/[0.02]"
           >
             {/* Type icon */}
             <div

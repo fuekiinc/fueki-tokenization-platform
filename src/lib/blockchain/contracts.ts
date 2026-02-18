@@ -18,6 +18,7 @@ import { LiquidityPoolAMMABI } from '../../contracts/abis/LiquidityPoolAMM.ts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { multicall, multicallSameTarget } from './multicall.ts';
 import type { MulticallRequest, MulticallResult } from './multicall.ts';
+import { getCached, setCache, invalidateCache, invalidateCacheForAsset } from './rpcCache.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -108,6 +109,84 @@ export function isETH(address: string | null): boolean {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Parse a contract/RPC error into a concise, user-friendly message.
+ *
+ * ethers v6 wraps Solidity revert reasons, custom errors, and RPC failures
+ * inside nested error objects.  This function digs out the actionable reason
+ * and maps common patterns to clear text.
+ */
+export function parseContractError(err: unknown): string {
+  // 1. Try to extract the Solidity revert reason from ethers v6 error types.
+  const revertReason =
+    (err as { reason?: string })?.reason ??
+    (err as { error?: { message?: string } })?.error?.message ??
+    (err as { data?: { message?: string } })?.data?.message;
+
+  // 2. Map known Solidity revert strings / custom error names.
+  const reason = revertReason ?? (err instanceof Error ? err.message : String(err));
+
+  // User rejected from wallet
+  if (/user (rejected|denied)|ACTION_REJECTED/i.test(reason)) {
+    return 'Transaction was rejected in your wallet.';
+  }
+
+  // Insufficient funds / balance
+  if (/insufficient funds|INSUFFICIENT_FUNDS/i.test(reason)) {
+    return 'Insufficient funds to cover the transaction and gas fees.';
+  }
+
+  // Nonce too low (stale nonce from pending tx)
+  if (/nonce.*too low|NONCE_EXPIRED/i.test(reason)) {
+    return 'Transaction nonce conflict. Please wait for your pending transaction to confirm, then try again.';
+  }
+
+  // Gas estimation failed (generic revert without reason string)
+  if (/cannot estimate gas|UNPREDICTABLE_GAS_LIMIT/i.test(reason)) {
+    return 'Transaction would fail on-chain. Please check your inputs and balances.';
+  }
+
+  // RPC rate limiting
+  if (/rate limit|429|too many requests/i.test(reason)) {
+    return 'Network is busy (rate limited). Please wait a moment and try again.';
+  }
+
+  // RPC timeout
+  if (/timeout|ETIMEDOUT|ECONNREFUSED/i.test(reason)) {
+    return 'Network request timed out. Please check your internet connection and try again.';
+  }
+
+  // Revert with reason string
+  if (/execution reverted/i.test(reason)) {
+    // Try to extract the actual revert string
+    const revertMatch = reason.match(/reverted(?:\s+with\s+reason\s+string\s+)?['":]?\s*(.+?)['"]?$/i);
+    if (revertMatch && revertMatch[1]) {
+      const cleanReason = revertMatch[1].replace(/^['"]|['"]$/g, '').trim();
+      if (cleanReason.length > 0 && cleanReason.length < 200) {
+        return `Transaction reverted: ${cleanReason}`;
+      }
+    }
+    return 'Transaction would revert on-chain. Please check your inputs and try again.';
+  }
+
+  // Transfer amount exceeds balance
+  if (/transfer amount exceeds balance|ERC20InsufficientBalance/i.test(reason)) {
+    return 'Token transfer amount exceeds your available balance.';
+  }
+
+  // Allowance exceeded
+  if (/insufficient allowance|ERC20InsufficientAllowance/i.test(reason)) {
+    return 'Token allowance is insufficient. Please approve a higher amount.';
+  }
+
+  // Fallback: return the reason if it is short enough, otherwise generic
+  if (reason && reason.length < 200 && !reason.includes('0x')) {
+    return reason;
+  }
+
+  return 'Transaction failed. Please try again or check your wallet for details.';
+}
 
 /**
  * Encode a document hash string into a bytes32 value suitable for the
@@ -304,7 +383,7 @@ export class ContractService {
     // arbitrary label) into a proper bytes32 value.
     const encodedHash = encodeDocumentHash(documentHash);
 
-    return this.executeWrite(factory, 'createWrappedAsset', [
+    const tx = await this.executeWrite(factory, 'createWrappedAsset', [
       name,
       symbol,
       encodedHash,
@@ -313,6 +392,8 @@ export class ContractService {
       mintAmount,
       recipient,
     ]);
+    invalidateCache('factory:');
+    return tx;
   }
 
   // -----------------------------------------------------------------------
@@ -322,9 +403,14 @@ export class ContractService {
   /** Retrieve all asset contract addresses created by a specific user. */
   async getUserAssets(userAddress: string): Promise<string[]> {
     this.validateAddress(userAddress, 'user');
+    const cacheKey = `factory:assets:${userAddress}`;
+    const cached = getCached<string[]>(cacheKey);
+    if (cached) return cached;
     const factory = this.getFactoryContract();
     try {
-      return await factory.getUserAssets(userAddress);
+      const result = await factory.getUserAssets(userAddress);
+      setCache(cacheKey, result as string[]);
+      return result;
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch user assets for ${userAddress}: ${error instanceof Error ? error.message : String(error)}`,
@@ -334,9 +420,14 @@ export class ContractService {
 
   /** Retrieve the total number of assets created through the factory. */
   async getTotalAssets(): Promise<bigint> {
+    const cacheKey = 'factory:totalAssets';
+    const cached = getCached<bigint>(cacheKey);
+    if (cached !== undefined) return cached;
     const factory = this.getFactoryContract();
     try {
-      return await factory.getTotalAssets();
+      const result: bigint = await factory.getTotalAssets();
+      setCache(cacheKey, result);
+      return result;
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch total assets: ${error instanceof Error ? error.message : String(error)}`,
@@ -369,6 +460,9 @@ export class ContractService {
     assetAddress: string,
   ): Promise<FactoryAssetDetails> {
     this.validateAddress(assetAddress, 'asset');
+    const cacheKey = `asset:${assetAddress}:factoryDetails`;
+    const cached = getCached<FactoryAssetDetails>(cacheKey);
+    if (cached) return cached;
 
     try {
       // Batch all token property reads into a single RPC call via Multicall3.
@@ -406,7 +500,7 @@ export class ContractService {
         // Event resolution is best-effort; creator defaults to zero address.
       }
 
-      return {
+      const result: FactoryAssetDetails = {
         creator,
         assetAddress,
         name,
@@ -416,6 +510,8 @@ export class ContractService {
         originalValue,
         totalSupply,
       };
+      setCache(cacheKey, result);
+      return result;
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch asset details for ${assetAddress}: ${error instanceof Error ? error.message : String(error)}`,
@@ -430,6 +526,9 @@ export class ContractService {
   /** Aggregate key details directly from a WrappedAsset token contract. */
   async getAssetDetails(assetAddress: string): Promise<AssetDetails> {
     this.validateAddress(assetAddress, 'asset');
+    const cacheKey = `asset:${assetAddress}:details`;
+    const cached = getCached<AssetDetails>(cacheKey);
+    if (cached) return cached;
     try {
       // Batch all property reads into a single RPC call via Multicall3.
       const results = await multicallSameTarget(
@@ -446,7 +545,7 @@ export class ContractService {
         ],
       );
 
-      return {
+      const result: AssetDetails = {
         name: results[0].success ? (results[0].data as string) : '',
         symbol: results[1].success ? (results[1].data as string) : '',
         totalSupply: results[2].success ? BigInt(results[2].data as bigint) : 0n,
@@ -454,6 +553,8 @@ export class ContractService {
         documentType: results[4].success ? (results[4].data as string) : '',
         originalValue: results[5].success ? BigInt(results[5].data as bigint) : 0n,
       };
+      setCache(cacheKey, result);
+      return result;
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch asset details for ${assetAddress}: ${error instanceof Error ? error.message : String(error)}`,
@@ -471,48 +572,54 @@ export class ContractService {
   ): Promise<(AssetDetails | null)[]> {
     if (assetAddresses.length === 0) return [];
 
-    const fields = ['name', 'symbol', 'totalSupply', 'documentHash', 'documentType', 'originalValue'] as const;
-    const requests: MulticallRequest[] = [];
+    try {
+      const fields = ['name', 'symbol', 'totalSupply', 'documentHash', 'documentType', 'originalValue'] as const;
+      const requests: MulticallRequest[] = [];
 
-    for (const addr of assetAddresses) {
-      for (const fn of fields) {
-        requests.push({
-          target: addr,
-          abi: WrappedAssetABI,
-          functionName: fn,
+      for (const addr of assetAddresses) {
+        for (const fn of fields) {
+          requests.push({
+            target: addr,
+            abi: WrappedAssetABI,
+            functionName: fn,
+          });
+        }
+      }
+
+      const results: MulticallResult[] = await multicall(this.provider, requests);
+      const assets: (AssetDetails | null)[] = [];
+
+      for (let i = 0; i < assetAddresses.length; i++) {
+        const offset = i * fields.length;
+        const nameResult = results[offset];
+        const symbolResult = results[offset + 1];
+        const totalSupplyResult = results[offset + 2];
+        const docHashResult = results[offset + 3];
+        const docTypeResult = results[offset + 4];
+        const origValueResult = results[offset + 5];
+
+        // If the first call (name) failed, the address is likely invalid.
+        if (!nameResult.success) {
+          assets.push(null);
+          continue;
+        }
+
+        assets.push({
+          name: nameResult.data as string,
+          symbol: symbolResult.success ? (symbolResult.data as string) : '',
+          totalSupply: totalSupplyResult.success ? BigInt(totalSupplyResult.data as bigint) : 0n,
+          documentHash: docHashResult.success ? (docHashResult.data as string) : '',
+          documentType: docTypeResult.success ? (docTypeResult.data as string) : '',
+          originalValue: origValueResult.success ? BigInt(origValueResult.data as bigint) : 0n,
         });
       }
+
+      return assets;
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch asset details: ${parseContractError(error)}`,
+      );
     }
-
-    const results: MulticallResult[] = await multicall(this.provider, requests);
-    const assets: (AssetDetails | null)[] = [];
-
-    for (let i = 0; i < assetAddresses.length; i++) {
-      const offset = i * fields.length;
-      const nameResult = results[offset];
-      const symbolResult = results[offset + 1];
-      const totalSupplyResult = results[offset + 2];
-      const docHashResult = results[offset + 3];
-      const docTypeResult = results[offset + 4];
-      const origValueResult = results[offset + 5];
-
-      // If the first call (name) failed, the address is likely invalid.
-      if (!nameResult.success) {
-        assets.push(null);
-        continue;
-      }
-
-      assets.push({
-        name: nameResult.data as string,
-        symbol: symbolResult.success ? (symbolResult.data as string) : '',
-        totalSupply: totalSupplyResult.success ? BigInt(totalSupplyResult.data as bigint) : 0n,
-        documentHash: docHashResult.success ? (docHashResult.data as string) : '',
-        documentType: docTypeResult.success ? (docTypeResult.data as string) : '',
-        originalValue: origValueResult.success ? BigInt(origValueResult.data as bigint) : 0n,
-      });
-    }
-
-    return assets;
   }
 
   /** Get the token balance of a specific address for a WrappedAsset. */
@@ -522,9 +629,14 @@ export class ContractService {
   ): Promise<bigint> {
     this.validateAddress(assetAddress, 'asset');
     this.validateAddress(userAddress, 'user');
+    const cacheKey = `asset:${assetAddress}:balance:${userAddress}`;
+    const cached = getCached<bigint>(cacheKey);
+    if (cached !== undefined) return cached;
     const asset = this.getAssetContract(assetAddress);
     try {
-      return await asset.balanceOf(userAddress);
+      const result: bigint = await asset.balanceOf(userAddress);
+      setCache(cacheKey, result);
+      return result;
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch balance for ${userAddress} on ${assetAddress}: ${error instanceof Error ? error.message : String(error)}`,
@@ -541,9 +653,14 @@ export class ContractService {
     this.validateAddress(assetAddress, 'asset');
     this.validateAddress(ownerAddress, 'owner');
     this.validateAddress(spenderAddress, 'spender');
+    const cacheKey = `asset:${assetAddress}:allowance:${ownerAddress}:${spenderAddress}`;
+    const cached = getCached<bigint>(cacheKey);
+    if (cached !== undefined) return cached;
     const asset = this.getAssetContract(assetAddress);
     try {
-      return await asset.allowance(ownerAddress, spenderAddress);
+      const result: bigint = await asset.allowance(ownerAddress, spenderAddress);
+      setCache(cacheKey, result);
+      return result;
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch allowance for ${ownerAddress}->${spenderAddress} on ${assetAddress}: ${error instanceof Error ? error.message : String(error)}`,
@@ -565,7 +682,9 @@ export class ContractService {
     this.validateAddress(to, 'recipient');
     const signer = await this.getSigner();
     const asset = this.getAssetContract(assetAddress, signer);
-    return this.executeWrite(asset, 'transfer', [to, amount]);
+    const tx = await this.executeWrite(asset, 'transfer', [to, amount]);
+    invalidateCacheForAsset(assetAddress);
+    return tx;
   }
 
   /** Approve a spender to transfer tokens on behalf of the connected wallet. */
@@ -578,7 +697,9 @@ export class ContractService {
     this.validateAddress(spender, 'spender');
     const signer = await this.getSigner();
     const asset = this.getAssetContract(assetAddress, signer);
-    return this.executeWrite(asset, 'approve', [spender, amount]);
+    const tx = await this.executeWrite(asset, 'approve', [spender, amount]);
+    invalidateCacheForAsset(assetAddress);
+    return tx;
   }
 
   /** Burn tokens from the connected wallet, permanently removing them. */
@@ -589,7 +710,9 @@ export class ContractService {
     this.validateAddress(assetAddress, 'asset');
     const signer = await this.getSigner();
     const asset = this.getAssetContract(assetAddress, signer);
-    return this.executeWrite(asset, 'burn', [amount]);
+    const tx = await this.executeWrite(asset, 'burn', [amount]);
+    invalidateCacheForAsset(assetAddress);
+    return tx;
   }
 
   // -----------------------------------------------------------------------
@@ -612,12 +735,15 @@ export class ContractService {
     this.validateAddress(tokenBuy, 'tokenBuy');
     const signer = await this.getSigner();
     const exchange = this.getExchangeContract(signer);
-    return this.executeWrite(exchange, 'createOrder', [
+    const tx = await this.executeWrite(exchange, 'createOrder', [
       tokenSell,
       tokenBuy,
       amountSell,
       amountBuy,
     ]);
+    invalidateCacheForAsset(tokenSell);
+    invalidateCacheForAsset(tokenBuy);
+    return tx;
   }
 
   /**
@@ -636,7 +762,9 @@ export class ContractService {
   ): Promise<ethers.ContractTransactionResponse> {
     const signer = await this.getSigner();
     const exchange = this.getExchangeContract(signer);
-    return this.executeWrite(exchange, 'fillOrder', [orderId, fillAmountBuy]);
+    const tx = await this.executeWrite(exchange, 'fillOrder', [orderId, fillAmountBuy]);
+    invalidateCache('asset:');
+    return tx;
   }
 
   /** Cancel an open order. Only the original maker can cancel. */
@@ -645,7 +773,9 @@ export class ContractService {
   ): Promise<ethers.ContractTransactionResponse> {
     const signer = await this.getSigner();
     const exchange = this.getExchangeContract(signer);
-    return this.executeWrite(exchange, 'cancelOrder', [orderId]);
+    const tx = await this.executeWrite(exchange, 'cancelOrder', [orderId]);
+    invalidateCache('asset:');
+    return tx;
   }
 
   // -----------------------------------------------------------------------
@@ -738,7 +868,7 @@ export class ContractService {
 
     const encodedHash = encodeDocumentHash(documentHash);
 
-    return this.executeWrite(factory, 'createSecurityToken', [
+    const tx = await this.executeWrite(factory, 'createSecurityToken', [
       rulesBytecode,
       swapBytecode,
       name,
@@ -752,6 +882,8 @@ export class ContractService {
       minTimelockAmount,
       maxReleaseDelay,
     ]);
+    invalidateCache('factory:');
+    return tx;
   }
 
   // -----------------------------------------------------------------------
@@ -762,34 +894,57 @@ export class ContractService {
   async getUserSecurityTokens(userAddress: string): Promise<string[]> {
     this.validateAddress(userAddress, 'user');
     const factory = this.getSecurityTokenFactoryContract();
-    return await factory.getUserTokens(userAddress);
+    try {
+      return await factory.getUserTokens(userAddress);
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch security tokens for user: ${parseContractError(error)}`,
+      );
+    }
   }
 
   /** Get total number of security tokens deployed through the factory. */
   async getTotalSecurityTokens(): Promise<bigint> {
     const factory = this.getSecurityTokenFactoryContract();
-    return await factory.getTotalTokens();
+    try {
+      return await factory.getTotalTokens();
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch total security tokens: ${parseContractError(error)}`,
+      );
+    }
   }
 
   /** Get full details of a security token by its address. */
   async getSecurityTokenDetails(tokenAddress: string): Promise<SecurityTokenDetails> {
     this.validateAddress(tokenAddress, 'token');
+    const cacheKey = `asset:${tokenAddress}:securityDetails`;
+    const cached = getCached<SecurityTokenDetails>(cacheKey);
+    if (cached) return cached;
     const factory = this.getSecurityTokenFactoryContract();
-    const raw = await factory.getTokenDetails(tokenAddress);
-    return {
-      tokenAddress: raw.tokenAddress,
-      transferRulesAddress: raw.transferRulesAddress,
-      creator: raw.creator,
-      name: raw.name,
-      symbol: raw.symbol,
-      decimals: Number(raw.decimals),
-      totalSupply: BigInt(raw.totalSupply),
-      maxTotalSupply: BigInt(raw.maxTotalSupply),
-      documentHash: raw.documentHash,
-      documentType: raw.documentType,
-      originalValue: BigInt(raw.originalValue),
-      createdAt: BigInt(raw.createdAt),
-    };
+    try {
+      const raw = await factory.getTokenDetails(tokenAddress);
+      const result: SecurityTokenDetails = {
+        tokenAddress: raw.tokenAddress ?? tokenAddress,
+        transferRulesAddress: raw.transferRulesAddress ?? ethers.ZeroAddress,
+        creator: raw.creator ?? ethers.ZeroAddress,
+        name: raw.name ?? '',
+        symbol: raw.symbol ?? '',
+        decimals: Number(raw.decimals ?? 18),
+        totalSupply: BigInt(raw.totalSupply ?? 0),
+        maxTotalSupply: BigInt(raw.maxTotalSupply ?? 0),
+        documentHash: raw.documentHash ?? '',
+        documentType: raw.documentType ?? '',
+        originalValue: BigInt(raw.originalValue ?? 0),
+        createdAt: BigInt(raw.createdAt ?? 0),
+      };
+      setCache(cacheKey, result);
+      return result;
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch security token details: ${parseContractError(error)}`,
+      );
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -801,7 +956,13 @@ export class ContractService {
     this.validateAddress(tokenAddress, 'token');
     this.validateAddress(userAddress, 'user');
     const token = this.getSecurityTokenContract(tokenAddress);
-    return await token.balanceOf(userAddress);
+    try {
+      return await token.balanceOf(userAddress);
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch security token balance: ${parseContractError(error)}`,
+      );
+    }
   }
 
   /** Get the unlocked (transferable) balance of a security token. */
@@ -809,7 +970,13 @@ export class ContractService {
     this.validateAddress(tokenAddress, 'token');
     this.validateAddress(userAddress, 'user');
     const token = this.getSecurityTokenContract(tokenAddress);
-    return await token.unlockedBalanceOf(userAddress);
+    try {
+      return await token.unlockedBalanceOf(userAddress);
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch unlocked balance: ${parseContractError(error)}`,
+      );
+    }
   }
 
   /** Get the locked balance of a security token. */
@@ -817,7 +984,13 @@ export class ContractService {
     this.validateAddress(tokenAddress, 'token');
     this.validateAddress(userAddress, 'user');
     const token = this.getSecurityTokenContract(tokenAddress);
-    return await token.lockedAmountOf(userAddress);
+    try {
+      return await token.lockedAmountOf(userAddress);
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch locked balance: ${parseContractError(error)}`,
+      );
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -838,9 +1011,12 @@ export class ContractService {
     this.validateAddress(tokenBuy, 'tokenBuy');
     const signer = await this.getSigner();
     const exchange = this.getAssetBackedExchangeContract(signer);
-    return this.executeWrite(exchange, 'createOrder', [
+    const tx = await this.executeWrite(exchange, 'createOrder', [
       tokenSell, tokenBuy, amountSell, amountBuy,
     ]);
+    invalidateCacheForAsset(tokenSell);
+    invalidateCacheForAsset(tokenBuy);
+    return tx;
   }
 
   /**
@@ -854,9 +1030,11 @@ export class ContractService {
     this.validateAddress(tokenBuy, 'tokenBuy');
     const signer = await this.getSigner();
     const exchange = this.getAssetBackedExchangeContract(signer);
-    return this.executeWrite(exchange, 'createOrderSellETH', [tokenBuy, amountBuy], {
+    const tx = await this.executeWrite(exchange, 'createOrderSellETH', [tokenBuy, amountBuy], {
       value: ethAmount,
     });
+    invalidateCacheForAsset(tokenBuy);
+    return tx;
   }
 
   /** Fill an exchange order by providing the buy-side ERC-20 token. */
@@ -866,7 +1044,9 @@ export class ContractService {
   ): Promise<ethers.ContractTransactionResponse> {
     const signer = await this.getSigner();
     const exchange = this.getAssetBackedExchangeContract(signer);
-    return this.executeWrite(exchange, 'fillOrder', [orderId, fillAmountBuy]);
+    const tx = await this.executeWrite(exchange, 'fillOrder', [orderId, fillAmountBuy]);
+    invalidateCache('asset:');
+    return tx;
   }
 
   /** Fill an exchange order with native ETH (for orders where tokenBuy is ETH). */
@@ -876,9 +1056,11 @@ export class ContractService {
   ): Promise<ethers.ContractTransactionResponse> {
     const signer = await this.getSigner();
     const exchange = this.getAssetBackedExchangeContract(signer);
-    return this.executeWrite(exchange, 'fillOrderWithETH', [orderId], {
+    const tx = await this.executeWrite(exchange, 'fillOrderWithETH', [orderId], {
       value: ethAmount,
     });
+    invalidateCache('asset:');
+    return tx;
   }
 
   /** Cancel an exchange order on the asset-backed exchange. */
@@ -887,7 +1069,9 @@ export class ContractService {
   ): Promise<ethers.ContractTransactionResponse> {
     const signer = await this.getSigner();
     const exchange = this.getAssetBackedExchangeContract(signer);
-    return this.executeWrite(exchange, 'cancelOrder', [orderId]);
+    const tx = await this.executeWrite(exchange, 'cancelOrder', [orderId]);
+    invalidateCache('asset:');
+    return tx;
   }
 
   /** Withdraw credited ETH from cancelled sell-ETH orders. */
@@ -916,22 +1100,40 @@ export class ContractService {
   /** Get an order from the asset-backed exchange. */
   async getExchangeOrder(orderId: bigint): Promise<Order> {
     const exchange = this.getAssetBackedExchangeContract();
-    const raw = await exchange.getOrder(orderId);
-    return this.parseOrder(raw);
+    try {
+      const raw = await exchange.getOrder(orderId);
+      return this.parseOrder(raw);
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch order #${orderId}: ${parseContractError(error)}`,
+      );
+    }
   }
 
   /** Get all order IDs for a user on the asset-backed exchange. */
   async getExchangeUserOrders(userAddress: string): Promise<bigint[]> {
     this.validateAddress(userAddress, 'user');
     const exchange = this.getAssetBackedExchangeContract();
-    return await exchange.getUserOrders(userAddress);
+    try {
+      return await exchange.getUserOrders(userAddress);
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch your orders: ${parseContractError(error)}`,
+      );
+    }
   }
 
   /** Get active orders for a specific trading pair on the asset-backed exchange. */
   async getExchangeActiveOrders(tokenSell: string, tokenBuy: string): Promise<Order[]> {
     const exchange = this.getAssetBackedExchangeContract();
-    const raw = await exchange.getActiveOrders(tokenSell, tokenBuy);
-    return raw.map((r: Record<string, unknown>) => this.parseOrder(r));
+    try {
+      const raw = await exchange.getActiveOrders(tokenSell, tokenBuy);
+      return raw.map((r: Record<string, unknown>) => this.parseOrder(r));
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch active orders: ${parseContractError(error)}`,
+      );
+    }
   }
 
   /** Get order IDs that a user filled as a taker (via OrderFilled events). */
@@ -980,7 +1182,13 @@ export class ContractService {
   async getExchangeEthBalance(userAddress: string): Promise<bigint> {
     this.validateAddress(userAddress, 'user');
     const exchange = this.getAssetBackedExchangeContract();
-    return await exchange.ethBalances(userAddress);
+    try {
+      return await exchange.ethBalances(userAddress);
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch withdrawable ETH balance: ${parseContractError(error)}`,
+      );
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -1021,21 +1229,34 @@ export class ContractService {
     return this.executeWrite(amm, 'createPool', [tokenA, tokenB]);
   }
 
+  /** Default transaction deadline: 20 minutes from now (in seconds). */
+  private _defaultDeadline(): bigint {
+    return BigInt(Math.floor(Date.now() / 1000) + 1200);
+  }
+
   /** Add liquidity to an ERC-20 / ERC-20 pool. */
   async addLiquidity(
     tokenA: string,
     tokenB: string,
-    amountA: bigint,
-    amountB: bigint,
+    amountADesired: bigint,
+    amountBDesired: bigint,
     minLiquidity: bigint,
+    amountAMin: bigint = 0n,
+    amountBMin: bigint = 0n,
+    deadline?: bigint,
   ): Promise<ethers.ContractTransactionResponse> {
     this.validateAddress(tokenA, 'tokenA');
     this.validateAddress(tokenB, 'tokenB');
+    const dl = deadline ?? this._defaultDeadline();
     const signer = await this.getSigner();
     const amm = this.getAMMContract(signer);
-    return this.executeWrite(amm, 'addLiquidity', [
-      tokenA, tokenB, amountA, amountB, minLiquidity,
+    const tx = await this.executeWrite(amm, 'addLiquidity', [
+      tokenA, tokenB, amountADesired, amountBDesired, amountAMin, amountBMin, minLiquidity, dl,
     ]);
+    invalidateCacheForAsset(tokenA);
+    invalidateCacheForAsset(tokenB);
+    invalidateCache('amm:');
+    return tx;
   }
 
   /** Add liquidity to an ETH / ERC-20 pool. */
@@ -1044,13 +1265,18 @@ export class ContractService {
     amountToken: bigint,
     minLiquidity: bigint,
     ethAmount: bigint,
+    deadline?: bigint,
   ): Promise<ethers.ContractTransactionResponse> {
     this.validateAddress(token, 'token');
+    const dl = deadline ?? this._defaultDeadline();
     const signer = await this.getSigner();
     const amm = this.getAMMContract(signer);
-    return this.executeWrite(amm, 'addLiquidityETH', [
-      token, amountToken, minLiquidity,
+    const tx = await this.executeWrite(amm, 'addLiquidityETH', [
+      token, amountToken, minLiquidity, dl,
     ], { value: ethAmount });
+    invalidateCacheForAsset(token);
+    invalidateCache('amm:');
+    return tx;
   }
 
   /** Remove liquidity from an ERC-20 / ERC-20 pool. */
@@ -1060,14 +1286,20 @@ export class ContractService {
     liquidity: bigint,
     minA: bigint,
     minB: bigint,
+    deadline?: bigint,
   ): Promise<ethers.ContractTransactionResponse> {
     this.validateAddress(tokenA, 'tokenA');
     this.validateAddress(tokenB, 'tokenB');
+    const dl = deadline ?? this._defaultDeadline();
     const signer = await this.getSigner();
     const amm = this.getAMMContract(signer);
-    return this.executeWrite(amm, 'removeLiquidity', [
-      tokenA, tokenB, liquidity, minA, minB,
+    const tx = await this.executeWrite(amm, 'removeLiquidity', [
+      tokenA, tokenB, liquidity, minA, minB, dl,
     ]);
+    invalidateCacheForAsset(tokenA);
+    invalidateCacheForAsset(tokenB);
+    invalidateCache('amm:');
+    return tx;
   }
 
   /** Remove liquidity from an ETH / ERC-20 pool. */
@@ -1076,13 +1308,18 @@ export class ContractService {
     liquidity: bigint,
     minToken: bigint,
     minETH: bigint,
+    deadline?: bigint,
   ): Promise<ethers.ContractTransactionResponse> {
     this.validateAddress(token, 'token');
+    const dl = deadline ?? this._defaultDeadline();
     const signer = await this.getSigner();
     const amm = this.getAMMContract(signer);
-    return this.executeWrite(amm, 'removeLiquidityETH', [
-      token, liquidity, minToken, minETH,
+    const tx = await this.executeWrite(amm, 'removeLiquidityETH', [
+      token, liquidity, minToken, minETH, dl,
     ]);
+    invalidateCacheForAsset(token);
+    invalidateCache('amm:');
+    return tx;
   }
 
   /** Swap ERC-20 for ERC-20 through the AMM. */
@@ -1091,14 +1328,20 @@ export class ContractService {
     tokenOut: string,
     amountIn: bigint,
     minAmountOut: bigint,
+    deadline?: bigint,
   ): Promise<ethers.ContractTransactionResponse> {
     this.validateAddress(tokenIn, 'tokenIn');
     this.validateAddress(tokenOut, 'tokenOut');
+    const dl = deadline ?? this._defaultDeadline();
     const signer = await this.getSigner();
     const amm = this.getAMMContract(signer);
-    return this.executeWrite(amm, 'swap', [
-      tokenIn, tokenOut, amountIn, minAmountOut,
+    const tx = await this.executeWrite(amm, 'swap', [
+      tokenIn, tokenOut, amountIn, minAmountOut, dl,
     ]);
+    invalidateCacheForAsset(tokenIn);
+    invalidateCacheForAsset(tokenOut);
+    invalidateCache('amm:');
+    return tx;
   }
 
   /** Swap native ETH for an ERC-20 token via the AMM. */
@@ -1106,13 +1349,18 @@ export class ContractService {
     token: string,
     minAmountOut: bigint,
     ethAmount: bigint,
+    deadline?: bigint,
   ): Promise<ethers.ContractTransactionResponse> {
     this.validateAddress(token, 'token');
+    const dl = deadline ?? this._defaultDeadline();
     const signer = await this.getSigner();
     const amm = this.getAMMContract(signer);
-    return this.executeWrite(amm, 'swapETHForToken', [
-      token, minAmountOut,
+    const tx = await this.executeWrite(amm, 'swapETHForToken', [
+      token, minAmountOut, dl,
     ], { value: ethAmount });
+    invalidateCacheForAsset(token);
+    invalidateCache('amm:');
+    return tx;
   }
 
   /** Swap an ERC-20 token for native ETH via the AMM. */
@@ -1120,13 +1368,18 @@ export class ContractService {
     token: string,
     amountIn: bigint,
     minETH: bigint,
+    deadline?: bigint,
   ): Promise<ethers.ContractTransactionResponse> {
     this.validateAddress(token, 'token');
+    const dl = deadline ?? this._defaultDeadline();
     const signer = await this.getSigner();
     const amm = this.getAMMContract(signer);
-    return this.executeWrite(amm, 'swapTokenForETH', [
-      token, amountIn, minETH,
+    const tx = await this.executeWrite(amm, 'swapTokenForETH', [
+      token, amountIn, minETH, dl,
     ]);
+    invalidateCacheForAsset(token);
+    invalidateCache('amm:');
+    return tx;
   }
 
   /** Approve the AMM contract to spend a token. */
@@ -1156,16 +1409,27 @@ export class ContractService {
   async getAMMPool(tokenA: string, tokenB: string): Promise<Pool> {
     this.validateAddress(tokenA, 'tokenA');
     this.validateAddress(tokenB, 'tokenB');
+    const cacheKey = `amm:pool:${tokenA}:${tokenB}`;
+    const cached = getCached<Pool>(cacheKey);
+    if (cached) return cached;
     const amm = this.getAMMContract();
-    const raw = await amm.getPool(tokenA, tokenB);
-    return {
-      token0: raw.token0,
-      token1: raw.token1,
-      reserve0: BigInt(raw.reserve0),
-      reserve1: BigInt(raw.reserve1),
-      totalLiquidity: BigInt(raw.totalLiquidity),
-      kLast: BigInt(raw.kLast),
-    };
+    try {
+      const raw = await amm.getPool(tokenA, tokenB);
+      const result: Pool = {
+        token0: raw.token0 ?? ethers.ZeroAddress,
+        token1: raw.token1 ?? ethers.ZeroAddress,
+        reserve0: BigInt(raw.reserve0 ?? 0),
+        reserve1: BigInt(raw.reserve1 ?? 0),
+        totalLiquidity: BigInt(raw.totalLiquidity ?? 0),
+        kLast: BigInt(raw.kLast ?? 0),
+      };
+      setCache(cacheKey, result);
+      return result;
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch AMM pool data: ${parseContractError(error)}`,
+      );
+    }
   }
 
   /** Get LP balance for a user in a specific AMM pool. */
@@ -1178,7 +1442,13 @@ export class ContractService {
     this.validateAddress(tokenB, 'tokenB');
     this.validateAddress(provider, 'provider');
     const amm = this.getAMMContract();
-    return await amm.getLiquidityBalance(tokenA, tokenB, provider);
+    try {
+      return await amm.getLiquidityBalance(tokenA, tokenB, provider);
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch LP balance: ${parseContractError(error)}`,
+      );
+    }
   }
 
   /** Get expected output for a swap via the AMM. */
@@ -1190,14 +1460,26 @@ export class ContractService {
     this.validateAddress(tokenIn, 'tokenIn');
     this.validateAddress(tokenOut, 'tokenOut');
     const amm = this.getAMMContract();
-    return await amm.quote(tokenIn, tokenOut, amountIn);
+    try {
+      return await amm.quote(tokenIn, tokenOut, amountIn);
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to get swap quote: ${parseContractError(error)}`,
+      );
+    }
   }
 
   /** Get withdrawable ETH balance from the AMM contract. */
   async getAMMEthBalance(userAddress: string): Promise<bigint> {
     this.validateAddress(userAddress, 'user');
     const amm = this.getAMMContract();
-    return await amm.ethBalances(userAddress);
+    try {
+      return await amm.ethBalances(userAddress);
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch AMM ETH balance: ${parseContractError(error)}`,
+      );
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -1278,12 +1560,9 @@ export class ContractService {
         gasLimit,
       });
     } catch (err: unknown) {
-      // Re-throw with context so callers know which method failed.
-      const reason =
-        err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `Transaction "${method}" failed during gas estimation (likely to revert): ${reason}`,
-      );
+      // Re-throw with a user-friendly message via parseContractError.
+      const userMessage = parseContractError(err);
+      throw new Error(userMessage);
     }
   }
 
@@ -1295,16 +1574,22 @@ export class ContractService {
    *   filledSell, filledBuy, cancelled
    */
   private parseOrder(raw: Record<string, unknown>): Order {
-    return {
-      id: BigInt(raw.id as string | number | bigint),
-      maker: raw.maker as string,
-      tokenSell: raw.tokenSell as string,
-      tokenBuy: raw.tokenBuy as string,
-      amountSell: BigInt(raw.amountSell as string | number | bigint),
-      amountBuy: BigInt(raw.amountBuy as string | number | bigint),
-      filledSell: BigInt(raw.filledSell as string | number | bigint),
-      filledBuy: BigInt(raw.filledBuy as string | number | bigint),
-      cancelled: Boolean(raw.cancelled),
-    };
+    try {
+      return {
+        id: BigInt(raw.id as string | number | bigint),
+        maker: (raw.maker as string) || ethers.ZeroAddress,
+        tokenSell: (raw.tokenSell as string) || ethers.ZeroAddress,
+        tokenBuy: (raw.tokenBuy as string) || ethers.ZeroAddress,
+        amountSell: BigInt(raw.amountSell as string | number | bigint),
+        amountBuy: BigInt(raw.amountBuy as string | number | bigint),
+        filledSell: BigInt(raw.filledSell as string | number | bigint),
+        filledBuy: BigInt(raw.filledBuy as string | number | bigint),
+        cancelled: Boolean(raw.cancelled),
+      };
+    } catch (err: unknown) {
+      throw new Error(
+        `Failed to parse order data from blockchain. The data may be corrupted or the contract interface has changed.`,
+      );
+    }
   }
 }

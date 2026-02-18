@@ -86,7 +86,7 @@ function MintStepIndicator({ activeStep }: { activeStep: number }) {
                 </div>
                 <span
                   className={clsx(
-                    'text-[11px] font-medium tracking-wide transition-colors duration-300',
+                    'text-xs font-medium tracking-wide transition-colors duration-300',
                     isCurrent && 'text-indigo-300',
                     isCompleted && 'text-indigo-400/70',
                     isUpcoming && 'text-gray-600',
@@ -316,7 +316,7 @@ export default function MintPage() {
           </div>
         </div>
 
-        <h1 className="mb-5 bg-gradient-to-r from-indigo-300 via-violet-300 to-purple-300 bg-clip-text text-5xl font-bold tracking-tight text-transparent sm:text-xl">
+        <h1 className="mb-5 bg-gradient-to-r from-indigo-300 via-violet-300 to-purple-300 bg-clip-text text-2xl font-bold tracking-tight text-transparent sm:text-3xl md:text-4xl">
           Upload &amp; Mint
         </h1>
 

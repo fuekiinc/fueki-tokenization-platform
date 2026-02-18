@@ -310,17 +310,13 @@ contract OrbitalPool {
         if (amountOut < minAmountOut) revert SlippageExceeded();
         if (amountOut > reserves[tokenOutIndex]) revert InsufficientLiquidity();
 
-        // Transfer input tokens from caller to pool
-        _safeTransferFrom(tokens[tokenInIndex], msg.sender, address(this), amountIn);
-
-        // Update reserves
+        // EFFECTS: update state before external calls (CEI pattern)
         reserves[tokenInIndex] += amountInAfterFee;
         reserves[tokenOutIndex] -= amountOut;
-
-        // Accumulate fees
         accumulatedFees[tokenInIndex] += feeAmount;
 
-        // Transfer output tokens to caller
+        // INTERACTIONS: transfer tokens after state is updated
+        _safeTransferFrom(tokens[tokenInIndex], msg.sender, address(this), amountIn);
         _safeTransfer(tokens[tokenOutIndex], msg.sender, amountOut);
 
         emit Swap(msg.sender, tokenInIndex, tokenOutIndex, amountIn, amountOut, feeAmount);

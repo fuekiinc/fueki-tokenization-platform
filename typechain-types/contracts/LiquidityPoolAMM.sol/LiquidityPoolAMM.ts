@@ -103,11 +103,20 @@ export interface LiquidityPoolAMMInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "addLiquidity",
-    values: [AddressLike, AddressLike, BigNumberish, BigNumberish, BigNumberish]
+    values: [
+      AddressLike,
+      AddressLike,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish
+    ]
   ): string;
   encodeFunctionData(
     functionFragment: "addLiquidityETH",
-    values: [AddressLike, BigNumberish, BigNumberish]
+    values: [AddressLike, BigNumberish, BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "createPool",
@@ -144,23 +153,36 @@ export interface LiquidityPoolAMMInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "removeLiquidity",
-    values: [AddressLike, AddressLike, BigNumberish, BigNumberish, BigNumberish]
+    values: [
+      AddressLike,
+      AddressLike,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish
+    ]
   ): string;
   encodeFunctionData(
     functionFragment: "removeLiquidityETH",
-    values: [AddressLike, BigNumberish, BigNumberish, BigNumberish]
+    values: [
+      AddressLike,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish
+    ]
   ): string;
   encodeFunctionData(
     functionFragment: "swap",
-    values: [AddressLike, AddressLike, BigNumberish, BigNumberish]
+    values: [AddressLike, AddressLike, BigNumberish, BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "swapETHForToken",
-    values: [AddressLike, BigNumberish]
+    values: [AddressLike, BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "swapTokenForETH",
-    values: [AddressLike, BigNumberish, BigNumberish]
+    values: [AddressLike, BigNumberish, BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "withdrawEth",
@@ -408,16 +430,24 @@ export interface LiquidityPoolAMM extends BaseContract {
     [
       tokenA: AddressLike,
       tokenB: AddressLike,
-      amountA: BigNumberish,
-      amountB: BigNumberish,
-      minLiquidity: BigNumberish
+      amountADesired: BigNumberish,
+      amountBDesired: BigNumberish,
+      amountAMin: BigNumberish,
+      amountBMin: BigNumberish,
+      minLiquidity: BigNumberish,
+      deadline: BigNumberish
     ],
     [bigint],
     "nonpayable"
   >;
 
   addLiquidityETH: TypedContractMethod<
-    [token: AddressLike, amountToken: BigNumberish, minLiquidity: BigNumberish],
+    [
+      token: AddressLike,
+      amountToken: BigNumberish,
+      minLiquidity: BigNumberish,
+      deadline: BigNumberish
+    ],
     [bigint],
     "payable"
   >;
@@ -487,7 +517,8 @@ export interface LiquidityPoolAMM extends BaseContract {
       tokenB: AddressLike,
       liquidity: BigNumberish,
       minA: BigNumberish,
-      minB: BigNumberish
+      minB: BigNumberish,
+      deadline: BigNumberish
     ],
     [[bigint, bigint] & { amountA: bigint; amountB: bigint }],
     "nonpayable"
@@ -498,7 +529,8 @@ export interface LiquidityPoolAMM extends BaseContract {
       token: AddressLike,
       liquidity: BigNumberish,
       minToken: BigNumberish,
-      minETH: BigNumberish
+      minETH: BigNumberish,
+      deadline: BigNumberish
     ],
     [[bigint, bigint] & { amountToken: bigint; amountETH: bigint }],
     "nonpayable"
@@ -509,20 +541,26 @@ export interface LiquidityPoolAMM extends BaseContract {
       tokenIn: AddressLike,
       tokenOut: AddressLike,
       amountIn: BigNumberish,
-      minAmountOut: BigNumberish
+      minAmountOut: BigNumberish,
+      deadline: BigNumberish
     ],
     [bigint],
     "nonpayable"
   >;
 
   swapETHForToken: TypedContractMethod<
-    [token: AddressLike, minAmountOut: BigNumberish],
+    [token: AddressLike, minAmountOut: BigNumberish, deadline: BigNumberish],
     [bigint],
     "payable"
   >;
 
   swapTokenForETH: TypedContractMethod<
-    [token: AddressLike, amountIn: BigNumberish, minETH: BigNumberish],
+    [
+      token: AddressLike,
+      amountIn: BigNumberish,
+      minETH: BigNumberish,
+      deadline: BigNumberish
+    ],
     [bigint],
     "nonpayable"
   >;
@@ -551,9 +589,12 @@ export interface LiquidityPoolAMM extends BaseContract {
     [
       tokenA: AddressLike,
       tokenB: AddressLike,
-      amountA: BigNumberish,
-      amountB: BigNumberish,
-      minLiquidity: BigNumberish
+      amountADesired: BigNumberish,
+      amountBDesired: BigNumberish,
+      amountAMin: BigNumberish,
+      amountBMin: BigNumberish,
+      minLiquidity: BigNumberish,
+      deadline: BigNumberish
     ],
     [bigint],
     "nonpayable"
@@ -561,7 +602,12 @@ export interface LiquidityPoolAMM extends BaseContract {
   getFunction(
     nameOrSignature: "addLiquidityETH"
   ): TypedContractMethod<
-    [token: AddressLike, amountToken: BigNumberish, minLiquidity: BigNumberish],
+    [
+      token: AddressLike,
+      amountToken: BigNumberish,
+      minLiquidity: BigNumberish,
+      deadline: BigNumberish
+    ],
     [bigint],
     "payable"
   >;
@@ -641,7 +687,8 @@ export interface LiquidityPoolAMM extends BaseContract {
       tokenB: AddressLike,
       liquidity: BigNumberish,
       minA: BigNumberish,
-      minB: BigNumberish
+      minB: BigNumberish,
+      deadline: BigNumberish
     ],
     [[bigint, bigint] & { amountA: bigint; amountB: bigint }],
     "nonpayable"
@@ -653,7 +700,8 @@ export interface LiquidityPoolAMM extends BaseContract {
       token: AddressLike,
       liquidity: BigNumberish,
       minToken: BigNumberish,
-      minETH: BigNumberish
+      minETH: BigNumberish,
+      deadline: BigNumberish
     ],
     [[bigint, bigint] & { amountToken: bigint; amountETH: bigint }],
     "nonpayable"
@@ -665,7 +713,8 @@ export interface LiquidityPoolAMM extends BaseContract {
       tokenIn: AddressLike,
       tokenOut: AddressLike,
       amountIn: BigNumberish,
-      minAmountOut: BigNumberish
+      minAmountOut: BigNumberish,
+      deadline: BigNumberish
     ],
     [bigint],
     "nonpayable"
@@ -673,14 +722,19 @@ export interface LiquidityPoolAMM extends BaseContract {
   getFunction(
     nameOrSignature: "swapETHForToken"
   ): TypedContractMethod<
-    [token: AddressLike, minAmountOut: BigNumberish],
+    [token: AddressLike, minAmountOut: BigNumberish, deadline: BigNumberish],
     [bigint],
     "payable"
   >;
   getFunction(
     nameOrSignature: "swapTokenForETH"
   ): TypedContractMethod<
-    [token: AddressLike, amountIn: BigNumberish, minETH: BigNumberish],
+    [
+      token: AddressLike,
+      amountIn: BigNumberish,
+      minETH: BigNumberish,
+      deadline: BigNumberish
+    ],
     [bigint],
     "nonpayable"
   >;

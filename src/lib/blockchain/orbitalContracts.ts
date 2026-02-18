@@ -12,6 +12,7 @@ import { OrbitalPoolABI } from '../../contracts/abis/OrbitalPool.ts';
 import { WrappedAssetABI } from '../../contracts/abis/WrappedAsset.ts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { multicallSameTarget } from './multicall.ts';
+import { parseContractError } from './contracts.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -119,22 +120,38 @@ export class OrbitalContractService {
 
   async getAllPools(): Promise<string[]> {
     const factory = this.getFactoryContract();
-    return await factory.getAllPools();
+    try {
+      return await factory.getAllPools();
+    } catch (error: unknown) {
+      throw new Error(`Failed to fetch pool list: ${parseContractError(error)}`);
+    }
   }
 
   async getTotalPools(): Promise<bigint> {
     const factory = this.getFactoryContract();
-    return await factory.totalPools();
+    try {
+      return await factory.totalPools();
+    } catch (error: unknown) {
+      throw new Error(`Failed to fetch pool count: ${parseContractError(error)}`);
+    }
   }
 
   async getPoolsForToken(token: string): Promise<string[]> {
     const factory = this.getFactoryContract();
-    return await factory.getPoolsForToken(token);
+    try {
+      return await factory.getPoolsForToken(token);
+    } catch (error: unknown) {
+      throw new Error(`Failed to fetch pools for token: ${parseContractError(error)}`);
+    }
   }
 
   async getPool(tokens: string[], concentration: number): Promise<string> {
     const factory = this.getFactoryContract();
-    return await factory.getPool(tokens, concentration);
+    try {
+      return await factory.getPool(tokens, concentration);
+    } catch (error: unknown) {
+      throw new Error(`Failed to look up pool address: ${parseContractError(error)}`);
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -142,55 +159,63 @@ export class OrbitalContractService {
   // -----------------------------------------------------------------------
 
   async getPoolInfo(poolAddress: string): Promise<OrbitalPoolInfo> {
-    // Batch all pool property reads into a single RPC call via Multicall3.
-    const results = await multicallSameTarget(
-      this.provider,
-      poolAddress,
-      OrbitalPoolABI,
-      [
-        { functionName: 'name' },
-        { functionName: 'symbol' },
-        { functionName: 'getTokens' },
-        { functionName: 'getReserves' },
-        { functionName: 'concentration' },
-        { functionName: 'swapFeeBps' },
-        { functionName: 'totalSupply' },
-        { functionName: 'getInvariant' },
-      ],
-    );
+    try {
+      // Batch all pool property reads into a single RPC call via Multicall3.
+      const results = await multicallSameTarget(
+        this.provider,
+        poolAddress,
+        OrbitalPoolABI,
+        [
+          { functionName: 'name' },
+          { functionName: 'symbol' },
+          { functionName: 'getTokens' },
+          { functionName: 'getReserves' },
+          { functionName: 'concentration' },
+          { functionName: 'swapFeeBps' },
+          { functionName: 'totalSupply' },
+          { functionName: 'getInvariant' },
+        ],
+      );
 
-    return {
-      address: poolAddress,
-      name: results[0].success ? (results[0].data as string) : '',
-      symbol: results[1].success ? (results[1].data as string) : '',
-      tokens: results[2].success ? (results[2].data as string[]) : [],
-      reserves: results[3].success ? (results[3].data as bigint[]).map((r: bigint) => BigInt(r)) : [],
-      concentration: results[4].success ? Number(results[4].data) : 0,
-      swapFeeBps: results[5].success ? BigInt(results[5].data as bigint) : 0n,
-      totalSupply: results[6].success ? BigInt(results[6].data as bigint) : 0n,
-      invariant: results[7].success ? BigInt(results[7].data as bigint) : 0n,
-    };
+      return {
+        address: poolAddress,
+        name: results[0].success ? (results[0].data as string) : '',
+        symbol: results[1].success ? (results[1].data as string) : '',
+        tokens: results[2].success ? (results[2].data as string[]) : [],
+        reserves: results[3].success ? (results[3].data as bigint[]).map((r: bigint) => BigInt(r)) : [],
+        concentration: results[4].success ? Number(results[4].data) : 0,
+        swapFeeBps: results[5].success ? BigInt(results[5].data as bigint) : 0n,
+        totalSupply: results[6].success ? BigInt(results[6].data as bigint) : 0n,
+        invariant: results[7].success ? BigInt(results[7].data as bigint) : 0n,
+      };
+    } catch (error: unknown) {
+      throw new Error(`Failed to fetch pool info: ${parseContractError(error)}`);
+    }
   }
 
   async getTokenInfo(tokenAddress: string): Promise<OrbitalTokenInfo> {
-    // Batch all token property reads into a single RPC call via Multicall3.
-    const results = await multicallSameTarget(
-      this.provider,
-      tokenAddress,
-      WrappedAssetABI,
-      [
-        { functionName: 'name' },
-        { functionName: 'symbol' },
-        { functionName: 'decimals' },
-      ],
-    );
+    try {
+      // Batch all token property reads into a single RPC call via Multicall3.
+      const results = await multicallSameTarget(
+        this.provider,
+        tokenAddress,
+        WrappedAssetABI,
+        [
+          { functionName: 'name' },
+          { functionName: 'symbol' },
+          { functionName: 'decimals' },
+        ],
+      );
 
-    return {
-      address: tokenAddress,
-      name: results[0].success ? (results[0].data as string) : '',
-      symbol: results[1].success ? (results[1].data as string) : '',
-      decimals: results[2].success ? Number(results[2].data) : 18,
-    };
+      return {
+        address: tokenAddress,
+        name: results[0].success ? (results[0].data as string) : '',
+        symbol: results[1].success ? (results[1].data as string) : '',
+        decimals: results[2].success ? Number(results[2].data) : 18,
+      };
+    } catch (error: unknown) {
+      throw new Error(`Failed to fetch token info: ${parseContractError(error)}`);
+    }
   }
 
   async getPoolAmountOut(
@@ -200,8 +225,12 @@ export class OrbitalContractService {
     amountIn: bigint,
   ): Promise<{ amountOut: bigint; feeAmount: bigint }> {
     const pool = this.getPoolContract(poolAddress);
-    const [amountOut, feeAmount] = await pool.getAmountOut(tokenInIndex, tokenOutIndex, amountIn);
-    return { amountOut: BigInt(amountOut), feeAmount: BigInt(feeAmount) };
+    try {
+      const [amountOut, feeAmount] = await pool.getAmountOut(tokenInIndex, tokenOutIndex, amountIn);
+      return { amountOut: BigInt(amountOut), feeAmount: BigInt(feeAmount) };
+    } catch (error: unknown) {
+      throw new Error(`Failed to get swap quote: ${parseContractError(error)}`);
+    }
   }
 
   async getSpotPrice(
@@ -210,22 +239,38 @@ export class OrbitalContractService {
     tokenBIndex: number,
   ): Promise<bigint> {
     const pool = this.getPoolContract(poolAddress);
-    return BigInt(await pool.getSpotPrice(tokenAIndex, tokenBIndex));
+    try {
+      return BigInt(await pool.getSpotPrice(tokenAIndex, tokenBIndex));
+    } catch (error: unknown) {
+      throw new Error(`Failed to get spot price: ${parseContractError(error)}`);
+    }
   }
 
   async getLPBalance(poolAddress: string, user: string): Promise<bigint> {
     const pool = this.getPoolContract(poolAddress);
-    return BigInt(await pool.balanceOf(user));
+    try {
+      return BigInt(await pool.balanceOf(user));
+    } catch (error: unknown) {
+      throw new Error(`Failed to fetch LP balance: ${parseContractError(error)}`);
+    }
   }
 
   async getTokenBalance(tokenAddress: string, user: string): Promise<bigint> {
     const token = this.getTokenContract(tokenAddress);
-    return BigInt(await token.balanceOf(user));
+    try {
+      return BigInt(await token.balanceOf(user));
+    } catch (error: unknown) {
+      throw new Error(`Failed to fetch token balance: ${parseContractError(error)}`);
+    }
   }
 
   async getTokenAllowance(tokenAddress: string, owner: string, spender: string): Promise<bigint> {
     const token = this.getTokenContract(tokenAddress);
-    return BigInt(await token.allowance(owner, spender));
+    try {
+      return BigInt(await token.allowance(owner, spender));
+    } catch (error: unknown) {
+      throw new Error(`Failed to fetch token allowance: ${parseContractError(error)}`);
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -239,8 +284,12 @@ export class OrbitalContractService {
     amountIn: bigint,
   ): Promise<{ amountOut: bigint; feeAmount: bigint }> {
     const router = this.getRouterContract();
-    const [amountOut, feeAmount] = await router.getAmountOut(poolAddress, tokenIn, tokenOut, amountIn);
-    return { amountOut: BigInt(amountOut), feeAmount: BigInt(feeAmount) };
+    try {
+      const [amountOut, feeAmount] = await router.getAmountOut(poolAddress, tokenIn, tokenOut, amountIn);
+      return { amountOut: BigInt(amountOut), feeAmount: BigInt(feeAmount) };
+    } catch (error: unknown) {
+      throw new Error(`Failed to get router quote: ${parseContractError(error)}`);
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -401,10 +450,8 @@ export class OrbitalContractService {
         gasLimit,
       });
     } catch (err: unknown) {
-      const reason = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `Transaction "${method}" failed during gas estimation (likely to revert): ${reason}`,
-      );
+      const userMessage = parseContractError(err);
+      throw new Error(userMessage);
     }
   }
 }

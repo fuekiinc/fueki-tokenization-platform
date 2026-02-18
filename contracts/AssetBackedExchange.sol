@@ -71,7 +71,7 @@ contract AssetBackedExchange {
     /// @notice maker address => array of their order IDs
     mapping(address => uint256[]) private _userOrderIds;
 
-    /// @notice Refundable ETH balances (for cancelled ETH-sell orders)
+    /// @notice Withdrawable ETH balances (credited from fills, refunds, and cancellations)
     mapping(address => uint256) public ethBalances;
 
     // ---------------------------------------------------------------
@@ -131,7 +131,7 @@ contract AssetBackedExchange {
         address tokenBuy,
         uint256 amountSell,
         uint256 amountBuy
-    ) external returns (uint256 orderId) {
+    ) external nonReentrant returns (uint256 orderId) {
         if (amountSell == 0 || amountBuy == 0) revert ZeroAmount();
         if (tokenSell == address(0) || tokenBuy == address(0)) revert ZeroAddress();
         if (tokenSell == tokenBuy) revert SameToken();
@@ -153,7 +153,7 @@ contract AssetBackedExchange {
     function createOrderSellETH(
         address tokenBuy,
         uint256 amountBuy
-    ) external payable returns (uint256 orderId) {
+    ) external payable nonReentrant returns (uint256 orderId) {
         if (msg.value == 0 || amountBuy == 0) revert ZeroAmount();
         if (tokenBuy == address(0) || tokenBuy == ETH_ADDRESS) revert ZeroAddress();
 
@@ -210,18 +210,22 @@ contract AssetBackedExchange {
         uint256 fillAmountSell = (fillAmountBuy * order.amountSell) / order.amountBuy;
         if (fillAmountSell == 0) revert InsufficientFill();
 
+        // --- State updates (CEI: all state before external calls) ---
         order.filledBuy += fillAmountBuy;
         order.filledSell += fillAmountSell;
 
+        // Credit ETH to taker via pull pattern if sell token is ETH
+        if (order.tokenSell == ETH_ADDRESS) {
+            ethBalances[msg.sender] += fillAmountSell;
+        }
+
+        // --- External calls (after all state updates) ---
         // Taker sends buy tokens to maker
         bool ok = IERC20(order.tokenBuy).transferFrom(msg.sender, order.maker, fillAmountBuy);
         if (!ok) revert TransferFailed();
 
-        // Taker receives sell tokens from escrow
-        if (order.tokenSell == ETH_ADDRESS) {
-            (bool sent,) = payable(msg.sender).call{value: fillAmountSell}("");
-            if (!sent) revert TransferFailed();
-        } else {
+        // Taker receives sell tokens from escrow (ERC-20 only; ETH credited above)
+        if (order.tokenSell != ETH_ADDRESS) {
             ok = IERC20(order.tokenSell).transfer(msg.sender, fillAmountSell);
             if (!ok) revert TransferFailed();
         }
@@ -247,22 +251,22 @@ contract AssetBackedExchange {
         uint256 fillAmountSell = (fillAmountBuy * order.amountSell) / order.amountBuy;
         if (fillAmountSell == 0) revert InsufficientFill();
 
+        // --- State updates (CEI: all state before external calls) ---
         order.filledBuy += fillAmountBuy;
         order.filledSell += fillAmountSell;
 
-        // Send ETH to maker
-        (bool sentToMaker,) = payable(order.maker).call{value: fillAmountBuy}("");
-        if (!sentToMaker) revert TransferFailed();
+        // Credit ETH to maker (pull pattern)
+        ethBalances[order.maker] += fillAmountBuy;
 
+        // Credit excess ETH refund to taker (pull pattern)
+        if (msg.value > fillAmountBuy) {
+            ethBalances[msg.sender] += msg.value - fillAmountBuy;
+        }
+
+        // --- External calls (after all state updates) ---
         // Send sell tokens to taker
         bool ok = IERC20(order.tokenSell).transfer(msg.sender, fillAmountSell);
         if (!ok) revert TransferFailed();
-
-        // Refund excess ETH to taker
-        if (msg.value > fillAmountBuy) {
-            (bool refund,) = payable(msg.sender).call{value: msg.value - fillAmountBuy}("");
-            if (!refund) revert TransferFailed();
-        }
 
         emit OrderFilled(orderId, msg.sender, fillAmountSell, fillAmountBuy);
     }
@@ -297,7 +301,7 @@ contract AssetBackedExchange {
     }
 
     /**
-     * @notice Withdraw credited ETH (from cancelled ETH-sell orders).
+     * @notice Withdraw credited ETH (from fills, refunds, or cancelled orders).
      */
     function withdrawEth() external nonReentrant {
         uint256 balance = ethBalances[msg.sender];
@@ -327,36 +331,62 @@ contract AssetBackedExchange {
     }
 
     /**
-     * @notice Get all active (non-cancelled, not fully filled) orders
-     *         for a specific trading pair.
+     * @notice Get active (non-cancelled, not fully filled) orders for a
+     *         specific trading pair.  Uses a default limit of 100.
      */
     function getActiveOrders(
         address tokenSell,
         address tokenBuy
     ) external view returns (Order[] memory) {
-        // Count matching orders first
-        uint256 count = 0;
-        for (uint256 i = 0; i < nextOrderId; i++) {
+        return this.getActiveOrders(tokenSell, tokenBuy, 0, 100);
+    }
+
+    /**
+     * @notice Get active orders for a trading pair with pagination.
+     *
+     * @param tokenSell The sell-side token address
+     * @param tokenBuy  The buy-side token address
+     * @param offset    Number of matching orders to skip
+     * @param limit     Maximum number of orders to return
+     */
+    function getActiveOrders(
+        address tokenSell,
+        address tokenBuy,
+        uint256 offset,
+        uint256 limit
+    ) external view returns (Order[] memory) {
+        if (limit == 0) limit = 100;
+
+        // First pass: count total matching orders and collect up to
+        // offset + limit entries to avoid unbounded memory allocation.
+        uint256 matched = 0;
+        uint256 collected = 0;
+
+        // Temporary array sized to at most `limit`
+        Order[] memory temp = new Order[](limit);
+
+        for (uint256 i = 0; i < nextOrderId && collected < limit; i++) {
             Order storage o = _orders[i];
             if (o.tokenSell == tokenSell &&
                 o.tokenBuy == tokenBuy &&
                 !o.cancelled &&
-                o.filledSell < o.amountSell) {
-                count++;
+                o.filledSell < o.amountSell)
+            {
+                if (matched >= offset) {
+                    temp[collected] = o;
+                    collected++;
+                }
+                matched++;
             }
         }
 
-        // Build result array
-        Order[] memory result = new Order[](count);
-        uint256 idx = 0;
-        for (uint256 i = 0; i < nextOrderId; i++) {
-            Order storage o = _orders[i];
-            if (o.tokenSell == tokenSell &&
-                o.tokenBuy == tokenBuy &&
-                !o.cancelled &&
-                o.filledSell < o.amountSell) {
-                result[idx++] = o;
-            }
+        // Trim the array to actual collected size
+        if (collected == limit) {
+            return temp;
+        }
+        Order[] memory result = new Order[](collected);
+        for (uint256 j = 0; j < collected; j++) {
+            result[j] = temp[j];
         }
         return result;
     }

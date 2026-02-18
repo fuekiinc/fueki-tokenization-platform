@@ -10,13 +10,13 @@ import {
 } from 'lucide-react';
 import { getAdminStats } from '../../lib/api/admin';
 import type { AdminStats } from '../../lib/api/admin';
+import { CARD_CLASSES } from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
-// Glass style tokens (matching DashboardPage)
+// Glass style tokens (from design system)
 // ---------------------------------------------------------------------------
 
-const GLASS =
-  'bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl';
+const GLASS = CARD_CLASSES.base;
 
 // ---------------------------------------------------------------------------
 // Stat card config

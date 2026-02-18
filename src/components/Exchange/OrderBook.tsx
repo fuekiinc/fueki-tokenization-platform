@@ -28,10 +28,11 @@ import {
 } from 'lucide-react';
 import { InfoTooltip } from '../Common/Tooltip';
 import { TOOLTIPS } from '../../lib/tooltipContent';
-import { ContractService, isETH, type Order } from '../../lib/blockchain/contracts';
+import { ContractService, isETH, parseContractError, type Order } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress } from '../../lib/utils/helpers';
 import { formatPrice, formatTokenAmount, formatPercent } from '../../lib/formatters';
+import logger from '../../lib/logger';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -236,8 +237,8 @@ export default function OrderBook({
 
       setOrders([...sellSide, ...buySide]);
     } catch (err) {
-      console.error('Failed to fetch order book:', err);
-      toast.error('Failed to load order book');
+      logger.error('Failed to fetch order book:', err);
+      toast.error('Unable to load the order book. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -256,8 +257,8 @@ export default function OrderBook({
           setChainId(Number(network.chainId));
         }
       } catch (error) {
-        console.error('Failed to resolve chain:', error);
-        toast.error('Failed to detect network');
+        logger.error('Failed to resolve chain:', error);
+        toast.error('Unable to detect your network. Please check your wallet connection.');
       }
     }
     void resolveChain();
@@ -291,7 +292,7 @@ export default function OrderBook({
         const signer = await contractService.getSigner();
         const userAddr = await signer.getAddress();
         if (userAddr.toLowerCase() === order.maker.toLowerCase()) {
-          toast.error('You cannot fill your own order');
+          toast.error('You cannot fill your own order. Try filling an order from another trader.');
           return;
         }
       } catch {
@@ -306,7 +307,7 @@ export default function OrderBook({
         // Compute the remaining unfilled buy-side amount.
         const fillAmountBuy = remainingBuy(order);
         if (fillAmountBuy <= 0n) {
-          toast.error('This order is already fully filled');
+          toast.error('This order has already been completely filled. Check the order book for other open orders.');
           return;
         }
 
@@ -348,10 +349,8 @@ export default function OrderBook({
         onOrderFilled();
         void fetchOrders();
       } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : 'Failed to fill order';
-        console.error('Fill order failed:', err);
-        toast.error(message, { id: 'fill-order' });
+        logger.error('Fill order failed:', err);
+        toast.error(parseContractError(err), { id: 'fill-order' });
         toast.dismiss('fill-approve');
       } finally {
         setFillingId(null);
@@ -368,9 +367,9 @@ export default function OrderBook({
         key={`skeleton-${index}`}
         className="grid grid-cols-3 gap-3 sm:gap-6 px-3 sm:px-5 py-3"
       >
-        <div className="h-4 animate-pulse rounded-md bg-white/[0.04]" />
-        <div className="h-4 animate-pulse rounded-md bg-white/[0.04]" />
-        <div className="h-4 animate-pulse rounded-md bg-white/[0.04]" />
+        <div className="h-4 animate-pulse motion-reduce:animate-none rounded-md bg-white/[0.04]" />
+        <div className="h-4 animate-pulse motion-reduce:animate-none rounded-md bg-white/[0.04]" />
+        <div className="h-4 animate-pulse motion-reduce:animate-none rounded-md bg-white/[0.04]" />
       </div>
     );
   }
@@ -391,11 +390,16 @@ export default function OrderBook({
         tabIndex={0}
         onClick={() => !isFilling && handleFillOrder(order)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !isFilling) handleFillOrder(order);
+          if ((e.key === 'Enter' || e.key === ' ') && !isFilling) {
+            e.preventDefault();
+            handleFillOrder(order);
+          }
         }}
+        aria-label={`Fill order: ${formatPrice(computeRowData(order, side).priceDisplay)} price, ${formatTokenAmount(computeRowData(order, side).amount)} amount`}
         className={clsx(
           'group relative grid cursor-pointer grid-cols-3 gap-3 sm:gap-6 px-3 sm:px-5 py-3 transition-all duration-150',
           'hover:bg-white/[0.04]',
+          'focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A] focus-visible:outline-none',
           'min-h-[44px] items-center',
           isFilling && 'pointer-events-none opacity-50',
         )}
@@ -432,7 +436,7 @@ export default function OrderBook({
         {/* Fill indicator on hover */}
         {isFilling && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#0D0F14]/60 backdrop-blur-sm">
-            <Loader2 className="h-4 w-4 animate-spin text-white" />
+            <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none text-white" />
           </div>
         )}
       </div>
@@ -470,7 +474,7 @@ export default function OrderBook({
         </span>
         <InfoTooltip content={TOOLTIPS.orderBook} />
         {loading && orders.length > 0 && (
-          <Loader2 className="ml-auto h-3 w-3 animate-spin text-gray-600" />
+          <Loader2 className="ml-auto h-3 w-3 animate-spin motion-reduce:animate-none text-gray-600" />
         )}
       </div>
 
@@ -503,10 +507,10 @@ export default function OrderBook({
             <AlertCircle className="h-5 w-5 text-gray-600" />
           </div>
           <p className="text-sm font-medium text-gray-400">
-            No orders for this pair
+            No open orders for this pair yet
           </p>
           <p className="mt-2 text-xs text-gray-600">
-            Be the first to create an order.
+            Be the first to place an order using the trade form.
           </p>
         </div>
       )}
@@ -528,7 +532,7 @@ export default function OrderBook({
           <div className="flex flex-col-reverse">
             {sellOrders.length === 0 ? (
               <div className="px-5 py-5 text-center text-xs text-gray-600">
-                No sell orders
+                No sell orders yet -- place a sell order to get started
               </div>
             ) : (
               sellOrders.map((o) => renderOrderRow(o, 'sell', maxSellTotal))
@@ -569,7 +573,7 @@ export default function OrderBook({
           <div>
             {buyOrders.length === 0 ? (
               <div className="px-5 py-5 text-center text-xs text-gray-600">
-                No buy orders
+                No buy orders yet -- place a buy order to get started
               </div>
             ) : (
               buyOrders.map((o) => renderOrderRow(o, 'buy', maxBuyTotal))

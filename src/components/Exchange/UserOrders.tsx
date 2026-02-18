@@ -41,8 +41,9 @@ import {
   ChevronUp,
   ChevronDown,
 } from 'lucide-react';
-import { ContractService, isETH, type Order } from '../../lib/blockchain/contracts';
+import { ContractService, isETH, parseContractError, type Order } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
+import logger from '../../lib/logger';
 import { formatAddress } from '../../lib/utils/helpers';
 import { formatTokenAmount, formatPrice } from '../../lib/formatters';
 import Badge from '../Common/Badge';
@@ -134,6 +135,7 @@ export default function UserOrders({
   const [sortField, setSortField] = useState<SortField>('id');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cancellingRef = useRef(false);
 
   // ---- Derived ------------------------------------------------------------
 
@@ -265,8 +267,8 @@ export default function UserOrders({
         // Non-critical
       }
     } catch (err) {
-      console.error('Failed to fetch user orders:', err);
-      toast.error('Failed to load your orders');
+      logger.error('Failed to fetch user orders:', err);
+      toast.error('Unable to load your orders. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -309,9 +311,8 @@ export default function UserOrders({
 
   const handleCancelOrder = useCallback(
     async (orderId: bigint) => {
-      if (!contractService) return;
-      // Prevent double-click while a cancellation is in flight
-      if (cancellingId !== null) return;
+      if (!contractService || cancellingRef.current) return;
+      cancellingRef.current = true;
 
       setCancellingId(orderId);
       setCancelTxHash(null);
@@ -328,15 +329,14 @@ export default function UserOrders({
         onOrderCancelled();
         void fetchUserOrders();
       } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : 'Failed to cancel order';
-        console.error('Cancel order failed:', err);
-        toast.error(message, { id: 'cancel-order' });
+        logger.error('Cancel order failed:', err);
+        toast.error(parseContractError(err), { id: 'cancel-order' });
       } finally {
+        cancellingRef.current = false;
         setCancellingId(null);
       }
     },
-    [contractService, cancellingId, onOrderCancelled, fetchUserOrders],
+    [contractService, onOrderCancelled, fetchUserOrders],
   );
 
   // ---- Withdraw ETH handler -----------------------------------------------
@@ -352,10 +352,8 @@ export default function UserOrders({
       setEthWithdrawable(0n);
       void fetchUserOrders();
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to withdraw ETH';
-      console.error('ETH withdrawal failed:', err);
-      toast.error(message, { id: 'withdraw-eth' });
+      logger.error('ETH withdrawal failed:', err);
+      toast.error(parseContractError(err), { id: 'withdraw-eth' });
     } finally {
       setWithdrawing(false);
     }
@@ -460,7 +458,7 @@ export default function UserOrders({
                 Withdrawing...
               </span>
             ) : (
-              'Withdraw'
+              'Withdraw ETH'
             )}
           </button>
         </div>
@@ -549,12 +547,12 @@ export default function UserOrders({
             </div>
             <p className="text-sm font-medium text-gray-400">
               {orders.length === 0
-                ? 'No orders yet'
+                ? 'Your order history is empty'
                 : `No ${activeTab} orders`}
             </p>
             {orders.length === 0 && (
               <p className="mt-2 text-xs text-gray-600">
-                Create your first order using the trade form.
+                Place your first order using the trade form to get started.
               </p>
             )}
           </div>
@@ -776,7 +774,7 @@ export default function UserOrders({
                             ) : (
                               <>
                                 <X className="h-3 w-3" aria-hidden="true" />
-                                Cancel
+                                Cancel Order
                               </>
                             )}
                           </button>
@@ -857,7 +855,7 @@ export default function UserOrders({
                   {/* Row 2: Amounts */}
                   <div className="mb-4 flex gap-3">
                     <div className="flex-1 rounded-xl bg-[#0D0F14]/80 border border-white/[0.04] px-3 py-3">
-                      <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-600">
+                      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-gray-600">
                         Sell {isETH(order.tokenSell) ? '(ETH)' : ''}
                       </div>
                       <div className="font-mono text-xs font-semibold tabular-nums text-red-400 truncate">
@@ -870,7 +868,7 @@ export default function UserOrders({
                     </div>
 
                     <div className="flex-1 rounded-xl bg-[#0D0F14]/80 border border-white/[0.04] px-3 py-3">
-                      <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-600">
+                      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-gray-600">
                         Buy {isETH(order.tokenBuy) ? '(ETH)' : ''}
                       </div>
                       <div className="font-mono text-xs font-semibold tabular-nums text-emerald-400 truncate">

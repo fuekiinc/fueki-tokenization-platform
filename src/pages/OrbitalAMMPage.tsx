@@ -17,9 +17,11 @@ import { useWallet } from '../hooks/useWallet';
 import { useWalletStore, getProvider } from '../store/walletStore.ts';
 import { useAssetStore } from '../store/assetStore.ts';
 import { OrbitalContractService } from '../lib/blockchain/orbitalContracts';
+import logger from '../lib/logger';
 import { getNetworkConfig } from '../contracts/addresses';
 import { formatAddress } from '../lib/utils/helpers';
 import { InfoTooltip } from '../components/Common/Tooltip';
+import { ErrorState } from '../components/Common/StateDisplays';
 import { TOOLTIPS } from '../lib/tooltipContent';
 
 import PoolList from '../components/OrbitalAMM/PoolList';
@@ -121,6 +123,7 @@ export default function OrbitalAMMPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [tokenAddresses, setTokenAddresses] = useState<string[]>([]);
+  const [initError, setInitError] = useState<string | null>(null);
 
   // ---- Timer refs for cleanup -----------------------------------------------
 
@@ -159,7 +162,7 @@ export default function OrbitalAMMPage() {
       const service = new OrbitalContractService(provider, wallet.chainId);
       setContractService(service);
     } catch (err) {
-      console.error('Failed to initialize OrbitalContractService:', err);
+      logger.error('Failed to initialize OrbitalContractService:', err);
       toast.error('Failed to initialize AMM contracts');
       setContractService(null);
     }

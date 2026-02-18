@@ -24,10 +24,12 @@ import {
   Zap,
 } from 'lucide-react';
 import { OrbitalContractService } from '../../lib/blockchain/orbitalContracts';
+import { parseContractError } from '../../lib/blockchain/contracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPercent, formatPrice } from '../../lib/formatters';
 import { InfoTooltip } from '../Common/Tooltip';
 import { TOOLTIPS } from '../../lib/tooltipContent';
+import logger from '../../lib/logger';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -201,7 +203,7 @@ export default function SwapInterface({
               swapFeeBps: Number(info.swapFeeBps),
             });
           } catch (err) {
-            console.error(`Failed to load pool ${addr}:`, err);
+            logger.error(`Failed to load pool ${addr}:`, err);
           }
         }),
       );
@@ -222,8 +224,8 @@ export default function SwapInterface({
         }
       }
     } catch (err) {
-      console.error('Failed to fetch pools:', err);
-      toast.error('Failed to load liquidity pools');
+      logger.error('Failed to fetch pools:', err);
+      toast.error('Unable to load liquidity pools. Check your connection and try again.');
     } finally {
       setLoadingPools(false);
     }
@@ -386,10 +388,7 @@ export default function SwapInterface({
         toast.success('Token approved', { id: 'orbital-approve' });
       }
     } catch (err: unknown) {
-      toast.error(
-        err instanceof Error ? err.message : 'Approval failed',
-        { id: 'orbital-approve' },
-      );
+      toast.error(parseContractError(err), { id: 'orbital-approve' });
       setTxStatus('idle');
       return;
     }
@@ -417,10 +416,7 @@ export default function SwapInterface({
       clearTimeout(statusTimerRef.current);
       statusTimerRef.current = setTimeout(() => setTxStatus('idle'), 2500);
     } catch (err: unknown) {
-      toast.error(
-        err instanceof Error ? err.message : 'Swap failed',
-        { id: 'orbital-swap' },
-      );
+      toast.error(parseContractError(err), { id: 'orbital-swap' });
       setTxStatus('idle');
     }
   }, [
@@ -660,7 +656,7 @@ export default function SwapInterface({
           {sameTokenError && (
             <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-400">
               <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-              Input and output tokens must be different.
+              Select two different tokens to swap. Input and output cannot be the same.
             </div>
           )}
 
@@ -811,7 +807,7 @@ export default function SwapInterface({
             ) : (
               <>
                 <ArrowDownUp className="h-4 w-4" />
-                Swap
+                Swap Tokens
               </>
             )}
           </button>
@@ -824,7 +820,7 @@ export default function SwapInterface({
           <Info className="mb-3 h-6 w-6 text-gray-600" />
           <p className="text-sm text-gray-400">Select a pool to start swapping</p>
           <p className="mt-1 text-xs text-gray-600">
-            Choose from {pools.length} available Orbital pool{pools.length !== 1 ? 's' : ''}
+            Choose from {pools.length} available Orbital pool{pools.length !== 1 ? 's' : ''} above
           </p>
         </div>
       )}
@@ -833,9 +829,9 @@ export default function SwapInterface({
       {!loadingPools && pools.length === 0 && (
         <div className="flex flex-col items-center py-10 text-center">
           <AlertCircle className="mb-3 h-6 w-6 text-gray-600" />
-          <p className="text-sm text-gray-400">No Orbital pools available</p>
+          <p className="text-sm text-gray-400">No Orbital pools available yet</p>
           <p className="mt-1 text-xs text-gray-600">
-            Create a pool first, then return here to swap
+            Create a new pool to enable token swapping on this network
           </p>
         </div>
       )}

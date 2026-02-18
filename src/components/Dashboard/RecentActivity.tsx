@@ -8,6 +8,7 @@ import ActivityFeed from './ActivityFeed';
 interface RecentActivityProps {
   trades: TradeHistory[];
   maxItems?: number;
+  chainId?: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -19,6 +20,6 @@ interface RecentActivityProps {
 // section to be independently lazy-loaded or skeleton-gated in the future.
 // ---------------------------------------------------------------------------
 
-export default function RecentActivity({ trades, maxItems = 8 }: RecentActivityProps) {
-  return <ActivityFeed trades={trades} maxItems={maxItems} />;
+export default function RecentActivity({ trades, maxItems = 8, chainId }: RecentActivityProps) {
+  return <ActivityFeed trades={trades} maxItems={maxItems} chainId={chainId} />;
 }

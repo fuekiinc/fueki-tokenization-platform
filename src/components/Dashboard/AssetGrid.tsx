@@ -41,7 +41,7 @@ export default function AssetGrid({
 
   return (
     <div className={clsx(
-      'grid grid-cols-1 gap-6 pl-4 sm:grid-cols-2 lg:grid-cols-4 sm:gap-12 overflow-hidden',
+      'grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4 lg:gap-8 overflow-hidden',
     )}>
       <PortfolioSummaryCard
         title="Total Assets"

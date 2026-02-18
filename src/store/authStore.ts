@@ -114,6 +114,13 @@ const initialState = {
 };
 
 // ---------------------------------------------------------------------------
+// Double-init guard: ensures concurrent calls to initialize() share a single
+// in-flight promise rather than racing against each other.
+// ---------------------------------------------------------------------------
+
+let _initPromise: Promise<void> | null = null;
+
+// ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
 
@@ -122,57 +129,68 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
   // ---- initialize ----------------------------------------------------------
   initialize: async () => {
-    const savedTokens = loadFromStorage<AuthTokens>(TOKENS_KEY);
-    const savedUser = loadFromStorage<User>(USER_KEY);
+    // If an initialization is already in flight, piggyback on it.
+    if (_initPromise) return _initPromise;
 
-    if (!savedTokens || !validateTokens(savedTokens)) {
-      // No valid tokens -- clear any partial/corrupt state and mark ready.
-      if (savedTokens) {
-        removeFromStorage(TOKENS_KEY);
-      }
-      set({ isInitialized: true });
-      return;
-    }
+    _initPromise = (async () => {
+      const savedTokens = loadFromStorage<AuthTokens>(TOKENS_KEY);
+      const savedUser = loadFromStorage<User>(USER_KEY);
 
-    // Tokens found in storage -- try to validate them by fetching the profile.
-    try {
-      const user = await authApi.getProfile();
-      saveToStorage(USER_KEY, user);
-      set({
-        user,
-        tokens: savedTokens,
-        isAuthenticated: true,
-        isInitialized: true,
-      });
-    } catch {
-      // Access token may have expired -- attempt a refresh.
-      // The refresh token is sent automatically via httpOnly cookie.
-      try {
-        const newTokens = await authApi.refreshToken();
-
-        saveToStorage(TOKENS_KEY, newTokens);
-
-        // Fetch the user profile with the new access token.
-        let user: User | null = savedUser;
-        try {
-          user = await authApi.getProfile();
-          saveToStorage(USER_KEY, user);
-        } catch {
-          // If profile fetch fails, use the previously saved user data.
-          // This is a degraded state but better than logging the user out.
+      if (!savedTokens || !validateTokens(savedTokens)) {
+        // No valid tokens -- clear any partial/corrupt state and mark ready.
+        if (savedTokens) {
+          removeFromStorage(TOKENS_KEY);
         }
+        set({ isInitialized: true });
+        return;
+      }
 
+      // Tokens found in storage -- try to validate them by fetching the profile.
+      try {
+        const user = await authApi.getProfile();
+        saveToStorage(USER_KEY, user);
         set({
           user,
-          tokens: newTokens,
+          tokens: savedTokens,
           isAuthenticated: true,
           isInitialized: true,
         });
       } catch {
-        // Refresh also failed -- clear everything.
-        get().clearAuth();
-        set({ isInitialized: true });
+        // Access token may have expired -- attempt a refresh.
+        // The refresh token is sent automatically via httpOnly cookie.
+        try {
+          const newTokens = await authApi.refreshToken();
+
+          saveToStorage(TOKENS_KEY, newTokens);
+
+          // Fetch the user profile with the new access token.
+          let user: User | null = savedUser;
+          try {
+            user = await authApi.getProfile();
+            saveToStorage(USER_KEY, user);
+          } catch {
+            // If profile fetch fails, use the previously saved user data.
+            // This is a degraded state but better than logging the user out.
+          }
+
+          set({
+            user,
+            tokens: newTokens,
+            isAuthenticated: true,
+            isInitialized: true,
+          });
+        } catch {
+          // Refresh also failed -- clear everything.
+          get().clearAuth();
+          set({ isInitialized: true });
+        }
       }
+    })();
+
+    try {
+      await _initPromise;
+    } finally {
+      _initPromise = null;
     }
   },
 

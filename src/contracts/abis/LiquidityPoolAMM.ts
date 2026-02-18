@@ -9,11 +9,13 @@ export const LiquidityPoolAMMABI = [
   'constructor()',
 
   // Errors
+  'error DeadlineExpired()',
   'error InsufficientAAmount()',
   'error InsufficientBAmount()',
   'error InsufficientEth()',
   'error InsufficientLiquidity()',
   'error InsufficientOutput()',
+  'error InvariantViolation()',
   'error InvalidK()',
   'error NothingToWithdraw()',
   'error PoolExists()',
@@ -46,14 +48,14 @@ export const LiquidityPoolAMMABI = [
   'function quote(address tokenIn, address tokenOut, uint256 amountIn) view returns (uint256 amountOut)',
 
   // Write functions
-  'function addLiquidity(address tokenA, address tokenB, uint256 amountA, uint256 amountB, uint256 minLiquidity) returns (uint256 liquidity)',
-  'function addLiquidityETH(address token, uint256 amountToken, uint256 minLiquidity) payable returns (uint256 liquidity)',
+  'function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, uint256 amountBDesired, uint256 amountAMin, uint256 amountBMin, uint256 minLiquidity, uint256 deadline) returns (uint256 liquidity)',
+  'function addLiquidityETH(address token, uint256 amountToken, uint256 minLiquidity, uint256 deadline) payable returns (uint256 liquidity)',
   'function createPool(address tokenA, address tokenB) returns (bytes32 poolId)',
-  'function removeLiquidity(address tokenA, address tokenB, uint256 liquidity, uint256 minA, uint256 minB) returns (uint256 amountA, uint256 amountB)',
-  'function removeLiquidityETH(address token, uint256 liquidity, uint256 minToken, uint256 minETH) returns (uint256 amountToken, uint256 amountETH)',
-  'function swap(address tokenIn, address tokenOut, uint256 amountIn, uint256 minAmountOut) returns (uint256 amountOut)',
-  'function swapETHForToken(address token, uint256 minAmountOut) payable returns (uint256 amountOut)',
-  'function swapTokenForETH(address token, uint256 amountIn, uint256 minETH) returns (uint256 amountOut)',
+  'function removeLiquidity(address tokenA, address tokenB, uint256 liquidity, uint256 minA, uint256 minB, uint256 deadline) returns (uint256 amountA, uint256 amountB)',
+  'function removeLiquidityETH(address token, uint256 liquidity, uint256 minToken, uint256 minETH, uint256 deadline) returns (uint256 amountToken, uint256 amountETH)',
+  'function swap(address tokenIn, address tokenOut, uint256 amountIn, uint256 minAmountOut, uint256 deadline) returns (uint256 amountOut)',
+  'function swapETHForToken(address token, uint256 minAmountOut, uint256 deadline) payable returns (uint256 amountOut)',
+  'function swapTokenForETH(address token, uint256 amountIn, uint256 minETH, uint256 deadline) returns (uint256 amountOut)',
   'function withdrawEth()',
 
   // Receive

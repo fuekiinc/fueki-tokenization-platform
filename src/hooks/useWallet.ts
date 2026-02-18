@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
+import logger from '../lib/logger';
 import { useWalletStore, getProvider as getStoreProvider } from '../store/walletStore.ts';
 import { useAssetStore } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
@@ -243,7 +244,7 @@ export function useWallet() {
         // If user rejected (4001), don't try fallbacks -- they said no.
         if (code === 4001) throw reqErr;
 
-        console.warn('eth_requestAccounts failed, trying wallet_requestPermissions...', reqErr);
+        logger.warn('eth_requestAccounts failed, trying wallet_requestPermissions...', reqErr);
 
         // Strategy 2: wallet_requestPermissions (works on some wallets that
         // don't implement eth_requestAccounts properly)
@@ -259,7 +260,7 @@ export function useWallet() {
           const permCode = (permErr as { code?: number }).code;
           if (permCode === 4001) throw permErr;
 
-          console.warn('wallet_requestPermissions failed, trying eth_accounts...', permErr);
+          logger.warn('wallet_requestPermissions failed, trying eth_accounts...', permErr);
 
           // Strategy 3: eth_accounts (check if already authorized)
           try {
@@ -302,7 +303,7 @@ export function useWallet() {
         `Wallet connected: ${address.slice(0, 6)}...${address.slice(-4)}`,
       );
     } catch (err: unknown) {
-      console.error('Wallet connection failed:', err);
+      logger.error('Wallet connection failed:', err);
 
       // Parse the user-facing message out of ethers v6 nested error structure.
       const message = parseWalletError(err);
@@ -382,7 +383,7 @@ export function useWallet() {
               toast.error(msg);
               return;
             }
-            console.error('wallet_addEthereumChain failed:', addErr);
+            logger.error('wallet_addEthereumChain failed:', addErr);
           }
         }
         const msg =
@@ -417,7 +418,7 @@ export function useWallet() {
       const balance = await provider.getBalance(wallet.address);
       setWallet({ balance: ethers.formatEther(balance) });
     } catch (err) {
-      console.error('Failed to refresh balance:', err);
+      logger.error('Failed to refresh balance:', err);
       toast.error('Failed to refresh wallet balance');
     }
   }, [wallet.address, wallet.isConnected, setWallet, getEthereumProvider]);
@@ -469,7 +470,13 @@ export function useWallet() {
       }
 
       // Normalize to checksum address for consistent comparison and storage.
-      const checksumAddress = ethers.getAddress(accounts[0]);
+      let checksumAddress: string;
+      try {
+        checksumAddress = ethers.getAddress(accounts[0]);
+      } catch {
+        logger.error('Invalid address returned by wallet:', accounts[0]);
+        return;
+      }
       const currentAddress = walletRef.current.address;
       if (checksumAddress !== currentAddress) {
         try {
@@ -485,7 +492,7 @@ export function useWallet() {
             isConnected: true,
           });
         } catch (err) {
-          console.error('Failed to handle account change:', err);
+          logger.error('Failed to handle account change:', err);
           toast.error('Failed to update wallet after account change');
         }
       }
@@ -505,7 +512,7 @@ export function useWallet() {
     // all chains, or when Trust Wallet / Coinbase Wallet explicitly revoke
     // the dApp's permission from the wallet UI.
     const handleDisconnect = (error: { code: number; message: string }) => {
-      console.warn('Wallet disconnect event:', error);
+      logger.warn('Wallet disconnect event:', error);
       useWalletStore.getState().resetWallet();
       useAssetStore.getState().setAssets([]);
       useAssetStore.getState().setSecurityTokens([]);

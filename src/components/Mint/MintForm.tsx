@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ethers } from 'ethers';
 import {
   Loader2,
@@ -15,18 +15,25 @@ import {
   ShieldCheck,
   RotateCcw,
   User,
+  Check,
+  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ContractService } from '../../lib/blockchain/contracts';
+import logger from '../../lib/logger';
 import { InfoTooltip } from '../Common/Tooltip';
+import { FormField } from '../Common/FormField';
 import { TOOLTIPS } from '../../lib/tooltipContent';
 import { useWallet } from '../../hooks/useWallet';
 import { useTradeStore } from '../../store/tradeStore.ts';
 import { useAssetStore } from '../../store/assetStore.ts';
 import { getProvider } from '../../store/walletStore.ts';
 import { formatAddress, generateId, copyToClipboard } from '../../lib/utils/helpers';
+import { txSubmittedToast, txConfirmedToast, txFailedToast } from '../../lib/utils/txToast';
 import { formatTokenAmount } from '../../lib/formatters';
 import { getNetworkConfig, getNetworkMetadata } from '../../contracts/addresses';
+import { sanitizePastedAddress, validateTokenSymbol, validatePositiveAmount } from '../../lib/utils/validation';
+import { INPUT_CLASSES } from '../../lib/designTokens';
 import type { ParsedDocument, TradeHistory } from '../../types';
 
 // ---------------------------------------------------------------------------
@@ -64,13 +71,12 @@ function formatNumberDisplay(value: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Shared input styles
+// Shared input styles (from design system)
 // ---------------------------------------------------------------------------
 
-const inputClasses =
-  'w-full bg-[#0D0F14] border border-white/[0.06] rounded-xl px-4 py-3.5 text-white placeholder-gray-600 text-sm outline-none transition-all duration-200 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20';
+const inputClasses = INPUT_CLASSES.base;
 
-const labelClasses = 'block text-sm font-medium text-gray-300 mb-2';
+const labelClasses = INPUT_CLASSES.label;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -89,6 +95,22 @@ export default function MintForm({ document }: MintFormProps) {
   const [recipient, setRecipient] = useState('');
   const [recipientManuallyEdited, setRecipientManuallyEdited] = useState(false);
   const [symbolManuallyEdited, setSymbolManuallyEdited] = useState(false);
+
+  // ---- Double-submission guard -------------------------------------------
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ---- Touched tracking for real-time validation -------------------------
+
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  const markTouched = useCallback((field: string) => {
+    setTouched((prev) => (prev[field] ? prev : { ...prev, [field]: true }));
+  }, []);
+
+  // ---- Address paste validation state ------------------------------------
+
+  const [recipientPasteStatus, setRecipientPasteStatus] = useState<'idle' | 'valid' | 'invalid'>('idle');
 
   // ---- TX state -----------------------------------------------------------
 
@@ -146,6 +168,51 @@ export default function MintForm({ document }: MintFormProps) {
     }
   }, [tokenName, symbolManuallyEdited]);
 
+  // ---- Real-time inline field errors --------------------------------------
+
+  const fieldErrors = useMemo(() => {
+    const errors: Record<string, string | undefined> = {};
+
+    // Token name
+    if (touched.tokenName && !tokenName.trim()) {
+      errors.tokenName = 'Token name is required';
+    }
+
+    // Token symbol
+    if (touched.tokenSymbol) {
+      const symbolErr = validateTokenSymbol(tokenSymbol);
+      if (symbolErr) errors.tokenSymbol = symbolErr;
+    }
+
+    // Mint amount
+    if (touched.mintAmount) {
+      const sanitized = mintAmount.replace(/[,\s]/g, '');
+      const amtErr = validatePositiveAmount(sanitized, 'Mint amount');
+      if (amtErr) {
+        errors.mintAmount = amtErr;
+      } else if (
+        document &&
+        !isNaN(Number(sanitized)) &&
+        Number(sanitized) > document.totalValue
+      ) {
+        errors.mintAmount = `Cannot exceed document value (${document.totalValue} ${document.currency})`;
+      }
+    }
+
+    // Recipient
+    if (touched.recipient) {
+      if (!recipient) {
+        errors.recipient = 'Recipient address is required';
+      } else if (!ethers.isAddress(recipient)) {
+        errors.recipient = 'Must be a valid Ethereum address (0x...)';
+      } else if (recipient === ethers.ZeroAddress) {
+        errors.recipient = 'Cannot be the zero address';
+      }
+    }
+
+    return errors;
+  }, [tokenName, tokenSymbol, mintAmount, recipient, touched, document]);
+
   // ---- Validation ---------------------------------------------------------
 
   const validate = useCallback((): string | null => {
@@ -171,21 +238,26 @@ export default function MintForm({ document }: MintFormProps) {
   // ---- Mint handler -------------------------------------------------------
 
   const handleMint = async () => {
+    if (isSubmitting) return;
+
     const validationError = validate();
     if (validationError) {
+      // Mark all fields as touched to show inline errors
+      setTouched({ tokenName: true, tokenSymbol: true, mintAmount: true, recipient: true });
       toast.error(validationError);
       return;
     }
 
+    setIsSubmitting(true);
     const provider = getProvider();
     if (!provider || !chainId) {
-      toast.error('Wallet not connected');
+      toast.error('Please connect your wallet before minting.');
       return;
     }
 
     const networkConfig = getNetworkConfig(chainId);
     if (!networkConfig) {
-      toast.error(`Network (chain ID ${chainId}) is not supported`);
+      toast.error(`This network (chain ID ${chainId}) is not supported. Please switch to a supported network.`);
       return;
     }
     if (!networkConfig.factoryAddress) {
@@ -196,6 +268,8 @@ export default function MintForm({ document }: MintFormProps) {
     setTxState('pending');
     setTxHash(null);
     setTxError(null);
+
+    let submittedMintHash: string | null = null;
 
     try {
       const service = new ContractService(provider, chainId);
@@ -256,10 +330,9 @@ export default function MintForm({ document }: MintFormProps) {
         recipient,
       );
 
+      submittedMintHash = tx.hash;
       setTxHash(tx.hash);
-      toast.loading('Transaction submitted. Waiting for confirmation...', {
-        id: 'mint-tx',
-      });
+      txSubmittedToast(tx.hash, chainId, 'Minting token... Waiting for confirmation');
 
       const receipt = await service.waitForTransaction(tx);
 
@@ -294,18 +367,17 @@ export default function MintForm({ document }: MintFormProps) {
       }
 
       // If we could not extract the token address from the event log,
-      // derive a deterministic placeholder so the asset record is still
-      // traceable back to the transaction.
+      // use the tx hash as a fallback identifier so the asset record is
+      // still traceable back to the transaction.
       if (!assetAddress) {
-        console.warn(
+        logger.warn(
           'Could not extract token address from AssetCreated event. Using tx hash as fallback identifier.',
         );
         assetAddress = receipt.hash;
       }
 
-      toast.dismiss('mint-tx');
+      txConfirmedToast(tx.hash, 'Wrapped asset minted successfully!');
       setTxState('confirmed');
-      toast.success('Wrapped asset minted successfully!');
 
       // Record trade in store
       const trade: TradeHistory = {
@@ -335,14 +407,13 @@ export default function MintForm({ document }: MintFormProps) {
         createdAt: Date.now(),
       });
     } catch (err: unknown) {
-      toast.dismiss('mint-tx');
       let message = 'Minting transaction failed';
       if (err instanceof Error) {
         // Provide user-friendly messages for common contract errors
         if (err.message.includes('user rejected') || err.message.includes('ACTION_REJECTED')) {
-          message = 'Transaction was rejected by the user';
+          message = 'You rejected the transaction in your wallet. No tokens were minted.';
         } else if (err.message.includes('insufficient funds')) {
-          message = 'Insufficient funds to cover gas fees';
+          message = 'Insufficient ETH to cover gas fees. Please add funds to your wallet.';
         } else if (err.message.includes('EmptyName')) {
           message = 'Token name cannot be empty';
         } else if (err.message.includes('EmptySymbol')) {
@@ -359,7 +430,13 @@ export default function MintForm({ document }: MintFormProps) {
       }
       setTxError(message);
       setTxState('failed');
-      toast.error(message);
+      if (submittedMintHash) {
+        txFailedToast(submittedMintHash, message);
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -435,9 +512,9 @@ export default function MintForm({ document }: MintFormProps) {
 
         <div className="flex flex-col items-center justify-center py-14 text-center">
           <div className="relative mb-7">
-            <div className="absolute -inset-3 rounded-full bg-indigo-500/10 animate-ping" />
+            <div className="absolute -inset-3 rounded-full bg-indigo-500/10 animate-ping motion-reduce:animate-none" />
             <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/20">
-              <Loader2 className="h-7 w-7 animate-spin text-indigo-400" />
+              <Loader2 className="h-7 w-7 animate-spin motion-reduce:animate-none text-indigo-400" />
             </div>
           </div>
 
@@ -450,7 +527,7 @@ export default function MintForm({ document }: MintFormProps) {
 
           {txHash && (
             <div className="mt-8 inline-flex items-center gap-2.5 rounded-2xl bg-amber-500/[0.06] border border-amber-500/10 px-5 py-3">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none text-amber-400" />
               <span className="text-sm text-amber-300/90">
                 Tx submitted:{' '}
                 {blockExplorer ? (
@@ -641,25 +718,32 @@ export default function MintForm({ document }: MintFormProps) {
 
       <div className="space-y-6">
         {/* Token Name */}
-        <div>
-          <label htmlFor="tokenName" className={labelClasses}>
-            Token Name
-          </label>
+        <FormField
+          label="Token Name"
+          htmlFor="tokenName"
+          error={fieldErrors.tokenName}
+          required
+        >
           <input
             id="tokenName"
             type="text"
             value={tokenName}
             onChange={(e) => setTokenName(e.target.value)}
+            onBlur={() => markTouched('tokenName')}
             placeholder="e.g., Wrapped Invoice Q4-2024"
-            className={inputClasses}
+            className={`${inputClasses}${fieldErrors.tokenName ? ' border-red-500/50 focus:border-red-500/70 focus:ring-red-500/20' : ''}`}
+            aria-invalid={!!fieldErrors.tokenName}
           />
-        </div>
+        </FormField>
 
         {/* Token Symbol */}
-        <div>
-          <label htmlFor="tokenSymbol" className={labelClasses}>
-            Token Symbol
-          </label>
+        <FormField
+          label="Token Symbol"
+          htmlFor="tokenSymbol"
+          error={fieldErrors.tokenSymbol}
+          hint={!fieldErrors.tokenSymbol && tokenSymbol ? `${tokenSymbol.length}/11 characters` : undefined}
+          required
+        >
           <div className="relative">
             <input
               id="tokenSymbol"
@@ -669,15 +753,17 @@ export default function MintForm({ document }: MintFormProps) {
                 setTokenSymbol(e.target.value.toUpperCase());
                 setSymbolManuallyEdited(true);
               }}
+              onBlur={() => markTouched('tokenSymbol')}
               placeholder="e.g., wINV24"
               maxLength={11}
-              className={`${inputClasses} uppercase pr-16`}
+              className={`${inputClasses} uppercase pr-16${fieldErrors.tokenSymbol ? ' border-red-500/50 focus:border-red-500/70 focus:ring-red-500/20' : ''}`}
+              aria-invalid={!!fieldErrors.tokenSymbol}
             />
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-gray-600 tabular-nums">
               {tokenSymbol.length}/11
             </span>
           </div>
-        </div>
+        </FormField>
       </div>
 
       {/* ---- Section: Mint Details ---- */}
@@ -690,28 +776,35 @@ export default function MintForm({ document }: MintFormProps) {
 
       <div className="space-y-6">
         {/* Mint Amount */}
-        <div>
-          <label htmlFor="mintAmount" className={labelClasses}>
-            <span className="inline-flex items-center gap-1.5">
-              Mint Amount
-              <InfoTooltip content={TOOLTIPS.mintAmount} />
-            </span>
-          </label>
+        <FormField
+          label="Mint Amount"
+          htmlFor="mintAmount"
+          error={fieldErrors.mintAmount}
+          hint={
+            !fieldErrors.mintAmount && mintAmount && !isNaN(Number(mintAmount.replace(/[,\s]/g, '')))
+              ? `${formatNumberDisplay(mintAmount)} of ${formatNumberDisplay(String(document.totalValue))} ${document.currency} max`
+              : undefined
+          }
+          required
+        >
           <div className="relative">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2">
+              <InfoTooltip content={TOOLTIPS.mintAmount} />
+            </div>
             <input
               id="mintAmount"
               type="text"
               inputMode="decimal"
               value={mintAmount}
               onChange={(e) => setMintAmount(e.target.value)}
+              onBlur={() => markTouched('mintAmount')}
               placeholder="0.00"
-              className={`${inputClasses} pr-32${
-                mintAmount &&
-                !isNaN(Number(mintAmount.replace(/[,\s]/g, ''))) &&
-                Number(mintAmount.replace(/[,\s]/g, '')) > document.totalValue
+              className={`${inputClasses} pl-10 pr-32${
+                fieldErrors.mintAmount || amountExceedsDocValue
                   ? ' border-red-500/50 focus:border-red-500/70 focus:ring-red-500/20'
                   : ''
               }`}
+              aria-invalid={!!fieldErrors.mintAmount}
             />
             <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
               {/* Max button -- fills the input with the document's total value */}
@@ -729,24 +822,20 @@ export default function MintForm({ document }: MintFormProps) {
               </span>
             </div>
           </div>
-          {mintAmount && !isNaN(Number(mintAmount.replace(/[,\s]/g, ''))) && (
-            Number(mintAmount.replace(/[,\s]/g, '')) > document.totalValue ? (
-              <p className="mt-2 text-xs text-red-400">
-                Exceeds document value of {formatNumberDisplay(String(document.totalValue))} {document.currency}. Max mintable: {document.totalValue}
-              </p>
-            ) : (
-              <p className="mt-2 text-xs text-gray-600">
-                {formatNumberDisplay(mintAmount)} of {formatNumberDisplay(String(document.totalValue))} {document.currency} max
-              </p>
-            )
-          )}
-        </div>
+        </FormField>
 
         {/* Recipient */}
-        <div>
-          <label htmlFor="recipient" className={labelClasses}>
-            Recipient Address
-          </label>
+        <FormField
+          label="Recipient Address"
+          htmlFor="recipient"
+          error={fieldErrors.recipient}
+          hint={
+            !fieldErrors.recipient && address && recipient === address
+              ? `Your connected wallet (${formatAddress(address)})`
+              : undefined
+          }
+          required
+        >
           <div className="relative">
             <input
               id="recipient"
@@ -755,28 +844,47 @@ export default function MintForm({ document }: MintFormProps) {
               onChange={(e) => {
                 setRecipient(e.target.value);
                 setRecipientManuallyEdited(true);
+                setRecipientPasteStatus('idle');
+              }}
+              onBlur={() => markTouched('recipient')}
+              onPaste={(e) => {
+                const pasted = e.clipboardData.getData('text');
+                const { value, valid } = sanitizePastedAddress(pasted);
+                e.preventDefault();
+                setRecipient(value);
+                setRecipientManuallyEdited(true);
+                setRecipientPasteStatus(valid ? 'valid' : 'invalid');
+                markTouched('recipient');
               }}
               placeholder="0x..."
-              className={`${inputClasses} font-mono text-xs pr-32`}
+              className={`${inputClasses} font-mono text-xs pr-32${fieldErrors.recipient ? ' border-red-500/50 focus:border-red-500/70 focus:ring-red-500/20' : ''}`}
+              aria-invalid={!!fieldErrors.recipient}
             />
-            {address && recipient !== address && (
-              <button
-                type="button"
-                onClick={() => { setRecipient(address); setRecipientManuallyEdited(false); }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-3 py-1.5 text-xs font-medium text-indigo-400 transition-all hover:bg-indigo-500/15 hover:text-indigo-300"
-              >
-                <User className="h-3 w-3" />
-                Use my address
-              </button>
-            )}
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              {/* Paste validation indicator */}
+              {recipientPasteStatus === 'valid' && (
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/15" title="Valid Ethereum address">
+                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                </span>
+              )}
+              {recipientPasteStatus === 'invalid' && (
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-500/15" title="Invalid Ethereum address">
+                  <X className="h-3.5 w-3.5 text-red-400" />
+                </span>
+              )}
+              {address && recipient !== address && (
+                <button
+                  type="button"
+                  onClick={() => { setRecipient(address); setRecipientManuallyEdited(false); setRecipientPasteStatus('idle'); }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-3 py-1.5 text-xs font-medium text-indigo-400 transition-all hover:bg-indigo-500/15 hover:text-indigo-300"
+                >
+                  <User className="h-3 w-3" />
+                  Use my address
+                </button>
+              )}
+            </div>
           </div>
-          {address && recipient === address && (
-            <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-600">
-              <ShieldCheck className="h-3 w-3 text-emerald-500/60" />
-              Your connected wallet ({formatAddress(address)})
-            </p>
-          )}
-        </div>
+        </FormField>
       </div>
 
       {/* ---- Section: Document Summary ---- */}
@@ -833,28 +941,62 @@ export default function MintForm({ document }: MintFormProps) {
       </div>
 
       {/* ---- Submit Button ---- */}
-      <button
-        type="button"
-        onClick={() => { void handleMint(); }}
-        disabled={!canSubmit}
-        className="group relative flex w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 px-6 py-4 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-all duration-200 hover:shadow-indigo-500/30 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:shadow-none disabled:hover:brightness-100 disabled:active:scale-100"
-      >
-        {/* Button shimmer effect */}
-        <div className="absolute inset-0 overflow-hidden rounded-2xl">
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.06] to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
-        </div>
+      {(() => {
+        // Determine the button label with a clear reason when disabled
+        let buttonLabel = 'Mint Token';
+        let buttonDisabledReason = '';
+        if (isSubmitting) {
+          buttonLabel = 'Submitting...';
+        } else if (!tokenName.trim()) {
+          buttonDisabledReason = 'Enter a token name';
+        } else if (!tokenSymbol.trim()) {
+          buttonDisabledReason = 'Enter a token symbol';
+        } else if (!mintAmount || isNaN(parsedMintAmount) || parsedMintAmount <= 0) {
+          buttonDisabledReason = 'Enter a mint amount';
+        } else if (amountExceedsDocValue) {
+          buttonDisabledReason = `Exceeds document value (${formatNumberDisplay(String(document.totalValue))} ${document.currency})`;
+        } else if (!recipient) {
+          buttonDisabledReason = 'Enter a recipient address';
+        } else if (!ethers.isAddress(recipient)) {
+          buttonDisabledReason = 'Invalid recipient address';
+        }
 
-        <Sparkles className="relative h-4.5 w-4.5" />
-        <span className="relative">Mint Token</span>
-      </button>
+        const isDisabled = !canSubmit || isSubmitting;
 
-      {!canSubmit && (
-        <p className={`text-center text-xs ${amountExceedsDocValue ? 'text-red-400' : 'text-gray-600'}`}>
-          {amountExceedsDocValue
-            ? `Mint amount exceeds the document value of ${formatNumberDisplay(String(document.totalValue))} ${document.currency}`
-            : 'Fill in all fields above to enable minting'}
-        </p>
-      )}
+        return (
+          <>
+            <button
+              type="button"
+              onClick={() => { void handleMint(); }}
+              disabled={isDisabled}
+              className="group relative flex w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 px-6 py-4 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-all duration-200 hover:shadow-indigo-500/30 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:shadow-none disabled:hover:brightness-100 disabled:active:scale-100"
+            >
+              {/* Button shimmer effect */}
+              <div className="absolute inset-0 overflow-hidden rounded-2xl">
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.06] to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+              </div>
+
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="relative h-4.5 w-4.5 animate-spin motion-reduce:animate-none" />
+                  <span className="relative">Submitting...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="relative h-4.5 w-4.5" />
+                  <span className="relative">{buttonDisabledReason || buttonLabel}</span>
+                </>
+              )}
+            </button>
+
+            {!canSubmit && !isSubmitting && buttonDisabledReason && (
+              <p className={`text-center text-xs ${amountExceedsDocValue ? 'text-red-400' : 'text-gray-600'}`}>
+                {buttonDisabledReason}
+              </p>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }

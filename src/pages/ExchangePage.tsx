@@ -16,8 +16,9 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useWallet } from '../hooks/useWallet';
 import { useWalletStore, getProvider } from '../store/walletStore.ts';
-import { useAssetStore } from '../store/assetStore.ts';
+import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
 import { ContractService } from '../lib/blockchain/contracts';
+import logger from '../lib/logger';
 import { getNetworkConfig } from '../contracts/addresses';
 import { formatAddress } from '../lib/utils/helpers';
 // Card is available in Common but not needed in this layout
@@ -28,6 +29,8 @@ import TokenSelector from '../components/Exchange/TokenSelector';
 import LiquidityPanel from '../components/Exchange/LiquidityPanel';
 import PoolInfo from '../components/Exchange/PoolInfo';
 import TradingViewChart from '../components/Exchange/TradingViewChart';
+import { ComponentErrorBoundary } from '../components/ErrorBoundary';
+import { ErrorState } from '../components/Common/StateDisplays';
 import {
   ArrowLeftRight,
   TrendingUp,
@@ -45,6 +48,7 @@ import {
   Droplets,
 } from 'lucide-react';
 import type { WrappedAsset } from '../types';
+import { CARD_CLASSES } from '../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // Mobile tab identifiers
@@ -78,9 +82,8 @@ function GlassCard({
   return (
     <div
       className={clsx(
-        'relative rounded-2xl',
-        'bg-[#0D0F14]/80 backdrop-blur-xl',
-        'border border-white/[0.06]',
+        'relative',
+        CARD_CLASSES.base,
         'transition-all duration-300',
         className,
       )}
@@ -131,6 +134,7 @@ export default function ExchangePage() {
   // Pair selection for order book -- derived from TradeForm selections
   const [selectedSellToken, setSelectedSellToken] = useState<string | null>(null);
   const [selectedBuyToken, setSelectedBuyToken] = useState<string | null>(null);
+  const [initError, setInitError] = useState<string | null>(null);
 
   // ---- Derived state ------------------------------------------------------
 
@@ -164,10 +168,12 @@ export default function ExchangePage() {
     try {
       const service = new ContractService(provider, wallet.chainId);
       setContractService(service);
+      setInitError(null);
     } catch (err) {
-      console.error('Failed to initialize ContractService:', err);
-      toast.error('Failed to initialize exchange contracts');
+      logger.error('Failed to initialize ContractService:', err);
+      toast.error('Unable to connect to exchange contracts. Please check your network and try again.');
       setContractService(null);
+      setInitError('Failed to initialize exchange contracts. Please check your network.');
     }
   }, [isConnected, wallet.chainId]);
 
@@ -183,12 +189,14 @@ export default function ExchangePage() {
   const fetchAssets = useCallback(async () => {
     if (!contractService || !address) return;
 
+    const gen = nextAssetFetchGeneration();
     setLocalLoadingAssets(true);
     setLoadingAssets(true);
 
     try {
       // Get total number of assets from factory
       const totalAssets = await contractService.getTotalAssets();
+      if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
       if (totalAssets === 0n) {
         setLocalAssets([]);
         setAssets([]);
@@ -200,9 +208,10 @@ export default function ExchangePage() {
       try {
         userAssetAddresses = await contractService.getUserAssets(address);
       } catch (err) {
-        console.error('Failed to fetch user assets:', err);
-        toast.error('Failed to load your asset list');
+        logger.error('Failed to fetch user assets:', err);
+        toast.error('Unable to load your token list. Some tokens may be missing.');
       }
+      if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
 
       // Build a unique set of known asset addresses.
       // Read from the ref to avoid the dependency cycle.
@@ -235,13 +244,15 @@ export default function ExchangePage() {
             });
           } catch (err) {
             failedCount++;
-            console.error(`Failed to load asset ${addr}:`, err);
+            logger.error(`Failed to load asset ${addr}:`, err);
           }
         }),
       );
 
+      if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
+
       if (failedCount > 0) {
-        toast.error(`Failed to load ${failedCount} asset(s). Some assets may be missing.`);
+        toast.error(`Could not load ${failedCount} token(s). Some tokens may not appear in your list.`);
       }
 
       // Sort by balance descending
@@ -256,8 +267,8 @@ export default function ExchangePage() {
       setLocalAssets(assetList);
       setAssets(assetList);
     } catch (err) {
-      console.error('Failed to fetch assets:', err);
-      toast.error('Failed to load wrapped assets');
+      logger.error('Failed to fetch assets:', err);
+      toast.error('Unable to load your tokens. Check your connection and try again.');
     } finally {
       setLocalLoadingAssets(false);
       setLoadingAssets(false);
@@ -281,8 +292,8 @@ export default function ExchangePage() {
           setEthBalance(bal.toString());
         }
       } catch (error) {
-        console.error('Failed to fetch ETH balance:', error);
-        toast.error('Failed to fetch ETH balance');
+        logger.error('Failed to fetch ETH balance:', error);
+        toast.error('Unable to fetch your ETH balance. Try refreshing the page.');
       }
     }
     void loadEthBalance();
@@ -315,7 +326,7 @@ export default function ExchangePage() {
           <GlassCard className="mx-auto max-w-2xl px-10 sm:px-14 py-20 sm:py-28 text-center">
             {/* Icon with animated ring */}
             <div className="mx-auto mb-10 flex h-24 w-24 items-center justify-center">
-              <div className="absolute h-24 w-24 animate-ping rounded-2xl bg-indigo-500/10" />
+              <div className="absolute h-24 w-24 animate-ping motion-reduce:animate-none rounded-2xl bg-indigo-500/10" />
               <div className="relative flex h-24 w-24 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600/20 to-cyan-600/20 ring-1 ring-white/[0.08]">
                 <ArrowLeftRight className="h-11 w-11 text-indigo-400" />
               </div>
@@ -365,7 +376,7 @@ export default function ExchangePage() {
               <span className="absolute inset-0 -z-10 rounded-xl bg-indigo-500/20 blur-xl transition-opacity duration-300 group-hover:opacity-100 opacity-0" />
               {isConnecting ? (
                 <>
-                  <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                  <Loader2 className="h-4.5 w-4.5 animate-spin motion-reduce:animate-none" />
                   Connecting...
                 </>
               ) : (
@@ -507,7 +518,7 @@ export default function ExchangePage() {
                 <RefreshCw
                   className={clsx(
                     'h-4 w-4 transition-transform duration-500',
-                    isRefreshing && 'animate-spin',
+                    isRefreshing && 'animate-spin motion-reduce:animate-none',
                   )}
                 />
               </button>
@@ -515,7 +526,7 @@ export default function ExchangePage() {
               {/* Network badge */}
               {networkConfig && (
                 <div className="hidden items-center gap-2 rounded-xl bg-[#0D0F14]/80 px-4 py-2.5 text-xs text-gray-500 ring-1 ring-white/[0.06] backdrop-blur-xl xl:flex">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse motion-reduce:animate-none" />
                   {networkConfig.name}
                 </div>
               )}
@@ -529,7 +540,7 @@ export default function ExchangePage() {
         {loadingAssets && assets.length === 0 && (
           <GlassCard className="flex items-center justify-center py-24">
             <div className="flex flex-col items-center gap-4">
-              <Loader2 className="h-8 w-8 animate-spin text-indigo-400/60" />
+              <Loader2 className="h-8 w-8 animate-spin motion-reduce:animate-none text-indigo-400/60" />
               <span className="text-sm text-gray-500">
                 Loading wrapped assets...
               </span>
@@ -538,18 +549,21 @@ export default function ExchangePage() {
         )}
 
         {/* ================================================================= */}
-        {/* No assets warning                                                 */}
+        {/* Contract init error / No assets warning                            */}
         {/* ================================================================= */}
-        {!loadingAssets && assets.length === 0 && (
+        {initError && !contractService && (
+          <ErrorState message={initError} onRetry={() => window.location.reload()} />
+        )}
+        {!initError && !loadingAssets && assets.length === 0 && (
           <GlassCard className="flex flex-col items-center justify-center px-8 py-24 text-center">
             <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-500/10 ring-1 ring-white/[0.06]">
               <AlertCircle className="h-8 w-8 text-gray-600" />
             </div>
             <p className="text-sm font-medium text-gray-400">
-              No wrapped assets found
+              No tokens available for trading
             </p>
             <p className="mt-2 max-w-xs text-xs leading-relaxed text-gray-600">
-              Mint some wrapped assets first, then return here to trade them.
+              Tokenize your first asset on the Mint page, then come back here to start trading.
             </p>
           </GlassCard>
         )}
@@ -658,13 +672,15 @@ export default function ExchangePage() {
                 </div>
                 {/* Card body */}
                 <div className="p-5 sm:p-7">
-                  <OrderBook
-                    key={`orderbook-${refreshKey}`}
-                    tokenSell={selectedSellToken ?? ''}
-                    tokenBuy={selectedBuyToken ?? ''}
-                    contractService={contractService}
-                    onOrderFilled={handleRefresh}
-                  />
+                  <ComponentErrorBoundary name="OrderBook">
+                    <OrderBook
+                      key={`orderbook-${refreshKey}`}
+                      tokenSell={selectedSellToken ?? ''}
+                      tokenBuy={selectedBuyToken ?? ''}
+                      contractService={contractService}
+                      onOrderFilled={handleRefresh}
+                    />
+                  </ComponentErrorBoundary>
                 </div>
               </GlassCard>
             </div>
@@ -702,11 +718,13 @@ export default function ExchangePage() {
                 </div>
                 {/* Card body -- responsive padding for the trade form */}
                 <div className="p-5 sm:p-7 lg:p-9">
-                  <TradeForm
-                    assets={assets}
-                    contractService={contractService}
-                    onOrderCreated={handleRefresh}
-                  />
+                  <ComponentErrorBoundary name="TradeForm">
+                    <TradeForm
+                      assets={assets}
+                      contractService={contractService}
+                      onOrderCreated={handleRefresh}
+                    />
+                  </ComponentErrorBoundary>
                 </div>
               </GlassCard>
             </div>
@@ -744,12 +762,14 @@ export default function ExchangePage() {
                 </div>
                 {/* Card body */}
                 <div className="p-5 sm:p-7">
-                  <UserOrders
-                    key={`userorders-${refreshKey}`}
-                    contractService={contractService}
-                    userAddress={address ?? ''}
-                    onOrderCancelled={handleRefresh}
-                  />
+                  <ComponentErrorBoundary name="UserOrders">
+                    <UserOrders
+                      key={`userorders-${refreshKey}`}
+                      contractService={contractService}
+                      userAddress={address ?? ''}
+                      onOrderCancelled={handleRefresh}
+                    />
+                  </ComponentErrorBoundary>
                 </div>
               </GlassCard>
             </div>
@@ -854,7 +874,7 @@ export default function ExchangePage() {
             )}
           >
             {/* Network */}
-            <span className="flex items-center gap-2 text-[11px] text-gray-500">
+            <span className="flex items-center gap-2 text-xs text-gray-500">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               {networkConfig.name}
             </span>

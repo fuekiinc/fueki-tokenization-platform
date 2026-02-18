@@ -14,13 +14,13 @@ import Badge from '../Common/Badge';
 import Spinner from '../Common/Spinner';
 import EmptyState from '../Common/EmptyState';
 import AdminUserDetail from './AdminUserDetail';
+import { CARD_CLASSES } from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
-// Glass style tokens
+// Glass style tokens (from design system)
 // ---------------------------------------------------------------------------
 
-const GLASS =
-  'bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] rounded-2xl';
+const GLASS = CARD_CLASSES.base;
 
 // ---------------------------------------------------------------------------
 // KYC status badge variant mapping

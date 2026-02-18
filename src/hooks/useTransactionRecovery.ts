@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import logger from '../lib/logger';
 import { useWalletStore, getProvider } from '../store/walletStore.ts';
 import {
   checkPendingTransactions,
@@ -79,7 +80,7 @@ export function useTransactionRecovery(): TransactionRecoveryState {
       } catch (err) {
         // Network errors during receipt fetch are non-fatal; the user can
         // try again on the next session. Log for debugging.
-        console.error('[useTransactionRecovery] check failed:', err);
+        logger.error('[useTransactionRecovery] check failed:', err);
       } finally {
         if (!cancelled) {
           setIsChecking(false);

@@ -29,7 +29,7 @@ export default function Layout() {
     <div className="gradient-bg-subtle min-h-screen flex flex-col text-white overflow-x-hidden">
       <Navbar />
 
-      <main className="flex-1 w-full max-w-[1920px] mx-auto px-8 sm:px-12 lg:px-20 xl:px-32 py-12 sm:py-16 lg:py-20 overflow-hidden box-border">
+      <main className="flex-1 w-full max-w-[1920px] mx-auto px-4 sm:px-8 md:px-12 lg:px-20 xl:px-32 py-8 sm:py-12 md:py-16 lg:py-20 overflow-hidden box-border">
         <PageTransition>
           <Outlet />
         </PageTransition>

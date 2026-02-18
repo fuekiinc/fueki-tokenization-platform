@@ -34,6 +34,28 @@ export interface AssetActions {
 export type AssetStore = AssetState & AssetActions;
 
 // ---------------------------------------------------------------------------
+// Fetch generation guard
+// ---------------------------------------------------------------------------
+// Prevents stale async fetches from overwriting newer data.
+// Call `nextAssetFetchGeneration()` at the start of a fetch and compare the
+// returned value against `getAssetFetchGeneration()` before committing
+// results to the store. If they differ, a newer fetch was initiated and the
+// current results should be discarded.
+// ---------------------------------------------------------------------------
+
+let _assetFetchGeneration = 0;
+
+/** Increment and return the new generation number. Call at fetch start. */
+export function nextAssetFetchGeneration(): number {
+  return ++_assetFetchGeneration;
+}
+
+/** Return the current generation number. Compare after async work. */
+export function getAssetFetchGeneration(): number {
+  return _assetFetchGeneration;
+}
+
+// ---------------------------------------------------------------------------
 // Initial state
 // ---------------------------------------------------------------------------
 

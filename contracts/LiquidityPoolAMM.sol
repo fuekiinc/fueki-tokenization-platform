@@ -126,6 +126,8 @@ contract LiquidityPoolAMM {
     error NothingToWithdraw();
     error ReentrantCall();
     error InvalidK();
+    error DeadlineExpired();
+    error InvariantViolation();
 
     // ---------------------------------------------------------------
     //  Modifiers
@@ -136,6 +138,11 @@ contract LiquidityPoolAMM {
         _status = _ENTERED;
         _;
         _status = _NOT_ENTERED;
+    }
+
+    modifier ensure(uint256 deadline) {
+        if (block.timestamp > deadline) revert DeadlineExpired();
+        _;
     }
 
     // ---------------------------------------------------------------
@@ -187,38 +194,73 @@ contract LiquidityPoolAMM {
      *
      * @param tokenA       First token
      * @param tokenB       Second token
-     * @param amountA      Amount of tokenA to deposit
-     * @param amountB      Amount of tokenB to deposit
+     * @param amountADesired Desired amount of tokenA to deposit
+     * @param amountBDesired Desired amount of tokenB to deposit
+     * @param amountAMin   Minimum acceptable amount of tokenA to deposit
+     * @param amountBMin   Minimum acceptable amount of tokenB to deposit
      * @param minLiquidity Minimum LP tokens to receive (slippage protection)
+     * @param deadline     Transaction deadline (revert if block.timestamp > deadline)
      */
     function addLiquidity(
         address tokenA,
         address tokenB,
-        uint256 amountA,
-        uint256 amountB,
-        uint256 minLiquidity
-    ) external nonReentrant returns (uint256 liquidity) {
+        uint256 amountADesired,
+        uint256 amountBDesired,
+        uint256 amountAMin,
+        uint256 amountBMin,
+        uint256 minLiquidity,
+        uint256 deadline
+    ) external nonReentrant ensure(deadline) returns (uint256 liquidity) {
         if (tokenA == ETH_ADDRESS || tokenB == ETH_ADDRESS) revert ZeroAddress();
-        if (amountA == 0 || amountB == 0) revert ZeroAmount();
+        if (amountADesired == 0 || amountBDesired == 0) revert ZeroAmount();
 
         (address token0, address token1) = _sortTokens(tokenA, tokenB);
         bytes32 poolId = _getPoolId(token0, token1);
         Pool storage pool = pools[poolId];
         if (pool.token0 == address(0)) revert PoolNotFound();
 
-        // Determine actual deposit amounts (match ratio for existing pools)
+        // Compute optimal deposit amounts
+        uint256 amountA;
+        uint256 amountB;
+        if (pool.totalLiquidity == 0) {
+            // First deposit -- accept desired amounts directly
+            amountA = amountADesired;
+            amountB = amountBDesired;
+        } else {
+            // Existing pool: enforce proportional deposit
+            (uint256 reserveA, uint256 reserveB) = tokenA == token0
+                ? (pool.reserve0, pool.reserve1)
+                : (pool.reserve1, pool.reserve0);
+
+            // Try amountADesired first
+            uint256 amountBOptimal = (amountADesired * reserveB) / reserveA;
+            if (amountBOptimal <= amountBDesired) {
+                if (amountBOptimal < amountBMin) revert InsufficientBAmount();
+                amountA = amountADesired;
+                amountB = amountBOptimal;
+            } else {
+                // Else derive amountA from amountBDesired
+                uint256 amountAOptimal = (amountBDesired * reserveA) / reserveB;
+                if (amountAOptimal > amountADesired) revert InsufficientAAmount();
+                if (amountAOptimal < amountAMin) revert InsufficientAAmount();
+                amountA = amountAOptimal;
+                amountB = amountBDesired;
+            }
+        }
+
+        // Determine sorted deposit amounts
         (uint256 amount0, uint256 amount1) = tokenA == token0
             ? (amountA, amountB)
             : (amountB, amountA);
 
-        // Transfer tokens in
-        _transferTokenIn(token0, msg.sender, amount0);
-        _transferTokenIn(token1, msg.sender, amount1);
+        // Transfer tokens in using fee-on-transfer safe pattern
+        uint256 received0 = _safeTransferIn(token0, msg.sender, amount0);
+        uint256 received1 = _safeTransferIn(token1, msg.sender, amount1);
 
-        liquidity = _mintLiquidity(poolId, pool, amount0, amount1);
+        liquidity = _mintLiquidity(poolId, pool, received0, received1);
         if (liquidity < minLiquidity) revert InsufficientLiquidity();
 
-        emit LiquidityAdded(poolId, msg.sender, amount0, amount1, liquidity);
+        emit LiquidityAdded(poolId, msg.sender, received0, received1, liquidity);
     }
 
     /**
@@ -227,12 +269,14 @@ contract LiquidityPoolAMM {
      * @param token        The ERC-20 token (paired with ETH)
      * @param amountToken  Amount of the ERC-20 token to deposit
      * @param minLiquidity Minimum LP tokens to receive
+     * @param deadline     Transaction deadline (revert if block.timestamp > deadline)
      */
     function addLiquidityETH(
         address token,
         uint256 amountToken,
-        uint256 minLiquidity
-    ) external payable nonReentrant returns (uint256 liquidity) {
+        uint256 minLiquidity,
+        uint256 deadline
+    ) external payable nonReentrant ensure(deadline) returns (uint256 liquidity) {
         if (token == address(0) || token == ETH_ADDRESS) revert ZeroAddress();
         if (msg.value == 0 || amountToken == 0) revert ZeroAmount();
 
@@ -271,15 +315,16 @@ contract LiquidityPoolAMM {
      * @param liquidity Amount of LP tokens to burn
      * @param minA      Minimum amount of tokenA to receive
      * @param minB      Minimum amount of tokenB to receive
+     * @param deadline  Transaction deadline (revert if block.timestamp > deadline)
      */
     function removeLiquidity(
         address tokenA,
         address tokenB,
         uint256 liquidity,
         uint256 minA,
-        uint256 minB
-    ) external nonReentrant returns (uint256 amountA, uint256 amountB) {
-        if (tokenA == ETH_ADDRESS || tokenB == ETH_ADDRESS) revert ZeroAddress();
+        uint256 minB,
+        uint256 deadline
+    ) external nonReentrant ensure(deadline) returns (uint256 amountA, uint256 amountB) {
         if (liquidity == 0) revert ZeroAmount();
 
         (address token0, address token1) = _sortTokens(tokenA, tokenB);
@@ -301,9 +346,9 @@ contract LiquidityPoolAMM {
         if (amountA < minA) revert InsufficientAAmount();
         if (amountB < minB) revert InsufficientBAmount();
 
-        // Transfer tokens out
-        _transferTokenOut(token0, msg.sender, amount0);
-        _transferTokenOut(token1, msg.sender, amount1);
+        // Transfer tokens out -- use pull pattern for ETH_ADDRESS
+        _safeTransferOut(token0, msg.sender, amount0);
+        _safeTransferOut(token1, msg.sender, amount1);
 
         emit LiquidityRemoved(poolId, msg.sender, amount0, amount1, liquidity);
     }
@@ -315,13 +360,15 @@ contract LiquidityPoolAMM {
      * @param liquidity Amount of LP tokens to burn
      * @param minToken  Minimum ERC-20 tokens to receive
      * @param minETH    Minimum ETH to receive
+     * @param deadline  Transaction deadline (revert if block.timestamp > deadline)
      */
     function removeLiquidityETH(
         address token,
         uint256 liquidity,
         uint256 minToken,
-        uint256 minETH
-    ) external nonReentrant returns (uint256 amountToken, uint256 amountETH) {
+        uint256 minETH,
+        uint256 deadline
+    ) external nonReentrant ensure(deadline) returns (uint256 amountToken, uint256 amountETH) {
         if (token == address(0) || token == ETH_ADDRESS) revert ZeroAddress();
         if (liquidity == 0) revert ZeroAmount();
 
@@ -363,13 +410,15 @@ contract LiquidityPoolAMM {
      * @param tokenOut    Token being bought
      * @param amountIn    Amount of tokenIn to sell
      * @param minAmountOut Minimum output (slippage protection)
+     * @param deadline    Transaction deadline (revert if block.timestamp > deadline)
      */
     function swap(
         address tokenIn,
         address tokenOut,
         uint256 amountIn,
-        uint256 minAmountOut
-    ) external nonReentrant returns (uint256 amountOut) {
+        uint256 minAmountOut,
+        uint256 deadline
+    ) external nonReentrant ensure(deadline) returns (uint256 amountOut) {
         if (tokenIn == ETH_ADDRESS || tokenOut == ETH_ADDRESS) revert ZeroAddress();
         if (amountIn == 0) revert ZeroAmount();
         if (tokenIn == tokenOut) revert SameToken();
@@ -379,16 +428,16 @@ contract LiquidityPoolAMM {
         Pool storage pool = pools[poolId];
         if (pool.token0 == address(0)) revert PoolNotFound();
 
-        // Transfer input token
-        _transferTokenIn(tokenIn, msg.sender, amountIn);
+        // Transfer input token using fee-on-transfer safe pattern
+        uint256 received = _safeTransferIn(tokenIn, msg.sender, amountIn);
 
-        amountOut = _executeSwap(pool, tokenIn, amountIn);
+        amountOut = _executeSwap(pool, tokenIn, received);
         if (amountOut < minAmountOut) revert InsufficientOutput();
 
         // Transfer output token
         _transferTokenOut(tokenOut, msg.sender, amountOut);
 
-        emit Swap(poolId, msg.sender, tokenIn, tokenOut, amountIn, amountOut);
+        emit Swap(poolId, msg.sender, tokenIn, tokenOut, received, amountOut);
     }
 
     /**
@@ -396,11 +445,13 @@ contract LiquidityPoolAMM {
      *
      * @param token        The ERC-20 token to buy
      * @param minAmountOut Minimum token output
+     * @param deadline     Transaction deadline (revert if block.timestamp > deadline)
      */
     function swapETHForToken(
         address token,
-        uint256 minAmountOut
-    ) external payable nonReentrant returns (uint256 amountOut) {
+        uint256 minAmountOut,
+        uint256 deadline
+    ) external payable nonReentrant ensure(deadline) returns (uint256 amountOut) {
         if (token == address(0) || token == ETH_ADDRESS) revert ZeroAddress();
         if (msg.value == 0) revert ZeroAmount();
 
@@ -421,15 +472,17 @@ contract LiquidityPoolAMM {
     /**
      * @notice Swap an ERC-20 token for native ETH.
      *
-     * @param token   The ERC-20 token to sell
+     * @param token    The ERC-20 token to sell
      * @param amountIn Amount of token to sell
-     * @param minETH  Minimum ETH output
+     * @param minETH   Minimum ETH output
+     * @param deadline Transaction deadline (revert if block.timestamp > deadline)
      */
     function swapTokenForETH(
         address token,
         uint256 amountIn,
-        uint256 minETH
-    ) external nonReentrant returns (uint256 amountOut) {
+        uint256 minETH,
+        uint256 deadline
+    ) external nonReentrant ensure(deadline) returns (uint256 amountOut) {
         if (token == address(0) || token == ETH_ADDRESS) revert ZeroAddress();
         if (amountIn == 0) revert ZeroAmount();
 
@@ -438,16 +491,16 @@ contract LiquidityPoolAMM {
         Pool storage pool = pools[poolId];
         if (pool.token0 == address(0)) revert PoolNotFound();
 
-        // Transfer ERC-20 in
-        _transferTokenIn(token, msg.sender, amountIn);
+        // Transfer ERC-20 in using fee-on-transfer safe pattern
+        uint256 received = _safeTransferIn(token, msg.sender, amountIn);
 
-        amountOut = _executeSwap(pool, token, amountIn);
+        amountOut = _executeSwap(pool, token, received);
         if (amountOut < minETH) revert InsufficientOutput();
 
         // Credit ETH via pull pattern
         ethBalances[msg.sender] += amountOut;
 
-        emit Swap(poolId, msg.sender, token, ETH_ADDRESS, amountIn, amountOut);
+        emit Swap(poolId, msg.sender, token, ETH_ADDRESS, received, amountOut);
     }
 
     // ---------------------------------------------------------------
@@ -628,6 +681,9 @@ contract LiquidityPoolAMM {
             reserveOut = pool.reserve0;
         }
 
+        // Snapshot K before swap
+        uint256 kBefore = reserveIn * reserveOut;
+
         amountOut = getAmountOut(amountIn, reserveIn, reserveOut);
         if (amountOut == 0) revert InsufficientOutput();
 
@@ -640,7 +696,11 @@ contract LiquidityPoolAMM {
             pool.reserve0 -= amountOut;
         }
 
-        pool.kLast = pool.reserve0 * pool.reserve1;
+        // Verify K invariant: k_new >= k_old
+        uint256 kAfter = pool.reserve0 * pool.reserve1;
+        if (kAfter < kBefore) revert InvariantViolation();
+
+        pool.kLast = kAfter;
     }
 
     // ---------------------------------------------------------------
@@ -656,10 +716,35 @@ contract LiquidityPoolAMM {
         if (!ok) revert TransferFailed();
     }
 
+    /**
+     * @dev Fee-on-transfer safe transfer-in. Returns the actual amount received
+     *      by checking contract balance before and after the transfer.
+     */
+    function _safeTransferIn(address token, address from, uint256 amount) private returns (uint256 received) {
+        uint256 balBefore = IERC20(token).balanceOf(address(this));
+        bool ok = IERC20(token).transferFrom(from, address(this), amount);
+        if (!ok) revert TransferFailed();
+        received = IERC20(token).balanceOf(address(this)) - balBefore;
+        if (received == 0) revert ZeroAmount();
+    }
+
     function _transferTokenOut(address token, address to, uint256 amount) private {
         if (token == ETH_ADDRESS) {
             (bool sent,) = payable(to).call{value: amount}("");
             if (!sent) revert TransferFailed();
+            return;
+        }
+        bool ok = IERC20(token).transfer(to, amount);
+        if (!ok) revert TransferFailed();
+    }
+
+    /**
+     * @dev Transfer token out with pull pattern for ETH -- credits
+     *      ethBalances[to] instead of sending ETH directly.
+     */
+    function _safeTransferOut(address token, address to, uint256 amount) private {
+        if (token == ETH_ADDRESS) {
+            ethBalances[to] += amount;
             return;
         }
         bool ok = IERC20(token).transfer(to, amount);

@@ -93,7 +93,7 @@ export default function Modal({
 
             {/* Header */}
             {(title || !hideCloseButton) && (
-              <div className="flex items-start justify-between gap-4 border-b border-white/[0.06] px-8 sm:px-10 pt-8 sm:pt-10 pb-6">
+              <div className="flex items-start justify-between gap-4 border-b border-white/[0.06] px-5 sm:px-8 md:px-10 pt-6 sm:pt-8 md:pt-10 pb-5 sm:pb-6">
                 <div className="min-w-0 flex-1">
                   {title && (
                     <DialogTitle className="text-xl font-semibold text-white leading-tight">
@@ -113,7 +113,7 @@ export default function Modal({
                     onClick={onClose}
                     aria-label="Close dialog"
                     className={clsx(
-                      'absolute top-6 right-6 sm:top-8 sm:right-8 shrink-0 rounded-xl p-2',
+                      'absolute top-4 right-4 sm:top-6 sm:right-6 md:top-8 md:right-8 shrink-0 rounded-xl p-2 min-h-[44px] min-w-[44px] flex items-center justify-center',
                       'text-gray-500 transition-all duration-200',
                       'hover:bg-white/[0.06] hover:text-white',
                       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0D0F14]',
@@ -126,11 +126,11 @@ export default function Modal({
             )}
 
             {/* Body -- spacious padding */}
-            <div className="px-8 sm:px-10 py-8 sm:py-10">{children}</div>
+            <div className="px-5 sm:px-8 md:px-10 py-6 sm:py-8 md:py-10">{children}</div>
 
             {/* Footer */}
             {footer && (
-              <div className="flex items-center justify-end gap-3 border-t border-white/[0.06] px-8 sm:px-10 py-6">
+              <div className="flex items-center justify-end gap-3 border-t border-white/[0.06] px-5 sm:px-8 md:px-10 py-5 sm:py-6">
                 {footer}
               </div>
             )}

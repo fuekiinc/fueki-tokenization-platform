@@ -13,6 +13,7 @@ const baseURL = import.meta.env.VITE_API_URL as string | undefined;
 // Fail-fast warning in development if the API URL env var is missing
 // (security audit C-4: prevents silently falling back to production).
 if (!baseURL && import.meta.env.DEV) {
+  // eslint-disable-next-line no-console -- intentional dev-only startup warning
   console.error(
     '[api/client] VITE_API_URL is not set. API requests will fall back to ' +
       'the production URL, which is unsafe in development. Set VITE_API_URL ' +

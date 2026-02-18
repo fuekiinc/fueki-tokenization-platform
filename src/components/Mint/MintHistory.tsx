@@ -72,7 +72,8 @@ function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={handleCopy}
-      className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.04] border border-white/[0.06] text-gray-500 transition-all hover:bg-white/[0.08] hover:text-gray-300"
+      className="flex h-9 w-9 min-h-[44px] min-w-[44px] items-center justify-center rounded-lg bg-white/[0.04] border border-white/[0.06] text-gray-500 transition-all hover:bg-white/[0.08] hover:text-gray-300 focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]"
+      aria-label="Copy transaction hash"
       title="Copy transaction hash"
     >
       {copied ? (
@@ -130,7 +131,7 @@ export default function MintHistory() {
         return (
           <div
             key={trade.id}
-            className="group rounded-2xl bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] p-7 transition-all duration-200 hover:bg-[#0D0F14] hover:border-white/[0.1]"
+            className="group rounded-2xl bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] p-4 sm:p-7 transition-all duration-200 hover:bg-[#0D0F14] hover:border-white/[0.1]"
           >
             {/* Top row: Name + Symbol + Status */}
             <div className="flex items-start justify-between gap-4">
@@ -164,7 +165,7 @@ export default function MintHistory() {
               <span
                 className={`shrink-0 inline-flex items-center gap-1.5 rounded-full ${status.bg} px-3 py-1.5 text-[11px] font-semibold ${status.text} ring-1 ring-inset ${status.ring}`}
               >
-                <span className={`h-1.5 w-1.5 rounded-full ${status.dot} ${trade.status === 'pending' ? 'animate-pulse' : ''}`} />
+                <span className={`h-1.5 w-1.5 rounded-full ${status.dot} ${trade.status === 'pending' ? 'animate-pulse motion-reduce:animate-none' : ''}`} />
                 {status.label}
               </span>
             </div>

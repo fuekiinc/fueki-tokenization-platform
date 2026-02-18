@@ -123,7 +123,7 @@ contract RestrictedSwap is Dividends, IRestrictedSwap {
     address quoteToken,
     address quoteTokenSender,
     uint256 quoteTokenAmount
-  ) external override {
+  ) external override nonReentrant {
     require(quoteTokenSender != address(0), "Invalid quote token sender");
     require(balanceOf(msg.sender) >= restrictedTokenAmount, "Insufficient restricted token amount");
 
@@ -153,7 +153,7 @@ contract RestrictedSwap is Dividends, IRestrictedSwap {
     address restrictedTokenSender,
     address quoteToken,
     uint256 quoteTokenAmount
-  ) external override {
+  ) external override nonReentrant {
     require(restrictedTokenSender != address(0), "Invalid restricted token sender");
 
     _configureSwap(
@@ -176,6 +176,7 @@ contract RestrictedSwap is Dividends, IRestrictedSwap {
   function completeSwapWithPaymentToken(uint256 swapNumber)
   external
   override
+  nonReentrant
   onlyValidSwap(swapNumber)
   {
     Swap storage swap = _swap[swapNumber];
@@ -209,6 +210,7 @@ contract RestrictedSwap is Dividends, IRestrictedSwap {
   function completeSwapWithRestrictedToken(uint256 swapNumber)
   external
   override
+  nonReentrant
   onlyValidSwap(swapNumber)
   {
     Swap storage swap = _swap[swapNumber];
@@ -242,6 +244,7 @@ contract RestrictedSwap is Dividends, IRestrictedSwap {
   function cancelSell(uint256 swapNumber)
   external
   override
+  nonReentrant
   onlyValidSwap(swapNumber)
   {
     Swap storage swap = _swap[swapNumber];

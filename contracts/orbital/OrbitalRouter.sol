@@ -28,6 +28,20 @@ interface IERC20Router {
 contract OrbitalRouter {
 
     // ---------------------------------------------------------------
+    //  Reentrancy Guard
+    // ---------------------------------------------------------------
+
+    uint256 private _status = 1;
+    error ReentrancyGuard();
+
+    modifier nonReentrant() {
+        if (_status != 1) revert ReentrancyGuard();
+        _status = 2;
+        _;
+        _status = 1;
+    }
+
+    // ---------------------------------------------------------------
     //  Storage
     // ---------------------------------------------------------------
 
@@ -102,7 +116,7 @@ contract OrbitalRouter {
         uint256 amountIn,
         uint256 minAmountOut,
         uint256 deadline
-    ) external returns (uint256 amountOut) {
+    ) external nonReentrant returns (uint256 amountOut) {
         if (block.timestamp > deadline) revert DeadlineExpired();
         if (amountIn == 0) revert ZeroAmount();
 
@@ -152,7 +166,7 @@ contract OrbitalRouter {
         uint256 amountIn,
         uint256 minAmountOut,
         uint256 deadline
-    ) external returns (uint256 amountOut) {
+    ) external nonReentrant returns (uint256 amountOut) {
         if (block.timestamp > deadline) revert DeadlineExpired();
         if (pools.length == 0) revert InvalidPath();
         if (tokenPath.length != pools.length + 1) revert InvalidPath();
@@ -212,7 +226,7 @@ contract OrbitalRouter {
         uint256[] calldata amounts,
         uint256 minLiquidity,
         uint256 deadline
-    ) external returns (uint256 liquidity) {
+    ) external nonReentrant returns (uint256 liquidity) {
         if (block.timestamp > deadline) revert DeadlineExpired();
 
         OrbitalPool orbPool = OrbitalPool(pool);
@@ -250,7 +264,7 @@ contract OrbitalRouter {
         uint256 liquidity,
         uint256[] calldata minAmounts,
         uint256 deadline
-    ) external returns (uint256[] memory amounts) {
+    ) external nonReentrant returns (uint256[] memory amounts) {
         if (block.timestamp > deadline) revert DeadlineExpired();
         if (liquidity == 0) revert ZeroAmount();
 
