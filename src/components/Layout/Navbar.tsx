@@ -94,6 +94,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', to: '/dashboard' },
   { label: 'Mint', to: '/mint' },
+  { label: 'Security Tokens', to: '/security-tokens' },
   { label: 'Portfolio', to: '/portfolio' },
   { label: 'Exchange', to: '/exchange' },
   { label: 'Orbital AMM', to: '/advanced' },

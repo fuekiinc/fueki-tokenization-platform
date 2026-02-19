@@ -407,29 +407,28 @@ export default function DashboardPage() {
           </h1>
 
           <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-gray-400">
-            Transform documents into ERC-20 tokens. Trade peer-to-peer on a
-            decentralized exchange. Every action is transparent and on-chain.
+          Wall Street Infrastructure. Main Street Access.
           </p>
 
           <div className="mx-auto mt-12 sm:mt-24 grid w-full max-w-4xl grid-cols-1 gap-5 sm:grid-cols-3 sm:gap-10">
             <FeatureCard
               icon={FileText}
               title="Tokenize Assets"
-              description="Upload financial documents, parse their content, and mint backed ERC-20 tokens in one seamless flow."
+              description="Upload financial documents, parse their content, and mint security tokens backed by your assets in one seamless flow."
               gradientFrom="#3B82F6"
               gradientTo="#6366F1"
             />
             <FeatureCard
               icon={Repeat}
               title="Trade P2P"
-              description="List and fill orders on a fully decentralized exchange. No intermediaries, no custody risk."
+              description="List and fill orders on a fully decentralized exchange with other KYC'd and accredited investors. No intermediaries, no custody risk."
               gradientFrom="#8B5CF6"
               gradientTo="#A855F7"
             />
             <FeatureCard
               icon={Shield}
               title="Full Transparency"
-              description="Every mint, burn, and transfer is recorded on-chain with verifiable document hashes."
+              description="Every mint, burn, and transfer is recorded on-chain with verifiable document hashes and audit trails."
               gradientFrom="#06B6D4"
               gradientTo="#14B8A6"
             />

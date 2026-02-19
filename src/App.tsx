@@ -30,6 +30,8 @@ const SettingsPage = lazyWithRetry(() => import('./pages/SettingsPage'))
 const AdminPage = lazyWithRetry(() => import('./pages/AdminPage'))
 const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'))
 const ExplorePage = lazyWithRetry(() => import('./pages/ExplorePage'))
+const SecurityTokenPage = lazyWithRetry(() => import('./pages/SecurityTokenPage'))
+const DeployTokenPage = lazyWithRetry(() => import('./pages/DeployTokenPage'))
 
 // ---------------------------------------------------------------------------
 // Page title map for document.title updates and screen reader announcements
@@ -49,6 +51,8 @@ const PAGE_TITLES: Record<string, string> = {
   '/forgot-password': 'Forgot Password',
   '/reset-password': 'Reset Password',
   '/explore': 'Explore',
+  '/security-tokens': 'Security Tokens',
+  '/security-tokens/deploy': 'Deploy Token',
 }
 
 const APP_NAME = 'Fueki'
@@ -144,6 +148,8 @@ export default function App() {
             <Route path="portfolio" element={<Suspense fallback={<PageLoader />}><PortfolioPage /></Suspense>} />
             <Route path="exchange" element={<Suspense fallback={<PageLoader />}><ExchangePage /></Suspense>} />
             <Route path="advanced" element={<Suspense fallback={<PageLoader />}><OrbitalAMMPage /></Suspense>} />
+            <Route path="security-tokens" element={<Suspense fallback={<PageLoader />}><SecurityTokenPage /></Suspense>} />
+            <Route path="security-tokens/deploy" element={<Suspense fallback={<PageLoader />}><DeployTokenPage /></Suspense>} />
             <Route path="settings" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
             <Route path="admin" element={<Suspense fallback={<PageLoader />}><AdminPage /></Suspense>} />
           </Route>
