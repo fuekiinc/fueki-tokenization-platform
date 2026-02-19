@@ -374,4 +374,4 @@ npm run lint
 
 ## License
 
-Proprietary. All rights reserved.
+Proprietary. All rights reserved. Fueki Inc.
