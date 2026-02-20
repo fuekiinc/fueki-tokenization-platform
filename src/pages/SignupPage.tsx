@@ -9,6 +9,7 @@ import {
   AccountStep,
   PersonalStep,
   AddressStep,
+  PlanStep,
   IdentityStep,
   SIGNUP_STEPS,
   STEP_META,
@@ -19,9 +20,10 @@ import type {
   AddressValues,
   IdentityValues,
 } from '../components/Forms';
+import type { SubscriptionPlan } from '../types/auth';
 
 // ---------------------------------------------------------------------------
-// SignupPage -- Orchestrator for the 4-step registration wizard
+// SignupPage -- Orchestrator for the 5-step registration wizard
 // ---------------------------------------------------------------------------
 
 export default function SignupPage() {
@@ -44,6 +46,7 @@ export default function SignupPage() {
   const [accountData, setAccountData] = useState<AccountValues | null>(null);
   const [personalData, setPersonalData] = useState<PersonalValues | null>(null);
   const [addressData, setAddressData] = useState<AddressValues | null>(null);
+  const [subscriptionPlan, setSubscriptionPlan] = useState<SubscriptionPlan | null>(null);
 
   // Document upload
   const [documentFile, setDocumentFile] = useState<File | null>(null);
@@ -116,8 +119,17 @@ export default function SignupPage() {
     goToStep(1);
   }, [goToStep]);
 
-  const handleIdentityBack = useCallback(() => {
+  const handlePlanNext = useCallback((plan: SubscriptionPlan) => {
+    setSubscriptionPlan(plan);
+    setCurrentStep(4);
+  }, []);
+
+  const handlePlanBack = useCallback(() => {
     goToStep(2);
+  }, [goToStep]);
+
+  const handleIdentityBack = useCallback(() => {
+    goToStep(3);
   }, [goToStep]);
 
   const handleDocumentSelect = useCallback((file: File | null, preview: string | null) => {
@@ -138,7 +150,7 @@ export default function SignupPage() {
       return;
     }
 
-    if (!personalData || !addressData) {
+    if (!personalData || !addressData || !subscriptionPlan) {
       toast.error('Some required fields from an earlier step are missing. Please go back and complete all fields.');
       return;
     }
@@ -170,6 +182,7 @@ export default function SignupPage() {
         zipCode: addressData.zipCode,
         country: addressData.country,
         documentType: identityValues.documentType,
+        subscriptionPlan,
       });
 
       toast.success(isKycOnly
@@ -192,7 +205,7 @@ export default function SignupPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [isAuthenticated, accountData, personalData, addressData, documentFile, authRegister, uploadDocument, submitKYC, navigate]);
+  }, [isAuthenticated, accountData, personalData, addressData, subscriptionPlan, documentFile, authRegister, uploadDocument, submitKYC, navigate]);
 
   // ---- Step renderers -------------------------------------------------------
 
@@ -222,6 +235,14 @@ export default function SignupPage() {
           />
         );
       case 3:
+        return (
+          <PlanStep
+            defaultValue={subscriptionPlan}
+            onNext={handlePlanNext}
+            onBack={handlePlanBack}
+          />
+        );
+      case 4:
         return (
           <IdentityStep
             documentFile={documentFile}

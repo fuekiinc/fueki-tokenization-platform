@@ -1,6 +1,7 @@
 export { default as AccountStep } from './AccountStep';
 export { default as PersonalStep } from './PersonalStep';
 export { default as AddressStep } from './AddressStep';
+export { default as PlanStep } from './PlanStep';
 export { default as IdentityStep } from './IdentityStep';
 export {
   accountSchema,

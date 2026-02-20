@@ -1,15 +1,17 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, ChevronDown, ExternalLink, Copy, LogOut, Check } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Check, ChevronDown, Copy, ExternalLink, LogOut, Menu, X } from 'lucide-react';
 import clsx from 'clsx';
 import { useWallet } from '../../hooks/useWallet';
 import { useWalletStore } from '../../store/walletStore.ts';
 import { useAuthStore } from '../../store/authStore';
 import { formatTokenAmount } from '../../lib/formatters';
+import { needsMobileWalletRedirect } from '../../lib/utils/mobile';
 import { ComponentErrorBoundary } from '../ErrorBoundary';
 import logger from '../../lib/logger';
 import ThemeToggle from './ThemeToggle';
 import PendingTransactions from './PendingTransactions';
+import MobileWalletModal from '../Wallet/MobileWalletModal';
 
 // ---------------------------------------------------------------------------
 // Supported networks
@@ -341,6 +343,7 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
   const wallet = useWalletStore((s) => s.wallet);
   const [showDetails, setShowDetails] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showMobileModal, setShowMobileModal] = useState(false);
   const detailsRef = useRef<HTMLDivElement>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -375,26 +378,44 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showDetails]);
 
+  const handleConnect = useCallback(() => {
+    if (needsMobileWalletRedirect()) {
+      setShowMobileModal(true);
+    } else {
+      void connectWallet();
+    }
+  }, [connectWallet]);
+
   // -- Disconnected: show connect button with gradient
   if (!isConnected || !address) {
     return (
-      <button
-        type="button"
-        onClick={() => void connectWallet()}
-        disabled={isConnecting}
-        className={clsx(
-          'connect-btn-gradient',
-          'flex items-center justify-center rounded-xl px-6 py-2.5 text-sm font-semibold text-white',
-          'transition-all duration-300',
-          'disabled:cursor-not-allowed disabled:opacity-50',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50',
-          compact && 'w-full',
-        )}
-      >
-        <span className="relative z-10">
-          {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-        </span>
-      </button>
+      <>
+        <button
+          type="button"
+          onClick={handleConnect}
+          disabled={isConnecting}
+          className={clsx(
+            'connect-btn-gradient',
+            'flex items-center justify-center rounded-xl px-6 py-2.5 text-sm font-semibold text-white',
+            'transition-all duration-300',
+            'disabled:cursor-not-allowed disabled:opacity-50',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50',
+            compact && 'w-full',
+          )}
+        >
+          <span className="relative z-10">
+            {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+          </span>
+        </button>
+        <MobileWalletModal
+          isOpen={showMobileModal}
+          onClose={() => setShowMobileModal(false)}
+          onDirectConnect={() => {
+            setShowMobileModal(false);
+            void connectWallet();
+          }}
+        />
+      </>
     );
   }
 

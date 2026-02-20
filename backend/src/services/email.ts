@@ -151,6 +151,7 @@ interface KYCReviewEmailData {
   zipCode: string;
   country: string;
   documentType: string;
+  subscriptionPlan: string;
   submittedAt: string;
 }
 
@@ -239,6 +240,10 @@ export async function sendKYCReviewEmail(data: KYCReviewEmailData): Promise<void
                         <td style="padding:6px 0;color:#1a1a2e;font-size:14px;">${data.documentType === 'drivers_license' ? "Driver's License" : 'Passport'}</td>
                       </tr>
                       <tr>
+                        <td style="padding:6px 0;color:#6b7280;font-size:13px;">Subscription</td>
+                        <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:700;">${data.subscriptionPlan === 'annual' ? '$1,800/year (Annual)' : '$200/month (Monthly)'}</td>
+                      </tr>
+                      <tr>
                         <td style="padding:6px 0;color:#6b7280;font-size:13px;">Submitted</td>
                         <td style="padding:6px 0;color:#1a1a2e;font-size:14px;">${data.submittedAt}</td>
                       </tr>
@@ -291,6 +296,7 @@ Email: ${data.userEmail}
 DOB: ${data.dateOfBirth}
 Address: ${data.addressLine1}, ${data.city}, ${data.state} ${data.zipCode}, ${data.country}
 Document: ${data.documentType === 'drivers_license' ? "Driver's License" : 'Passport'}
+Subscription Plan: ${data.subscriptionPlan === 'annual' ? '$1,800/year (Annual)' : '$200/month (Monthly)'}
 Submitted: ${data.submittedAt}
 
 Approve: ${approveUrl}

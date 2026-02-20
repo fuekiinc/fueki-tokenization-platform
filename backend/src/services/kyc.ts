@@ -20,6 +20,7 @@ interface KYCInput {
   documentType: string;
   documentPath: string;
   documentOrigName: string;
+  subscriptionPlan: string;
 }
 
 export async function submitKYC(input: KYCInput) {
@@ -39,6 +40,7 @@ export async function submitKYC(input: KYCInput) {
     documentType: input.documentType,
     documentPath: input.documentPath,
     documentOrigName: input.documentOrigName,
+    subscriptionPlan: input.subscriptionPlan,
   };
 
   // Upsert KYC data
@@ -67,6 +69,7 @@ export async function submitKYC(input: KYCInput) {
     zipCode: input.zipCode,
     country: input.country,
     documentType: input.documentType,
+    subscriptionPlan: input.subscriptionPlan,
     submittedAt: new Date().toISOString(),
   }).catch((err) => {
     console.error('Failed to send KYC review email:', err);

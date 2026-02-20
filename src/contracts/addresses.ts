@@ -75,7 +75,7 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   17000: {
     chainId: 17000,
     name: 'Holesky',
-    rpcUrl: 'https://ethereum-holesky-rpc.publicnode.com',
+    rpcUrl: 'https://holesky.drpc.org',
     blockExplorer: 'https://eth-holesky.blockscout.com',
     blockExplorerApi: 'https://eth-holesky.blockscout.com/api',
     factoryAddress: '0xCC00D84b5D2448552a238465C4C05A82ac5AB411',

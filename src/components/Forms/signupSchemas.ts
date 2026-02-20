@@ -172,6 +172,7 @@ export const SIGNUP_STEPS = [
   { label: 'Account', description: 'Email & password' },
   { label: 'Personal', description: 'Your information' },
   { label: 'Address', description: 'Residential address' },
+  { label: 'Plan', description: 'Subscription plan' },
   { label: 'Identity', description: 'Verification' },
 ] as const;
 
@@ -233,6 +234,10 @@ export const STEP_META = [
   {
     title: 'Your address',
     description: 'Required for regulatory compliance',
+  },
+  {
+    title: 'Choose your plan',
+    description: 'Select a subscription to access the platform',
   },
   {
     title: 'Identity verification',

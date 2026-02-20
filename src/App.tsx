@@ -32,6 +32,8 @@ const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'))
 const ExplorePage = lazyWithRetry(() => import('./pages/ExplorePage'))
 const SecurityTokenPage = lazyWithRetry(() => import('./pages/SecurityTokenPage'))
 const DeployTokenPage = lazyWithRetry(() => import('./pages/DeployTokenPage'))
+const TermsPage = lazyWithRetry(() => import('./pages/TermsPage'))
+const PrivacyPage = lazyWithRetry(() => import('./pages/PrivacyPage'))
 
 // ---------------------------------------------------------------------------
 // Page title map for document.title updates and screen reader announcements
@@ -53,6 +55,8 @@ const PAGE_TITLES: Record<string, string> = {
   '/explore': 'Explore',
   '/security-tokens': 'Security Tokens',
   '/security-tokens/deploy': 'Deploy Token',
+  '/terms': 'Terms of Service',
+  '/privacy': 'Privacy Policy',
 }
 
 const APP_NAME = 'Fueki'
@@ -127,8 +131,10 @@ export default function App() {
       <RouteAnnouncer />
 
       <Routes>
-        {/* Public exploration */}
+        {/* Public pages */}
         <Route path="/explore" element={<Suspense fallback={<PageLoader />}><ExplorePage /></Suspense>} />
+        <Route path="/terms" element={<Suspense fallback={<PageLoader />}><TermsPage /></Suspense>} />
+        <Route path="/privacy" element={<Suspense fallback={<PageLoader />}><PrivacyPage /></Suspense>} />
 
         {/* Auth pages - no navbar, standalone layout */}
         <Route element={<Suspense fallback={<PageLoader />}><AuthLayout /></Suspense>}>

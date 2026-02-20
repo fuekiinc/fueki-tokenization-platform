@@ -1,5 +1,5 @@
-import { useNavigate, Link } from 'react-router-dom';
-import { Fingerprint, Home, LogIn, ArrowLeft } from 'lucide-react';
+import { Link , useNavigate  } from 'react-router-dom';
+import { ArrowLeft, Fingerprint, Home, LogIn } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuthStore } from '../store/authStore';
 

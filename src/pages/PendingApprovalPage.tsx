@@ -8,6 +8,7 @@ import {
   LogOut,
   Shield,
   Mail,
+  CreditCard,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -417,6 +418,29 @@ export default function PendingApprovalPage() {
                     background: 'var(--accent-gradient)',
                   }}
                 />
+              </div>
+            </div>
+
+            {/* Subscription info */}
+            <div
+              className={clsx(
+                'mt-7 mx-auto max-w-sm',
+                'bg-indigo-500/[0.06] border border-indigo-500/15',
+                'rounded-xl px-4 py-4',
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <CreditCard className="h-4 w-4 text-indigo-400 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+                    You will be receiving an email with an invoice to pay for the
+                    subscription required to access the tokenization platform. You
+                    can either pay <strong className="text-[var(--text-primary)]">$200 per month</strong> or{' '}
+                    <strong className="text-[var(--text-primary)]">$1,800 per year</strong> for
+                    access, and you will require access in order to interact/transfer/distribute
+                    your security tokens.
+                  </p>
+                </div>
               </div>
             </div>
 

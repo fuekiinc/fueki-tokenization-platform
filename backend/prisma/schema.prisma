@@ -45,6 +45,7 @@ model KYCData {
   documentType        String   // drivers_license or passport
   documentPath        String   // encrypted file stored on disk
   documentOrigName    String
+  subscriptionPlan    String?  // "monthly" or "annual"
 
   submittedAt         DateTime @default(now())
   reviewedAt          DateTime?

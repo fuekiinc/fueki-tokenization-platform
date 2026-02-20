@@ -10,7 +10,7 @@
  * it to each child component.
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useWallet } from '../hooks/useWallet';
