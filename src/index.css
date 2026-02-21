@@ -652,6 +652,11 @@ textarea,
 }
 
 .fueki-connect-button:hover {
+  background: linear-gradient(135deg, #14cfb8, #34b5e8) !important;
+  border-color: rgba(138, 233, 220, 0.55) !important;
+  box-shadow:
+    0 10px 32px -16px rgba(45, 167, 222, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
   filter: brightness(1.06);
   transform: translateY(-1px);
 }
@@ -670,6 +675,16 @@ textarea,
 .fueki-wallet-details-button:hover {
   background: rgba(255, 255, 255, 0.14) !important;
   border-color: rgba(156, 208, 234, 0.45) !important;
+}
+
+/* Override any thirdweb-injected purple/indigo hover styles */
+.wallet-connect-shell button:hover {
+  background: linear-gradient(135deg, #14cfb8, #34b5e8) !important;
+}
+
+.wallet-connect-shell [data-connected="true"] button:hover,
+.wallet-connect-shell .fueki-wallet-details-button:hover {
+  background: rgba(255, 255, 255, 0.14) !important;
 }
 
 /* --------------------------------------------------------------------------

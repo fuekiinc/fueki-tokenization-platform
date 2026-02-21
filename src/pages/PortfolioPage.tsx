@@ -570,9 +570,19 @@ export default function PortfolioPage() {
 
       setAssets(assets);
     } catch (err) {
-      logger.error('Failed to fetch portfolio assets:', err);
-      showError(err, 'Failed to load portfolio');
-      setFetchError('Failed to load portfolio data. Please try again.');
+      logger.warn('Failed to fetch portfolio assets:', err);
+      // Only show error UI if this is a genuine connectivity problem,
+      // not a missing-contract / unsupported-network situation.
+      const msg = err instanceof Error ? err.message : String(err);
+      const isContractMissing =
+        msg.includes('not deployed') ||
+        msg.includes('CALL_EXCEPTION') ||
+        msg.includes('could not decode result') ||
+        msg.includes('BAD_DATA');
+      if (!isContractMissing) {
+        showError(err, 'Failed to load portfolio');
+        setFetchError('Failed to load portfolio data. Please try again.');
+      }
     } finally {
       setLoadingAssets(false);
     }

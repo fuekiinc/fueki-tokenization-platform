@@ -253,7 +253,8 @@ export default function DashboardPage() {
         setUserOrders([]);
       }
     } catch (error) {
-      showError(error, 'Unable to load your exchange orders');
+      // Non-critical: exchange data is supplementary on the dashboard
+      logger.warn('Unable to load exchange orders:', error);
     }
 
     // Fetch trade history from on-chain events (user-scoped filters)
@@ -323,7 +324,8 @@ export default function DashboardPage() {
       merged.sort((a, b) => b.timestamp - a.timestamp);
       setTrades(merged);
     } catch (error) {
-      showError(error, 'Unable to load your trade history');
+      // Non-critical: trade history is supplementary on the dashboard
+      logger.warn('Unable to load trade history:', error);
     }
 
     setIsInitialLoading(false);

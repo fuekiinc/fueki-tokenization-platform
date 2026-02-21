@@ -1,4 +1,5 @@
 import clsx from 'clsx';
+import fuekiLogo from '../../assets/fueki-logo.jpg';
 
 type FuekiBrandVariant = 'mark' | 'full';
 
@@ -15,7 +16,7 @@ export default function FuekiBrand({
   imageClassName,
   alt,
 }: FuekiBrandProps) {
-  const src = '/fueki-logo.jpg';
+  const src = fuekiLogo;
 
   return (
     <span className={clsx('inline-flex items-center', className)}>
