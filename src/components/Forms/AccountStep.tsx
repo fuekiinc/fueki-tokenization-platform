@@ -14,7 +14,6 @@ import {
   accountSchema,
   getPasswordStrength,
   PASSWORD_STRENGTH_CONFIG,
-  HELP_LEVEL_OPTIONS,
   type AccountValues,
 } from './signupSchemas';
 import {
@@ -53,7 +52,6 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
       email: defaultValues?.email ?? '',
       password: defaultValues?.password ?? '',
       confirmPassword: defaultValues?.confirmPassword ?? '',
-      helpLevel: defaultValues?.helpLevel ?? 'novice',
       acceptTerms: defaultValues?.acceptTerms ?? false as unknown as true,
     },
   });
@@ -218,54 +216,6 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
           </p>
         )}
       </div>
-
-      {/* Help level */}
-      <fieldset className="space-y-2.5">
-        <legend className={LABEL}>
-          Help mode
-          <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
-        </legend>
-        <p className="text-xs text-[var(--text-muted)]">
-          Choose how much in-app guidance you want. You can change this in settings later.
-        </p>
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-          {HELP_LEVEL_OPTIONS.map((option) => (
-            <label
-              key={option.value}
-              className={clsx(
-                'group relative flex cursor-pointer flex-col rounded-xl border px-3.5 py-3 transition-all duration-150',
-                'bg-[var(--bg-tertiary)]/70',
-                'hover:border-[var(--border-hover)]',
-              )}
-            >
-              <input
-                type="radio"
-                value={option.value}
-                className="peer sr-only"
-                {...register('helpLevel')}
-              />
-              <span
-                className={clsx(
-                  'mb-1 text-sm font-semibold text-[var(--text-secondary)]',
-                  'peer-checked:text-[var(--text-primary)]',
-                )}
-              >
-                {option.label}
-              </span>
-              <span className="text-xs leading-relaxed text-[var(--text-muted)]">
-                {option.description}
-              </span>
-              <span
-                className={clsx(
-                  'pointer-events-none absolute inset-0 rounded-xl border transition-all duration-150',
-                  'border-transparent peer-checked:border-indigo-500/60 peer-checked:ring-1 peer-checked:ring-indigo-500/35',
-                )}
-                aria-hidden="true"
-              />
-            </label>
-          ))}
-        </div>
-      </fieldset>
 
       {/* Terms of Service */}
       <div className="space-y-1.5">

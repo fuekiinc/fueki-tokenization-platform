@@ -24,7 +24,7 @@ export default function FuekiBrand({
         src={src}
         alt={alt ?? 'Fueki logo'}
         className={clsx(
-          variant === 'mark' ? 'h-12 w-12' : 'h-11 w-auto',
+          !imageClassName && (variant === 'mark' ? 'h-12 w-12' : 'h-11 w-auto'),
           imageClassName,
         )}
         loading="eager"

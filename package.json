@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "frontend:update": "tsc -b && vite build && gcloud run deploy fueki-frontend --source . --region us-central1",
+    "backend:update": "cd backend && npm run build && cd .. && gcloud run deploy fueki-backend --source backend --region us-central1"
   },
   "dependencies": {
     "@datadog/browser-logs": "^6.27.1",

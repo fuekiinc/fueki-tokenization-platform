@@ -16,7 +16,6 @@ export const accountSchema = z
       .regex(/[0-9]/, 'Password must contain a number')
       .regex(/[^A-Za-z0-9]/, 'Password must contain a special character'),
     confirmPassword: z.string().min(1, 'Please confirm your password'),
-    helpLevel: z.enum(['novice', 'intermediate', 'expert']),
     acceptTerms: z.literal(true, {
       message: 'You must accept the terms of service',
     }),
@@ -84,6 +83,7 @@ export const personalSchema = z.object({
       /^\+?[1-9]\d{1,14}$/,
       'Enter a valid phone number (e.g., +12125551234)',
     ),
+  helpLevel: z.enum(['novice', 'intermediate', 'expert']),
 });
 
 export const addressSchema = z.object({
@@ -227,7 +227,7 @@ export const COUNTRY_PHONE_CODES: Record<string, string> = {
 export const STEP_META = [
   {
     title: 'Create your account',
-    description: 'Start with your email, password, and help preference',
+    description: 'Start with your email and password',
   },
   {
     title: 'Personal information',

@@ -164,7 +164,7 @@ export default function SignupPage() {
         await authRegister({
           email: accountData.email,
           password: accountData.password,
-          helpLevel: accountData.helpLevel,
+          helpLevel: personalData!.helpLevel,
         });
       }
 
@@ -268,12 +268,14 @@ export default function SignupPage() {
       <div className="text-center mb-8">
         <FuekiBrand
           variant="full"
-          className="justify-center mb-4"
-          imageClassName="h-16 w-auto drop-shadow-[0_14px_32px_rgba(8,24,38,0.4)]"
+          className="justify-center mb-5"
+          imageClassName="h-52 w-auto drop-shadow-[0_14px_32px_rgba(8,24,38,0.4)]"
         />
-        <p className="mt-1.5 text-sm text-[var(--text-muted)] tracking-widest uppercase font-medium">
-          {isKycOnly ? 'Complete verification' : 'Create your account'}
-        </p>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
+          <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-300 bg-clip-text text-transparent">
+            {isKycOnly ? 'Complete Verification' : 'Create Your Account'}
+          </span>
+        </h1>
       </div>
 
       {/* Step Indicator */}

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
-import { personalSchema, type PersonalValues } from './signupSchemas';
+import { personalSchema, HELP_LEVEL_OPTIONS, type PersonalValues } from './signupSchemas';
 import {
   INPUT_BASE,
   ICON_LEFT,
@@ -45,6 +45,7 @@ export default function PersonalStep({ defaultValues, onNext, onBack }: Personal
       lastName: defaultValues?.lastName ?? '',
       dateOfBirth: defaultValues?.dateOfBirth ?? '',
       phone: defaultValues?.phone ?? '',
+      helpLevel: defaultValues?.helpLevel ?? 'novice',
     },
   });
 
@@ -185,6 +186,54 @@ export default function PersonalStep({ defaultValues, onNext, onBack }: Personal
           </p>
         )}
       </div>
+
+      {/* Help level */}
+      <fieldset className="space-y-2">
+        <legend className={LABEL}>
+          Help mode
+          <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
+        </legend>
+        <p className="text-[11px] text-[var(--text-muted)]">
+          Choose how much in-app guidance you want. You can change this later.
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          {HELP_LEVEL_OPTIONS.map((option) => (
+            <label
+              key={option.value}
+              className={clsx(
+                'group relative flex cursor-pointer flex-col rounded-lg border px-2.5 py-2 transition-all duration-150',
+                'bg-[var(--bg-tertiary)]/70',
+                'hover:border-[var(--border-hover)]',
+              )}
+            >
+              <input
+                type="radio"
+                value={option.value}
+                className="peer sr-only"
+                {...register('helpLevel')}
+              />
+              <span
+                className={clsx(
+                  'text-xs font-semibold text-[var(--text-secondary)]',
+                  'peer-checked:text-[var(--text-primary)]',
+                )}
+              >
+                {option.label}
+              </span>
+              <span className="text-[10px] leading-snug text-[var(--text-muted)] mt-0.5">
+                {option.description}
+              </span>
+              <span
+                className={clsx(
+                  'pointer-events-none absolute inset-0 rounded-lg border transition-all duration-150',
+                  'border-transparent peer-checked:border-indigo-500/60 peer-checked:ring-1 peer-checked:ring-indigo-500/35',
+                )}
+                aria-hidden="true"
+              />
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       {/* Navigation */}
       <div className="flex gap-3 pt-2">
