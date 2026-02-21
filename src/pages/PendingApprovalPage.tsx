@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Clock,
   CheckCircle2,
-  XCircle,
-  RefreshCw,
-  LogOut,
-  Shield,
-  Mail,
+  Clock,
   CreditCard,
+  LogOut,
+  Mail,
+  RefreshCw,
+  Shield,
+  XCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useAuthStore } from '../store/authStore';
+import FuekiBrand from '../components/Brand/FuekiBrand';
 import type { KYCStatus } from '../types/auth';
 
 // ---------------------------------------------------------------------------
@@ -156,14 +157,11 @@ export default function PendingApprovalPage() {
     <div className="w-full max-w-[520px] mx-auto animate-page-fade-in">
       {/* ---- Branding -------------------------------------------------- */}
       <div className="text-center mb-10">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/25 mb-5">
-          <Shield className="h-8 w-8 text-white" />
-        </div>
-        <h1 className="text-4xl font-bold tracking-tight">
-          <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-300 bg-clip-text text-transparent">
-            Fueki
-          </span>
-        </h1>
+        <FuekiBrand
+          variant="full"
+          className="justify-center mb-6"
+          imageClassName="h-20 w-auto drop-shadow-[0_20px_44px_rgba(8,24,38,0.45)]"
+        />
         <p className="mt-2 text-sm text-[var(--text-muted)] tracking-widest uppercase font-medium">
           Tokenization Platform
         </p>
@@ -293,7 +291,7 @@ export default function PendingApprovalPage() {
             <div className="mt-6 space-y-3">
               {/* Contact support */}
               <a
-                href="mailto:support@fueki.io"
+                href="mailto:mark@fueki-tech.com"
                 className={clsx(
                   'w-full flex items-center justify-center gap-2',
                   'bg-gradient-to-r from-indigo-600 to-purple-600',

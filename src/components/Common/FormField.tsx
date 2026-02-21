@@ -7,6 +7,7 @@
 
 import type { ReactNode } from 'react';
 import { INPUT_CLASSES } from '../../lib/designTokens';
+import HelpTooltip, { type TooltipId } from './HelpTooltip';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -20,18 +21,40 @@ export interface FormFieldProps {
   required?: boolean;
   children: ReactNode;
   className?: string;
+  tooltipId?: TooltipId;
+  tooltipFlow?: 'mint' | 'securityMint' | 'swap' | 'pool' | 'orbital';
+  tooltipComponent?: string;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function FormField({ label, htmlFor, error, hint, required, children, className }: FormFieldProps) {
+export function FormField({
+  label,
+  htmlFor,
+  error,
+  hint,
+  required,
+  children,
+  className,
+  tooltipId,
+  tooltipFlow,
+  tooltipComponent,
+}: FormFieldProps) {
   return (
     <div className={className ?? 'space-y-2'}>
       <label htmlFor={htmlFor} className={INPUT_CLASSES.label}>
         {label}
         {required && <span className="text-red-400 ml-1">*</span>}
+        {tooltipId && tooltipFlow && tooltipComponent && (
+          <HelpTooltip
+            tooltipId={tooltipId}
+            flow={tooltipFlow}
+            component={tooltipComponent}
+            className="ml-1.5"
+          />
+        )}
       </label>
       {children}
       {error && (

@@ -10,6 +10,7 @@ import type {
   KYCStatusResponse,
   User,
   RefreshTokenResponse,
+  UpdatePreferencesRequest,
 } from '../../types/auth';
 
 // ---------------------------------------------------------------------------
@@ -37,6 +38,13 @@ export async function logout(): Promise<void> {
 
 export async function getProfile(): Promise<User> {
   const response = await apiClient.get<User>('/api/auth/me');
+  return response.data;
+}
+
+export async function updatePreferences(
+  data: UpdatePreferencesRequest,
+): Promise<User> {
+  const response = await apiClient.put<User>('/api/auth/preferences', data);
   return response.data;
 }
 

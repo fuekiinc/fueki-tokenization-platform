@@ -30,7 +30,21 @@ export function verifyRefreshToken(token: string): { userId: string } {
   return jwt.verify(token, config.jwt.refreshSecret) as { userId: string };
 }
 
-export async function createSession(userId: string): Promise<{ accessToken: string; refreshToken: string }> {
+interface SessionCreateOptions {
+  rememberMe?: boolean;
+}
+
+interface SessionTokens {
+  accessToken: string;
+  refreshToken: string;
+  rememberMe: boolean;
+}
+
+export async function createSession(
+  userId: string,
+  options: SessionCreateOptions = {},
+): Promise<SessionTokens> {
+  const rememberMe = options.rememberMe === true;
   const accessToken = generateAccessToken(userId);
   const refreshToken = generateRefreshToken(userId);
 
@@ -42,14 +56,15 @@ export async function createSession(userId: string): Promise<{ accessToken: stri
     data: {
       userId,
       refreshToken,
+      rememberMe,
       expiresAt,
     },
   });
 
-  return { accessToken, refreshToken };
+  return { accessToken, refreshToken, rememberMe };
 }
 
-export async function refreshSession(oldRefreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+export async function refreshSession(oldRefreshToken: string): Promise<SessionTokens> {
   // Verify the token
   const payload = verifyRefreshToken(oldRefreshToken);
 
@@ -65,7 +80,7 @@ export async function refreshSession(oldRefreshToken: string): Promise<{ accessT
   // Rotate: delete old session, create new one
   await prisma.session.delete({ where: { id: session.id } });
 
-  return createSession(payload.userId);
+  return createSession(payload.userId, { rememberMe: session.rememberMe });
 }
 
 export async function invalidateSession(refreshToken: string): Promise<void> {

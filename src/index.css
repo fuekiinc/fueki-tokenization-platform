@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 /* ==========================================================================
@@ -11,42 +11,42 @@
    -------------------------------------------------------------------------- */
 :root {
   /* ---- Backgrounds ---- */
-  --bg-primary: #06070A;
-  --bg-secondary: #0D0F14;
-  --bg-tertiary: #141620;
-  --bg-hover: #1A1D2B;
-  --bg-input: #0F1118;
-  --bg-tooltip: #1E2030;
+  --bg-primary: #02111d;
+  --bg-secondary: #082132;
+  --bg-tertiary: #0e2f45;
+  --bg-hover: #123a56;
+  --bg-input: #0b2537;
+  --bg-tooltip: #13344a;
 
   /* ---- Borders ---- */
-  --border-primary: rgba(255, 255, 255, 0.06);
-  --border-hover: rgba(255, 255, 255, 0.12);
-  --border-focus: rgba(99, 102, 241, 0.5);
-  --border-accent: rgba(99, 102, 241, 0.3);
+  --border-primary: rgba(150, 202, 230, 0.18);
+  --border-hover: rgba(177, 225, 249, 0.32);
+  --border-focus: rgba(24, 202, 184, 0.55);
+  --border-accent: rgba(24, 202, 184, 0.4);
 
   /* ---- Accents ---- */
-  --accent-primary: #6366F1;
-  --accent-secondary: #8B5CF6;
-  --accent-tertiary: #A78BFA;
-  --accent-gradient: linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #A78BFA 100%);
-  --accent-gradient-hover: linear-gradient(135deg, #818CF8 0%, #A78BFA 50%, #C4B5FD 100%);
+  --accent-primary: #12bfa8;
+  --accent-secondary: #1dd6d0;
+  --accent-tertiary: #8deeb7;
+  --accent-gradient: linear-gradient(135deg, #0fbfba 0%, #1ca6d9 48%, #9ce7ba 100%);
+  --accent-gradient-hover: linear-gradient(135deg, #26d6cc 0%, #3bc3ea 48%, #b6f3ca 100%);
 
   /* ---- Semantic ---- */
-  --success: #10B981;
+  --success: #19d79f;
   --success-soft: rgba(16, 185, 129, 0.12);
-  --warning: #F59E0B;
+  --warning: #f4bc48;
   --warning-soft: rgba(245, 158, 11, 0.12);
-  --danger: #EF4444;
+  --danger: #ff6b66;
   --danger-soft: rgba(239, 68, 68, 0.12);
-  --info: #3B82F6;
+  --info: #46c4f3;
   --info-soft: rgba(59, 130, 246, 0.12);
 
   /* ---- Text ---- */
-  --text-primary: #F1F5F9;
-  --text-secondary: #94A3B8;
-  --text-muted: #64748B;
-  --text-disabled: #475569;
-  --text-inverse: #06070A;
+  --text-primary: #e9f6ff;
+  --text-secondary: #a7c0d3;
+  --text-muted: #7f9bb0;
+  --text-disabled: #61788b;
+  --text-inverse: #03131f;
 
   /* ---- Typography scale (fluid with clamp) ---- */
   --text-xs: clamp(0.6875rem, 0.65rem + 0.1vw, 0.75rem);
@@ -115,8 +115,7 @@ html[data-theme="light"] {
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+  font-family: 'Manrope', 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   background-color: var(--bg-primary);
   color: var(--text-primary);
@@ -126,6 +125,16 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   overflow-x: hidden;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: 'Space Grotesk', 'Manrope', sans-serif;
+  letter-spacing: -0.02em;
 }
 
 /* Reduced motion preference */
@@ -302,6 +311,141 @@ body {
   }
 }
 
+@keyframes octopusFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes octopusBlink {
+  0%, 44%, 100% {
+    transform: scaleY(1);
+  }
+  47%, 49% {
+    transform: scaleY(0.18);
+  }
+}
+
+@keyframes tentacleWaveA {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(5deg);
+  }
+}
+
+@keyframes tentacleWaveB {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(-5deg);
+  }
+}
+
+@keyframes bubbleRise {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.86);
+  }
+  30% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-12px) scale(1.12);
+  }
+}
+
+.octopus-loader {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.octopus-loader__svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.octopus-loader__ring {
+  fill: none;
+  stroke: rgba(120, 170, 198, 0.24);
+  stroke-width: 2.5;
+  stroke-dasharray: 10 9;
+  animation: spinSlow 15s linear infinite;
+}
+
+.octopus-loader__octopus {
+  transform-origin: center;
+  animation: octopusFloat 2.2s ease-in-out infinite;
+}
+
+.octopus-loader__head {
+  fill: rgba(18, 191, 168, 0.2);
+  stroke: rgba(102, 250, 227, 0.85);
+  stroke-width: 3.2;
+  stroke-linejoin: round;
+}
+
+.octopus-loader__eye {
+  fill: rgba(223, 248, 255, 0.95);
+  transform-origin: center;
+  animation: octopusBlink 3.5s ease-in-out infinite;
+}
+
+.octopus-loader__pupil {
+  fill: #042336;
+}
+
+.octopus-loader__mouth {
+  fill: none;
+  stroke: rgba(185, 245, 236, 0.95);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.octopus-loader__tentacle {
+  fill: none;
+  stroke: rgba(112, 236, 211, 0.86);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  transform-origin: center top;
+}
+
+.octopus-loader__tentacle--1,
+.octopus-loader__tentacle--3 {
+  animation: tentacleWaveA 1.9s ease-in-out infinite;
+}
+
+.octopus-loader__tentacle--2,
+.octopus-loader__tentacle--4 {
+  animation: tentacleWaveB 2s ease-in-out infinite;
+}
+
+.octopus-loader__bubble {
+  fill: rgba(184, 240, 255, 0.65);
+  animation: bubbleRise 1.8s ease-in infinite;
+}
+
+.octopus-loader__bubble--2 {
+  animation-delay: 0.3s;
+}
+
+.octopus-loader__bubble--3 {
+  animation-delay: 0.55s;
+}
+
+.octopus-loader__bubble--4 {
+  animation-delay: 0.9s;
+}
+
 /* --------------------------------------------------------------------------
    4. SCROLLBAR
    -------------------------------------------------------------------------- */
@@ -400,9 +544,9 @@ textarea,
 }
 
 .glass-navbar {
-  background: rgba(6, 7, 10, 0.72);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  background: rgba(4, 23, 36, 0.68);
+  backdrop-filter: blur(22px) saturate(170%);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
 }
 
 /* --------------------------------------------------------------------------
@@ -450,16 +594,17 @@ textarea,
 
 .gradient-bg {
   background:
-    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(99, 102, 241, 0.12) 0%, transparent 60%),
-    radial-gradient(ellipse 50% 40% at 80% 10%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 62% at 50% -20%, rgba(17, 191, 186, 0.16) 0%, transparent 60%),
+    radial-gradient(ellipse 58% 42% at 88% 8%, rgba(58, 174, 227, 0.14) 0%, transparent 52%),
+    radial-gradient(ellipse 45% 40% at 12% 92%, rgba(146, 239, 189, 0.11) 0%, transparent 58%),
     var(--bg-primary);
 }
 
 .gradient-bg-subtle {
   background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.08), transparent),
-    radial-gradient(ellipse 60% 40% at 80% 50%, rgba(139, 92, 246, 0.04), transparent),
-    radial-gradient(ellipse 50% 50% at 20% 80%, rgba(59, 130, 246, 0.03), transparent),
+    radial-gradient(ellipse 82% 56% at 45% -20%, rgba(17, 191, 186, 0.14), transparent),
+    radial-gradient(ellipse 54% 42% at 88% 52%, rgba(58, 174, 227, 0.11), transparent),
+    radial-gradient(ellipse 56% 56% at 16% 84%, rgba(146, 239, 189, 0.08), transparent),
     var(--bg-primary);
 }
 
@@ -468,15 +613,15 @@ textarea,
   border-image: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(99, 102, 241, 0.3) 25%,
-    rgba(139, 92, 246, 0.3) 50%,
-    rgba(99, 102, 241, 0.3) 75%,
+    rgba(17, 191, 186, 0.36) 25%,
+    rgba(58, 174, 227, 0.3) 50%,
+    rgba(146, 239, 189, 0.32) 75%,
     transparent 100%
   ) 1;
 }
 
 .connect-btn-gradient {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, #0fbfba, #2aa6dd);
   position: relative;
   overflow: hidden;
 }
@@ -485,13 +630,46 @@ textarea,
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, #818cf8, #a78bfa);
+  background: linear-gradient(135deg, #22d8c8, #69ddff);
   opacity: 0;
   transition: opacity 0.3s ease;
 }
 
 .connect-btn-gradient:hover::before {
   opacity: 1;
+}
+
+.fueki-connect-button {
+  background: linear-gradient(135deg, #11b9a5, #2da7de) !important;
+  border: 1px solid rgba(138, 233, 220, 0.4) !important;
+  box-shadow:
+    0 10px 32px -16px rgba(45, 167, 222, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+  color: #021018 !important;
+  font-family: 'Space Grotesk', 'Manrope', sans-serif !important;
+  font-weight: 700 !important;
+  border-radius: 14px !important;
+}
+
+.fueki-connect-button:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.fueki-wallet-details-button {
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, 0.09) !important;
+  border: 1px solid rgba(156, 208, 234, 0.3) !important;
+  color: var(--text-primary) !important;
+  font-family: 'Space Grotesk', 'Manrope', sans-serif !important;
+  box-shadow:
+    0 8px 20px -16px rgba(27, 181, 204, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.fueki-wallet-details-button:hover {
+  background: rgba(255, 255, 255, 0.14) !important;
+  border-color: rgba(156, 208, 234, 0.45) !important;
 }
 
 /* --------------------------------------------------------------------------

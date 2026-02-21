@@ -35,6 +35,7 @@ import { parseContractError } from '../../lib/blockchain/contracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPercent } from '../../lib/formatters';
 import logger from '../../lib/logger';
+import HelpTooltip from '../Common/HelpTooltip';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -501,13 +502,26 @@ export default function CreatePoolForm({
       <>
       <div>
         <div className="flex items-center justify-between mb-3">
-          <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">
             Pool Tokens ({selectedTokens.length}/{MAX_TOKENS})
-          </label>
+            <HelpTooltip
+              tooltipId="pool.tokenPair"
+              flow="pool"
+              component="CreatePoolForm.StepTokens"
+            />
+          </div>
           <span className="text-[10px] text-gray-600">
             Min {MIN_TOKENS}, Max {MAX_TOKENS}
           </span>
         </div>
+        <p className="mb-3 inline-flex items-center gap-1.5 text-[11px] text-gray-500">
+          Initial pool pricing is inferred from your first liquidity ratios.
+          <HelpTooltip
+            tooltipId="pool.initialPrice"
+            flow="pool"
+            component="CreatePoolForm.StepTokens"
+          />
+        </p>
 
         {/* Selected tokens list */}
         <div className="space-y-3">
@@ -692,9 +706,14 @@ export default function CreatePoolForm({
       <>
       {/* ---- Concentration Power --------------------------------------------- */}
       <div>
-        <label className="mb-3 block text-xs font-semibold text-gray-400 uppercase tracking-wider">
+        <div className="mb-3 inline-flex items-center gap-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">
           Concentration Power
-        </label>
+          <HelpTooltip
+            tooltipId="orbital.concentration"
+            flow="pool"
+            component="CreatePoolForm.StepConfiguration"
+          />
+        </div>
         <div className="space-y-2">
           {CONCENTRATION_OPTIONS.map((opt) => {
             const Icon = opt.icon;
@@ -804,9 +823,14 @@ export default function CreatePoolForm({
 
       {/* ---- Fee Tier -------------------------------------------------------- */}
       <div>
-        <label className="mb-3 block text-xs font-semibold text-gray-400 uppercase tracking-wider">
+        <div className="mb-3 inline-flex items-center gap-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">
           Fee Tier
-        </label>
+          <HelpTooltip
+            tooltipId="pool.feeTier"
+            flow="pool"
+            component="CreatePoolForm.StepConfiguration"
+          />
+        </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {FEE_TIERS.map((tier) => {
             // Recommend fee tier based on concentration
@@ -867,9 +891,14 @@ export default function CreatePoolForm({
       <>
       {/* ---- LP Token Metadata ----------------------------------------------- */}
       <div>
-        <label className="mb-3 block text-xs font-semibold text-gray-400 uppercase tracking-wider">
+        <div className="mb-3 inline-flex items-center gap-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">
           LP Token Details
-        </label>
+          <HelpTooltip
+            tooltipId="pool.poolShare"
+            flow="pool"
+            component="CreatePoolForm.StepReview"
+          />
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1.5 block text-[11px] text-gray-500">Name</label>
@@ -961,6 +990,12 @@ export default function CreatePoolForm({
           equilibrium, increasing capital efficiency but requiring more frequent
           rebalancing for volatile pairs.
         </p>
+        <HelpTooltip
+          tooltipId="orbital.invariant"
+          flow="pool"
+          component="CreatePoolForm.StepReview"
+          className="mt-0.5"
+        />
       </div>
 
       {/* Step 3 back button */}

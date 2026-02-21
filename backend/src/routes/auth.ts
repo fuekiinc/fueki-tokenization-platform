@@ -16,16 +16,31 @@ const prisma = new PrismaClient();
 
 const REFRESH_COOKIE_NAME = 'fueki_refresh_token';
 
-function setRefreshCookie(res: Response, refreshToken: string): void {
+function setRefreshCookie(
+  res: Response,
+  refreshToken: string,
+  rememberMe = true,
+): void {
   const isProduction = config.nodeEnv === 'production';
 
-  (res as any).cookie(REFRESH_COOKIE_NAME, refreshToken, {
+  const cookieOptions: {
+    httpOnly: boolean;
+    secure: boolean;
+    sameSite: 'strict' | 'lax';
+    path: string;
+    maxAge?: number;
+  } = {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? 'strict' : 'lax',
     path: '/api/auth',
-    maxAge: config.jwt.refreshExpiresIn * 1000, // 7 days in ms
-  });
+  };
+
+  if (rememberMe) {
+    cookieOptions.maxAge = config.jwt.refreshExpiresIn * 1000;
+  }
+
+  (res as any).cookie(REFRESH_COOKIE_NAME, refreshToken, cookieOptions);
 }
 
 function clearRefreshCookie(res: Response): void {
@@ -44,14 +59,22 @@ function clearRefreshCookie(res: Response): void {
 // Validation schemas
 // ---------------------------------------------------------------------------
 
+const helpLevelSchema = z.enum(['novice', 'intermediate', 'expert']);
+
 const registerSchema = z.object({
   email: z.string().email('Invalid email'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
+  helpLevel: helpLevelSchema.optional().default('novice'),
 });
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email'),
   password: z.string().min(1, 'Password is required'),
+  rememberMe: z.boolean().optional().default(false),
+});
+
+const updatePreferencesSchema = z.object({
+  helpLevel: helpLevelSchema,
 });
 
 // ---------------------------------------------------------------------------
@@ -60,7 +83,7 @@ const loginSchema = z.object({
 
 router.post('/register', async (req, res) => {
   try {
-    const { email, password } = registerSchema.parse(req.body);
+    const { email, password, helpLevel } = registerSchema.parse(req.body);
 
     // Check if user exists
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -72,14 +95,14 @@ router.post('/register', async (req, res) => {
     // Create user
     const passwordHash = await hashPassword(password);
     const user = await prisma.user.create({
-      data: { email, passwordHash },
+      data: { email, passwordHash, helpLevel },
     });
 
     // Create session
     const tokens = await createSession(user.id);
 
     // Set refresh token as httpOnly cookie
-    setRefreshCookie(res, tokens.refreshToken);
+    setRefreshCookie(res, tokens.refreshToken, true);
 
     // Return only the access token in the response body
     res.status(201).json({
@@ -89,6 +112,7 @@ router.post('/register', async (req, res) => {
         role: user.role,
         walletAddress: user.walletAddress,
         kycStatus: user.kycStatus,
+        helpLevel: user.helpLevel,
         createdAt: user.createdAt.toISOString(),
         updatedAt: user.updatedAt.toISOString(),
       },
@@ -112,7 +136,7 @@ router.post('/register', async (req, res) => {
 
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = loginSchema.parse(req.body);
+    const { email, password, rememberMe } = loginSchema.parse(req.body);
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
@@ -126,10 +150,10 @@ router.post('/login', async (req, res) => {
       return;
     }
 
-    const tokens = await createSession(user.id);
+    const tokens = await createSession(user.id, { rememberMe });
 
     // Set refresh token as httpOnly cookie
-    setRefreshCookie(res, tokens.refreshToken);
+    setRefreshCookie(res, tokens.refreshToken, rememberMe);
 
     // Return only the access token in the response body
     res.json({
@@ -139,6 +163,7 @@ router.post('/login', async (req, res) => {
         role: user.role,
         walletAddress: user.walletAddress,
         kycStatus: user.kycStatus,
+        helpLevel: user.helpLevel,
         createdAt: user.createdAt.toISOString(),
         updatedAt: user.updatedAt.toISOString(),
       },
@@ -200,11 +225,47 @@ router.get('/me', authenticate, async (req, res) => {
       role: user.role,
       walletAddress: user.walletAddress,
       kycStatus: user.kycStatus,
+      helpLevel: user.helpLevel,
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
     });
   } catch (err) {
     console.error('Profile error:', err);
+    res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/auth/preferences
+// ---------------------------------------------------------------------------
+
+router.put('/preferences', authenticate, async (req, res) => {
+  try {
+    const { helpLevel } = updatePreferencesSchema.parse(req.body);
+
+    const user = await prisma.user.update({
+      where: { id: req.userId },
+      data: { helpLevel },
+    });
+
+    res.json({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      walletAddress: user.walletAddress,
+      kycStatus: user.kycStatus,
+      helpLevel: user.helpLevel,
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({
+        error: { message: err.errors[0].message, code: 'VALIDATION_ERROR' },
+      });
+      return;
+    }
+    console.error('Update preferences error:', err);
     res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
   }
 });
@@ -225,7 +286,7 @@ router.post('/refresh', async (req, res) => {
     const tokens = await refreshSession(refreshToken);
 
     // Set new refresh token as httpOnly cookie (rotation)
-    setRefreshCookie(res, tokens.refreshToken);
+    setRefreshCookie(res, tokens.refreshToken, tokens.rememberMe);
 
     // Return only the access token in the response body
     res.json({ accessToken: tokens.accessToken });

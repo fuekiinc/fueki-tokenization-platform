@@ -1,151 +1,67 @@
-/**
- * Production wallet connection hook.
- *
- * Supports:
- *   - MetaMask (including Flask), Trust Wallet, Coinbase Wallet, Brave Wallet
- *   - EIP-6963 provider discovery (modern multi-wallet environments)
- *   - Connection persistence across page reloads (localStorage + auto-reconnect)
- *   - Account change detection and automatic re-binding
- *   - Network change detection and automatic re-initialisation
- *   - ENS name resolution for the connected address
- *   - Chain validation and switching with automatic wallet_addEthereumChain
- *
- * All user-facing error messages are parsed from ethers v6 nested error
- * structures into clear, actionable text.
- */
-
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
+import {
+  useActiveAccount,
+  useActiveWallet,
+  useActiveWalletChain,
+  useActiveWalletConnectionStatus,
+  useConnectModal,
+  useDisconnect,
+  useSwitchActiveWalletChain,
+} from 'thirdweb/react';
+import { EIP1193 } from 'thirdweb/wallets';
+
 import logger from '../lib/logger';
-import { useWalletStore, getProvider as getStoreProvider } from '../store/walletStore.ts';
+import { getProvider as getStoreProvider, useWalletStore } from '../store/walletStore.ts';
 import { useAssetStore } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
 import { useExchangeStore } from '../store/exchangeStore.ts';
-import { SUPPORTED_NETWORKS } from '../contracts/addresses';
+import {
+  THIRDWEB_DEFAULT_CHAIN,
+  THIRDWEB_SUPPORTED_CHAINS,
+  THIRDWEB_THEME,
+  THIRDWEB_WALLETCONNECT_PROJECT_ID,
+  THIRDWEB_WALLETS,
+  getThirdwebAppMetadata,
+  getThirdwebChain,
+  isThirdwebConfigured,
+  thirdwebClient,
+} from '../lib/thirdweb';
 
-// ---------------------------------------------------------------------------
-// Wallet provider type (EIP-1193 + extensions)
-// ---------------------------------------------------------------------------
-
-interface EthereumProvider {
-  isMetaMask?: boolean;
-  isTrust?: boolean;
-  isCoinbaseWallet?: boolean;
-  isBraveWallet?: boolean;
-  isTokenPocket?: boolean;
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  on: (event: string, handler: (...args: never[]) => void) => void;
-  removeListener: (event: string, handler: (...args: never[]) => void) => void;
-  providers?: EthereumProvider[];
-}
-
-interface EIP6963ProviderDetail {
-  info: {
-    uuid: string;
-    name: string;
-    icon: string;
-    rdns: string;
-  };
-  provider: EthereumProvider;
-}
-
-declare global {
-  interface Window {
-    ethereum?: EthereumProvider;
-    trustwallet?: EthereumProvider;
-  }
-  interface WindowEventMap {
-    'eip6963:announceProvider': CustomEvent<EIP6963ProviderDetail>;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Module-level EIP-6963 provider registry.
-// Providers announce themselves via a CustomEvent; we collect them here so
-// getEthereumProvider() can use modern wallet discovery.
-// ---------------------------------------------------------------------------
-const eip6963Providers: EIP6963ProviderDetail[] = [];
-let eip6963Listening = false;
-
-function startEIP6963Discovery(): void {
-  if (typeof window === 'undefined' || eip6963Listening) return;
-  eip6963Listening = true;
-
-  window.addEventListener('eip6963:announceProvider', ((
-    event: CustomEvent<EIP6963ProviderDetail>,
-  ) => {
-    const detail = event.detail;
-    // Avoid duplicates (same uuid).
-    if (!eip6963Providers.some((p) => p.info.uuid === detail.info.uuid)) {
-      eip6963Providers.push(detail);
-    }
-  }) as EventListener);
-
-  // Request providers already injected.
-  window.dispatchEvent(new Event('eip6963:requestProvider'));
-}
-
-// Kick off discovery as early as possible (module load time).
-startEIP6963Discovery();
-
-// ---------------------------------------------------------------------------
-// Module-level ref-counter so that wallet event listeners are registered
-// exactly once and only removed when the LAST consumer unmounts.
-// ---------------------------------------------------------------------------
-let listenerConsumerCount = 0;
-
-// ---------------------------------------------------------------------------
-// Error parsing
-// ---------------------------------------------------------------------------
-
-/**
- * Extract a user-friendly message from ethers v6 / wallet RPC errors.
- */
 function parseWalletError(err: unknown): string {
-  const inner =
-    (err as { info?: { error?: { message?: string; code?: number } } })?.info
-      ?.error ??
-    (err as { error?: { message?: string; code?: number } })?.error;
+  const message = err instanceof Error ? err.message : String(err);
 
-  const code =
-    inner?.code ??
-    (err as { code?: number | string })?.code;
-
-  const rawMessage =
-    inner?.message ??
-    (err instanceof Error ? err.message : '');
-
-  // User rejected the request in their wallet popup.
-  if (code === 4001 || /user (rejected|denied)/i.test(rawMessage)) {
+  if (/user rejected|rejected by user|ACTION_REJECTED/i.test(message)) {
     return 'Connection request was rejected. Please approve the wallet prompt to connect.';
   }
 
-  // Wallet extension is present but has no unlocked / created account.
-  if (code === -32603 && /no active wallet/i.test(rawMessage)) {
-    return 'No active wallet found. Please open your wallet extension and create or unlock an account first.';
+  if (/user closed|cancelled|canceled|modal/i.test(message)) {
+    return 'Wallet connection was cancelled.';
   }
 
-  // Request already pending (user didn't act on a previous popup).
-  if (code === -32002 || /already pending/i.test(rawMessage)) {
-    return 'A wallet connection request is already pending. Please check your wallet extension popup.';
+  if (/already pending/i.test(message)) {
+    return 'A wallet connection request is already pending. Please check your wallet app.';
   }
 
-  // Generic internal JSON-RPC error.
-  if (code === -32603) {
-    return rawMessage || 'Wallet encountered an internal error. Please try again.';
+  if (/unsupported chain|network/i.test(message)) {
+    return 'Selected network is not supported by the connected wallet.';
   }
 
-  // Fallback: use the raw message if it's short enough, otherwise generic.
-  if (rawMessage && rawMessage.length < 200) {
-    return rawMessage;
+  if (message.length > 0 && message.length < 220) {
+    return message;
   }
-  return 'Failed to connect wallet. Please try again.';
+
+  return 'Wallet action failed. Please try again.';
 }
 
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
+function clearWalletBoundStores(): void {
+  useAssetStore.getState().setAssets([]);
+  useAssetStore.getState().setSecurityTokens([]);
+  useTradeStore.getState().setTrades([]);
+  useExchangeStore.getState().setOrders([]);
+  useExchangeStore.getState().setUserOrders([]);
+}
 
 export function useWallet() {
   const wallet = useWalletStore((s) => s.wallet);
@@ -155,445 +71,250 @@ export function useWallet() {
   const resetWallet = useWalletStore((s) => s.resetWallet);
   const setEnsName = useWalletStore((s) => s.setEnsName);
   const persistConnection = useWalletStore((s) => s.persistConnection);
-  const hasPersistedConnection = useWalletStore((s) => s.hasPersistedConnection);
+
+  const activeAccount = useActiveAccount();
+  const activeWallet = useActiveWallet();
+  const activeWalletChain = useActiveWalletChain();
+  const connectionStatus = useActiveWalletConnectionStatus();
+  const { connect, isConnecting: isModalConnecting } = useConnectModal();
+  const { disconnect } = useDisconnect();
+  const switchActiveWalletChain = useSwitchActiveWalletChain();
 
   const [error, setError] = useState<string | null>(null);
 
-  // Refs that always point at the latest values so event-handler closures
-  // never read stale state.
-  const walletRef = useRef(wallet);
-  walletRef.current = wallet;
+  const wasConnectedRef = useRef(false);
 
-  // Guard against concurrent connectWallet invocations.
-  const connectingRef = useRef(false);
-
-  // Track whether auto-reconnect has already been attempted this session.
-  const autoReconnectAttemptedRef = useRef(false);
-
-  // ---- Helpers ------------------------------------------------------------
-
-  /**
-   * Discover available wallet providers. MetaMask is preferred; if not
-   * found we fall back to other wallets.
-   */
-  const getEthereumProvider = useCallback((): EthereumProvider | null => {
-    if (typeof window === 'undefined') return null;
-
-    // 1. EIP-6963: prefer MetaMask by rdns, then any announced provider.
-    if (eip6963Providers.length > 0) {
-      const metamask = eip6963Providers.find(
-        (p) => p.info.rdns === 'io.metamask' || p.info.rdns === 'io.metamask.flask',
-      );
-      if (metamask) return metamask.provider;
-      return eip6963Providers[0].provider;
-    }
-
-    // 2. Multi-provider environments.
-    if (window.ethereum?.providers?.length) {
-      const mm = window.ethereum.providers.find((p) => p.isMetaMask && !p.isBraveWallet);
-      if (mm) return mm;
-      return window.ethereum.providers[0];
-    }
-
-    // 3. Legacy single-provider.
-    if (window.ethereum) return window.ethereum;
-
-    // 4. Trust Wallet specific injection (older versions).
-    if (window.trustwallet) return window.trustwallet;
-
-    return null;
-  }, []);
-
-  const checkIfWalletIsInstalled = useCallback((): boolean => {
-    return getEthereumProvider() !== null;
-  }, [getEthereumProvider]);
-
-  // ---- ENS Resolution -----------------------------------------------------
-
-  /**
-   * Resolve ENS name for an address. Non-blocking; updates store on success.
-   * Only resolves on mainnet (chainId 1) where ENS is deployed.
-   */
-  const resolveEnsName = useCallback(async (address: string, provider: ethers.BrowserProvider) => {
-    try {
-      const network = await provider.getNetwork();
-      // ENS is only available on mainnet. On other chains, clear ENS name.
-      if (Number(network.chainId) !== 1) {
+  const resolveEnsName = useCallback(
+    async (address: string, provider: ethers.BrowserProvider) => {
+      try {
+        const network = await provider.getNetwork();
+        if (Number(network.chainId) !== 1) {
+          setEnsName(null);
+          return;
+        }
+        const name = await provider.lookupAddress(address);
+        setEnsName(name);
+      } catch {
         setEnsName(null);
-        return;
       }
-      const name = await provider.lookupAddress(address);
-      setEnsName(name);
-    } catch {
-      // ENS resolution is best-effort; do not surface errors.
-      setEnsName(null);
-    }
-  }, [setEnsName]);
+    },
+    [setEnsName],
+  );
 
-  // ---- Connect ------------------------------------------------------------
+  const syncWalletStore = useCallback(async () => {
+    const isConnecting = connectionStatus === 'connecting' || isModalConnecting;
+    const isConnected =
+      connectionStatus === 'connected' &&
+      Boolean(activeWallet) &&
+      Boolean(activeAccount?.address);
 
-  const connectWallet = useCallback(async () => {
-    const walletProvider = getEthereumProvider();
-
-    if (!walletProvider) {
-      const msg =
-        'No Ethereum wallet detected. Please install MetaMask, Trust Wallet, or another Web3 wallet.';
-      setError(msg);
-      toast.error(msg);
+    if (!isConnected || !activeWallet || !activeAccount?.address) {
+      setProvider(null);
+      setSigner(null);
+      setWallet({
+        address: null,
+        chainId: activeWalletChain?.id ?? null,
+        isConnected: false,
+        isConnecting,
+        balance: '0',
+      });
+      if (!isConnecting) {
+        setEnsName(null);
+      }
       return;
     }
 
-    // Prevent overlapping connection attempts.
-    if (connectingRef.current) return;
-    connectingRef.current = true;
+    if (!thirdwebClient || !isThirdwebConfigured) {
+      setWallet({
+        address: activeAccount.address,
+        chainId: activeWalletChain?.id ?? null,
+        isConnected: true,
+        isConnecting,
+      });
+      return;
+    }
+
+    const chain = activeWalletChain ?? getThirdwebChain(activeWallet.getChain()?.id) ?? THIRDWEB_DEFAULT_CHAIN;
 
     try {
-      setWallet({ isConnecting: true });
-      setError(null);
+      const eip1193Provider = EIP1193.toProvider({
+        wallet: activeWallet,
+        chain,
+        client: thirdwebClient,
+      });
 
-      let accounts: string[] = [];
-
-      // Helper: race a promise against a timeout.
-      const withTimeout = <T,>(promise: Promise<T>, ms = 120_000): Promise<T> =>
-        Promise.race([
-          promise,
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Wallet request timed out. Please try again.')), ms),
-          ),
-        ]);
-
-      // Strategy 1: eth_requestAccounts (standard EIP-1102)
-      try {
-        accounts = ((await withTimeout(walletProvider.request({
-          method: 'eth_requestAccounts',
-        }))) ?? []) as string[];
-      } catch (reqErr: unknown) {
-        const code = (reqErr as { code?: number }).code;
-        if (code === 4001) throw reqErr;
-
-        logger.warn('eth_requestAccounts failed, trying wallet_requestPermissions...', reqErr);
-
-        // Strategy 2: wallet_requestPermissions
-        try {
-          await withTimeout(walletProvider.request({
-            method: 'wallet_requestPermissions',
-            params: [{ eth_accounts: {} }],
-          }));
-          accounts = ((await withTimeout(walletProvider.request({
-            method: 'eth_accounts',
-          }))) ?? []) as string[];
-        } catch (permErr: unknown) {
-          const permCode = (permErr as { code?: number }).code;
-          if (permCode === 4001) throw permErr;
-
-          logger.warn('wallet_requestPermissions failed, trying eth_accounts...', permErr);
-
-          // Strategy 3: eth_accounts (check if already authorized)
-          try {
-            accounts = ((await withTimeout(walletProvider.request({
-              method: 'eth_accounts',
-            }))) ?? []) as string[];
-          } catch {
-            throw reqErr;
-          }
-        }
-      }
-
-      if (!accounts || accounts.length === 0) {
-        throw new Error(
-          'No accounts available. Please open your wallet extension, create or unlock an account, and try again.',
-        );
-      }
-
-      const provider = new ethers.BrowserProvider(walletProvider as ethers.Eip1193Provider);
+      const provider = new ethers.BrowserProvider(eip1193Provider as ethers.Eip1193Provider);
       const signer = await provider.getSigner();
       const address = await signer.getAddress();
-      const network = await provider.getNetwork();
       const balance = await provider.getBalance(address);
 
       setProvider(provider);
       setSigner(signer);
       setWallet({
         address,
-        chainId: Number(network.chainId),
+        chainId: chain.id,
         isConnected: true,
-        isConnecting: false,
+        isConnecting,
         balance: ethers.formatEther(balance),
       });
 
-      // Persist connection for auto-reconnect on page reload.
       persistConnection();
-
-      // Resolve ENS name in the background (non-blocking).
       void resolveEnsName(address, provider);
+      setError(null);
+    } catch (err) {
+      logger.error('Failed to sync thirdweb wallet into ethers provider:', err);
+      setWallet({
+        address: activeAccount.address,
+        chainId: chain.id,
+        isConnected: true,
+        isConnecting,
+      });
+      setProvider(null);
+      setSigner(null);
+    }
+  }, [
+    activeAccount,
+    activeWallet,
+    activeWalletChain,
+    connectionStatus,
+    isModalConnecting,
+    persistConnection,
+    resolveEnsName,
+    setEnsName,
+    setProvider,
+    setSigner,
+    setWallet,
+  ]);
 
-      toast.success(
-        `Wallet connected: ${address.slice(0, 6)}...${address.slice(-4)}`,
-      );
+  useEffect(() => {
+    void syncWalletStore();
+  }, [syncWalletStore]);
+
+  useEffect(() => {
+    const isConnected = connectionStatus === 'connected';
+
+    if (isConnected) {
+      wasConnectedRef.current = true;
+      return;
+    }
+
+    if (connectionStatus === 'disconnected' && wasConnectedRef.current) {
+      wasConnectedRef.current = false;
+      resetWallet();
+      clearWalletBoundStores();
+      setError(null);
+    }
+  }, [connectionStatus, resetWallet]);
+
+  const connectWallet = useCallback(async () => {
+    if (!thirdwebClient || !isThirdwebConfigured) {
+      const msg =
+        'Wallet connection is not configured. Set VITE_THIRDWEB_CLIENT_ID before using on-chain features.';
+      setError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    if (connectionStatus === 'connecting' || isModalConnecting) return;
+
+    setWallet({ isConnecting: true });
+    setError(null);
+
+    try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://fueki.io';
+
+      const connectedWallet = await connect({
+        client: thirdwebClient,
+        wallets: THIRDWEB_WALLETS,
+        appMetadata: getThirdwebAppMetadata(),
+        chain: activeWalletChain ?? THIRDWEB_DEFAULT_CHAIN,
+        chains: THIRDWEB_SUPPORTED_CHAINS,
+        title: 'Connect to Fueki',
+        titleIcon: '',
+        size: 'wide',
+        termsOfServiceUrl: `${origin}/terms`,
+        privacyPolicyUrl: `${origin}/privacy`,
+        showAllWallets: true,
+        theme: THIRDWEB_THEME,
+        walletConnect: THIRDWEB_WALLETCONNECT_PROJECT_ID
+          ? { projectId: THIRDWEB_WALLETCONNECT_PROJECT_ID }
+          : undefined,
+      });
+
+      const connectedAddress = connectedWallet.getAccount()?.address;
+      if (connectedAddress) {
+        toast.success(`Wallet connected: ${connectedAddress.slice(0, 6)}...${connectedAddress.slice(-4)}`);
+      }
     } catch (err: unknown) {
       logger.error('Wallet connection failed:', err);
       const message = parseWalletError(err);
       setError(message);
-      toast.error(message);
-      setWallet({ isConnecting: false, isConnected: false });
-    } finally {
-      connectingRef.current = false;
+      setWallet({ isConnecting: false });
+      if (!/cancelled/i.test(message)) {
+        toast.error(message);
+      }
     }
-  }, [getEthereumProvider, setWallet, setProvider, setSigner, persistConnection, resolveEnsName]);
-
-  // Keep a ref to connectWallet so the event handlers always call the
-  // latest version without needing to re-register listeners.
-  const connectWalletRef = useRef(connectWallet);
-  connectWalletRef.current = connectWallet;
-
-  // ---- Disconnect ---------------------------------------------------------
+  }, [
+    activeWalletChain,
+    connect,
+    connectionStatus,
+    isModalConnecting,
+    setWallet,
+  ]);
 
   const disconnectWallet = useCallback(() => {
+    if (activeWallet) {
+      disconnect(activeWallet);
+    }
+
     resetWallet();
-    // Clear data from other domain stores so a fresh connect starts clean.
-    useAssetStore.getState().setAssets([]);
-    useAssetStore.getState().setSecurityTokens([]);
-    useTradeStore.getState().setTrades([]);
-    useExchangeStore.getState().setOrders([]);
-    useExchangeStore.getState().setUserOrders([]);
+    clearWalletBoundStores();
     setError(null);
-  }, [resetWallet]);
+    toast.success('Wallet disconnected');
+  }, [activeWallet, disconnect, resetWallet]);
 
-  // ---- Network switching --------------------------------------------------
-
-  const switchNetwork = useCallback(async (chainId: number) => {
-    const walletProvider = getEthereumProvider();
-    if (!walletProvider) return;
-
-    const hexChainId = `0x${chainId.toString(16)}`;
-
-    try {
-      await walletProvider.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: hexChainId }],
-      });
-    } catch (err: unknown) {
-      const code =
-        (err as { code?: number }).code ??
-        (err as { data?: { originalError?: { code?: number } } })?.data
-          ?.originalError?.code;
-
-      // 4902 = chain not configured in wallet.
-      if (code === 4902) {
-        const networkConfig = SUPPORTED_NETWORKS[chainId];
-        if (networkConfig) {
-          try {
-            await walletProvider.request({
-              method: 'wallet_addEthereumChain',
-              params: [
-                {
-                  chainId: hexChainId,
-                  chainName: networkConfig.name,
-                  rpcUrls: [networkConfig.rpcUrl],
-                  blockExplorerUrls: networkConfig.blockExplorer
-                    ? [networkConfig.blockExplorer]
-                    : undefined,
-                  nativeCurrency: networkConfig.nativeCurrency,
-                },
-              ],
-            });
-            return;
-          } catch (addErr: unknown) {
-            const addCode = (addErr as { code?: number }).code;
-            if (addCode === 4001) {
-              const msg = 'Network addition was rejected. Please approve the wallet prompt to add the network.';
-              setError(msg);
-              toast.error(msg);
-              return;
-            }
-            logger.error('wallet_addEthereumChain failed:', addErr);
-          }
-        }
-        const msg =
-          'Network not configured in wallet and could not be added automatically. Please add it manually.';
+  const switchNetwork = useCallback(
+    async (chainId: number) => {
+      if (!activeWallet) {
+        const msg = 'Please connect your wallet first.';
         setError(msg);
         toast.error(msg);
-      } else if (code === 4001) {
-        const msg = 'Network switch was rejected. Please approve the wallet prompt to switch networks.';
+        return;
+      }
+
+      const chain = getThirdwebChain(chainId);
+      if (!chain) {
+        const msg = 'Requested network is not available.';
         setError(msg);
         toast.error(msg);
-      } else {
+        return;
+      }
+
+      try {
+        await switchActiveWalletChain(chain);
+        setError(null);
+      } catch (err: unknown) {
         const message = parseWalletError(err);
         setError(message);
         toast.error(message);
       }
-    }
-  }, [getEthereumProvider]);
-
-  // ---- Balance refresh ----------------------------------------------------
+    },
+    [activeWallet, switchActiveWalletChain],
+  );
 
   const refreshBalance = useCallback(async () => {
     if (!wallet.address || !wallet.isConnected) return;
 
     try {
-      const existingProvider = getStoreProvider();
-      const rawProvider = getEthereumProvider();
-      if (!existingProvider && !rawProvider) return;
-      const provider =
-        existingProvider ?? new ethers.BrowserProvider(rawProvider! as ethers.Eip1193Provider);
+      const provider = getStoreProvider();
+      if (!provider) return;
       const balance = await provider.getBalance(wallet.address);
       setWallet({ balance: ethers.formatEther(balance) });
     } catch (err) {
       logger.error('Failed to refresh balance:', err);
       toast.error('Failed to refresh wallet balance');
     }
-  }, [wallet.address, wallet.isConnected, setWallet, getEthereumProvider]);
-
-  // ---- Auto-reconnect from persisted session ------------------------------
-
-  useEffect(() => {
-    if (autoReconnectAttemptedRef.current) return;
-    if (wallet.isConnected || wallet.isConnecting) return;
-
-    autoReconnectAttemptedRef.current = true;
-
-    if (!hasPersistedConnection()) return;
-
-    const walletProvider = getEthereumProvider();
-    if (!walletProvider) return;
-
-    // Silently check if accounts are still available (no popup).
-    const attemptReconnect = async () => {
-      try {
-        const accounts = (await walletProvider.request({
-          method: 'eth_accounts',
-        })) as string[];
-
-        if (accounts && accounts.length > 0) {
-          // Accounts still available -- re-connect silently.
-          void connectWalletRef.current();
-        }
-      } catch {
-        // Silent failure -- user can manually reconnect.
-      }
-    };
-
-    void attemptReconnect();
-  }, [wallet.isConnected, wallet.isConnecting, hasPersistedConnection, getEthereumProvider]);
-
-  // ---- Event listeners (account / chain changes) --------------------------
-
-  useEffect(() => {
-    let walletProvider: EthereumProvider | null = null;
-    if (typeof window !== 'undefined') {
-      if (eip6963Providers.length > 0) {
-        const mm = eip6963Providers.find(
-          (p) => p.info.rdns === 'io.metamask' || p.info.rdns === 'io.metamask.flask',
-        );
-        walletProvider = mm?.provider ?? eip6963Providers[0].provider;
-      } else if (window.ethereum?.providers?.length) {
-        walletProvider =
-          window.ethereum.providers.find((p) => p.isMetaMask && !p.isBraveWallet) ??
-          window.ethereum.providers[0];
-      } else {
-        walletProvider = window.ethereum ?? window.trustwallet ?? null;
-      }
-    }
-
-    if (!walletProvider) return;
-
-    listenerConsumerCount += 1;
-    if (listenerConsumerCount > 1) return;
-
-    const handleAccountsChanged = async (accounts: string[]) => {
-      if (accounts.length === 0) {
-        useWalletStore.getState().resetWallet();
-        useAssetStore.getState().setAssets([]);
-        useAssetStore.getState().setSecurityTokens([]);
-        useTradeStore.getState().setTrades([]);
-        useExchangeStore.getState().setOrders([]);
-        useExchangeStore.getState().setUserOrders([]);
-        return;
-      }
-
-      let checksumAddress: string;
-      try {
-        checksumAddress = ethers.getAddress(accounts[0]);
-      } catch {
-        logger.error('Invalid address returned by wallet:', accounts[0]);
-        return;
-      }
-      const currentAddress = walletRef.current.address;
-      if (checksumAddress !== currentAddress) {
-        try {
-          const provider = new ethers.BrowserProvider(walletProvider as ethers.Eip1193Provider);
-          const signer = await provider.getSigner();
-          const balance = await provider.getBalance(checksumAddress);
-
-          useWalletStore.getState().setProvider(provider);
-          useWalletStore.getState().setSigner(signer);
-          useWalletStore.getState().setWallet({
-            address: checksumAddress,
-            balance: ethers.formatEther(balance),
-            isConnected: true,
-          });
-          useWalletStore.getState().persistConnection();
-        } catch (err) {
-          logger.error('Failed to handle account change:', err);
-          toast.error('Failed to update wallet after account change');
-        }
-      }
-    };
-
-    const handleChainChanged = (chainIdHex: string) => {
-      const newChainId = parseInt(chainIdHex, 16);
-      useWalletStore.getState().setChainId(newChainId);
-
-      if (walletRef.current.isConnected) {
-        void connectWalletRef.current();
-      }
-    };
-
-    const handleDisconnect = (disconnectError: { code: number; message: string }) => {
-      logger.warn('Wallet disconnect event:', disconnectError);
-      useWalletStore.getState().resetWallet();
-      useAssetStore.getState().setAssets([]);
-      useAssetStore.getState().setSecurityTokens([]);
-      useTradeStore.getState().setTrades([]);
-      useExchangeStore.getState().setOrders([]);
-      useExchangeStore.getState().setUserOrders([]);
-    };
-
-    walletProvider.on(
-      'accountsChanged',
-      handleAccountsChanged as (...args: never[]) => void,
-    );
-    walletProvider.on(
-      'chainChanged',
-      handleChainChanged as (...args: never[]) => void,
-    );
-    walletProvider.on(
-      'disconnect',
-      handleDisconnect as (...args: never[]) => void,
-    );
-
-    return () => {
-      listenerConsumerCount = Math.max(0, listenerConsumerCount - 1);
-
-      if (listenerConsumerCount === 0) {
-        walletProvider.removeListener(
-          'accountsChanged',
-          handleAccountsChanged as (...args: never[]) => void,
-        );
-        walletProvider.removeListener(
-          'chainChanged',
-          handleChainChanged as (...args: never[]) => void,
-        );
-        walletProvider.removeListener(
-          'disconnect',
-          handleDisconnect as (...args: never[]) => void,
-        );
-      }
-    };
-    // Empty deps: register once, use refs for latest values.
-  }, []);
-
-  // ---- Public API ---------------------------------------------------------
+  }, [setWallet, wallet.address, wallet.isConnected]);
 
   return {
     ...wallet,
@@ -602,8 +323,7 @@ export function useWallet() {
     disconnectWallet,
     switchNetwork,
     refreshBalance,
-    isWalletInstalled: checkIfWalletIsInstalled(),
-    /** EIP-6963 discovered wallet providers (for wallet-selection UIs). */
-    discoveredProviders: eip6963Providers,
+    isWalletInstalled: isThirdwebConfigured,
+    discoveredProviders: [],
   };
 }

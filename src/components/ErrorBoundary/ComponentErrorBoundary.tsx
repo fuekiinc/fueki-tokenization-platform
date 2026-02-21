@@ -123,7 +123,7 @@ export class ComponentErrorBoundary extends Component<
       ].join('\n'),
     );
     window.open(
-      `mailto:support@fueki.io?subject=${subject}&body=${body}`,
+      `mailto:mark@fueki-tech.com?subject=${subject}&body=${body}`,
       '_blank',
     );
   };

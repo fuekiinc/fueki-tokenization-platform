@@ -71,7 +71,7 @@ export default function Spinner({
           strokeLinecap="round"
           strokeDasharray="42 88"
           strokeDashoffset="0"
-          className={clsx(!color && 'text-indigo-500')}
+          className={clsx(!color && 'text-cyan-400')}
         />
 
         {/* Gradient definition */}
@@ -85,8 +85,8 @@ export default function Spinner({
               y2="24"
               gradientUnits="userSpaceOnUse"
             >
-              <stop stopColor="#6366f1" />
-              <stop offset="1" stopColor="#8b5cf6" />
+              <stop stopColor="#11b9a5" />
+              <stop offset="1" stopColor="#2da7de" />
             </linearGradient>
           </defs>
         )}

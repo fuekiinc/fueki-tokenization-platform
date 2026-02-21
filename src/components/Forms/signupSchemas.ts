@@ -1,4 +1,5 @@
 import { z } from 'zod';
+export { HELP_LEVEL_OPTIONS } from '../../lib/helpLevels';
 
 // ---------------------------------------------------------------------------
 // Validation Schemas
@@ -15,6 +16,7 @@ export const accountSchema = z
       .regex(/[0-9]/, 'Password must contain a number')
       .regex(/[^A-Za-z0-9]/, 'Password must contain a special character'),
     confirmPassword: z.string().min(1, 'Please confirm your password'),
+    helpLevel: z.enum(['novice', 'intermediate', 'expert']),
     acceptTerms: z.literal(true, {
       message: 'You must accept the terms of service',
     }),
@@ -225,7 +227,7 @@ export const COUNTRY_PHONE_CODES: Record<string, string> = {
 export const STEP_META = [
   {
     title: 'Create your account',
-    description: 'Start with your email and a secure password',
+    description: 'Start with your email, password, and help preference',
   },
   {
     title: 'Personal information',

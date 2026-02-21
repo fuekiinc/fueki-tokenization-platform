@@ -1,12 +1,19 @@
-import { StrictMode, Component } from 'react'
+import { Component, StrictMode } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import { AutoConnect, ThirdwebProvider } from 'thirdweb/react'
 import './index.css'
 import App from './App'
 import { datadogRum } from '@datadog/browser-rum'
 import logger from './lib/logger'
 import { classifyError } from './lib/errorUtils'
+import {
+  getThirdwebAppMetadata,
+  THIRDWEB_DEFAULT_CHAIN,
+  THIRDWEB_WALLETS,
+  thirdwebClient,
+} from './lib/thirdweb'
 
 
 datadogRum.init({
@@ -110,7 +117,7 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, EBState> {
         `User Agent: ${navigator.userAgent}`,
       ].join('\n'),
     )
-    window.open(`mailto:support@fueki.io?subject=${subject}&body=${body}`, '_blank')
+    window.open(`mailto:mark@fueki-tech.com?subject=${subject}&body=${body}`, '_blank')
   }
 
   render() {
@@ -258,9 +265,19 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, EBState> {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <RootErrorBoundary>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <ThirdwebProvider>
+        {thirdwebClient && (
+          <AutoConnect
+            client={thirdwebClient}
+            wallets={THIRDWEB_WALLETS}
+            appMetadata={getThirdwebAppMetadata()}
+            chain={THIRDWEB_DEFAULT_CHAIN}
+          />
+        )}
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </ThirdwebProvider>
     </RootErrorBoundary>
   </StrictMode>,
 )

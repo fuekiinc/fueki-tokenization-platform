@@ -70,6 +70,11 @@ export const config = {
   // Backend URL (used for building action links in admin emails)
   backendUrl: process.env.BACKEND_URL || 'http://localhost:8080',
 
+  // Support inbox destination for in-app support requests
+  support: {
+    requestRecipient: process.env.SUPPORT_EMAIL_TO || 'mark@fueki-tech.com',
+  },
+
   // Local upload fallback (dev only, not used on Cloud Run)
   upload: {
     dir: process.env.UPLOAD_DIR || './uploads',

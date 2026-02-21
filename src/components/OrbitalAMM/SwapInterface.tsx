@@ -27,8 +27,7 @@ import { OrbitalContractService } from '../../lib/blockchain/orbitalContracts';
 import { parseContractError } from '../../lib/blockchain/contracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPercent, formatPrice } from '../../lib/formatters';
-import { InfoTooltip } from '../Common/Tooltip';
-import { TOOLTIPS } from '../../lib/tooltipContent';
+import HelpTooltip from '../Common/HelpTooltip';
 import logger from '../../lib/logger';
 
 // ---------------------------------------------------------------------------
@@ -754,7 +753,11 @@ export default function SwapInterface({
                 <div className="flex items-center justify-between text-xs">
                   <span className="flex items-center gap-1.5 text-gray-500">
                     Price Impact
-                    <InfoTooltip content={TOOLTIPS.priceImpact} />
+                    <HelpTooltip
+                      tooltipId="orbital.priceImpact"
+                      flow="orbital"
+                      component="SwapInterface.Details"
+                    />
                   </span>
                   <span
                     className={clsx(
@@ -802,7 +805,11 @@ export default function SwapInterface({
                 >
                   <Info className="h-3 w-3" />
                   Slippage Tolerance
-                  <InfoTooltip content={TOOLTIPS.slippage} />
+                  <HelpTooltip
+                    tooltipId="orbital.slippage"
+                    flow="orbital"
+                    component="SwapInterface.Details"
+                  />
                 </button>
                 <span className="font-mono text-gray-400">
                   {formatPercent(slippageBps / 100)}
@@ -873,7 +880,14 @@ export default function SwapInterface({
 
               {/* Auto-refresh countdown */}
               <div className="flex items-center justify-between text-[10px] text-gray-600 pt-1">
-                <span>Quote auto-refreshes</span>
+                <span className="inline-flex items-center gap-1.5">
+                  Quote auto-refreshes
+                  <HelpTooltip
+                    tooltipId="orbital.quoteRefresh"
+                    flow="orbital"
+                    component="SwapInterface.Details"
+                  />
+                </span>
                 <span className="font-mono tabular-nums">
                   {quoteCountdown}s
                 </span>

@@ -1,5 +1,6 @@
-import { AlertCircle, Package, Loader2, RefreshCw } from 'lucide-react';
+import { AlertCircle, Package, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
+import OctopusLoader from './OctopusLoader';
 import {
   CARD_CLASSES,
   EMPTY_STATE_CLASSES,
@@ -65,8 +66,8 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
 export function LoadingState({ message = 'Loading...' }: LoadingStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-16">
-      <Loader2 className="h-8 w-8 animate-spin text-indigo-500 mb-3" />
-      <p className="text-xs text-gray-500">{message}</p>
+      <OctopusLoader size="sm" />
+      <p className="mt-3 text-xs text-gray-500">{message}</p>
     </div>
   );
 }

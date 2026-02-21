@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "helpLevel" TEXT NOT NULL DEFAULT 'novice';

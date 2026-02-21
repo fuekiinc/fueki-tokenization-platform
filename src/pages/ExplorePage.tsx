@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Fingerprint,
   Coins,
   ArrowLeftRight,
   PieChart,
@@ -20,6 +19,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import clsx from 'clsx';
+import FuekiBrand from '../components/Brand/FuekiBrand';
 
 // ---------------------------------------------------------------------------
 // Feature card data
@@ -304,9 +304,11 @@ export default function ExplorePage() {
         {/* ---------------------------------------------------------------- */}
         <section className="px-4 pt-16 pb-12 sm:pt-24 sm:pb-16 max-w-5xl mx-auto text-center">
           {/* Branding */}
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/25 mb-8">
-            <Fingerprint className="h-8 w-8 text-white" />
-          </div>
+          <FuekiBrand
+            variant="full"
+            className="justify-center mb-8"
+            imageClassName="h-24 w-auto drop-shadow-[0_24px_52px_rgba(8,24,38,0.48)]"
+          />
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight">
             <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-300 bg-clip-text text-transparent">

@@ -5,6 +5,7 @@
 export type KYCStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
 export type DocumentType = 'drivers_license' | 'passport' | 'national_id';
 export type SubscriptionPlan = 'monthly' | 'annual';
+export type HelpLevel = 'novice' | 'intermediate' | 'expert';
 
 export interface User {
   id: string;
@@ -13,6 +14,7 @@ export interface User {
   lastName?: string;
   walletAddress: string | null;
   kycStatus: KYCStatus;
+  helpLevel: HelpLevel;
   role?: string;
   createdAt: string;
   updatedAt: string;
@@ -27,6 +29,7 @@ export interface AuthTokens {
 export interface LoginRequest {
   email: string;
   password: string;
+  rememberMe?: boolean;
 }
 
 export interface LoginResponse {
@@ -37,11 +40,16 @@ export interface LoginResponse {
 export interface RegisterRequest {
   email: string;
   password: string;
+  helpLevel?: HelpLevel;
 }
 
 export interface RegisterResponse {
   user: User;
   tokens: AuthTokens;
+}
+
+export interface UpdatePreferencesRequest {
+  helpLevel: HelpLevel;
 }
 
 export interface KYCFormData {
@@ -101,6 +109,7 @@ export interface AuthState {
 export interface LoginFormValues {
   email: string;
   password: string;
+  rememberMe: boolean;
 }
 
 export interface RegisterFormValues {

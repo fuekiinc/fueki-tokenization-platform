@@ -6,7 +6,6 @@ import {
   Shield,
   Copy,
   Globe,
-  Layers,
 } from 'lucide-react';
 import { ethers } from 'ethers';
 import logger from '../lib/logger';
@@ -30,6 +29,7 @@ import ValueChart from '../components/Dashboard/ValueChart';
 import DashboardSkeleton from '../components/Dashboard/DashboardSkeleton';
 import { ErrorState } from '../components/Common/StateDisplays';
 import { ComponentErrorBoundary } from '../components/ErrorBoundary';
+import FuekiBrand from '../components/Brand/FuekiBrand';
 import { CARD_CLASSES } from '../lib/designTokens';
 
 // ---------------------------------------------------------------------------
@@ -385,14 +385,11 @@ export default function DashboardPage() {
 
         {/* ---- Hero content ---- */}
         <div className="relative z-10 flex flex-col items-center justify-center px-4 py-16 text-center sm:px-8 md:px-12 md:py-28 lg:py-36">
-          <div className="mb-4 flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600">
-              <Layers className="h-5 w-5 text-white" />
-            </div>
-            <span className="text-2xl font-bold tracking-tight text-white">
-              Fueki
-            </span>
-          </div>
+          <FuekiBrand
+            variant="full"
+            className="justify-center mb-4"
+            imageClassName="h-20 w-auto drop-shadow-[0_20px_44px_rgba(8,24,38,0.45)]"
+          />
 
           <p className="mb-12 text-sm font-medium uppercase tracking-[0.25em] text-gray-500">
             Institutional-Grade Asset Tokenization
@@ -502,6 +499,11 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           {/* Left: title + subtitle */}
           <div className="min-w-0">
+            <FuekiBrand
+              variant="full"
+              className="mb-4"
+              imageClassName="h-10 w-auto drop-shadow-[0_12px_26px_rgba(8,24,38,0.35)]"
+            />
             <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
               {getGreeting()}, {displayName}
             </h1>

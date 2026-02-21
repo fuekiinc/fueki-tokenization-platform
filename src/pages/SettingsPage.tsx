@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -18,6 +18,7 @@ import {
   Loader2,
   Sun,
   Moon,
+  CircleHelp,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -25,7 +26,8 @@ import { useAuthStore } from '../store/authStore';
 import { useTheme } from '../hooks/useTheme';
 import apiClient from '../lib/api/client';
 import { formatAddress, copyToClipboard } from '../lib/utils/helpers';
-import type { KYCStatus } from '../types/auth';
+import type { KYCStatus, HelpLevel } from '../types/auth';
+import { HELP_LEVEL_OPTIONS } from '../lib/helpLevels';
 
 // ---------------------------------------------------------------------------
 // Validation
@@ -541,6 +543,102 @@ function PreferencesSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Help Guidance Section
+// ---------------------------------------------------------------------------
+
+function HelpGuidanceSection() {
+  const user = useAuthStore((s) => s.user);
+  const updateHelpLevel = useAuthStore((s) => s.updateHelpLevel);
+  const [selectedLevel, setSelectedLevel] = useState<HelpLevel>(user?.helpLevel ?? 'novice');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setSelectedLevel(user?.helpLevel ?? 'novice');
+  }, [user?.helpLevel]);
+
+  const handleSelect = useCallback(
+    async (nextLevel: HelpLevel) => {
+      if (isSaving) return;
+      const currentLevel = user?.helpLevel ?? 'novice';
+      if (nextLevel === currentLevel) {
+        setSelectedLevel(nextLevel);
+        return;
+      }
+
+      setSelectedLevel(nextLevel);
+      setIsSaving(true);
+      try {
+        await updateHelpLevel(nextLevel);
+        toast.success('Help guidance preference updated');
+      } catch (err: unknown) {
+        setSelectedLevel(currentLevel);
+        let message = 'Unable to update help guidance. Please try again.';
+        if (
+          err !== null &&
+          typeof err === 'object' &&
+          'response' in err
+        ) {
+          const axiosErr = err as { response?: { data?: { error?: { message?: string }; message?: string } } };
+          message =
+            axiosErr.response?.data?.error?.message ??
+            axiosErr.response?.data?.message ??
+            message;
+        }
+        toast.error(message);
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [isSaving, updateHelpLevel, user?.helpLevel],
+  );
+
+  return (
+    <div className={CARD}>
+      <SectionHeader
+        icon={CircleHelp}
+        title="Help Guidance"
+        description="Control how much contextual guidance appears across workflows"
+      />
+
+      <div className="space-y-2.5">
+        {HELP_LEVEL_OPTIONS.map((option) => {
+          const selected = option.value === selectedLevel;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              disabled={isSaving}
+              onClick={() => void handleSelect(option.value)}
+              className={clsx(
+                'w-full rounded-xl border px-4 py-3 text-left transition-all duration-150',
+                selected
+                  ? 'border-indigo-500/55 bg-indigo-500/10 ring-1 ring-indigo-500/30'
+                  : 'border-[var(--border-primary)] bg-[var(--bg-tertiary)] hover:border-[var(--border-hover)]',
+                'disabled:cursor-not-allowed disabled:opacity-70',
+              )}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-sm font-semibold text-[var(--text-primary)]">
+                  {option.label}
+                </span>
+                {selected && (
+                  <span className="rounded-md bg-indigo-500/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-indigo-300">
+                    Active
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
+                {option.description}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Danger Zone Section
 // ---------------------------------------------------------------------------
 
@@ -635,6 +733,7 @@ export default function SettingsPage() {
         <ProfileSection />
         <SecuritySection />
         <PreferencesSection />
+        <HelpGuidanceSection />
         <DangerZoneSection />
       </div>
     </div>

@@ -321,3 +321,175 @@ These links expire in 7 days and can only be used once.
     console.log('[DEV EMAIL] Message ID:', info.messageId);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Support Request Email
+// ---------------------------------------------------------------------------
+
+export type SupportRequestCategory =
+  | 'general'
+  | 'technical'
+  | 'wallet'
+  | 'swap'
+  | 'compliance'
+  | 'billing';
+
+interface SupportRequestEmailData {
+  subject: string;
+  message: string;
+  category: SupportRequestCategory;
+  contactEmail: string;
+  contactName?: string;
+  route?: string;
+  userId?: string;
+  accountEmail?: string;
+  userAgent?: string;
+  ipAddress?: string;
+  submittedAtIso: string;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function categoryLabel(category: SupportRequestCategory): string {
+  switch (category) {
+    case 'technical':
+      return 'Technical Issue';
+    case 'wallet':
+      return 'Wallet / Connection';
+    case 'swap':
+      return 'Swap / Exchange';
+    case 'compliance':
+      return 'Compliance / Security Token';
+    case 'billing':
+      return 'Billing';
+    case 'general':
+    default:
+      return 'General Question';
+  }
+}
+
+export async function sendSupportRequestEmail(
+  data: SupportRequestEmailData,
+): Promise<void> {
+  const safeSubject = data.subject.trim();
+  const safeMessage = data.message.trim();
+  const safeName = data.contactName?.trim() || 'Not provided';
+  const safeRoute = data.route?.trim() || 'Not provided';
+  const safeUserId = data.userId?.trim() || 'Anonymous';
+  const safeAccountEmail = data.accountEmail?.trim() || 'Not authenticated';
+  const safeUserAgent = data.userAgent?.trim() || 'Not provided';
+  const safeIp = data.ipAddress?.trim() || 'Not provided';
+  const category = categoryLabel(data.category);
+
+  const subjectLine = `[Fueki Support] ${category} - ${safeSubject}`;
+
+  const htmlBody = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Support Request</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f7;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="680" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+          <tr>
+            <td style="background-color:#0f172a;padding:28px 36px;">
+              <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Fueki Support Request</h1>
+              <p style="margin:10px 0 0;color:#93c5fd;font-size:13px;">${escapeHtml(data.submittedAtIso)}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px 36px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                <tr>
+                  <td style="padding:7px 0;color:#6b7280;font-size:13px;width:180px;">Category</td>
+                  <td style="padding:7px 0;color:#111827;font-size:14px;font-weight:600;">${escapeHtml(category)}</td>
+                </tr>
+                <tr>
+                  <td style="padding:7px 0;color:#6b7280;font-size:13px;">Subject</td>
+                  <td style="padding:7px 0;color:#111827;font-size:14px;font-weight:600;">${escapeHtml(safeSubject)}</td>
+                </tr>
+                <tr>
+                  <td style="padding:7px 0;color:#6b7280;font-size:13px;">Contact Name</td>
+                  <td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtml(safeName)}</td>
+                </tr>
+                <tr>
+                  <td style="padding:7px 0;color:#6b7280;font-size:13px;">Contact Email</td>
+                  <td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtml(data.contactEmail)}</td>
+                </tr>
+                <tr>
+                  <td style="padding:7px 0;color:#6b7280;font-size:13px;">Authenticated Account Email</td>
+                  <td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtml(safeAccountEmail)}</td>
+                </tr>
+                <tr>
+                  <td style="padding:7px 0;color:#6b7280;font-size:13px;">User ID</td>
+                  <td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtml(safeUserId)}</td>
+                </tr>
+                <tr>
+                  <td style="padding:7px 0;color:#6b7280;font-size:13px;">Route</td>
+                  <td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtml(safeRoute)}</td>
+                </tr>
+                <tr>
+                  <td style="padding:7px 0;color:#6b7280;font-size:13px;">IP Address</td>
+                  <td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtml(safeIp)}</td>
+                </tr>
+                <tr>
+                  <td style="padding:7px 0;color:#6b7280;font-size:13px;">User Agent</td>
+                  <td style="padding:7px 0;color:#111827;font-size:14px;word-break:break-word;">${escapeHtml(safeUserAgent)}</td>
+                </tr>
+              </table>
+              <hr style="border:none;border-top:1px solid #e5e7eb;margin:22px 0;" />
+              <h2 style="margin:0 0 10px;color:#111827;font-size:16px;">Issue Details</h2>
+              <pre style="margin:0;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:14px;color:#111827;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;font-size:13px;line-height:1.55;">${escapeHtml(safeMessage)}</pre>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const textBody = `Fueki Support Request
+
+Submitted At: ${data.submittedAtIso}
+Category: ${category}
+Subject: ${safeSubject}
+Contact Name: ${safeName}
+Contact Email: ${data.contactEmail}
+Authenticated Account Email: ${safeAccountEmail}
+User ID: ${safeUserId}
+Route: ${safeRoute}
+IP Address: ${safeIp}
+User Agent: ${safeUserAgent}
+
+Issue Details:
+${safeMessage}
+`;
+
+  const info = await transporter.sendMail({
+    from: config.smtp.from,
+    to: config.support.requestRecipient,
+    replyTo: data.contactEmail,
+    subject: subjectLine,
+    text: textBody,
+    html: htmlBody,
+  });
+
+  if (!config.smtp.user) {
+    console.log('[DEV EMAIL] Support request email sent');
+    console.log('[DEV EMAIL] Recipient:', config.support.requestRecipient);
+    console.log('[DEV EMAIL] Message ID:', info.messageId);
+  }
+}

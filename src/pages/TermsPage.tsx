@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
+import FuekiBrand from '../components/Brand/FuekiBrand';
 
 // ---------------------------------------------------------------------------
 // TermsPage -- Terms of Service
@@ -22,13 +23,20 @@ export default function TermsPage() {
         {/* ---------------------------------------------------------------- */}
         {/* Back Navigation                                                  */}
         {/* ---------------------------------------------------------------- */}
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors duration-200 mb-10 text-sm font-medium"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Home
-        </Link>
+        <div className="mb-10 flex items-center justify-between gap-4">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors duration-200 text-sm font-medium"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Home
+          </Link>
+          <FuekiBrand
+            variant="full"
+            className="shrink-0 justify-center"
+            imageClassName="h-8 w-auto drop-shadow-[0_8px_18px_rgba(8,24,38,0.35)]"
+          />
+        </div>
 
         {/* ---------------------------------------------------------------- */}
         {/* Glass Card Container                                             */}

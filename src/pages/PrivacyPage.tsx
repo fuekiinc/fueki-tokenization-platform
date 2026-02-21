@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Fingerprint } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import clsx from 'clsx';
+import FuekiBrand from '../components/Brand/FuekiBrand';
 
 // ---------------------------------------------------------------------------
 // PrivacyPage
@@ -25,14 +26,11 @@ export default function PrivacyPage() {
             <ArrowLeft className="h-4 w-4" />
             Back
           </Link>
-          <div className="flex items-center gap-2.5">
-            <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-600 to-purple-600 shadow-md shadow-indigo-500/20">
-              <Fingerprint className="h-4 w-4 text-white" />
-            </div>
-            <span className="text-sm font-semibold text-[var(--text-primary)]">
-              Fueki
-            </span>
-          </div>
+          <FuekiBrand
+            variant="full"
+            className="justify-center"
+            imageClassName="h-8 w-auto drop-shadow-[0_8px_18px_rgba(8,24,38,0.35)]"
+          />
         </div>
       </header>
 

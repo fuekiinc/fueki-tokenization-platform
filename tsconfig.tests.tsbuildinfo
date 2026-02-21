@@ -1,1 +1,1 @@
-{"root":["./tests/accessibility.spec.ts"],"version":"5.9.3"}
+{"root":["./tests/accessibility.spec.ts","./tests/help-guidance.spec.ts","./tests/unit/tooltipregistry.test.ts"],"version":"5.9.3"}

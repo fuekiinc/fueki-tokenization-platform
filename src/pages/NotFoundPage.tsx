@@ -1,7 +1,8 @@
-import { Link , useNavigate  } from 'react-router-dom';
-import { ArrowLeft, Fingerprint, Home, LogIn } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Home, LogIn } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuthStore } from '../store/authStore';
+import FuekiBrand from '../components/Brand/FuekiBrand';
 
 // ---------------------------------------------------------------------------
 // NotFoundPage
@@ -19,9 +20,11 @@ export default function NotFoundPage() {
           {/* Branding                                                        */}
           {/* -------------------------------------------------------------- */}
           <div className="mb-10">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/25 mb-5">
-              <Fingerprint className="h-7 w-7 text-white" />
-            </div>
+            <FuekiBrand
+              variant="full"
+              className="justify-center"
+              imageClassName="h-14 w-auto drop-shadow-[0_14px_32px_rgba(8,24,38,0.4)]"
+            />
           </div>
 
           {/* -------------------------------------------------------------- */}

@@ -32,6 +32,7 @@ import toast from 'react-hot-toast';
 import { ethers } from 'ethers';
 
 import { useWalletStore, getProvider, getSigner } from '../store/walletStore.ts';
+import { useWallet } from '../hooks/useWallet.ts';
 import { SecurityTokenFactoryABI } from '../contracts/abis/SecurityTokenFactory.ts';
 import { TRANSFER_RULES_BYTECODE, RESTRICTED_SWAP_BYTECODE } from '../contracts/bytecodes.ts';
 import {
@@ -40,6 +41,7 @@ import {
   getExplorerAddressUrl,
 } from '../contracts/addresses.ts';
 import { encodeDocumentHash, parseContractError } from '../lib/blockchain/contracts.ts';
+import HelpTooltip, { type TooltipId } from '../components/Common/HelpTooltip';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -244,18 +246,27 @@ function FieldLabel({
   htmlFor,
   children,
   required,
+  tooltipId,
 }: {
   htmlFor: string;
   children: React.ReactNode;
   required?: boolean;
+  tooltipId?: TooltipId;
 }) {
   return (
     <label
       htmlFor={htmlFor}
-      className="block text-sm font-medium text-gray-300 mb-2"
+      className="flex items-center gap-1.5 text-sm font-medium text-gray-300 mb-2"
     >
       {children}
       {required && <span className="text-red-400 ml-0.5">*</span>}
+      {tooltipId && (
+        <HelpTooltip
+          tooltipId={tooltipId}
+          flow="securityMint"
+          component={`DeployTokenPage.${htmlFor}`}
+        />
+      )}
     </label>
   );
 }
@@ -435,6 +446,7 @@ export default function DeployTokenPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const wallet = useWalletStore((s) => s.wallet);
+  const { switchNetwork: switchWalletNetwork } = useWallet();
 
   // Supported deploy networks
   const deployNetworks = useMemo(() => getSupportedDeployNetworks(), []);
@@ -611,28 +623,9 @@ export default function DeployTokenPage() {
   // Network switching
   // -----------------------------------------------------------------------
 
-  const switchNetwork = useCallback(async () => {
-    if (!window.ethereum) {
-      toast.error('No wallet detected');
-      return;
-    }
-
-    try {
-      await window.ethereum.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: `0x${targetChainId.toString(16)}` }],
-      });
-    } catch (err: unknown) {
-      const error = err as { code?: number; message?: string };
-      if (error.code === 4902) {
-        toast.error(
-          `${targetNetwork?.name ?? 'This network'} is not configured in your wallet. Please add it manually.`,
-        );
-      } else {
-        toast.error('Failed to switch network');
-      }
-    }
-  }, [targetChainId, targetNetwork]);
+  const handleSwitchNetwork = useCallback(async () => {
+    await switchWalletNetwork(targetChainId);
+  }, [switchWalletNetwork, targetChainId]);
 
   // -----------------------------------------------------------------------
   // Deploy
@@ -930,7 +923,9 @@ export default function DeployTokenPage() {
 
                 {/* Decimals */}
                 <div>
-                  <FieldLabel htmlFor="decimals">Decimals</FieldLabel>
+                  <FieldLabel htmlFor="decimals" tooltipId="mint.decimals">
+                    Decimals
+                  </FieldLabel>
                   <input
                     id="decimals"
                     type="number"
@@ -1035,7 +1030,10 @@ export default function DeployTokenPage() {
 
                 {/* Min timelock amount */}
                 <div>
-                  <FieldLabel htmlFor="minTimelockAmount">
+                  <FieldLabel
+                    htmlFor="minTimelockAmount"
+                    tooltipId="security.timelock"
+                  >
                     Min Timelock Amount
                   </FieldLabel>
                   <input
@@ -1057,7 +1055,10 @@ export default function DeployTokenPage() {
 
                 {/* Max release delay */}
                 <div>
-                  <FieldLabel htmlFor="maxReleaseDelayDays">
+                  <FieldLabel
+                    htmlFor="maxReleaseDelayDays"
+                    tooltipId="security.releaseDelay"
+                  >
                     Max Release Delay (days)
                   </FieldLabel>
                   <input
@@ -1211,7 +1212,11 @@ export default function DeployTokenPage() {
               {/* Manual hash input mode */}
               {form.hashSource === 'manual' && (
                 <div>
-                  <FieldLabel htmlFor="manualHash" required>
+                  <FieldLabel
+                    htmlFor="manualHash"
+                    required
+                    tooltipId="mint.documentHash"
+                  >
                     Document Hash (hex)
                   </FieldLabel>
                   <input
@@ -1283,6 +1288,66 @@ export default function DeployTokenPage() {
                 ))}
               </div>
 
+              <div className="rounded-xl border border-white/[0.06] bg-[#0D0F14] p-4">
+                <h3 className="mb-3 text-sm font-semibold text-gray-200">
+                  Compliance Readiness
+                </h3>
+                <div className="space-y-2.5 text-xs text-gray-400">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5">
+                      Transfer restrictions
+                      <HelpTooltip
+                        tooltipId="security.transferRestrictions"
+                        flow="securityMint"
+                        component="DeployTokenPage.Review"
+                      />
+                    </span>
+                    <span className="text-gray-500">
+                      Enforced through transfer-rules contract
+                    </span>
+                  </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5">
+                      Role assignments
+                      <HelpTooltip
+                        tooltipId="security.roleAssignments"
+                        flow="securityMint"
+                        component="DeployTokenPage.Review"
+                      />
+                    </span>
+                    <span className="text-gray-500">
+                      Configure issuer/admin roles post-deployment
+                    </span>
+                  </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5">
+                      Whitelist policy
+                      <HelpTooltip
+                        tooltipId="security.whitelist"
+                        flow="securityMint"
+                        component="DeployTokenPage.Review"
+                      />
+                    </span>
+                    <span className="text-gray-500">
+                      Add verified investor addresses before trading
+                    </span>
+                  </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5">
+                      Offering disclosure
+                      <HelpTooltip
+                        tooltipId="security.complianceDisclosure"
+                        flow="securityMint"
+                        component="DeployTokenPage.Review"
+                      />
+                    </span>
+                    <span className="text-gray-500">
+                      Ensure terms and disclosures are published
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* Network selector */}
               <div>
                 <FieldLabel htmlFor="targetChain">Deploy to Network</FieldLabel>
@@ -1332,7 +1397,7 @@ export default function DeployTokenPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={switchNetwork}
+                    onClick={handleSwitchNetwork}
                     className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors shrink-0"
                   >
                     Switch Network

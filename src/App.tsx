@@ -1,12 +1,14 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import Layout from './components/Layout/Layout'
 import AuthLayout from './components/Layout/AuthLayout'
 import ProtectedRoute, { AuthRedirect } from './components/Auth/ProtectedRoute'
 import { useAuthStore } from './store/authStore'
+import OctopusLoader from './components/Common/OctopusLoader'
+import SupportWidget from './components/Support/SupportWidget'
 
 // Auto-reload on stale chunk after deploy (avoids "Failed to fetch dynamically imported module")
-function lazyWithRetry(factory: () => Promise<{ default: React.ComponentType<any> }>) {
+function lazyWithRetry(factory: () => Promise<{ default: React.ComponentType }>) {
   return lazy(() =>
     factory().catch(() => {
       window.location.reload();
@@ -63,9 +65,13 @@ const APP_NAME = 'Fueki'
 
 function PageLoader() {
   return (
-    <div className="flex items-center justify-center py-32" role="status" aria-label="Loading page">
-      <div className="h-8 w-8 animate-spin motion-reduce:animate-none rounded-full border-2 border-indigo-500 border-t-transparent" aria-hidden="true" />
-      <span className="sr-only">Loading page content</span>
+    <div
+      className="flex flex-col items-center justify-center gap-4 py-32"
+      role="status"
+      aria-label="Loading page"
+    >
+      <OctopusLoader size="md" label="Loading page content" />
+      <p className="text-sm text-[var(--text-secondary)]">Preparing your workspace...</p>
     </div>
   )
 }
@@ -164,6 +170,8 @@ export default function App() {
         {/* 404 catch-all */}
         <Route path="*" element={<Suspense fallback={<PageLoader />}><NotFoundPage /></Suspense>} />
       </Routes>
+
+      <SupportWidget />
     </AuthInitializer>
   )
 }

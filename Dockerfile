@@ -13,6 +13,7 @@ COPY . .
 # Vite bakes VITE_* env vars at build time (public, client-side only)
 ENV VITE_API_URL=https://fueki-backend-114394197024.us-central1.run.app
 ENV VITE_GOOGLE_MAPS_API_KEY=AIzaSyBEmXxzsM1deLV_FwYn91ECjJ43dUGs0V8
+ENV VITE_THIRDWEB_CLIENT_ID=2e0666f968e836ef3adfb480987686c6
 
 RUN npx vite build
 

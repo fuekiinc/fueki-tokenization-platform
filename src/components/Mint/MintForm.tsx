@@ -20,9 +20,8 @@ import {
 import toast from 'react-hot-toast';
 import { ContractService } from '../../lib/blockchain/contracts';
 import logger from '../../lib/logger';
-import { InfoTooltip } from '../Common/Tooltip';
+import HelpTooltip from '../Common/HelpTooltip';
 import { FormField } from '../Common/FormField';
-import { TOOLTIPS } from '../../lib/tooltipContent';
 import { useWallet } from '../../hooks/useWallet';
 import { useTradeStore } from '../../store/tradeStore.ts';
 import { useAssetStore } from '../../store/assetStore.ts';
@@ -784,6 +783,9 @@ export default function MintForm({ document }: MintFormProps) {
         <FormField
           label="Mint Amount"
           htmlFor="mintAmount"
+          tooltipId="mint.mintAmount"
+          tooltipFlow="mint"
+          tooltipComponent="MintForm"
           error={fieldErrors.mintAmount}
           hint={
             !fieldErrors.mintAmount && mintAmount && !isNaN(Number(mintAmount.replace(/[,\s]/g, '')))
@@ -793,9 +795,6 @@ export default function MintForm({ document }: MintFormProps) {
           required
         >
           <div className="relative">
-            <div className="absolute left-4 top-1/2 -translate-y-1/2">
-              <InfoTooltip content={TOOLTIPS.mintAmount} />
-            </div>
             <input
               id="mintAmount"
               type="text"
@@ -804,7 +803,7 @@ export default function MintForm({ document }: MintFormProps) {
               onChange={(e) => setMintAmount(e.target.value)}
               onBlur={() => markTouched('mintAmount')}
               placeholder="0.00"
-              className={`${inputClasses} pl-10 pr-32${
+              className={`${inputClasses} pr-32${
                 fieldErrors.mintAmount || amountExceedsDocValue
                   ? ' border-red-500/50 focus:border-red-500/70 focus:ring-red-500/20'
                   : ''
@@ -834,6 +833,9 @@ export default function MintForm({ document }: MintFormProps) {
         <FormField
           label="Recipient Address"
           htmlFor="recipient"
+          tooltipId="mint.mintAuthority"
+          tooltipFlow="mint"
+          tooltipComponent="MintForm"
           error={fieldErrors.recipient}
           hint={
             !fieldErrors.recipient && address && recipient === address
@@ -924,7 +926,11 @@ export default function MintForm({ document }: MintFormProps) {
           <div className="flex items-center justify-between py-3">
             <span className="flex items-center gap-1.5 text-sm text-gray-400">
               Hash
-              <InfoTooltip content={TOOLTIPS.documentHash} />
+              <HelpTooltip
+                tooltipId="mint.documentHash"
+                flow="mint"
+                component="MintForm.DocumentSummary"
+              />
             </span>
             <div className="flex items-center gap-2">
               <Hash className="h-3 w-3 text-gray-600" />

@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "rememberMe" BOOLEAN NOT NULL DEFAULT false;

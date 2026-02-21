@@ -1,17 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Check, ChevronDown, Copy, ExternalLink, LogOut, Menu, X } from 'lucide-react';
+import { Check, ChevronDown, LogOut, Menu, X } from 'lucide-react';
 import clsx from 'clsx';
+import { ConnectButton as ThirdwebConnectButton } from 'thirdweb/react';
+import FuekiBrand from '../Brand/FuekiBrand';
 import { useWallet } from '../../hooks/useWallet';
 import { useWalletStore } from '../../store/walletStore.ts';
 import { useAuthStore } from '../../store/authStore';
-import { formatTokenAmount } from '../../lib/formatters';
-import { needsMobileWalletRedirect } from '../../lib/utils/mobile';
 import { ComponentErrorBoundary } from '../ErrorBoundary';
 import logger from '../../lib/logger';
+import {
+  THIRDWEB_DEFAULT_CHAIN,
+  THIRDWEB_SUPPORTED_CHAINS,
+  THIRDWEB_THEME,
+  THIRDWEB_WALLETS,
+  THIRDWEB_WALLETCONNECT_PROJECT_ID,
+  getThirdwebAppMetadata,
+  isThirdwebConfigured,
+  thirdwebClient,
+} from '../../lib/thirdweb';
 import ThemeToggle from './ThemeToggle';
 import PendingTransactions from './PendingTransactions';
-import MobileWalletModal from '../Wallet/MobileWalletModal';
 
 // ---------------------------------------------------------------------------
 // Supported networks
@@ -106,35 +115,6 @@ const NAV_ITEMS: NavItem[] = [
 // Helpers
 // ---------------------------------------------------------------------------
 
-function truncateAddress(address: string): string {
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
-
-function formatNavBalance(balance: string): string {
-  const num = parseFloat(balance);
-  if (num === 0) return '0 ETH';
-  if (num < 0.0001) return '<0.0001 ETH';
-  return `${formatTokenAmount(num)} ETH`;
-}
-
-function copyToClipboard(text: string): void {
-  navigator.clipboard.writeText(text).catch(() => {
-    // Fallback silently
-  });
-}
-
-function addressToColor(address: string): string {
-  const hash = address.toLowerCase().slice(2, 8);
-  const h = parseInt(hash, 16) % 360;
-  return `hsl(${h}, 70%, 60%)`;
-}
-
-function addressToSecondaryColor(address: string): string {
-  const hash = address.toLowerCase().slice(6, 12);
-  const h = parseInt(hash, 16) % 360;
-  return `hsl(${h}, 65%, 50%)`;
-}
-
 // ---------------------------------------------------------------------------
 // Hook: close on outside click
 // ---------------------------------------------------------------------------
@@ -152,32 +132,6 @@ function useClickOutside(
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [ref, handler]);
-}
-
-// ---------------------------------------------------------------------------
-// AddressIdenticon
-// ---------------------------------------------------------------------------
-
-function AddressIdenticon({
-  address,
-  size = 24,
-}: {
-  address: string;
-  size?: number;
-}) {
-  const primary = addressToColor(address);
-  const secondary = addressToSecondaryColor(address);
-
-  return (
-    <div
-      className="rounded-full shrink-0"
-      style={{
-        width: size,
-        height: size,
-        background: `linear-gradient(135deg, ${primary}, ${secondary})`,
-      }}
-    />
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -316,7 +270,7 @@ function NetworkSelector({ compact = false }: { compact?: boolean }) {
               />
               <span className="flex-1 font-medium">{network.name}</span>
               {network.chainId === wallet.chainId && (
-                <Check className="h-4 w-4 text-indigo-400" />
+                <Check className="h-4 w-4 text-cyan-300" />
               )}
             </button>
           ))}
@@ -331,254 +285,63 @@ function NetworkSelector({ compact = false }: { compact?: boolean }) {
 // ---------------------------------------------------------------------------
 
 function WalletButton({ compact = false }: { compact?: boolean }) {
-  const {
-    address,
-    balance,
-    isConnected,
-    isConnecting,
-    connectWallet,
-    disconnectWallet,
-  } = useWallet();
+  const { isConnecting, error: walletError } = useWallet();
 
-  const wallet = useWalletStore((s) => s.wallet);
-  const [showDetails, setShowDetails] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [showMobileModal, setShowMobileModal] = useState(false);
-  const detailsRef = useRef<HTMLDivElement>(null);
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  useEffect(() => {
-    return () => { clearTimeout(copyTimerRef.current); };
-  }, []);
-
-  const close = useCallback(() => setShowDetails(false), []);
-  useClickOutside(detailsRef, close);
-
-  const currentNetwork = useMemo(
-    () => NETWORKS.find((n) => n.chainId === wallet.chainId) ?? null,
-    [wallet.chainId],
-  );
-
-  const handleCopy = useCallback((text: string) => {
-    copyToClipboard(text);
-    setCopied(true);
-    clearTimeout(copyTimerRef.current);
-    copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
-  }, []);
-
-  // Close on Escape key
-  useEffect(() => {
-    if (!showDetails) return;
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setShowDetails(false);
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [showDetails]);
-
-  const handleConnect = useCallback(() => {
-    if (needsMobileWalletRedirect()) {
-      setShowMobileModal(true);
-    } else {
-      void connectWallet();
-    }
-  }, [connectWallet]);
-
-  // -- Disconnected: show connect button with gradient
-  if (!isConnected || !address) {
+  if (!thirdwebClient || !isThirdwebConfigured) {
     return (
-      <>
-        <button
-          type="button"
-          onClick={handleConnect}
-          disabled={isConnecting}
-          className={clsx(
-            'connect-btn-gradient',
-            'flex items-center justify-center rounded-xl px-6 py-2.5 text-sm font-semibold text-white',
-            'transition-all duration-300',
-            'disabled:cursor-not-allowed disabled:opacity-50',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50',
-            compact && 'w-full',
-          )}
-        >
-          <span className="relative z-10">
-            {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-          </span>
-        </button>
-        <MobileWalletModal
-          isOpen={showMobileModal}
-          onClose={() => setShowMobileModal(false)}
-          onDirectConnect={() => {
-            setShowMobileModal(false);
-            void connectWallet();
-          }}
-        />
-      </>
+      <button
+        type="button"
+        disabled
+        className={clsx(
+          'flex items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold',
+          'border border-amber-500/30 bg-amber-500/10 text-amber-300',
+          'cursor-not-allowed',
+          compact && 'w-full',
+        )}
+        title="Set VITE_THIRDWEB_CLIENT_ID to enable wallet connectivity."
+      >
+        Wallet Config Required
+      </button>
     );
   }
 
-  // -- Connected: show truncated address
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://fueki.io';
+
   return (
-    <div className="relative" ref={detailsRef}>
-      <button
-        type="button"
-        onClick={() => setShowDetails((prev) => !prev)}
-        className={clsx(
-          'flex items-center gap-2.5 rounded-xl border px-3.5 py-2 text-sm transition-all duration-200',
-          'border-white/[0.06] bg-white/[0.03] text-gray-200',
-          'hover:border-white/[0.1] hover:bg-white/[0.06]',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50',
-          compact && 'w-full',
-        )}
-      >
-        <AddressIdenticon address={address} size={20} />
-        <span className="font-medium">{truncateAddress(address)}</span>
-        <ChevronDown
-          className={clsx(
-            'h-3.5 w-3.5 shrink-0 text-gray-500 transition-transform duration-200',
-            showDetails && 'rotate-180',
-          )}
-        />
-      </button>
-
-      {showDetails && (
-        <div
-          className={clsx(
-            'absolute z-50 mt-2 w-[calc(100vw-2rem)] sm:w-80 origin-top-right rounded-2xl shadow-2xl',
-            'border border-white/[0.06] bg-[#0D0F14]/95 backdrop-blur-xl',
-            'animate-scale-in',
-            compact ? 'left-0 right-0 w-full' : 'right-0',
-          )}
-        >
-          {/* Header */}
-          <div className="flex items-center gap-3 border-b border-white/[0.04] px-5 py-4">
-            <AddressIdenticon address={address} size={36} />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-white">
-                {truncateAddress(address)}
-              </p>
-              {currentNetwork && (
-                <div className="mt-0.5 flex items-center gap-1.5">
-                  <span
-                    className="h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: currentNetwork.color }}
-                  />
-                  <p className="text-xs text-gray-500">{currentNetwork.name}</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="p-4 space-y-4">
-            {/* Address */}
-            <div>
-              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                Address
-              </p>
-              <div className="flex items-center gap-2 rounded-xl border border-white/[0.04] bg-white/[0.03] px-3 py-2">
-                <code className="flex-1 truncate font-mono text-xs text-gray-300">
-                  {address}
-                </code>
-                <button
-                  type="button"
-                  onClick={() => handleCopy(address)}
-                  className={clsx(
-                    'shrink-0 rounded-lg p-1.5 transition-all duration-150',
-                    copied
-                      ? 'bg-green-500/10 text-green-400'
-                      : 'text-gray-500 hover:bg-white/[0.06] hover:text-white',
-                  )}
-                  title="Copy address"
-                >
-                  {copied ? (
-                    <Check className="h-3.5 w-3.5" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </button>
-                {currentNetwork?.explorerUrl && (
-                  <a
-                    href={`${currentNetwork.explorerUrl}/address/${address}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="shrink-0 rounded-lg p-1.5 text-gray-500 transition-all duration-150 hover:bg-white/[0.06] hover:text-white"
-                    title="View on explorer"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                )}
-              </div>
-            </div>
-
-            {/* Balance */}
-            <div>
-              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                Balance
-              </p>
-              <p className="text-xl font-bold tracking-tight text-white">
-                {formatNavBalance(balance)}
-              </p>
-            </div>
-
-            {/* Network info */}
-            {currentNetwork && (
-              <div>
-                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                  Network
-                </p>
-                <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.04] bg-white/[0.03] px-3 py-2.5">
-                  <span
-                    className="h-3 w-3 shrink-0 rounded-full"
-                    style={{
-                      backgroundColor: currentNetwork.color,
-                      boxShadow: `0 0 8px ${currentNetwork.color}40`,
-                    }}
-                  />
-                  <span className="text-sm font-medium text-gray-300">
-                    {currentNetwork.name}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* View on Explorer */}
-            {currentNetwork?.explorerUrl && (
-              <a
-                href={`${currentNetwork.explorerUrl}/address/${address}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={clsx(
-                  'flex items-center justify-center gap-2 rounded-xl border border-white/[0.06] px-3 py-2.5 text-sm font-medium',
-                  'text-gray-400 transition-all duration-150',
-                  'hover:border-white/[0.1] hover:bg-white/[0.03] hover:text-white',
-                )}
-              >
-                <ExternalLink className="h-4 w-4" />
-                View on Explorer
-              </a>
-            )}
-
-            {/* Disconnect */}
-            <button
-              type="button"
-              onClick={() => {
-                disconnectWallet();
-                setShowDetails(false);
-              }}
-              className={clsx(
-                'flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium',
-                'transition-all duration-150',
-                'border-red-500/20 bg-red-500/[0.06] text-red-400',
-                'hover:border-red-500/30 hover:bg-red-500/10',
-              )}
-            >
-              <LogOut className="h-4 w-4" />
-              Disconnect Wallet
-            </button>
-          </div>
-        </div>
+    <div className={clsx('wallet-connect-shell', compact && 'w-full')}>
+      <ThirdwebConnectButton
+        client={thirdwebClient}
+        wallets={THIRDWEB_WALLETS}
+        appMetadata={getThirdwebAppMetadata()}
+        chain={THIRDWEB_DEFAULT_CHAIN}
+        chains={THIRDWEB_SUPPORTED_CHAINS}
+        theme={THIRDWEB_THEME}
+        connectButton={{
+          label: isConnecting ? 'Connecting...' : 'Connect Wallet',
+          className: clsx('fueki-connect-button', compact && 'w-full'),
+        }}
+        detailsButton={{
+          className: clsx('fueki-wallet-details-button', compact && 'w-full justify-between'),
+        }}
+        connectModal={{
+          title: 'Connect to Fueki',
+          titleIcon: '',
+          size: 'wide',
+          termsOfServiceUrl: `${origin}/terms`,
+          privacyPolicyUrl: `${origin}/privacy`,
+        }}
+        showAllWallets={true}
+        detailsModal={{
+          showTestnetFaucet: true,
+        }}
+        walletConnect={
+          THIRDWEB_WALLETCONNECT_PROJECT_ID
+            ? { projectId: THIRDWEB_WALLETCONNECT_PROJECT_ID }
+            : undefined
+        }
+      />
+      {walletError && (
+        <p className="mt-2 text-xs text-red-400">{walletError}</p>
       )}
     </div>
   );
@@ -659,22 +422,15 @@ function MobileSlideOver({
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-6">
-          <span
-            className="text-xl font-bold tracking-tight"
-            style={{
-              background: 'linear-gradient(135deg, #6366f1, #a78bfa)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-            }}
-          >
-            Fueki
-          </span>
+          <FuekiBrand
+            variant="full"
+            imageClassName="h-8 w-auto drop-shadow-[0_8px_20px_rgba(8,24,38,0.45)]"
+          />
           <button
             ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            className="rounded-xl p-2 text-gray-400 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+            className="rounded-xl p-2 text-gray-400 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
             aria-label="Close navigation menu"
           >
             <X className="h-5 w-5" />
@@ -692,7 +448,7 @@ function MobileSlideOver({
                 className={({ isActive }) =>
                   clsx(
                     'flex items-center gap-3 rounded-2xl px-5 py-3.5 text-[15px] font-medium transition-all duration-150',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60',
                     isActive
                       ? 'bg-white/[0.08] text-white'
                       : 'text-gray-400 hover:bg-white/[0.04] hover:text-white',
@@ -704,7 +460,7 @@ function MobileSlideOver({
                     {/* Active indicator bar */}
                     {isActive && (
                       <span
-                        className="h-5 w-0.5 shrink-0 rounded-full bg-indigo-400"
+                        className="h-5 w-0.5 shrink-0 rounded-full bg-cyan-300"
                         aria-hidden="true"
                       />
                     )}
@@ -747,8 +503,13 @@ function MobileSlideOver({
 
         {/* Footer */}
         <div className="border-t border-white/[0.04] px-6 py-5">
-          <p className="text-center text-[11px] text-gray-500">
-            Fueki v1.0
+          <FuekiBrand
+            variant="full"
+            className="justify-center"
+            imageClassName="h-6 w-auto opacity-85"
+          />
+          <p className="mt-2 text-center text-[11px] text-gray-500">
+            v1.0
           </p>
         </div>
       </div>
@@ -833,19 +594,12 @@ export default function Navbar() {
               {/* Logo */}
               <Link
                 to="/"
-                className="group flex items-center transition-opacity duration-200 hover:opacity-90 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+                className="group flex items-center transition-opacity duration-200 hover:opacity-90 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
               >
-                <span
-                  className="text-xl font-bold tracking-tight"
-                  style={{
-                    background: 'linear-gradient(135deg, #6366f1, #a78bfa)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                  }}
-                >
-                  Fueki
-                </span>
+                <FuekiBrand
+                  variant="full"
+                  imageClassName="h-9 w-auto drop-shadow-[0_10px_24px_rgba(12,44,67,0.55)]"
+                />
               </Link>
 
               {/* Desktop nav links -- NavLink auto-sets aria-current="page" when active */}
@@ -858,7 +612,7 @@ export default function Navbar() {
                       clsx(
                         'relative rounded-full px-5 py-2.5 text-sm font-medium',
                         'transition-all duration-200',
-                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
                         isActive
                           ? 'bg-white/[0.08] text-white'
                           : 'text-gray-400 hover:bg-white/[0.04] hover:text-white',
@@ -871,7 +625,7 @@ export default function Navbar() {
                         {/* Active route indicator dot */}
                         {isActive && (
                           <span
-                            className="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-indigo-400"
+                            className="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-cyan-300"
                             aria-hidden="true"
                           />
                         )}
@@ -918,7 +672,7 @@ export default function Navbar() {
                 className={clsx(
                   'rounded-xl p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center transition-all duration-200 lg:hidden',
                   'text-gray-400 hover:bg-white/[0.06] hover:text-white',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60',
                 )}
                 aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
                 aria-expanded={mobileMenuOpen}

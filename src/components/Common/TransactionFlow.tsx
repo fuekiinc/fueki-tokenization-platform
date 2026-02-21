@@ -48,7 +48,6 @@ import {
   XCircle,
   ExternalLink,
   ArrowRight,
-  Loader2,
   AlertTriangle,
   Copy,
   Check,
@@ -62,6 +61,7 @@ import { useWalletStore, getProvider } from '../../store/walletStore.ts';
 import { addPendingTransaction } from '../../lib/transactionRecovery.ts';
 import type { PendingTransaction } from '../../lib/transactionRecovery.ts';
 import Spinner from './Spinner.tsx';
+import OctopusLoader from './OctopusLoader.tsx';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -184,27 +184,8 @@ function getExplorerTxURL(
 /** Indeterminate progress ring used in the wallet-wait phase. */
 function PulseRing({ className }: { className?: string }) {
   return (
-    <div className={clsx('relative', className)}>
-      {/* Outer pulsing ring */}
-      <div
-        className={clsx(
-          'absolute inset-0 rounded-full',
-          'bg-gradient-to-r from-indigo-500/20 to-violet-500/20',
-          'animate-ping motion-reduce:animate-none',
-        )}
-        aria-hidden="true"
-      />
-      {/* Inner steady ring */}
-      <div
-        className={clsx(
-          'relative flex items-center justify-center',
-          'h-20 w-20 rounded-full',
-          'bg-gradient-to-r from-indigo-500/10 to-violet-500/10',
-          'border border-indigo-500/30',
-        )}
-      >
-        <Loader2 className="h-8 w-8 text-indigo-400 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-      </div>
+    <div className={clsx('flex items-center justify-center', className)}>
+      <OctopusLoader size="md" label="Awaiting wallet confirmation" />
     </div>
   );
 }
@@ -399,7 +380,7 @@ interface WalletPhaseProps {
 function WalletPhase({ timedOut, onRetry }: WalletPhaseProps) {
   return (
     <div className="flex flex-col items-center py-6 space-y-6">
-      <PulseRing className="h-20 w-20" />
+      <PulseRing />
 
       <div className="text-center space-y-2" aria-live="polite">
         <h3 className="text-lg font-semibold text-white">

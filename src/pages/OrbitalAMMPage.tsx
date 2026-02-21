@@ -20,9 +20,8 @@ import { OrbitalContractService } from '../lib/blockchain/orbitalContracts';
 import logger from '../lib/logger';
 import { getNetworkConfig, getNetworkMetadata } from '../contracts/addresses';
 import { formatAddress } from '../lib/utils/helpers';
-import { InfoTooltip } from '../components/Common/Tooltip';
+import HelpTooltip from '../components/Common/HelpTooltip';
 import { ErrorState } from '../components/Common/StateDisplays';
-import { TOOLTIPS } from '../lib/tooltipContent';
 
 import PoolList from '../components/OrbitalAMM/PoolList';
 import SwapInterface from '../components/OrbitalAMM/SwapInterface';
@@ -385,7 +384,11 @@ export default function OrbitalAMMPage() {
             </h1>
             <p className="flex items-center gap-1.5 text-sm text-gray-500 pl-0.5">
               Concentrated multi-token liquidity pools with power-mean invariants
-              <InfoTooltip content={TOOLTIPS.liquidityPool} />
+              <HelpTooltip
+                tooltipId="orbital.invariant"
+                flow="orbital"
+                component="OrbitalAMMPage.Header"
+              />
             </p>
           </div>
 

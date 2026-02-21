@@ -1,19 +1,23 @@
 import axios from 'axios';
 import type { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import type { AuthTokens } from '../../types/auth';
+import {
+  clearPersistedAuth,
+  persistTokens,
+  readAuthSnapshot,
+  resolveActiveStorageMode,
+} from '../authStorage';
+import type { AuthStorageMode } from '../authStorage';
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
-
-const AUTH_STORAGE_KEY = 'fueki-auth-tokens';
 
 const baseURL = import.meta.env.VITE_API_URL as string | undefined;
 
 // Fail-fast warning in development if the API URL env var is missing
 // (security audit C-4: prevents silently falling back to production).
 if (!baseURL && import.meta.env.DEV) {
-  // eslint-disable-next-line no-console -- intentional dev-only startup warning
   console.error(
     '[api/client] VITE_API_URL is not set. API requests will fall back to ' +
       'the production URL, which is unsafe in development. Set VITE_API_URL ' +
@@ -39,24 +43,11 @@ const apiClient = axios.create({
  * Returns null if tokens are missing or malformed.
  */
 function getStoredTokens(): AuthTokens | null {
-  try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return null;
+  return readAuthSnapshot()?.tokens ?? null;
+}
 
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      'accessToken' in parsed &&
-      typeof (parsed as Record<string, unknown>).accessToken === 'string'
-    ) {
-      return parsed as AuthTokens;
-    }
-    return null;
-  } catch {
-    // Malformed JSON in storage -- treat as absent.
-    return null;
-  }
+function getActiveStorageMode(): AuthStorageMode {
+  return resolveActiveStorageMode() ?? 'local';
 }
 
 /**
@@ -160,7 +151,7 @@ apiClient.interceptors.response.use(
       }
 
       // Persist the new access token (refresh token stays in httpOnly cookie).
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ accessToken: data.accessToken }));
+      persistTokens(getActiveStorageMode(), { accessToken: data.accessToken });
 
       // Retry the original request and flush the queue.
       originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
@@ -171,7 +162,7 @@ apiClient.interceptors.response.use(
       processQueue(refreshError, null);
 
       // Clear auth state and redirect to login.
-      localStorage.removeItem(AUTH_STORAGE_KEY);
+      clearPersistedAuth();
       window.location.href = '/login';
 
       return Promise.reject(refreshError);

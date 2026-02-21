@@ -7,7 +7,6 @@ import {
   History,
   CheckCircle2,
   Sparkles,
-  HelpCircle,
 } from 'lucide-react';
 import { useDocumentStore } from '../store/documentStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
@@ -128,37 +127,6 @@ function MintStepIndicator({ activeStep }: { activeStep: number }) {
 }
 
 // ---------------------------------------------------------------------------
-// Inline help tooltip
-// ---------------------------------------------------------------------------
-
-function HelpTooltip({ text }: { text: string }) {
-  return (
-    <span className="group relative inline-flex ml-1.5 align-middle">
-      <HelpCircle
-        className="h-3.5 w-3.5 text-[var(--text-muted)] cursor-help"
-        aria-hidden="true"
-      />
-      <span
-        role="tooltip"
-        className={clsx(
-          'invisible group-hover:visible group-focus-within:visible',
-          'absolute left-1/2 -translate-x-1/2 bottom-full mb-2',
-          'w-56 px-3 py-2 rounded-lg',
-          'bg-[var(--bg-primary)] border border-[var(--border-primary)]',
-          'text-xs text-[var(--text-secondary)] leading-relaxed',
-          'shadow-lg shadow-black/30',
-          'z-50 pointer-events-none',
-          'transition-opacity duration-150',
-        )}
-      >
-        {text}
-      </span>
-      <span className="sr-only">{text}</span>
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Section card -- glass container with step badge
 // ---------------------------------------------------------------------------
 
@@ -170,7 +138,6 @@ interface SectionCardProps {
   icon: React.ElementType;
   isActive?: boolean;
   isCompleted?: boolean;
-  helpText?: string;
 }
 
 function SectionCard({
@@ -181,7 +148,6 @@ function SectionCard({
   icon: Icon,
   isActive = false,
   isCompleted = false,
-  helpText,
 }: SectionCardProps) {
   return (
     <section
@@ -255,7 +221,6 @@ function SectionCard({
               )}
             >
               {title}
-              {helpText && <HelpTooltip text={helpText} />}
             </h3>
           </div>
           {subtitle && (
@@ -358,7 +323,6 @@ export default function MintPage() {
             icon={Upload}
             isActive={activeStep === 1}
             isCompleted={activeStep > 1}
-            helpText="Upload a structured document containing transaction data. Supported formats: JSON, CSV, XML."
           >
             <FileUploader />
           </SectionCard>
@@ -370,7 +334,6 @@ export default function MintPage() {
             icon={FileText}
             isActive={activeStep === 2}
             isCompleted={activeStep > 2}
-            helpText="Review the transactions parsed from your document. Verify amounts and details before proceeding."
           >
             <TransactionPreview />
           </SectionCard>
@@ -385,7 +348,6 @@ export default function MintPage() {
             icon={Coins}
             isActive={activeStep >= 2 && activeStep < 4}
             isCompleted={activeStep === 4}
-            helpText="Configure your token's on-chain properties. The token name and symbol will be visible on the blockchain."
           >
             <MintForm document={currentDocument} />
           </SectionCard>

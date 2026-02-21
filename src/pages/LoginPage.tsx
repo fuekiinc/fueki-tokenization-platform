@@ -4,19 +4,19 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Mail,
-  Lock,
+  ArrowRight,
   Eye,
   EyeOff,
-  LogIn,
-  ArrowRight,
-  Shield,
   Loader2,
-  Fingerprint,
+  Lock,
+  LogIn,
+  Mail,
+  Shield,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useAuthStore } from '../store/authStore';
+import FuekiBrand from '../components/Brand/FuekiBrand';
 import type { LoginFormValues } from '../types/auth';
 
 // ---------------------------------------------------------------------------
@@ -32,6 +32,7 @@ const loginSchema = z.object({
     .string()
     .min(1, 'Password is required')
     .min(8, 'Password must be at least 8 characters'),
+  rememberMe: z.boolean(),
 });
 
 // ---------------------------------------------------------------------------
@@ -50,7 +51,7 @@ export default function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: '', password: '' },
+    defaultValues: { email: '', password: '', rememberMe: true },
   });
 
   const onSubmit = async (values: LoginFormValues) => {
@@ -80,14 +81,11 @@ export default function LoginPage() {
       {/* Branding                                                            */}
       {/* ------------------------------------------------------------------ */}
       <div className="text-center mb-10">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/25 mb-5">
-          <Fingerprint className="h-8 w-8 text-white" />
-        </div>
-        <h1 className="text-4xl font-bold tracking-tight">
-          <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-300 bg-clip-text text-transparent">
-            Fueki
-          </span>
-        </h1>
+        <FuekiBrand
+          variant="full"
+          className="justify-center mb-6"
+          imageClassName="h-20 w-auto drop-shadow-[0_20px_44px_rgba(8,24,38,0.45)]"
+        />
         <p className="mt-2 text-sm text-[var(--text-muted)] tracking-widest uppercase font-medium">
           Tokenization Platform
         </p>
@@ -204,11 +202,13 @@ export default function LoginPage() {
             <label className="flex items-center gap-2.5 cursor-pointer group">
               <input
                 type="checkbox"
+                id="rememberMe"
                 className={clsx(
                   'h-4 w-4 rounded border-[var(--border-primary)] bg-[var(--bg-tertiary)]',
                   'text-indigo-600 focus:ring-2 focus:ring-indigo-500/20 focus:ring-offset-0',
                   'transition-colors duration-150',
                 )}
+                {...register('rememberMe')}
               />
               <span className="text-sm text-[var(--text-muted)] group-hover:text-[var(--text-secondary)] transition-colors">
                 Remember me

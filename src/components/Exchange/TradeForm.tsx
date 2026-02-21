@@ -37,8 +37,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import type { WrappedAsset } from '../../types';
-import { InfoTooltip } from '../Common/Tooltip';
-import { TOOLTIPS } from '../../lib/tooltipContent';
+import HelpTooltip from '../Common/HelpTooltip';
 import { useTradeStore } from '../../store/tradeStore.ts';
 import { ContractService, ETH_SENTINEL, isETH, parseContractError } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
@@ -674,7 +673,11 @@ export default function TradeForm({
           <BookOpen className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Limit Order</span>
           <span className="sm:hidden">Limit</span>
-          <InfoTooltip content={TOOLTIPS.limitOrder} />
+          <HelpTooltip
+            tooltipId="swap.routing"
+            flow="swap"
+            component="TradeForm.ModeToggle"
+          />
         </button>
         <button
           type="button"
@@ -953,6 +956,14 @@ export default function TradeForm({
           txStatus === 'approving' ||
           txStatus === 'approved') && (
           <div className="space-y-4">
+            <div className="flex items-center gap-1.5 px-1 text-xs text-gray-500">
+              Approval required
+              <HelpTooltip
+                tooltipId="swap.approval"
+                flow="swap"
+                component="TradeForm.Approval"
+              />
+            </div>
             {/* Step indicator */}
             <div className="flex items-center gap-3 px-1">
               <div
@@ -1249,7 +1260,11 @@ export default function TradeForm({
               <div className="flex items-center justify-between py-2.5">
                 <span className="flex items-center gap-1.5 text-xs text-gray-500">
                   Price Impact
-                  <InfoTooltip content={TOOLTIPS.slippage} />
+                  <HelpTooltip
+                    tooltipId="swap.priceImpact"
+                    flow="swap"
+                    component="TradeForm.AMMQuote"
+                  />
                 </span>
                 <span className={clsx(
                   'font-mono text-xs font-medium',
@@ -1264,7 +1279,14 @@ export default function TradeForm({
             )}
 
             <div className="flex items-center justify-between py-2.5">
-              <span className="text-xs text-gray-500">Min. received</span>
+              <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                Min. received
+                <HelpTooltip
+                  tooltipId="swap.minReceived"
+                  flow="swap"
+                  component="TradeForm.AMMQuote"
+                />
+              </span>
               <span className="font-mono text-xs text-gray-400">
                 {formatPrice(Number(ethers.formatUnits(ammQuote - (ammQuote * BigInt(Math.round(slippage * 10)) / 1000n), 18)))}{' '}
                 {buyAsset.symbol}
@@ -1282,7 +1304,11 @@ export default function TradeForm({
               >
                 <Settings2 className="h-3 w-3" />
                 Slippage Tolerance
-                <InfoTooltip content={TOOLTIPS.slippage} />
+                <HelpTooltip
+                  tooltipId="swap.slippage"
+                  flow="swap"
+                  component="TradeForm.AMMQuote"
+                />
               </button>
               <span className="font-mono text-xs text-purple-400">{slippage}%</span>
             </div>

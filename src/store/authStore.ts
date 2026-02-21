@@ -1,82 +1,26 @@
 import { create } from 'zustand';
 import type {
-  User,
   AuthTokens,
+  DocumentUploadResponse,
+  HelpLevel,
+  KYCFormData,
+  KYCStatusResponse,
+  KYCSubmitResponse,
   LoginRequest,
   RegisterRequest,
-  KYCFormData,
-  KYCSubmitResponse,
-  KYCStatusResponse,
-  DocumentUploadResponse,
+  User,
 } from '../types/auth';
 import * as authApi from '../lib/api/auth';
+import {
+  type AuthStorageMode,
+  clearPersistedAuth,
+  persistAuthSnapshot,
+  persistTokens,
+  persistUser,
+  readAuthSnapshot,
+} from '../lib/authStorage';
 
 // ---------------------------------------------------------------------------
-// localStorage keys
-// ---------------------------------------------------------------------------
-
-// Only the short-lived access token is stored in localStorage.
-// The long-lived refresh token is managed via an httpOnly cookie set by the
-// backend, keeping it out of reach of XSS attacks (security audit H-01 fix).
-const TOKENS_KEY = 'fueki-auth-tokens';
-const USER_KEY = 'fueki-auth-user';
-
-// ---------------------------------------------------------------------------
-// localStorage helpers
-// ---------------------------------------------------------------------------
-
-function loadFromStorage<T>(key: string): T | null {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveToStorage<T>(key: string, value: T): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Silently ignore storage errors (e.g. quota exceeded, SSR).
-  }
-}
-
-function removeFromStorage(key: string): void {
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    // Silently ignore.
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Token validation
-// ---------------------------------------------------------------------------
-
-/**
- * Minimal structural check that a token string looks like a JWT (three
- * dot-separated, non-empty segments). This does NOT verify the signature.
- */
-function isPlausibleJWT(token: string): boolean {
-  if (!token || typeof token !== 'string') return false;
-  const parts = token.split('.');
-  return parts.length === 3 && parts.every((p) => p.length > 0);
-}
-
-/**
- * Validates that a stored tokens object has the expected shape and that the
- * access token string is structurally plausible.
- * (The refresh token is now in an httpOnly cookie, not in localStorage.)
- */
-function validateTokens(tokens: AuthTokens | null): tokens is AuthTokens {
-  if (!tokens) return false;
-  return (
-    typeof tokens.accessToken === 'string' &&
-    isPlausibleJWT(tokens.accessToken)
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Store interface
 // ---------------------------------------------------------------------------
@@ -88,6 +32,7 @@ interface AuthStore {
   isAuthenticated: boolean;
   isLoading: boolean;
   isInitialized: boolean;
+  storageMode: AuthStorageMode;
 
   // Actions
   initialize: () => Promise<void>;
@@ -97,6 +42,7 @@ interface AuthStore {
   submitKYC: (data: KYCFormData) => Promise<KYCSubmitResponse>;
   uploadDocument: (file: File, documentType: string) => Promise<DocumentUploadResponse>;
   checkKYCStatus: () => Promise<KYCStatusResponse>;
+  updateHelpLevel: (helpLevel: HelpLevel) => Promise<User>;
   setUser: (user: User) => void;
   clearAuth: () => void;
 }
@@ -111,6 +57,7 @@ const initialState = {
   isAuthenticated: false,
   isLoading: false,
   isInitialized: false,
+  storageMode: 'local' as AuthStorageMode,
 };
 
 // ---------------------------------------------------------------------------
@@ -133,27 +80,26 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     if (_initPromise) return _initPromise;
 
     _initPromise = (async () => {
-      const savedTokens = loadFromStorage<AuthTokens>(TOKENS_KEY);
-      const savedUser = loadFromStorage<User>(USER_KEY);
+      const snapshot = readAuthSnapshot();
 
-      if (!savedTokens || !validateTokens(savedTokens)) {
-        // No valid tokens -- clear any partial/corrupt state and mark ready.
-        if (savedTokens) {
-          removeFromStorage(TOKENS_KEY);
-        }
+      if (!snapshot) {
         set({ isInitialized: true });
         return;
       }
 
+      const { tokens: savedTokens, user: savedUser, mode: storageMode } =
+        snapshot;
+
       // Tokens found in storage -- try to validate them by fetching the profile.
       try {
         const user = await authApi.getProfile();
-        saveToStorage(USER_KEY, user);
+        persistUser(storageMode, user);
         set({
           user,
           tokens: savedTokens,
           isAuthenticated: true,
           isInitialized: true,
+          storageMode,
         });
       } catch {
         // Access token may have expired -- attempt a refresh.
@@ -161,13 +107,15 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         try {
           const newTokens = await authApi.refreshToken();
 
-          saveToStorage(TOKENS_KEY, newTokens);
+          persistTokens(storageMode, newTokens);
 
           // Fetch the user profile with the new access token.
           let user: User | null = savedUser;
           try {
             user = await authApi.getProfile();
-            saveToStorage(USER_KEY, user);
+            if (user) {
+              persistUser(storageMode, user);
+            }
           } catch {
             // If profile fetch fails, use the previously saved user data.
             // This is a degraded state but better than logging the user out.
@@ -178,6 +126,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
             tokens: newTokens,
             isAuthenticated: true,
             isInitialized: true,
+            storageMode,
           });
         } catch {
           // Refresh also failed -- clear everything.
@@ -199,13 +148,14 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     set({ isLoading: true });
     try {
       const response = await authApi.login(data);
-      saveToStorage(TOKENS_KEY, response.tokens);
-      saveToStorage(USER_KEY, response.user);
+      const storageMode: AuthStorageMode = data.rememberMe ? 'local' : 'session';
+      persistAuthSnapshot(storageMode, response.tokens, response.user);
       set({
         user: response.user,
         tokens: response.tokens,
         isAuthenticated: true,
         isLoading: false,
+        storageMode,
       });
     } catch (error) {
       set({ isLoading: false });
@@ -218,13 +168,13 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     set({ isLoading: true });
     try {
       const response = await authApi.register(data);
-      saveToStorage(TOKENS_KEY, response.tokens);
-      saveToStorage(USER_KEY, response.user);
+      persistAuthSnapshot('local', response.tokens, response.user);
       set({
         user: response.user,
         tokens: response.tokens,
         isAuthenticated: true,
         isLoading: false,
+        storageMode: 'local',
       });
     } catch (error) {
       set({ isLoading: false });
@@ -244,9 +194,10 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
   submitKYC: async (data) => {
     const response = await authApi.submitKYC(data);
     const currentUser = get().user;
+    const storageMode = get().storageMode;
     if (currentUser) {
       const updatedUser: User = { ...currentUser, kycStatus: 'pending' };
-      saveToStorage(USER_KEY, updatedUser);
+      persistUser(storageMode, updatedUser);
       set({ user: updatedUser });
     }
     return response;
@@ -262,28 +213,37 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
   checkKYCStatus: async () => {
     const response = await authApi.getKYCStatus();
     const currentUser = get().user;
+    const storageMode = get().storageMode;
     if (currentUser) {
       const updatedUser: User = { ...currentUser, kycStatus: response.status };
-      saveToStorage(USER_KEY, updatedUser);
+      persistUser(storageMode, updatedUser);
       set({ user: updatedUser });
     }
     return response;
   },
 
+  // ---- updateHelpLevel -----------------------------------------------------
+  updateHelpLevel: async (helpLevel) => {
+    const updatedUser = await authApi.updatePreferences({ helpLevel });
+    persistUser(get().storageMode, updatedUser);
+    set({ user: updatedUser });
+    return updatedUser;
+  },
+
   // ---- setUser -------------------------------------------------------------
   setUser: (user) => {
-    saveToStorage(USER_KEY, user);
+    persistUser(get().storageMode, user);
     set({ user });
   },
 
   // ---- clearAuth -----------------------------------------------------------
   clearAuth: () => {
-    removeFromStorage(TOKENS_KEY);
-    removeFromStorage(USER_KEY);
+    clearPersistedAuth();
     set({
       user: null,
       tokens: null,
       isAuthenticated: false,
+      storageMode: 'local',
     });
   },
 }));
