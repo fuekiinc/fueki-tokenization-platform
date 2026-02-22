@@ -6,7 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "test:unit": "tsx --test tests/unit/*.test.ts",
+    "test:unit:coverage": "c8 --reporter=text --reporter=lcov --reporter=json-summary --all --include=src/lib/**/*.ts --include=src/components/Forms/signupSchemas.ts tsx --test tests/unit/*.test.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test tests/e2e tests/help-guidance.spec.ts --project=chromium",
+    "test:e2e:a11y": "playwright test tests/accessibility.spec.ts --project=chromium",
+    "test:all": "npm run test:unit && npm run test:e2e:smoke",
     "preview": "vite preview",
     "frontend:update": "tsc -b && vite build && gcloud run deploy fueki-frontend --source . --region us-central1",
     "backend:update": "cd backend && npm run build && cd .. && gcloud run deploy fueki-backend --source backend --region us-central1"
@@ -53,6 +60,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "c8": "^10.1.3",
     "dotenv": "^17.2.4",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
