@@ -19,7 +19,8 @@ import { useWalletStore, getProvider } from '../store/walletStore.ts';
 import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
 import { ContractService } from '../lib/blockchain/contracts';
 import logger from '../lib/logger';
-import { getNetworkConfig, getNetworkMetadata } from '../contracts/addresses';
+import { getNetworkMetadata } from '../contracts/addresses';
+import { getNetworkCapabilities } from '../contracts/networkCapabilities';
 import { formatAddress } from '../lib/utils/helpers';
 // Card is available in Common but not needed in this layout
 import OrderBook from '../components/Exchange/OrderBook';
@@ -31,6 +32,7 @@ import PoolInfo from '../components/Exchange/PoolInfo';
 import TradingViewChart from '../components/Exchange/TradingViewChart';
 import { ComponentErrorBoundary } from '../components/ErrorBoundary';
 import { ErrorState } from '../components/Common/StateDisplays';
+import NetworkCapabilityGuard from '../components/Common/NetworkCapabilityGuard';
 import {
   ArrowLeftRight,
   TrendingUp,
@@ -140,22 +142,22 @@ export default function ExchangePage() {
   // ---- Derived state ------------------------------------------------------
 
   const networkConfig = useMemo(
-    () => (wallet.chainId ? getNetworkConfig(wallet.chainId) ?? null : null),
+    () => (wallet.chainId ? getNetworkMetadata(wallet.chainId) ?? null : null),
     [wallet.chainId],
   );
 
-  const isNetworkReady = useMemo(
-    () =>
-      networkConfig !== null &&
-      !!networkConfig.factoryAddress &&
-      (!!networkConfig.exchangeAddress || !!networkConfig.assetBackedExchangeAddress),
-    [networkConfig],
+  const capabilities = useMemo(
+    () => getNetworkCapabilities(wallet.chainId),
+    [wallet.chainId],
   );
+
+  const isNetworkReady = capabilities?.exchangeOrderbook ?? false;
+  const isAMMReady = capabilities?.exchangeAMM ?? false;
 
   // ---- Initialize ContractService -----------------------------------------
 
   useEffect(() => {
-    if (!isConnected || !wallet.chainId) {
+    if (!isConnected || !wallet.chainId || !isNetworkReady) {
       setContractService(null);
       return;
     }
@@ -176,7 +178,7 @@ export default function ExchangePage() {
       setContractService(null);
       setInitError('Failed to initialize exchange contracts. Please check your network.');
     }
-  }, [isConnected, wallet.chainId]);
+  }, [isConnected, isNetworkReady, wallet.chainId]);
 
   // ---- Fetch all wrapped assets -------------------------------------------
 
@@ -405,54 +407,14 @@ export default function ExchangePage() {
         </div>
 
         <div className="relative mx-auto max-w-xl">
-          <GlassCard
-            className="px-10 sm:px-14 py-20 sm:py-24 text-center"
-            gradientFrom="from-amber-500"
-            gradientTo="to-orange-500"
-          >
-            {/* Amber warning icon */}
-            <div className="mx-auto mb-8 flex h-18 w-18 items-center justify-center rounded-2xl bg-amber-500/10 ring-1 ring-amber-500/20">
-              <AlertCircle className="h-9 w-9 text-amber-400" />
-            </div>
-
-            <h2 className="mb-4 text-2xl font-bold text-white">
-              Network Not Supported
-            </h2>
-            <p className="mx-auto max-w-sm text-sm leading-relaxed text-gray-400">
-              The exchange contracts are not deployed on your current network.
-              Please switch to a supported network to start trading.
-            </p>
-
-            {/* Current network badge */}
-            {(() => {
-              const currentMeta = wallet.chainId ? getNetworkMetadata(wallet.chainId) : null;
-              const currentName = currentMeta?.name ?? (wallet.chainId ? `Unknown Network (${wallet.chainId})` : 'Unknown Network');
-              return (
-                <div className="mt-8 inline-flex items-center gap-2.5 rounded-full bg-amber-500/10 px-5 py-2.5 text-xs font-medium text-amber-400 ring-1 ring-amber-500/20">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                  Connected to: {currentName}
-                </div>
-              );
-            })()}
-
-            {/* Switch network buttons */}
-            <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => void switchNetwork(1)}
-                className="inline-flex items-center gap-2 rounded-xl bg-indigo-500/15 border border-indigo-500/25 px-6 py-3 text-sm font-semibold text-indigo-300 transition-all hover:bg-indigo-500/25 hover:text-indigo-200"
-              >
-                Switch to Ethereum Mainnet
-              </button>
-              <button
-                type="button"
-                onClick={() => void switchNetwork(31337)}
-                className="inline-flex items-center gap-2 rounded-xl bg-white/[0.04] border border-white/[0.08] px-6 py-3 text-sm font-medium text-gray-400 transition-all hover:bg-white/[0.08] hover:text-gray-300"
-              >
-                Hardhat Local
-              </button>
-            </div>
-          </GlassCard>
+          <NetworkCapabilityGuard
+            chainId={wallet.chainId}
+            requiredCapability="exchangeOrderbook"
+            switchNetwork={switchNetwork}
+            title="Network Not Supported"
+            description="The exchange contracts are not deployed on your current network. Please switch to a supported network to start trading."
+            switchChainIds={[17000, 1, 31337]}
+          />
         </div>
       </div>
     );
@@ -745,6 +707,7 @@ export default function ExchangePage() {
                       assets={assets}
                       contractService={contractService}
                       onOrderCreated={handleRefresh}
+                      enableAMM={isAMMReady}
                     />
                   </ComponentErrorBoundary>
                 </div>
@@ -801,7 +764,7 @@ export default function ExchangePage() {
         {/* ================================================================= */}
         {/* Liquidity Pools section                                          */}
         {/* ================================================================= */}
-        {assets.length > 0 && (
+        {assets.length > 0 && isAMMReady && (
           <div className="mt-10 sm:mt-14">
             {/* Section header */}
             <div className="mb-8 flex flex-col gap-2">
@@ -881,6 +844,19 @@ export default function ExchangePage() {
                 </div>
               </GlassCard>
             </div>
+          </div>
+        )}
+
+        {assets.length > 0 && !isAMMReady && (
+          <div className="mt-10 sm:mt-14">
+            <NetworkCapabilityGuard
+              chainId={wallet.chainId}
+              requiredCapability="exchangeAMM"
+              switchNetwork={switchNetwork}
+              title="AMM Unavailable on This Network"
+              description="Order-book trading is available, but AMM liquidity pools are not deployed on this network."
+              switchChainIds={[17000, 1, 31337]}
+            />
           </div>
         )}
 

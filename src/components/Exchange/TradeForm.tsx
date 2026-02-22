@@ -59,6 +59,8 @@ interface TradeFormProps {
   assets: WrappedAsset[];
   contractService: ContractService | null;
   onOrderCreated: () => void;
+  /** Disable AMM mode when AMM contracts are not deployed on the active chain. */
+  enableAMM?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -69,6 +71,7 @@ export default function TradeForm({
   assets,
   contractService,
   onOrderCreated,
+  enableAMM = true,
 }: TradeFormProps) {
   const addTrade = useTradeStore((s) => s.addTrade);
 
@@ -94,6 +97,12 @@ export default function TradeForm({
   const [customSlippage, setCustomSlippage] = useState('');
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
   const [quoteRefreshTimer, setQuoteRefreshTimer] = useState(15);
+
+  useEffect(() => {
+    if (!enableAMM && tradeMode === 'amm') {
+      setTradeMode('limit');
+    }
+  }, [enableAMM, tradeMode]);
 
   // ---- Derived ------------------------------------------------------------
 
@@ -238,11 +247,13 @@ export default function TradeForm({
         const signer = await contractService.getSigner();
         const userAddress = await signer.getAddress();
         const provider = signer.provider;
+        let resolvedChainId: number | null = null;
 
         // Resolve chainId
         if (provider) {
           const network = await provider.getNetwork();
-          if (!cancelled) setChainId(Number(network.chainId));
+          resolvedChainId = Number(network.chainId);
+          if (!cancelled) setChainId(resolvedChainId);
         }
 
         if (sellIsETH) {
@@ -257,8 +268,8 @@ export default function TradeForm({
           }
         } else {
           // ERC-20: fetch balance + allowance against AssetBackedExchange
-          const currentChainId = chainId!;
-          const config = getNetworkConfig(currentChainId);
+          const effectiveChainId = resolvedChainId ?? chainId;
+          const config = effectiveChainId ? getNetworkConfig(effectiveChainId) : null;
           const spender = config?.assetBackedExchangeAddress;
 
           const [bal, allow] = await Promise.all([
@@ -339,6 +350,13 @@ export default function TradeForm({
     if (!contractService || !sellToken || parsedSellAmount === 0n || sellIsETH) return;
     if (txStatus !== 'idle') return;
 
+    if (!chainId) {
+      toast.error('Unable to detect your network. Please reconnect your wallet.');
+      return;
+    }
+
+    const currentChainId = chainId;
+
     setTxStatus('approving');
     setTxHash(null);
 
@@ -349,7 +367,6 @@ export default function TradeForm({
         parsedSellAmount,
       );
       setTxHash(tx.hash);
-      const currentChainId = chainId!;
       txSubmittedToast(tx.hash, currentChainId, 'Approving token spend...');
 
       await contractService.waitForTransaction(tx);
@@ -365,7 +382,7 @@ export default function TradeForm({
       }
       setTxStatus('idle');
     }
-  }, [contractService, sellToken, parsedSellAmount, txStatus, sellIsETH]);
+  }, [contractService, sellToken, parsedSellAmount, txStatus, sellIsETH, chainId]);
 
   const handleCreateOrder = useCallback(async () => {
     if (
@@ -399,10 +416,16 @@ export default function TradeForm({
     setTxStatus('creating');
     setTxHash(null);
 
+    if (!chainId) {
+      toast.error('Unable to detect your network. Please reconnect your wallet.');
+      setTxStatus('idle');
+      return;
+    }
+
     // Track tx hash locally so the catch block can reference it even though
     // React state updates are asynchronous.
     let submittedHash: string | null = null;
-    const currentChainId = chainId!;
+    const currentChainId = chainId;
 
     try {
       let tx: ethers.ContractTransactionResponse;
@@ -557,12 +580,20 @@ export default function TradeForm({
 
   // AMM swap handler
   const handleAMMSwap = useCallback(async () => {
+    if (!enableAMM) {
+      toast.error('AMM swaps are not available on this network.');
+      return;
+    }
     if (!contractService || !sellToken || !buyToken || parsedSellAmount === 0n || ammQuote === 0n) return;
     if (txStatus !== 'idle' && txStatus !== 'approved') return;
+    if (!chainId) {
+      toast.error('Unable to detect your network. Please reconnect your wallet.');
+      return;
+    }
 
     // Check approval for non-ETH tokens
     if (!sellIsETH) {
-      const currentChainId = chainId!;
+      const currentChainId = chainId;
       const config = getNetworkConfig(currentChainId);
       const ammAddress = config?.ammAddress;
 
@@ -596,7 +627,7 @@ export default function TradeForm({
     // Calculate min output with slippage
     const minOut = ammQuote - (ammQuote * BigInt(Math.round(slippage * 10)) / 1000n);
 
-    const swapChainId = chainId!;
+    const swapChainId = chainId;
     let submittedSwapHash: string | null = null;
 
     try {
@@ -649,7 +680,7 @@ export default function TradeForm({
       }
       setTxStatus('idle');
     }
-  }, [contractService, sellToken, buyToken, parsedSellAmount, ammQuote, slippage, txStatus, sellIsETH, buyIsETH, chainId, onOrderCreated, addTrade, assets, sellAmount]);
+  }, [contractService, sellToken, buyToken, parsedSellAmount, ammQuote, slippage, txStatus, sellIsETH, buyIsETH, chainId, enableAMM, onOrderCreated, addTrade, assets, sellAmount]);
 
   // ---- Render -------------------------------------------------------------
 
@@ -683,13 +714,20 @@ export default function TradeForm({
           type="button"
           role="tab"
           aria-selected={tradeMode === 'amm'}
-          onClick={() => { setTradeMode('amm'); setTxStatus('idle'); setTxHash(null); }}
+          onClick={() => {
+            if (!enableAMM) return;
+            setTradeMode('amm');
+            setTxStatus('idle');
+            setTxHash(null);
+          }}
+          disabled={!enableAMM}
           className={clsx(
             'flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold transition-all duration-200',
             'min-h-[44px]',
             tradeMode === 'amm'
               ? 'bg-purple-500/15 text-purple-400 shadow-[inset_0_1px_0_rgba(168,85,247,0.2)]'
               : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.03]',
+            !enableAMM && 'cursor-not-allowed opacity-50 hover:bg-transparent hover:text-gray-500',
           )}
         >
           <Zap className="h-3.5 w-3.5" />
@@ -697,6 +735,12 @@ export default function TradeForm({
           <span className="sm:hidden">Swap</span>
         </button>
       </div>
+
+      {!enableAMM && (
+        <div className="rounded-xl border border-amber-500/15 bg-amber-500/[0.05] px-4 py-3 text-xs text-amber-300">
+          AMM unavailable on this network. Limit orders remain fully available.
+        </div>
+      )}
 
       {/* ---- Buy/Sell segmented control (Limit mode only) ---------------- */}
       {tradeMode === 'limit' && (

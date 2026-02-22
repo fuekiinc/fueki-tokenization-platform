@@ -18,10 +18,12 @@ import { useWalletStore, getProvider } from '../store/walletStore.ts';
 import { useAssetStore } from '../store/assetStore.ts';
 import { OrbitalContractService } from '../lib/blockchain/orbitalContracts';
 import logger from '../lib/logger';
-import { getNetworkConfig, getNetworkMetadata } from '../contracts/addresses';
+import { getNetworkMetadata } from '../contracts/addresses';
+import { getNetworkCapabilities } from '../contracts/networkCapabilities';
 import { formatAddress } from '../lib/utils/helpers';
 import HelpTooltip from '../components/Common/HelpTooltip';
 import { ErrorState } from '../components/Common/StateDisplays';
+import NetworkCapabilityGuard from '../components/Common/NetworkCapabilityGuard';
 
 import PoolList from '../components/OrbitalAMM/PoolList';
 import SwapInterface from '../components/OrbitalAMM/SwapInterface';
@@ -35,7 +37,6 @@ import {
   PlusCircle,
   Layers,
   Loader2,
-  AlertCircle,
   Wallet,
   Zap,
   Shield,
@@ -140,14 +141,21 @@ export default function OrbitalAMMPage() {
   // ---- Derived state --------------------------------------------------------
 
   const networkConfig = useMemo(
-    () => (wallet.chainId ? getNetworkConfig(wallet.chainId) ?? null : null),
+    () => (wallet.chainId ? getNetworkMetadata(wallet.chainId) ?? null : null),
     [wallet.chainId],
   );
+
+  const capabilities = useMemo(
+    () => getNetworkCapabilities(wallet.chainId),
+    [wallet.chainId],
+  );
+
+  const isOrbitalReady = capabilities?.orbitalAMM ?? false;
 
   // ---- Initialize OrbitalContractService ------------------------------------
 
   useEffect(() => {
-    if (!isConnected || !wallet.chainId) {
+    if (!isConnected || !wallet.chainId || !isOrbitalReady) {
       setContractService(null);
       return;
     }
@@ -168,7 +176,7 @@ export default function OrbitalAMMPage() {
       setContractService(null);
       setInitError('Failed to initialize AMM contracts. Please check your network connection and try again.');
     }
-  }, [isConnected, wallet.chainId]);
+  }, [isConnected, isOrbitalReady, wallet.chainId]);
 
   // ---- Collect known token addresses from wrapped assets --------------------
 
@@ -292,7 +300,7 @@ export default function OrbitalAMMPage() {
   // Render: network not configured
   // =========================================================================
 
-  if (!networkConfig) {
+  if (!isOrbitalReady) {
     return (
       <div className="relative mx-auto max-w-7xl py-20 sm:py-28">
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -300,53 +308,14 @@ export default function OrbitalAMMPage() {
         </div>
 
         <div className="relative mx-auto max-w-xl">
-          <GlassCard
-            className="px-10 sm:px-14 py-20 sm:py-24 text-center"
-            gradientFrom="from-amber-500"
-            gradientTo="to-orange-500"
-          >
-            <div className="mx-auto mb-8 flex h-18 w-18 items-center justify-center rounded-2xl bg-amber-500/10 ring-1 ring-amber-500/20">
-              <AlertCircle className="h-9 w-9 text-amber-400" />
-            </div>
-
-            <h2 className="mb-4 text-2xl font-bold text-white">
-              Network Not Supported
-            </h2>
-            <p className="mx-auto max-w-sm text-sm leading-relaxed text-gray-400">
-              The Orbital AMM contracts are not deployed on your current network.
-              Please switch to a supported network to use concentrated liquidity pools.
-            </p>
-
-            {/* Current network badge */}
-            {(() => {
-              const currentMeta = wallet.chainId ? getNetworkMetadata(wallet.chainId) : null;
-              const currentName = currentMeta?.name ?? (wallet.chainId ? `Unknown Network (${wallet.chainId})` : 'Unknown Network');
-              return (
-                <div className="mt-8 inline-flex items-center gap-2.5 rounded-full bg-amber-500/10 px-5 py-2.5 text-xs font-medium text-amber-400 ring-1 ring-amber-500/20">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                  Connected to: {currentName}
-                </div>
-              );
-            })()}
-
-            {/* Switch network buttons */}
-            <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => void switchNetwork(1)}
-                className="inline-flex items-center gap-2 rounded-xl bg-indigo-500/15 border border-indigo-500/25 px-6 py-3 text-sm font-semibold text-indigo-300 transition-all hover:bg-indigo-500/25 hover:text-indigo-200"
-              >
-                Switch to Ethereum Mainnet
-              </button>
-              <button
-                type="button"
-                onClick={() => void switchNetwork(31337)}
-                className="inline-flex items-center gap-2 rounded-xl bg-white/[0.04] border border-white/[0.08] px-6 py-3 text-sm font-medium text-gray-400 transition-all hover:bg-white/[0.08] hover:text-gray-300"
-              >
-                Hardhat Local
-              </button>
-            </div>
-          </GlassCard>
+          <NetworkCapabilityGuard
+            chainId={wallet.chainId}
+            requiredCapability="orbitalAMM"
+            switchNetwork={switchNetwork}
+            title="Network Not Supported"
+            description="The Orbital AMM contracts are not deployed on your current network. Please switch to a supported network to use concentrated liquidity pools."
+            switchChainIds={[17000, 1, 31337]}
+          />
         </div>
       </div>
     );

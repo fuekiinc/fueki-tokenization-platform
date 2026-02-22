@@ -21,6 +21,12 @@ import type { WrappedAsset } from '../../types';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { ETH_SENTINEL, isETH } from '../../lib/blockchain/contracts';
 import { useWalletStore } from '../../store/walletStore';
+import {
+  getRpcEndpoints,
+  getPrimaryRpcUrl,
+  reportRpcEndpointFailure,
+  reportRpcEndpointSuccess,
+} from '../../lib/rpc/endpoints';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -141,6 +147,7 @@ export default function TokenSelector({
 
   // Wallet connection state for balance display
   const isConnected = useWalletStore((s) => s.wallet.isConnected);
+  const chainId = useWalletStore((s) => s.wallet.chainId);
 
   // Load recent tokens when dropdown opens
   useEffect(() => {
@@ -251,32 +258,67 @@ export default function TokenSelector({
       'function decimals() view returns (uint8)',
     ];
 
+    async function readTokenMetadata(provider: ethers.Provider): Promise<{ name: string; symbol: string }> {
+      const contract = new ethers.Contract(address, minimalERC20ABI, provider);
+      const [name, symbol] = await Promise.all([
+        contract.name() as Promise<string>,
+        contract.symbol() as Promise<string>,
+      ]);
+      return { name, symbol };
+    }
+
     async function lookupToken() {
       try {
-        // Use a public provider for read-only lookup. window.ethereum may not
-        // be available, so fall back to a basic JsonRpcProvider.
-        let provider: ethers.Provider;
+        // Use the injected provider when available; otherwise use a chain-aware
+        // RPC endpoint instead of ethers.getDefaultProvider (which can hit the wrong chain).
+        let name = 'Unknown Token';
+        let symbol = '???';
+
         if (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).ethereum) {
-          provider = new ethers.BrowserProvider(
+          const provider = new ethers.BrowserProvider(
             (window as unknown as Record<string, unknown>).ethereum as ethers.Eip1193Provider,
           );
+          const result = await readTokenMetadata(provider);
+          name = result.name || 'Unknown Token';
+          symbol = result.symbol || '???';
         } else {
-          // Fallback -- this will likely fail but gives a clear error message
-          provider = ethers.getDefaultProvider();
-        }
+          const fallbackChainId = chainId ?? 17000;
+          const endpoints = getRpcEndpoints(fallbackChainId);
+          const primaryEndpoint = getPrimaryRpcUrl(fallbackChainId);
+          const orderedEndpoints = [
+            primaryEndpoint,
+            ...endpoints.filter((url) => url !== primaryEndpoint),
+          ];
 
-        const contract = new ethers.Contract(address, minimalERC20ABI, provider);
-        const [name, symbol] = await Promise.all([
-          contract.name() as Promise<string>,
-          contract.symbol() as Promise<string>,
-        ]);
+          let lastError: unknown;
+          let resolved = false;
+
+          for (const endpoint of orderedEndpoints) {
+            try {
+              const provider = new ethers.JsonRpcProvider(endpoint);
+              const result = await readTokenMetadata(provider);
+              reportRpcEndpointSuccess(fallbackChainId, endpoint);
+              name = result.name || 'Unknown Token';
+              symbol = result.symbol || '???';
+              resolved = true;
+              break;
+            } catch (error) {
+              reportRpcEndpointFailure(fallbackChainId, endpoint);
+              lastError = error;
+            }
+          }
+
+          if (!resolved) {
+            throw lastError ?? new Error('Unable to query token metadata from configured RPC endpoints');
+          }
+        }
 
         if (cancelled) return;
 
         setAddressSearchResult({
           address,
-          name: name || 'Unknown Token',
-          symbol: symbol || '???',
+          name,
+          symbol,
           totalSupply: '0',
           balance: '0',
           documentHash: '',
@@ -300,7 +342,7 @@ export default function TokenSelector({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [search, searchIsAddress, knownAddresses]);
+  }, [search, searchIsAddress, knownAddresses, chainId]);
 
   // ---- Position the portal dropdown relative to the trigger ----------------
 

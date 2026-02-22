@@ -248,6 +248,15 @@ npx hardhat run scripts/verify-wrapped-asset-factory.cjs --network holesky
 ```
 VITE_API_URL=http://localhost:8080          # backend URL
 VITE_GOOGLE_MAPS_API_KEY=                   # for address autocomplete
+VITE_THIRDWEB_CLIENT_ID=                    # required for wallet connectivity
+
+# Optional RPC pools (comma-separated, primary first)
+VITE_RPC_1_URLS=https://<primary>,https://ethereum-rpc.publicnode.com
+VITE_RPC_17000_URLS=https://<primary>,https://holesky.drpc.org
+VITE_RPC_42161_URLS=https://<primary>,https://arb1.arbitrum.io/rpc
+VITE_RPC_421614_URLS=https://<primary>,https://sepolia-rollup.arbitrum.io/rpc
+VITE_RPC_8453_URLS=https://<primary>,https://mainnet.base.org
+VITE_RPC_84532_URLS=https://<primary>,https://sepolia.base.org
 ```
 
 ### Backend (`backend/.env`)

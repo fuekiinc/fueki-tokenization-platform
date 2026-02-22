@@ -103,6 +103,15 @@ const ALL_NETWORKS: NetworkOption[] = [
     hasContracts: false,
   },
   {
+    chainId: 84532,
+    name: 'Base Sepolia',
+    shortName: 'Base Sepolia',
+    explorerUrl: 'https://sepolia.basescan.org',
+    color: '#4F46E5',
+    isTestnet: true,
+    hasContracts: false,
+  },
+  {
     chainId: 31337,
     name: 'Localhost',
     shortName: 'Localhost',

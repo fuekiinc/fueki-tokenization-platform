@@ -13,13 +13,7 @@
  *
  * Write operations must NEVER be cached. After any on-chain mutation the
  * relevant cache entries should be invalidated via `invalidateCache` or
- * `invalidateCacheForAsset`.
- *
- * Memory management:
- *   - MAX_CACHE_SIZE limits total entries; LRU eviction removes the
- *     least-recently-accessed entries when the cap is reached.
- *   - Expired entries are lazily cleaned on access and periodically
- *     via a sweep timer.
+ * chain-scoped helpers.
  */
 
 import logger from '../logger';
@@ -39,6 +33,8 @@ export const TTL_METADATA = 300_000;
 
 /** Default TTL when no specific tier is provided. */
 const DEFAULT_TTL_MS = TTL_BALANCE;
+
+const CHAIN_KEY_PREFIX = 'chain:';
 
 // ---------------------------------------------------------------------------
 // Cache internals
@@ -66,8 +62,7 @@ const SWEEP_INTERVAL_MS = 60_000;
 const cache = new Map<string, CacheEntry<unknown>>();
 
 // ---------------------------------------------------------------------------
-// Periodic sweep -- removes expired entries proactively so memory does not
-// grow unbounded even if entries are never re-accessed.
+// Periodic sweep
 // ---------------------------------------------------------------------------
 
 let sweepTimer: ReturnType<typeof setInterval> | null = null;
@@ -82,20 +77,38 @@ function startSweepTimer(): void {
       }
     }
   }, SWEEP_INTERVAL_MS);
+
+  // Allow Node-based scripts/tests to exit without waiting on this interval.
+  if (typeof (sweepTimer as { unref?: () => void }).unref === 'function') {
+    (sweepTimer as { unref: () => void }).unref();
+  }
 }
 
-// Start the sweep on module load. In test environments this is harmless;
-// the timer uses setInterval which does not prevent Node from exiting.
 startSweepTimer();
 
 // ---------------------------------------------------------------------------
-// LRU eviction -- sorts by lastAccessed and removes the oldest batch.
+// Key helpers
+// ---------------------------------------------------------------------------
+
+export function makeChainCacheKey(chainId: number, key: string): string {
+  return `${CHAIN_KEY_PREFIX}${chainId}:${key}`;
+}
+
+export function getChainCachePrefix(chainId: number): string {
+  return `${CHAIN_KEY_PREFIX}${chainId}:`;
+}
+
+export function getChainCachePrefixForKey(chainId: number, keyPrefix: string): string {
+  return makeChainCacheKey(chainId, keyPrefix);
+}
+
+// ---------------------------------------------------------------------------
+// LRU eviction
 // ---------------------------------------------------------------------------
 
 function evictLRU(): void {
   if (cache.size <= MAX_CACHE_SIZE) return;
 
-  // Collect entries sorted by lastAccessed ascending (oldest first).
   const entries = Array.from(cache.entries()).sort(
     ([, a], [, b]) => a.lastAccessed - b.lastAccessed,
   );
@@ -112,10 +125,6 @@ function evictLRU(): void {
 // Public API
 // ---------------------------------------------------------------------------
 
-/**
- * Retrieve a cached value by key.
- * Returns `undefined` if the key is missing or the entry has expired.
- */
 export function getCached<T>(key: string): T | undefined {
   const entry = cache.get(key);
   if (!entry) return undefined;
@@ -126,35 +135,19 @@ export function getCached<T>(key: string): T | undefined {
     return undefined;
   }
 
-  // Update last-accessed timestamp for LRU tracking.
   entry.lastAccessed = now;
   return entry.data as T;
 }
 
-/**
- * Store a value in the cache with a given TTL.
- *
- * @param key    Cache key (e.g. `asset:0xABC:balance:0xDEF`).
- * @param data   The data to cache.
- * @param ttlMs  Time-to-live in milliseconds. Use one of the TTL_*
- *               constants for consistency, or the default (30 s).
- */
 export function setCache<T>(key: string, data: T, ttlMs: number = DEFAULT_TTL_MS): void {
   const now = Date.now();
   cache.set(key, { data, createdAt: now, lastAccessed: now, ttlMs });
 
-  // Evict if we exceed the size limit.
   if (cache.size > MAX_CACHE_SIZE) {
     evictLRU();
   }
 }
 
-/**
- * Invalidate cache entries by prefix, or clear the entire cache.
- *
- * @param prefix  If provided, only entries whose key starts with this
- *                string are removed. If omitted, the entire cache is cleared.
- */
 export function invalidateCache(prefix?: string): void {
   if (!prefix) {
     cache.clear();
@@ -167,33 +160,36 @@ export function invalidateCache(prefix?: string): void {
   }
 }
 
-/**
- * Invalidate all cache entries related to a specific asset address.
- * Covers balances, allowances, details, pool data, etc.
- */
-export function invalidateCacheForAsset(assetAddress: string): void {
+/** Invalidate all cache entries for a specific chain, optionally by key prefix. */
+export function invalidateChainCache(chainId: number, keyPrefix?: string): void {
+  const prefix = keyPrefix
+    ? getChainCachePrefixForKey(chainId, keyPrefix)
+    : getChainCachePrefix(chainId);
+  invalidateCache(prefix);
+}
+
+export function invalidateCacheForAsset(assetAddress: string, chainId?: number): void {
+  if (typeof chainId === 'number') {
+    invalidateChainCache(chainId, `asset:${assetAddress}`);
+    return;
+  }
   invalidateCache(`asset:${assetAddress}`);
 }
 
-/**
- * Invalidate all pool-related cache entries.
- * Should be called after any AMM write operation (swap, add/remove liquidity).
- */
-export function invalidatePoolCache(): void {
+export function invalidatePoolCache(chainId?: number): void {
+  if (typeof chainId === 'number') {
+    invalidateChainCache(chainId, 'amm:');
+    invalidateChainCache(chainId, 'orbital:');
+    return;
+  }
   invalidateCache('amm:');
   invalidateCache('orbital:');
 }
 
-/**
- * Return the current cache size (for diagnostics).
- */
 export function getCacheSize(): number {
   return cache.size;
 }
 
-/**
- * Stop the periodic sweep timer. Useful for clean shutdown in tests.
- */
 export function stopSweepTimer(): void {
   if (sweepTimer !== null) {
     clearInterval(sweepTimer);

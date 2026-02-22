@@ -37,10 +37,14 @@ const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
 // Environment detection
 // ---------------------------------------------------------------------------
 
-const IS_DEV = import.meta.env.DEV;
+const META_ENV = (import.meta as ImportMeta & {
+  env?: Record<string, string | boolean | undefined>;
+}).env ?? {};
+
+const IS_DEV = META_ENV.DEV === true;
 
 const CONFIGURED_LEVEL: LogLevel = (() => {
-  const envLevel = (import.meta.env.VITE_LOG_LEVEL ?? '').toLowerCase();
+  const envLevel = String(META_ENV.VITE_LOG_LEVEL ?? '').toLowerCase();
   if (envLevel in LOG_LEVEL_ORDER) {
     return envLevel as LogLevel;
   }

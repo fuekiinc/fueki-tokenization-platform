@@ -25,9 +25,10 @@ import { multicallSameTarget } from './multicall.ts';
 import { parseContractError } from './contracts.ts';
 import {
   getCached,
-  setCache,
-  invalidateCache,
+  invalidateChainCache,
   invalidatePoolCache,
+  makeChainCacheKey,
+  setCache,
   TTL_BALANCE,
   TTL_POOL,
   TTL_METADATA,
@@ -68,6 +69,18 @@ export class OrbitalContractService {
   constructor(provider: ethers.BrowserProvider, chainId: number) {
     this.provider = provider;
     this.chainId = chainId;
+  }
+
+  private cacheKey(key: string): string {
+    return makeChainCacheKey(this.chainId, key);
+  }
+
+  private invalidateCachePrefix(prefix?: string): void {
+    invalidateChainCache(this.chainId, prefix);
+  }
+
+  private invalidatePools(): void {
+    invalidatePoolCache(this.chainId);
   }
 
   async getSigner(): Promise<ethers.Signer> {
@@ -136,7 +149,7 @@ export class OrbitalContractService {
 
   /** Retrieve all pool addresses from the factory. */
   async getAllPools(): Promise<string[]> {
-    const cacheKey = `orbital:factory:allPools`;
+    const cacheKey = this.cacheKey(`orbital:factory:allPools`);
     const cached = getCached<string[]>(cacheKey);
     if (cached) return cached;
 
@@ -152,7 +165,7 @@ export class OrbitalContractService {
 
   /** Retrieve the total number of pools created. */
   async getTotalPools(): Promise<bigint> {
-    const cacheKey = `orbital:factory:totalPools`;
+    const cacheKey = this.cacheKey(`orbital:factory:totalPools`);
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
 
@@ -169,7 +182,7 @@ export class OrbitalContractService {
   /** Retrieve all pool addresses that include a specific token. */
   async getPoolsForToken(token: string): Promise<string[]> {
     this.validateAddress(token, 'token');
-    const cacheKey = `orbital:factory:poolsForToken:${token}`;
+    const cacheKey = this.cacheKey(`orbital:factory:poolsForToken:${token}`);
     const cached = getCached<string[]>(cacheKey);
     if (cached) return cached;
 
@@ -205,7 +218,7 @@ export class OrbitalContractService {
    */
   async getPoolInfo(poolAddress: string): Promise<OrbitalPoolInfo> {
     this.validateAddress(poolAddress, 'pool');
-    const cacheKey = `orbital:pool:${poolAddress}:info`;
+    const cacheKey = this.cacheKey(`orbital:pool:${poolAddress}:info`);
     const cached = getCached<OrbitalPoolInfo>(cacheKey);
     if (cached) return cached;
 
@@ -250,7 +263,7 @@ export class OrbitalContractService {
   /** Retrieve token reserves for a pool. */
   async getReserves(poolAddress: string): Promise<bigint[]> {
     this.validateAddress(poolAddress, 'pool');
-    const cacheKey = `orbital:pool:${poolAddress}:reserves`;
+    const cacheKey = this.cacheKey(`orbital:pool:${poolAddress}:reserves`);
     const cached = getCached<bigint[]>(cacheKey);
     if (cached) return cached;
 
@@ -272,7 +285,7 @@ export class OrbitalContractService {
     tokenBIndex: number,
   ): Promise<bigint> {
     this.validateAddress(poolAddress, 'pool');
-    const cacheKey = `orbital:pool:${poolAddress}:spotPrice:${tokenAIndex}:${tokenBIndex}`;
+    const cacheKey = this.cacheKey(`orbital:pool:${poolAddress}:spotPrice:${tokenAIndex}:${tokenBIndex}`);
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
 
@@ -309,7 +322,7 @@ export class OrbitalContractService {
    */
   async getTokenInfo(tokenAddress: string): Promise<OrbitalTokenInfo> {
     this.validateAddress(tokenAddress, 'token');
-    const cacheKey = `orbital:token:${tokenAddress}:info`;
+    const cacheKey = this.cacheKey(`orbital:token:${tokenAddress}:info`);
     const cached = getCached<OrbitalTokenInfo>(cacheKey);
     if (cached) return cached;
 
@@ -343,7 +356,7 @@ export class OrbitalContractService {
   async getLPBalance(poolAddress: string, user: string): Promise<bigint> {
     this.validateAddress(poolAddress, 'pool');
     this.validateAddress(user, 'user');
-    const cacheKey = `orbital:pool:${poolAddress}:lp:${user}`;
+    const cacheKey = this.cacheKey(`orbital:pool:${poolAddress}:lp:${user}`);
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
 
@@ -361,7 +374,7 @@ export class OrbitalContractService {
   async getTokenBalance(tokenAddress: string, user: string): Promise<bigint> {
     this.validateAddress(tokenAddress, 'token');
     this.validateAddress(user, 'user');
-    const cacheKey = `orbital:token:${tokenAddress}:balance:${user}`;
+    const cacheKey = this.cacheKey(`orbital:token:${tokenAddress}:balance:${user}`);
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
 
@@ -380,7 +393,7 @@ export class OrbitalContractService {
     this.validateAddress(tokenAddress, 'token');
     this.validateAddress(owner, 'owner');
     this.validateAddress(spender, 'spender');
-    const cacheKey = `orbital:token:${tokenAddress}:allowance:${owner}:${spender}`;
+    const cacheKey = this.cacheKey(`orbital:token:${tokenAddress}:allowance:${owner}:${spender}`);
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
 
@@ -441,8 +454,8 @@ export class OrbitalContractService {
       name,
       symbol,
     ]);
-    invalidatePoolCache();
-    invalidateCache('orbital:factory:');
+    this.invalidatePools();
+    this.invalidateCachePrefix('orbital:factory:');
     return tx;
   }
 
@@ -476,10 +489,10 @@ export class OrbitalContractService {
       deadline,
     ]);
     // Invalidate affected caches after swap.
-    invalidatePoolCache();
-    invalidateCache(`orbital:token:${tokenIn}:`);
-    invalidateCache(`orbital:token:${tokenOut}:`);
-    invalidateCache(`orbital:pool:${poolAddress}:`);
+    this.invalidatePools();
+    this.invalidateCachePrefix(`orbital:token:${tokenIn}:`);
+    this.invalidateCachePrefix(`orbital:token:${tokenOut}:`);
+    this.invalidateCachePrefix(`orbital:pool:${poolAddress}:`);
     return tx;
   }
 
@@ -507,8 +520,8 @@ export class OrbitalContractService {
       minLiquidity,
       deadline,
     ]);
-    invalidatePoolCache();
-    invalidateCache(`orbital:pool:${poolAddress}:`);
+    this.invalidatePools();
+    this.invalidateCachePrefix(`orbital:pool:${poolAddress}:`);
     return tx;
   }
 
@@ -535,8 +548,8 @@ export class OrbitalContractService {
       minAmounts,
       deadline,
     ]);
-    invalidatePoolCache();
-    invalidateCache(`orbital:pool:${poolAddress}:`);
+    this.invalidatePools();
+    this.invalidateCachePrefix(`orbital:pool:${poolAddress}:`);
     return tx;
   }
 
@@ -555,7 +568,7 @@ export class OrbitalContractService {
     const signer = await this.getSigner();
     const token = this.getTokenContract(tokenAddress, signer);
     const tx = await this.executeWrite(token, 'approve', [spender, amount]);
-    invalidateCache(`orbital:token:${tokenAddress}:`);
+    this.invalidateCachePrefix(`orbital:token:${tokenAddress}:`);
     return tx;
   }
 

@@ -45,6 +45,18 @@ interface LiquidityPanelProps {
   onLiquidityChanged: () => void;
 }
 
+function parseEthBalance(value: string): bigint {
+  if (!value) return 0n;
+  try {
+    if (value.includes('.')) {
+      return ethers.parseUnits(value, 18);
+    }
+    return BigInt(value);
+  } catch {
+    return 0n;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -126,7 +138,7 @@ export default function LiquidityPanel({
         // Token balances
         try {
           if (tokenAIsETH) {
-            setBalanceA(BigInt(ethBalance));
+            setBalanceA(parseEthBalance(ethBalance));
           } else {
             const bal = await contractService.getAssetBalance(tokenA, userAddress);
             if (!cancelled) setBalanceA(bal);
@@ -137,7 +149,7 @@ export default function LiquidityPanel({
 
         try {
           if (tokenBIsETH) {
-            setBalanceB(BigInt(ethBalance));
+            setBalanceB(parseEthBalance(ethBalance));
           } else {
             const bal = await contractService.getAssetBalance(tokenB, userAddress);
             if (!cancelled) setBalanceB(bal);
@@ -214,8 +226,12 @@ export default function LiquidityPanel({
 
   const handleCreatePool = useCallback(async () => {
     if (!contractService || !tokenA || !tokenB) return;
+    if (!chainId) {
+      toast.error('Unable to detect your network. Please reconnect your wallet.');
+      return;
+    }
     setTxStatus('submitting');
-    const liqChainId = chainId!;
+    const liqChainId = chainId;
     try {
       const tx = await contractService.createPool(tokenA, tokenB);
       txSubmittedToast(tx.hash, liqChainId, 'Creating pool...');
@@ -227,16 +243,21 @@ export default function LiquidityPanel({
       toast.error(parseContractError(err), { id: 'create-pool' });
       setTxStatus('idle');
     }
-  }, [contractService, tokenA, tokenB, onLiquidityChanged]);
+  }, [contractService, tokenA, tokenB, chainId, onLiquidityChanged]);
 
   const handleAddLiquidity = useCallback(async () => {
     if (!contractService || !tokenA || !tokenB || parsedAmountA === 0n || parsedAmountB === 0n) return;
     if (txStatus !== 'idle' && txStatus !== 'confirmed') return;
 
-    const config = chainId ? getNetworkConfig(chainId) : null;
+    if (!chainId) {
+      toast.error('Unable to detect your network. Please reconnect your wallet.');
+      return;
+    }
+
+    const config = getNetworkConfig(chainId);
     const ammAddress = config?.ammAddress;
 
-    const liqChainId = chainId!;
+    const liqChainId = chainId;
 
     // Approve tokenA if not ETH
     if (!tokenAIsETH && ammAddress) {
@@ -316,8 +337,12 @@ export default function LiquidityPanel({
   const handleRemoveLiquidity = useCallback(async () => {
     if (!contractService || !tokenA || !tokenB || parsedRemoveAmount === 0n) return;
     if (txStatus !== 'idle') return;
+    if (!chainId) {
+      toast.error('Unable to detect your network. Please reconnect your wallet.');
+      return;
+    }
 
-    const liqChainId = chainId!;
+    const liqChainId = chainId;
     setTxStatus('submitting');
     let submittedRemoveHash: string | null = null;
     try {

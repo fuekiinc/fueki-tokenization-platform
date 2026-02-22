@@ -1,8 +1,16 @@
 import { createThirdwebClient, defineChain } from 'thirdweb';
-import { arbitrum, arbitrumSepolia, base, ethereum, polygon, sepolia } from 'thirdweb/chains';
+import {
+  arbitrum,
+  arbitrumSepolia,
+  base,
+  ethereum,
+  polygon,
+  sepolia,
+} from 'thirdweb/chains';
 import type { Chain } from 'thirdweb/chains';
 import { darkTheme } from 'thirdweb/react';
 import { createWallet } from 'thirdweb/wallets';
+import { getPrimaryRpcUrl } from './rpc/endpoints';
 
 const THIRDWEB_CLIENT_ID = import.meta.env.VITE_THIRDWEB_CLIENT_ID?.trim();
 export const THIRDWEB_WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID?.trim();
@@ -10,19 +18,40 @@ export const THIRDWEB_WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONN
 export const isThirdwebConfigured = Boolean(THIRDWEB_CLIENT_ID);
 
 export const thirdwebClient = THIRDWEB_CLIENT_ID
-  ? createThirdwebClient({ clientId: THIRDWEB_CLIENT_ID })
+  ? createThirdwebClient({
+      clientId: THIRDWEB_CLIENT_ID,
+      // Public/testnet RPC providers can reject large JSON-RPC batches.
+      // Keep thirdweb batching conservative to avoid Holesky free-tier failures.
+      config: {
+        rpc: {
+          maxBatchSize: 1,
+          batchTimeoutMs: 0,
+        },
+      },
+    })
   : null;
 
-/** Holesky testnet with explicit RPC and metadata so ThirdWeb can reliably
- *  create providers and prompt wallet_addEthereumChain when needed. */
+/** Holesky testnet with dynamic RPC metadata for wallet_addEthereumChain prompts. */
 const holesky = defineChain({
   id: 17000,
   name: 'Holesky',
   nativeCurrency: { name: 'Holesky ETH', symbol: 'ETH', decimals: 18 },
-  rpc: 'https://holesky.drpc.org',
+  rpc: getPrimaryRpcUrl(17000),
   testnet: true,
   blockExplorers: [
     { name: 'Blockscout', url: 'https://eth-holesky.blockscout.com' },
+  ],
+});
+
+/** Base Sepolia metadata (contracts may not be deployed yet). */
+const baseSepoliaChain = defineChain({
+  id: 84532,
+  name: 'Base Sepolia',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpc: getPrimaryRpcUrl(84532),
+  testnet: true,
+  blockExplorers: [
+    { name: 'BaseScan', url: 'https://sepolia.basescan.org' },
   ],
 });
 
@@ -34,6 +63,7 @@ export const THIRDWEB_SUPPORTED_CHAINS: Chain[] = [
   arbitrum,
   arbitrumSepolia,
   base,
+  baseSepoliaChain,
   defineChain(31337), // Hardhat local
 ];
 

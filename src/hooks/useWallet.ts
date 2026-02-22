@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import {
-  useActiveAccount,
   useActiveWallet,
   useActiveWalletChain,
   useActiveWalletConnectionStatus,
@@ -10,13 +9,9 @@ import {
   useDisconnect,
   useSwitchActiveWalletChain,
 } from 'thirdweb/react';
-import { EIP1193 } from 'thirdweb/wallets';
 
 import logger from '../lib/logger';
 import { getProvider as getStoreProvider, useWalletStore } from '../store/walletStore.ts';
-import { useAssetStore } from '../store/assetStore.ts';
-import { useTradeStore } from '../store/tradeStore.ts';
-import { useExchangeStore } from '../store/exchangeStore.ts';
 import {
   THIRDWEB_DEFAULT_CHAIN,
   THIRDWEB_SUPPORTED_CHAINS,
@@ -28,10 +23,7 @@ import {
   isThirdwebConfigured,
   thirdwebClient,
 } from '../lib/thirdweb';
-
-// ---------------------------------------------------------------------------
-// Error parsing — user-friendly, actionable messages
-// ---------------------------------------------------------------------------
+import { clearWalletBoundStores } from '../wallet/walletBoundStores';
 
 function parseWalletError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
@@ -67,22 +59,6 @@ function parseWalletError(err: unknown): string {
   return 'Wallet action failed. Please try again.';
 }
 
-// ---------------------------------------------------------------------------
-// Store cleanup
-// ---------------------------------------------------------------------------
-
-function clearWalletBoundStores(): void {
-  useAssetStore.getState().setAssets([]);
-  useAssetStore.getState().setSecurityTokens([]);
-  useTradeStore.getState().setTrades([]);
-  useExchangeStore.getState().setOrders([]);
-  useExchangeStore.getState().setUserOrders([]);
-}
-
-// ---------------------------------------------------------------------------
-// Balance fetch with retry
-// ---------------------------------------------------------------------------
-
 async function fetchBalanceWithRetry(
   provider: ethers.BrowserProvider,
   address: string,
@@ -97,27 +73,21 @@ async function fetchBalanceWithRetry(
         logger.error('Balance fetch failed after retries:', err);
         return '0';
       }
-      // Brief delay before retry (200ms, 600ms)
       await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
     }
   }
   return '0';
 }
 
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
-
 export function useWallet() {
   const wallet = useWalletStore((s) => s.wallet);
   const setWallet = useWalletStore((s) => s.setWallet);
-  const setProvider = useWalletStore((s) => s.setProvider);
-  const setSigner = useWalletStore((s) => s.setSigner);
   const resetWallet = useWalletStore((s) => s.resetWallet);
-  const setEnsName = useWalletStore((s) => s.setEnsName);
-  const persistConnection = useWalletStore((s) => s.persistConnection);
+  const setLastError = useWalletStore((s) => s.setLastError);
+  const setConnectionStatus = useWalletStore((s) => s.setConnectionStatus);
+  const beginChainSwitch = useWalletStore((s) => s.beginChainSwitch);
+  const failChainSwitch = useWalletStore((s) => s.failChainSwitch);
 
-  const activeAccount = useActiveAccount();
   const activeWallet = useActiveWallet();
   const activeWalletChain = useActiveWalletChain();
   const connectionStatus = useActiveWalletConnectionStatus();
@@ -125,210 +95,27 @@ export function useWallet() {
   const { disconnect } = useDisconnect();
   const switchActiveWalletChain = useSwitchActiveWalletChain();
 
-  const [error, setError] = useState<string | null>(null);
-  const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
-
-  const wasConnectedRef = useRef(false);
-
-  // Monotonic counter to discard stale async sync results.
-  // Every time syncWalletStore fires, it captures the current value;
-  // if a newer call increments the counter before an older call completes,
-  // the older call's state updates are skipped.
-  const syncVersionRef = useRef(0);
-
-  // Background balance polling interval
-  const balanceIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
-
-  // ---- ENS resolution (mainnet only) --------------------------------------
-
-  const resolveEnsName = useCallback(
-    async (address: string, provider: ethers.BrowserProvider) => {
-      try {
-        const network = await provider.getNetwork();
-        if (Number(network.chainId) !== 1) {
-          setEnsName(null);
-          return;
-        }
-        const name = await provider.lookupAddress(address);
-        setEnsName(name);
-      } catch {
-        setEnsName(null);
-      }
-    },
-    [setEnsName],
-  );
-
-  // ---- Core sync: thirdweb hooks → zustand store --------------------------
-
-  const syncWalletStore = useCallback(async () => {
-    const version = ++syncVersionRef.current;
-    const isStale = () => syncVersionRef.current !== version;
-
-    const isConnecting = connectionStatus === 'connecting' || isModalConnecting;
-    const isConnected =
-      connectionStatus === 'connected' &&
-      Boolean(activeWallet) &&
-      Boolean(activeAccount?.address);
-
-    // ---- Not connected ----------------------------------------------------
-    if (!isConnected || !activeWallet || !activeAccount?.address) {
-      if (isStale()) return;
-      setProvider(null);
-      setSigner(null);
-      setWallet({
-        address: null,
-        chainId: activeWalletChain?.id ?? null,
-        isConnected: false,
-        isConnecting,
-        balance: '0',
-      });
-      if (!isConnecting) {
-        setEnsName(null);
-      }
-      return;
-    }
-
-    // ---- Thirdweb not configured ------------------------------------------
-    if (!thirdwebClient || !isThirdwebConfigured) {
-      if (isStale()) return;
-      setWallet({
-        address: activeAccount.address,
-        chainId: activeWalletChain?.id ?? null,
-        isConnected: true,
-        isConnecting,
-      });
-      return;
-    }
-
-    // ---- Resolve chain ----------------------------------------------------
-    const chain =
-      activeWalletChain ??
-      getThirdwebChain(activeWallet.getChain()?.id) ??
-      THIRDWEB_DEFAULT_CHAIN;
-
-    // ---- Create provider & signer -----------------------------------------
-    try {
-      const eip1193Provider = EIP1193.toProvider({
-        wallet: activeWallet,
-        chain,
-        client: thirdwebClient,
-      });
-
-      const provider = new ethers.BrowserProvider(
-        eip1193Provider as ethers.Eip1193Provider,
-      );
-      const signer = await provider.getSigner();
-      const address = await signer.getAddress();
-
-      // Discard if a newer sync started while we were awaiting.
-      if (isStale()) return;
-
-      // Set provider/signer immediately so they're available for transactions
-      // even if the subsequent balance fetch is slow or fails.
-      setProvider(provider);
-      setSigner(signer);
-
-      // Fetch balance (non-critical — retries internally)
-      const balance = await fetchBalanceWithRetry(provider, address);
-      if (isStale()) return;
-
-      setWallet({
-        address,
-        chainId: chain.id,
-        isConnected: true,
-        isConnecting: false,
-        balance,
-      });
-
-      persistConnection();
-      void resolveEnsName(address, provider);
-      setError(null);
-    } catch (err) {
-      logger.error('Failed to create ethers provider from thirdweb wallet:', err);
-      if (isStale()) return;
-
-      setProvider(null);
-      setSigner(null);
-      setWallet({
-        address: activeAccount.address,
-        chainId: chain.id,
-        isConnected: true,
-        isConnecting: false,
-      });
-    }
-  }, [
-    activeAccount,
-    activeWallet,
-    activeWalletChain,
-    connectionStatus,
-    isModalConnecting,
-    persistConnection,
-    resolveEnsName,
-    setEnsName,
-    setProvider,
-    setSigner,
-    setWallet,
-  ]);
-
-  // Re-sync whenever thirdweb hooks change
-  useEffect(() => {
-    void syncWalletStore();
-  }, [syncWalletStore]);
-
-  // ---- Disconnect detection -----------------------------------------------
-
-  useEffect(() => {
-    const isConnected = connectionStatus === 'connected';
-
-    if (isConnected) {
-      wasConnectedRef.current = true;
-      return;
-    }
-
-    if (connectionStatus === 'disconnected' && wasConnectedRef.current) {
-      wasConnectedRef.current = false;
-      resetWallet();
-      clearWalletBoundStores();
-      setError(null);
-    }
-  }, [connectionStatus, resetWallet]);
-
-  // ---- Background balance polling (every 30s when connected) --------------
-
-  useEffect(() => {
-    clearInterval(balanceIntervalRef.current);
-
-    if (!wallet.isConnected || !wallet.address) return;
-
-    balanceIntervalRef.current = setInterval(async () => {
-      const provider = getStoreProvider();
-      if (!provider || !wallet.address) return;
-      try {
-        const raw = await provider.getBalance(wallet.address);
-        setWallet({ balance: ethers.formatEther(raw) });
-      } catch {
-        // Silent — don't spam user with toast on background poll failure
-      }
-    }, 30_000);
-
-    return () => clearInterval(balanceIntervalRef.current);
-  }, [wallet.isConnected, wallet.address, setWallet]);
-
-  // ---- Connect wallet -----------------------------------------------------
-
   const connectWallet = useCallback(async () => {
     if (!thirdwebClient || !isThirdwebConfigured) {
       const msg =
         'Wallet connection is not configured. Set VITE_THIRDWEB_CLIENT_ID before using on-chain features.';
-      setError(msg);
+      setLastError(msg);
+      setConnectionStatus('degraded');
       toast.error(msg);
       return;
     }
 
-    if (connectionStatus === 'connecting' || isModalConnecting) return;
+    if (
+      connectionStatus === 'connecting' ||
+      isModalConnecting ||
+      wallet.connectionStatus === 'switching'
+    ) {
+      return;
+    }
 
-    setWallet({ isConnecting: true });
-    setError(null);
+    setConnectionStatus('connecting');
+    setWallet({ isConnecting: true, lastError: null });
+    setLastError(null);
 
     try {
       const origin =
@@ -361,12 +148,12 @@ export function useWallet() {
     } catch (err: unknown) {
       logger.error('Wallet connection failed:', err);
       const message = parseWalletError(err);
-      setError(message);
+      setLastError(message);
+      setConnectionStatus('degraded');
       if (!/cancelled/i.test(message)) {
         toast.error(message);
       }
     } finally {
-      // Always clear isConnecting — syncWalletStore will set the real state.
       setWallet({ isConnecting: false });
     }
   }, [
@@ -374,10 +161,11 @@ export function useWallet() {
     connect,
     connectionStatus,
     isModalConnecting,
+    setConnectionStatus,
+    setLastError,
     setWallet,
+    wallet.connectionStatus,
   ]);
-
-  // ---- Disconnect wallet --------------------------------------------------
 
   const disconnectWallet = useCallback(() => {
     if (activeWallet) {
@@ -386,17 +174,15 @@ export function useWallet() {
 
     resetWallet();
     clearWalletBoundStores();
-    setError(null);
+    setLastError(null);
     toast.success('Wallet disconnected');
-  }, [activeWallet, disconnect, resetWallet]);
-
-  // ---- Switch network with verification -----------------------------------
+  }, [activeWallet, disconnect, resetWallet, setLastError]);
 
   const switchNetwork = useCallback(
     async (chainId: number) => {
       if (!activeWallet) {
         const msg = 'Please connect your wallet first.';
-        setError(msg);
+        setLastError(msg);
         toast.error(msg);
         return;
       }
@@ -404,29 +190,31 @@ export function useWallet() {
       const chain = getThirdwebChain(chainId);
       if (!chain) {
         const msg = 'Requested network is not available.';
-        setError(msg);
+        setLastError(msg);
         toast.error(msg);
         return;
       }
 
-      setIsSwitchingNetwork(true);
+      beginChainSwitch(chainId);
+      clearWalletBoundStores();
 
       try {
         await switchActiveWalletChain(chain);
-        setError(null);
-        // syncWalletStore will fire when activeWalletChain updates
+        setLastError(null);
       } catch (err: unknown) {
         const message = parseWalletError(err);
-        setError(message);
+        failChainSwitch(message);
         toast.error(message);
-      } finally {
-        setIsSwitchingNetwork(false);
       }
     },
-    [activeWallet, switchActiveWalletChain],
+    [
+      activeWallet,
+      beginChainSwitch,
+      failChainSwitch,
+      setLastError,
+      switchActiveWalletChain,
+    ],
   );
-
-  // ---- Manual balance refresh ---------------------------------------------
 
   const refreshBalance = useCallback(async () => {
     if (!wallet.address || !wallet.isConnected) return;
@@ -435,15 +223,15 @@ export function useWallet() {
     if (!provider) return;
 
     const balance = await fetchBalanceWithRetry(provider, wallet.address);
-    setWallet({ balance });
+    setWallet({ balance, lastSyncAt: Date.now() });
   }, [setWallet, wallet.address, wallet.isConnected]);
-
-  // ---- Public API ---------------------------------------------------------
 
   return {
     ...wallet,
-    error,
-    isSwitchingNetwork,
+    error: wallet.lastError,
+    isConnecting:
+      wallet.isConnecting || connectionStatus === 'connecting' || isModalConnecting,
+    isSwitchingNetwork: wallet.connectionStatus === 'switching',
     connectWallet,
     disconnectWallet,
     switchNetwork,

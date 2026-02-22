@@ -25,7 +25,14 @@ import { parseContractError } from '../lib/blockchain/contracts';
 import type { SecurityTokenDetails } from '../lib/blockchain/contracts';
 import { ContractService } from '../lib/blockchain/contracts';
 import { multicallSameTarget } from '../lib/blockchain/multicall';
-import { getCached, setCache, invalidateCacheForAsset, TTL_METADATA, TTL_BALANCE } from '../lib/blockchain/rpcCache';
+import {
+  getCached,
+  invalidateCacheForAsset,
+  makeChainCacheKey,
+  setCache,
+  TTL_BALANCE,
+  TTL_METADATA,
+} from '../lib/blockchain/rpcCache';
 import { txToast } from '../lib/utils/txToast';
 
 // ---------------------------------------------------------------------------
@@ -123,6 +130,16 @@ async function executeWrite(
   });
 }
 
+function chainScopedKey(chainId: number | null, key: string): string {
+  if (!chainId) return key;
+  return makeChainCacheKey(chainId, key);
+}
+
+function invalidateTokenCache(tokenAddress: string): void {
+  const activeChainId = useWalletStore.getState().wallet.chainId;
+  invalidateCacheForAsset(tokenAddress, activeChainId ?? undefined);
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -200,7 +217,7 @@ export function useSecurityToken() {
     const provider = getProvider();
     if (!provider || !chainId) return;
 
-    const cacheKey = `sectoken:${tokenAddress}:details`;
+    const cacheKey = chainScopedKey(chainId, `sectoken:${tokenAddress}:details`);
     const cached = getCached<SecurityTokenDetails>(cacheKey);
     if (cached) {
       store.getState().setTokenDetails(tokenAddress, cached);
@@ -267,7 +284,7 @@ export function useSecurityToken() {
     const provider = getProvider();
     if (!provider) throw new Error('Provider not available');
 
-    const cacheKey = `sectoken:${tokenAddress}:balances:${userAddress}`;
+    const cacheKey = chainScopedKey(chainId, `sectoken:${tokenAddress}:balances:${userAddress}`);
     const cached = getCached<SecurityTokenBalances>(cacheKey);
     if (cached) return cached;
 
@@ -296,7 +313,7 @@ export function useSecurityToken() {
     } catch (err: unknown) {
       throw new Error(`Failed to fetch balances: ${parseContractError(err)}`);
     }
-  }, [validateAddress]);
+  }, [chainId, validateAddress]);
 
   /**
    * Get the transfer group ID for an address.
@@ -735,7 +752,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Tokens minted successfully');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -771,7 +788,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Tokens burned successfully');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -804,7 +821,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Token paused');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -837,7 +854,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Token unpaused');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -874,7 +891,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, `Address ${status ? 'frozen' : 'unfrozen'}`);
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -944,7 +961,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Transfer group updated');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -980,7 +997,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Max balance updated');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -1018,7 +1035,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Group transfer rule updated');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -1059,7 +1076,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Address permissions updated');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -1143,7 +1160,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Release schedule funded');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -1183,7 +1200,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Batch funding complete');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -1226,7 +1243,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Timelock cancelled');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -1333,7 +1350,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Transfer rules upgraded');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -1560,7 +1577,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Swap completed');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {
@@ -1594,7 +1611,7 @@ export function useSecurityToken() {
       }
 
       txToast.success(tx.hash, chainId!, 'Swap completed');
-      invalidateCacheForAsset(tokenAddress);
+      invalidateTokenCache(tokenAddress);
       store.getState().setTransacting(false);
       return tx;
     } catch (err: unknown) {

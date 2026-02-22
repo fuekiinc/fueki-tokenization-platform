@@ -14,6 +14,7 @@ import {
   THIRDWEB_WALLETS,
   thirdwebClient,
 } from './lib/thirdweb'
+import { WalletConnectionController } from './wallet/WalletConnectionController'
 
 
 datadogRum.init({
@@ -274,6 +275,7 @@ createRoot(document.getElementById('root')!).render(
             chain={THIRDWEB_DEFAULT_CHAIN}
           />
         )}
+        <WalletConnectionController />
         <BrowserRouter>
           <App />
         </BrowserRouter>

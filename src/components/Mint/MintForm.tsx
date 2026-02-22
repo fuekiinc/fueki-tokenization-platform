@@ -3,7 +3,6 @@ import { ethers } from 'ethers';
 import {
   Loader2,
   AlertCircle,
-  AlertTriangle,
   CheckCircle2,
   ExternalLink,
   Wallet,
@@ -22,6 +21,7 @@ import { ContractService } from '../../lib/blockchain/contracts';
 import logger from '../../lib/logger';
 import HelpTooltip from '../Common/HelpTooltip';
 import { FormField } from '../Common/FormField';
+import NetworkCapabilityGuard from '../Common/NetworkCapabilityGuard';
 import { useWallet } from '../../hooks/useWallet';
 import { useTradeStore } from '../../store/tradeStore.ts';
 import { useAssetStore } from '../../store/assetStore.ts';
@@ -30,6 +30,7 @@ import { formatAddress, generateId, copyToClipboard } from '../../lib/utils/help
 import { txSubmittedToast, txConfirmedToast, txFailedToast } from '../../lib/utils/txToast';
 import { formatTokenAmount } from '../../lib/formatters';
 import { getNetworkConfig, getNetworkMetadata } from '../../contracts/addresses';
+import { getNetworkCapabilities } from '../../contracts/networkCapabilities';
 import { sanitizePastedAddress, validateTokenSymbol, validatePositiveAmount } from '../../lib/utils/validation';
 import { INPUT_CLASSES } from '../../lib/designTokens';
 import type { ParsedDocument, TradeHistory } from '../../types';
@@ -124,7 +125,8 @@ export default function MintForm({ document }: MintFormProps) {
   const blockExplorer = chainId
     ? getNetworkMetadata(chainId)?.blockExplorer ?? ''
     : '';
-  const networkSupported = chainId ? !!getNetworkConfig(chainId) : false;
+  const capabilities = getNetworkCapabilities(chainId);
+  const networkSupported = capabilities?.mintAsset ?? false;
   const networkName = chainId ? getNetworkMetadata(chainId)?.name ?? `Chain ${chainId}` : '';
 
   // ---- Reset tx state when document changes --------------------------------
@@ -244,7 +246,6 @@ export default function MintForm({ document }: MintFormProps) {
       return;
     }
 
-    setIsSubmitting(true);
     const provider = getProvider();
     if (!provider || !chainId) {
       toast.error('Please connect your wallet before minting.');
@@ -252,15 +253,12 @@ export default function MintForm({ document }: MintFormProps) {
     }
 
     const networkConfig = getNetworkConfig(chainId);
-    if (!networkConfig) {
-      toast.error(`This network (chain ID ${chainId}) is not supported. Please switch to a supported network.`);
-      return;
-    }
-    if (!networkConfig.factoryAddress) {
-      toast.error(`Contracts are not deployed on ${networkConfig.name}. Please switch to a supported network.`);
+    if (!networkConfig || !capabilities?.mintAsset) {
+      toast.error(`Contracts are not deployed on ${networkName || `chain ID ${chainId}`}. Please switch to a supported network.`);
       return;
     }
 
+    setIsSubmitting(true);
     setTxState('pending');
     setTxHash(null);
     setTxError(null);
@@ -681,35 +679,16 @@ export default function MintForm({ document }: MintFormProps) {
 
       {/* ---- Unsupported network banner ---- */}
       {isConnected && chainId && !networkSupported && (
-        <div className="rounded-2xl border border-amber-500/15 bg-amber-500/[0.05] p-4 sm:p-6" role="alert">
-          <div className="flex items-start gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 ring-1 ring-amber-500/20">
-              <AlertTriangle className="h-5 w-5 text-amber-400" aria-hidden="true" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-amber-300">Unsupported Network</p>
-              <p className="mt-1.5 text-sm leading-relaxed text-amber-400/60">
-                Contracts are not deployed on {networkName}. Switch to a supported network to mint tokens.
-              </p>
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => void switchNetwork(1)}
-                  className="rounded-xl bg-indigo-500/15 border border-indigo-500/25 px-4 py-2 min-h-[44px] text-xs font-semibold text-indigo-300 transition-all hover:bg-indigo-500/25 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                >
-                  Switch to Ethereum
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void switchNetwork(31337)}
-                  className="rounded-xl bg-white/[0.04] border border-white/[0.08] px-4 py-2 min-h-[44px] text-xs font-medium text-gray-400 transition-all hover:bg-white/[0.08] hover:text-gray-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                >
-                  Hardhat Local
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <NetworkCapabilityGuard
+          chainId={chainId}
+          requiredCapability="mintAsset"
+          switchNetwork={switchNetwork}
+          title="Unsupported Network"
+          description={
+            `Contracts are not deployed on ${networkName}. Switch to a supported network to mint tokens.`
+          }
+          switchChainIds={[17000, 1, 31337]}
+        />
       )}
 
       {/* ---- Section: Token Configuration ---- */}

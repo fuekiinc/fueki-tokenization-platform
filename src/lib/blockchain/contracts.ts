@@ -18,7 +18,13 @@ import { LiquidityPoolAMMABI } from '../../contracts/abis/LiquidityPoolAMM.ts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { multicall, multicallSameTarget } from './multicall.ts';
 import type { MulticallRequest, MulticallResult } from './multicall.ts';
-import { getCached, setCache, invalidateCache, invalidateCacheForAsset } from './rpcCache.ts';
+import {
+  getCached,
+  invalidateCacheForAsset as invalidateCacheForAssetGlobal,
+  invalidateChainCache,
+  makeChainCacheKey,
+  setCache,
+} from './rpcCache.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -230,6 +236,18 @@ export class ContractService {
     this.chainId = chainId;
   }
 
+  private cacheKey(key: string): string {
+    return makeChainCacheKey(this.chainId, key);
+  }
+
+  private invalidateCachePrefix(prefix?: string): void {
+    invalidateChainCache(this.chainId, prefix);
+  }
+
+  private invalidateAssetCache(assetAddress: string): void {
+    invalidateCacheForAssetGlobal(assetAddress, this.chainId);
+  }
+
   // -----------------------------------------------------------------------
   // Signer
   // -----------------------------------------------------------------------
@@ -392,7 +410,7 @@ export class ContractService {
       mintAmount,
       recipient,
     ]);
-    invalidateCache('factory:');
+    this.invalidateCachePrefix('factory:');
     return tx;
   }
 
@@ -403,7 +421,7 @@ export class ContractService {
   /** Retrieve all asset contract addresses created by a specific user. */
   async getUserAssets(userAddress: string): Promise<string[]> {
     this.validateAddress(userAddress, 'user');
-    const cacheKey = `factory:assets:${userAddress}`;
+    const cacheKey = this.cacheKey(`factory:assets:${userAddress}`);
     const cached = getCached<string[]>(cacheKey);
     if (cached) return cached;
     const factory = this.getFactoryContract();
@@ -420,7 +438,7 @@ export class ContractService {
 
   /** Retrieve the total number of assets created through the factory. */
   async getTotalAssets(): Promise<bigint> {
-    const cacheKey = 'factory:totalAssets';
+    const cacheKey = this.cacheKey('factory:totalAssets');
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
     const factory = this.getFactoryContract();
@@ -460,7 +478,7 @@ export class ContractService {
     assetAddress: string,
   ): Promise<FactoryAssetDetails> {
     this.validateAddress(assetAddress, 'asset');
-    const cacheKey = `asset:${assetAddress}:factoryDetails`;
+    const cacheKey = this.cacheKey(`asset:${assetAddress}:factoryDetails`);
     const cached = getCached<FactoryAssetDetails>(cacheKey);
     if (cached) return cached;
 
@@ -526,7 +544,7 @@ export class ContractService {
   /** Aggregate key details directly from a WrappedAsset token contract. */
   async getAssetDetails(assetAddress: string): Promise<AssetDetails> {
     this.validateAddress(assetAddress, 'asset');
-    const cacheKey = `asset:${assetAddress}:details`;
+    const cacheKey = this.cacheKey(`asset:${assetAddress}:details`);
     const cached = getCached<AssetDetails>(cacheKey);
     if (cached) return cached;
     try {
@@ -629,7 +647,7 @@ export class ContractService {
   ): Promise<bigint> {
     this.validateAddress(assetAddress, 'asset');
     this.validateAddress(userAddress, 'user');
-    const cacheKey = `asset:${assetAddress}:balance:${userAddress}`;
+    const cacheKey = this.cacheKey(`asset:${assetAddress}:balance:${userAddress}`);
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
     const asset = this.getAssetContract(assetAddress);
@@ -653,7 +671,7 @@ export class ContractService {
     this.validateAddress(assetAddress, 'asset');
     this.validateAddress(ownerAddress, 'owner');
     this.validateAddress(spenderAddress, 'spender');
-    const cacheKey = `asset:${assetAddress}:allowance:${ownerAddress}:${spenderAddress}`;
+    const cacheKey = this.cacheKey(`asset:${assetAddress}:allowance:${ownerAddress}:${spenderAddress}`);
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
     const asset = this.getAssetContract(assetAddress);
@@ -683,7 +701,7 @@ export class ContractService {
     const signer = await this.getSigner();
     const asset = this.getAssetContract(assetAddress, signer);
     const tx = await this.executeWrite(asset, 'transfer', [to, amount]);
-    invalidateCacheForAsset(assetAddress);
+    this.invalidateAssetCache(assetAddress);
     return tx;
   }
 
@@ -698,7 +716,7 @@ export class ContractService {
     const signer = await this.getSigner();
     const asset = this.getAssetContract(assetAddress, signer);
     const tx = await this.executeWrite(asset, 'approve', [spender, amount]);
-    invalidateCacheForAsset(assetAddress);
+    this.invalidateAssetCache(assetAddress);
     return tx;
   }
 
@@ -711,7 +729,7 @@ export class ContractService {
     const signer = await this.getSigner();
     const asset = this.getAssetContract(assetAddress, signer);
     const tx = await this.executeWrite(asset, 'burn', [amount]);
-    invalidateCacheForAsset(assetAddress);
+    this.invalidateAssetCache(assetAddress);
     return tx;
   }
 
@@ -741,8 +759,8 @@ export class ContractService {
       amountSell,
       amountBuy,
     ]);
-    invalidateCacheForAsset(tokenSell);
-    invalidateCacheForAsset(tokenBuy);
+    this.invalidateAssetCache(tokenSell);
+    this.invalidateAssetCache(tokenBuy);
     return tx;
   }
 
@@ -763,7 +781,7 @@ export class ContractService {
     const signer = await this.getSigner();
     const exchange = this.getExchangeContract(signer);
     const tx = await this.executeWrite(exchange, 'fillOrder', [orderId, fillAmountBuy]);
-    invalidateCache('asset:');
+    this.invalidateCachePrefix('asset:');
     return tx;
   }
 
@@ -774,7 +792,7 @@ export class ContractService {
     const signer = await this.getSigner();
     const exchange = this.getExchangeContract(signer);
     const tx = await this.executeWrite(exchange, 'cancelOrder', [orderId]);
-    invalidateCache('asset:');
+    this.invalidateCachePrefix('asset:');
     return tx;
   }
 
@@ -882,7 +900,7 @@ export class ContractService {
       minTimelockAmount,
       maxReleaseDelay,
     ]);
-    invalidateCache('factory:');
+    this.invalidateCachePrefix('factory:');
     return tx;
   }
 
@@ -918,7 +936,7 @@ export class ContractService {
   /** Get full details of a security token by its address. */
   async getSecurityTokenDetails(tokenAddress: string): Promise<SecurityTokenDetails> {
     this.validateAddress(tokenAddress, 'token');
-    const cacheKey = `asset:${tokenAddress}:securityDetails`;
+    const cacheKey = this.cacheKey(`asset:${tokenAddress}:securityDetails`);
     const cached = getCached<SecurityTokenDetails>(cacheKey);
     if (cached) return cached;
     const factory = this.getSecurityTokenFactoryContract();
@@ -1014,8 +1032,8 @@ export class ContractService {
     const tx = await this.executeWrite(exchange, 'createOrder', [
       tokenSell, tokenBuy, amountSell, amountBuy,
     ]);
-    invalidateCacheForAsset(tokenSell);
-    invalidateCacheForAsset(tokenBuy);
+    this.invalidateAssetCache(tokenSell);
+    this.invalidateAssetCache(tokenBuy);
     return tx;
   }
 
@@ -1033,7 +1051,7 @@ export class ContractService {
     const tx = await this.executeWrite(exchange, 'createOrderSellETH', [tokenBuy, amountBuy], {
       value: ethAmount,
     });
-    invalidateCacheForAsset(tokenBuy);
+    this.invalidateAssetCache(tokenBuy);
     return tx;
   }
 
@@ -1045,7 +1063,7 @@ export class ContractService {
     const signer = await this.getSigner();
     const exchange = this.getAssetBackedExchangeContract(signer);
     const tx = await this.executeWrite(exchange, 'fillOrder', [orderId, fillAmountBuy]);
-    invalidateCache('asset:');
+    this.invalidateCachePrefix('asset:');
     return tx;
   }
 
@@ -1059,7 +1077,7 @@ export class ContractService {
     const tx = await this.executeWrite(exchange, 'fillOrderWithETH', [orderId], {
       value: ethAmount,
     });
-    invalidateCache('asset:');
+    this.invalidateCachePrefix('asset:');
     return tx;
   }
 
@@ -1070,7 +1088,7 @@ export class ContractService {
     const signer = await this.getSigner();
     const exchange = this.getAssetBackedExchangeContract(signer);
     const tx = await this.executeWrite(exchange, 'cancelOrder', [orderId]);
-    invalidateCache('asset:');
+    this.invalidateCachePrefix('asset:');
     return tx;
   }
 
@@ -1253,9 +1271,9 @@ export class ContractService {
     const tx = await this.executeWrite(amm, 'addLiquidity', [
       tokenA, tokenB, amountADesired, amountBDesired, amountAMin, amountBMin, minLiquidity, dl,
     ]);
-    invalidateCacheForAsset(tokenA);
-    invalidateCacheForAsset(tokenB);
-    invalidateCache('amm:');
+    this.invalidateAssetCache(tokenA);
+    this.invalidateAssetCache(tokenB);
+    this.invalidateCachePrefix('amm:');
     return tx;
   }
 
@@ -1274,8 +1292,8 @@ export class ContractService {
     const tx = await this.executeWrite(amm, 'addLiquidityETH', [
       token, amountToken, minLiquidity, dl,
     ], { value: ethAmount });
-    invalidateCacheForAsset(token);
-    invalidateCache('amm:');
+    this.invalidateAssetCache(token);
+    this.invalidateCachePrefix('amm:');
     return tx;
   }
 
@@ -1296,9 +1314,9 @@ export class ContractService {
     const tx = await this.executeWrite(amm, 'removeLiquidity', [
       tokenA, tokenB, liquidity, minA, minB, dl,
     ]);
-    invalidateCacheForAsset(tokenA);
-    invalidateCacheForAsset(tokenB);
-    invalidateCache('amm:');
+    this.invalidateAssetCache(tokenA);
+    this.invalidateAssetCache(tokenB);
+    this.invalidateCachePrefix('amm:');
     return tx;
   }
 
@@ -1317,8 +1335,8 @@ export class ContractService {
     const tx = await this.executeWrite(amm, 'removeLiquidityETH', [
       token, liquidity, minToken, minETH, dl,
     ]);
-    invalidateCacheForAsset(token);
-    invalidateCache('amm:');
+    this.invalidateAssetCache(token);
+    this.invalidateCachePrefix('amm:');
     return tx;
   }
 
@@ -1338,9 +1356,9 @@ export class ContractService {
     const tx = await this.executeWrite(amm, 'swap', [
       tokenIn, tokenOut, amountIn, minAmountOut, dl,
     ]);
-    invalidateCacheForAsset(tokenIn);
-    invalidateCacheForAsset(tokenOut);
-    invalidateCache('amm:');
+    this.invalidateAssetCache(tokenIn);
+    this.invalidateAssetCache(tokenOut);
+    this.invalidateCachePrefix('amm:');
     return tx;
   }
 
@@ -1358,8 +1376,8 @@ export class ContractService {
     const tx = await this.executeWrite(amm, 'swapETHForToken', [
       token, minAmountOut, dl,
     ], { value: ethAmount });
-    invalidateCacheForAsset(token);
-    invalidateCache('amm:');
+    this.invalidateAssetCache(token);
+    this.invalidateCachePrefix('amm:');
     return tx;
   }
 
@@ -1377,8 +1395,8 @@ export class ContractService {
     const tx = await this.executeWrite(amm, 'swapTokenForETH', [
       token, amountIn, minETH, dl,
     ]);
-    invalidateCacheForAsset(token);
-    invalidateCache('amm:');
+    this.invalidateAssetCache(token);
+    this.invalidateCachePrefix('amm:');
     return tx;
   }
 
@@ -1409,7 +1427,7 @@ export class ContractService {
   async getAMMPool(tokenA: string, tokenB: string): Promise<Pool> {
     this.validateAddress(tokenA, 'tokenA');
     this.validateAddress(tokenB, 'tokenB');
-    const cacheKey = `amm:pool:${tokenA}:${tokenB}`;
+    const cacheKey = this.cacheKey(`amm:pool:${tokenA}:${tokenB}`);
     const cached = getCached<Pool>(cacheKey);
     if (cached) return cached;
     const amm = this.getAMMContract();

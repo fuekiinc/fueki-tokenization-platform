@@ -6,6 +6,7 @@
  *   - Holesky Testnet (chainId: 17000) -- full deployment (primary testnet)
  *   - Arbitrum One (chainId: 42161) -- not yet deployed
  *   - Arbitrum Sepolia (chainId: 421614) -- not yet deployed
+ *   - Base Sepolia (chainId: 84532) -- metadata only, no deployments yet
  *   - Hardhat Local (chainId: 31337) -- local development
  *
  * All contract addresses are EIP-55 checksummed.
@@ -15,6 +16,8 @@
  * need only network metadata (RPC, explorer) regardless of deployment status
  * should use `getNetworkMetadata` instead.
  */
+
+import { getPrimaryRpcUrl } from '../lib/rpc/endpoints';
 
 export interface NetworkConfig {
   chainId: number;
@@ -56,7 +59,7 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   1: {
     chainId: 1,
     name: 'Ethereum Mainnet',
-    rpcUrl: 'https://ethereum-rpc.publicnode.com',
+    rpcUrl: getPrimaryRpcUrl(1),
     blockExplorer: 'https://etherscan.io',
     blockExplorerApi: 'https://api.etherscan.io/api',
     factoryAddress: '0xf7d3fC3b395b4Add020fF46B7ceA9E4c404ab4dB',
@@ -75,7 +78,7 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   17000: {
     chainId: 17000,
     name: 'Holesky',
-    rpcUrl: 'https://holesky.drpc.org',
+    rpcUrl: getPrimaryRpcUrl(17000),
     blockExplorer: 'https://eth-holesky.blockscout.com',
     blockExplorerApi: 'https://eth-holesky.blockscout.com/api',
     factoryAddress: '0xCC00D84b5D2448552a238465C4C05A82ac5AB411',
@@ -94,7 +97,7 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   42161: {
     chainId: 42161,
     name: 'Arbitrum One',
-    rpcUrl: 'https://arb1.arbitrum.io/rpc',
+    rpcUrl: getPrimaryRpcUrl(42161),
     blockExplorer: 'https://arbiscan.io',
     blockExplorerApi: 'https://api.arbiscan.io/api',
     factoryAddress: '',
@@ -113,7 +116,7 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   421614: {
     chainId: 421614,
     name: 'Arbitrum Sepolia',
-    rpcUrl: 'https://sepolia-rollup.arbitrum.io/rpc',
+    rpcUrl: getPrimaryRpcUrl(421614),
     blockExplorer: 'https://sepolia.arbiscan.io',
     blockExplorerApi: 'https://api-sepolia.arbiscan.io/api',
     factoryAddress: '',
@@ -132,7 +135,7 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   11155111: {
     chainId: 11155111,
     name: 'Sepolia Testnet',
-    rpcUrl: 'https://rpc.sepolia.org',
+    rpcUrl: getPrimaryRpcUrl(11155111),
     blockExplorer: 'https://sepolia.etherscan.io',
     blockExplorerApi: 'https://api-sepolia.etherscan.io/api',
     factoryAddress: '',
@@ -151,7 +154,7 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   137: {
     chainId: 137,
     name: 'Polygon',
-    rpcUrl: 'https://polygon-rpc.com',
+    rpcUrl: getPrimaryRpcUrl(137),
     blockExplorer: 'https://polygonscan.com',
     blockExplorerApi: 'https://api.polygonscan.com/api',
     factoryAddress: '',
@@ -170,9 +173,28 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   8453: {
     chainId: 8453,
     name: 'Base',
-    rpcUrl: 'https://mainnet.base.org',
+    rpcUrl: getPrimaryRpcUrl(8453),
     blockExplorer: 'https://basescan.org',
     blockExplorerApi: 'https://api.basescan.org/api',
+    factoryAddress: '',
+    exchangeAddress: '',
+    securityTokenFactoryAddress: '',
+    assetBackedExchangeAddress: '',
+    wethAddress: '0x4200000000000000000000000000000000000006',
+    wbtcAddress: '',
+    ammAddress: '',
+    orbitalFactoryAddress: '',
+    orbitalRouterAddress: '',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  },
+
+  // ---- Base Sepolia (metadata only, no deployments) -----------------------
+  84532: {
+    chainId: 84532,
+    name: 'Base Sepolia',
+    rpcUrl: getPrimaryRpcUrl(84532),
+    blockExplorer: 'https://sepolia.basescan.org',
+    blockExplorerApi: 'https://api-sepolia.basescan.org/api',
     factoryAddress: '',
     exchangeAddress: '',
     securityTokenFactoryAddress: '',
@@ -189,7 +211,7 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   31337: {
     chainId: 31337,
     name: 'Hardhat Local',
-    rpcUrl: 'http://127.0.0.1:8545',
+    rpcUrl: getPrimaryRpcUrl(31337),
     blockExplorer: '',
     blockExplorerApi: '',
     factoryAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
