@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ethers } from 'ethers';
-import { ContractService } from '../lib/blockchain/contracts.ts';
+import { ContractService, parseContractError } from '../lib/blockchain/contracts.ts';
 import { useWallet } from '../hooks/useWallet.ts';
 import { getProvider } from '../store/walletStore.ts';
 import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
@@ -35,7 +35,7 @@ import { useTradeStore } from '../store/tradeStore.ts';
 import { Modal, Button, EmptyState } from '../components/Common/index.ts';
 import { formatBalance, formatAddress, copyToClipboard } from '../lib/utils/helpers.ts';
 import { formatCurrency, formatTokenAmount } from '../lib/formatters.ts';
-import { SUPPORTED_NETWORKS } from '../contracts/addresses.ts';
+import { SUPPORTED_NETWORKS, getNetworkConfig } from '../contracts/addresses.ts';
 import {
   calculateAssetPerformance,
   formatPnLPercent,
@@ -538,7 +538,7 @@ export default function PortfolioPage() {
 
     const provider = getProvider();
     if (!provider) {
-      setFetchError('Wallet provider not available. Please reconnect your wallet.');
+      setFetchError('Please connect your wallet to view your portfolio.');
       return;
     }
 
@@ -693,7 +693,12 @@ export default function PortfolioPage() {
 
     const provider = getProvider();
     if (!provider) {
-      setTransferError('Wallet provider not available');
+      setTransferError('Please connect your wallet before transferring.');
+      return;
+    }
+
+    if (!getNetworkConfig(chainId)) {
+      setTransferError(`This network is not supported for transfers. Please switch to a supported network.`);
       return;
     }
 
@@ -771,9 +776,8 @@ export default function PortfolioPage() {
 
       void fetchAssets();
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Transfer failed';
-      setTransferError(message);
+      logger.error('[PortfolioPage] Transfer failed:', err);
+      setTransferError(parseContractError(err));
     } finally {
       setTransferLoading(false);
     }
@@ -792,7 +796,12 @@ export default function PortfolioPage() {
 
     const provider = getProvider();
     if (!provider) {
-      setBurnError('Wallet provider not available');
+      setBurnError('Please connect your wallet before burning.');
+      return;
+    }
+
+    if (!getNetworkConfig(chainId)) {
+      setBurnError(`This network is not supported for burning. Please switch to a supported network.`);
       return;
     }
 
@@ -861,9 +870,8 @@ export default function PortfolioPage() {
 
       void fetchAssets();
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Burn failed';
-      setBurnError(message);
+      logger.error('[PortfolioPage] Burn failed:', err);
+      setBurnError(parseContractError(err));
     } finally {
       setBurnLoading(false);
     }

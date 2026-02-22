@@ -145,7 +145,7 @@ export default function DashboardPage() {
     const provider = getProvider();
     if (!provider) {
       setIsInitialLoading(false);
-      setLoadError('Wallet provider not available. Please reconnect your wallet.');
+      setLoadError('Please connect your wallet to view dashboard data.');
       return;
     }
 

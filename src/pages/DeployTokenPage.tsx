@@ -647,7 +647,7 @@ export default function DeployTokenPage() {
     const provider = getProvider();
     const signer = getSigner();
     if (!provider || !signer) {
-      toast.error('Wallet provider not available');
+      toast.error('Please connect your wallet before deploying.');
       return;
     }
 

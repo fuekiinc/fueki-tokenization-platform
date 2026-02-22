@@ -29,23 +29,35 @@ import {
   thirdwebClient,
 } from '../lib/thirdweb';
 
+// ---------------------------------------------------------------------------
+// Error parsing — user-friendly, actionable messages
+// ---------------------------------------------------------------------------
+
 function parseWalletError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
 
-  if (/user rejected|rejected by user|ACTION_REJECTED/i.test(message)) {
-    return 'Connection request was rejected. Please approve the wallet prompt to connect.';
+  if (/user rejected|rejected by user|ACTION_REJECTED|denied/i.test(message)) {
+    return 'Request rejected. Please approve the prompt in your wallet to continue.';
   }
 
-  if (/user closed|cancelled|canceled|modal/i.test(message)) {
+  if (/user closed|cancelled|canceled|abort|modal/i.test(message)) {
     return 'Wallet connection was cancelled.';
   }
 
   if (/already pending/i.test(message)) {
-    return 'A wallet connection request is already pending. Please check your wallet app.';
+    return 'A request is already pending — please check your wallet app.';
   }
 
-  if (/unsupported chain|network/i.test(message)) {
-    return 'Selected network is not supported by the connected wallet.';
+  if (/chain.*not.*support|unsupported.*chain|network.*not.*support/i.test(message)) {
+    return 'This network is not supported by your wallet. You may need to add it manually.';
+  }
+
+  if (/insufficient funds/i.test(message)) {
+    return 'Insufficient funds for this transaction.';
+  }
+
+  if (/timeout|timed out|ETIMEDOUT/i.test(message)) {
+    return 'Network request timed out. Please check your connection and try again.';
   }
 
   if (message.length > 0 && message.length < 220) {
@@ -55,6 +67,10 @@ function parseWalletError(err: unknown): string {
   return 'Wallet action failed. Please try again.';
 }
 
+// ---------------------------------------------------------------------------
+// Store cleanup
+// ---------------------------------------------------------------------------
+
 function clearWalletBoundStores(): void {
   useAssetStore.getState().setAssets([]);
   useAssetStore.getState().setSecurityTokens([]);
@@ -62,6 +78,35 @@ function clearWalletBoundStores(): void {
   useExchangeStore.getState().setOrders([]);
   useExchangeStore.getState().setUserOrders([]);
 }
+
+// ---------------------------------------------------------------------------
+// Balance fetch with retry
+// ---------------------------------------------------------------------------
+
+async function fetchBalanceWithRetry(
+  provider: ethers.BrowserProvider,
+  address: string,
+  retries = 2,
+): Promise<string> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const raw = await provider.getBalance(address);
+      return ethers.formatEther(raw);
+    } catch (err) {
+      if (attempt === retries) {
+        logger.error('Balance fetch failed after retries:', err);
+        return '0';
+      }
+      // Brief delay before retry (200ms, 600ms)
+      await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+    }
+  }
+  return '0';
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 export function useWallet() {
   const wallet = useWalletStore((s) => s.wallet);
@@ -81,8 +126,20 @@ export function useWallet() {
   const switchActiveWalletChain = useSwitchActiveWalletChain();
 
   const [error, setError] = useState<string | null>(null);
+  const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
 
   const wasConnectedRef = useRef(false);
+
+  // Monotonic counter to discard stale async sync results.
+  // Every time syncWalletStore fires, it captures the current value;
+  // if a newer call increments the counter before an older call completes,
+  // the older call's state updates are skipped.
+  const syncVersionRef = useRef(0);
+
+  // Background balance polling interval
+  const balanceIntervalRef = useRef<ReturnType<typeof setInterval>>();
+
+  // ---- ENS resolution (mainnet only) --------------------------------------
 
   const resolveEnsName = useCallback(
     async (address: string, provider: ethers.BrowserProvider) => {
@@ -101,14 +158,21 @@ export function useWallet() {
     [setEnsName],
   );
 
+  // ---- Core sync: thirdweb hooks → zustand store --------------------------
+
   const syncWalletStore = useCallback(async () => {
+    const version = ++syncVersionRef.current;
+    const isStale = () => syncVersionRef.current !== version;
+
     const isConnecting = connectionStatus === 'connecting' || isModalConnecting;
     const isConnected =
       connectionStatus === 'connected' &&
       Boolean(activeWallet) &&
       Boolean(activeAccount?.address);
 
+    // ---- Not connected ----------------------------------------------------
     if (!isConnected || !activeWallet || !activeAccount?.address) {
+      if (isStale()) return;
       setProvider(null);
       setSigner(null);
       setWallet({
@@ -124,7 +188,9 @@ export function useWallet() {
       return;
     }
 
+    // ---- Thirdweb not configured ------------------------------------------
     if (!thirdwebClient || !isThirdwebConfigured) {
+      if (isStale()) return;
       setWallet({
         address: activeAccount.address,
         chainId: activeWalletChain?.id ?? null,
@@ -134,8 +200,13 @@ export function useWallet() {
       return;
     }
 
-    const chain = activeWalletChain ?? getThirdwebChain(activeWallet.getChain()?.id) ?? THIRDWEB_DEFAULT_CHAIN;
+    // ---- Resolve chain ----------------------------------------------------
+    const chain =
+      activeWalletChain ??
+      getThirdwebChain(activeWallet.getChain()?.id) ??
+      THIRDWEB_DEFAULT_CHAIN;
 
+    // ---- Create provider & signer -----------------------------------------
     try {
       const eip1193Provider = EIP1193.toProvider({
         wallet: activeWallet,
@@ -143,28 +214,29 @@ export function useWallet() {
         client: thirdwebClient,
       });
 
-      const provider = new ethers.BrowserProvider(eip1193Provider as ethers.Eip1193Provider);
+      const provider = new ethers.BrowserProvider(
+        eip1193Provider as ethers.Eip1193Provider,
+      );
       const signer = await provider.getSigner();
       const address = await signer.getAddress();
 
-      // Set provider and signer FIRST so they're available even if balance
-      // fetch fails (e.g. slow RPC on testnets like Holesky).
+      // Discard if a newer sync started while we were awaiting.
+      if (isStale()) return;
+
+      // Set provider/signer immediately so they're available for transactions
+      // even if the subsequent balance fetch is slow or fails.
       setProvider(provider);
       setSigner(signer);
 
-      let balance = '0';
-      try {
-        const rawBalance = await provider.getBalance(address);
-        balance = ethers.formatEther(rawBalance);
-      } catch (balanceErr) {
-        logger.error('Failed to fetch balance (provider still usable):', balanceErr);
-      }
+      // Fetch balance (non-critical — retries internally)
+      const balance = await fetchBalanceWithRetry(provider, address);
+      if (isStale()) return;
 
       setWallet({
         address,
         chainId: chain.id,
         isConnected: true,
-        isConnecting,
+        isConnecting: false,
         balance,
       });
 
@@ -172,33 +244,16 @@ export function useWallet() {
       void resolveEnsName(address, provider);
       setError(null);
     } catch (err) {
-      logger.error('Failed to sync thirdweb wallet into ethers provider:', err);
+      logger.error('Failed to create ethers provider from thirdweb wallet:', err);
+      if (isStale()) return;
 
-      // Still try to create provider from the wallet's native EIP-1193
-      // interface as a fallback before giving up entirely.
-      try {
-        const fallbackEip1193 = EIP1193.toProvider({
-          wallet: activeWallet,
-          chain,
-          client: thirdwebClient,
-        });
-        const fallbackProvider = new ethers.BrowserProvider(
-          fallbackEip1193 as ethers.Eip1193Provider,
-        );
-        setProvider(fallbackProvider);
-        const fallbackSigner = await fallbackProvider.getSigner();
-        setSigner(fallbackSigner);
-        logger.info('Fallback provider/signer created successfully');
-      } catch {
-        setProvider(null);
-        setSigner(null);
-      }
-
+      setProvider(null);
+      setSigner(null);
       setWallet({
         address: activeAccount.address,
         chainId: chain.id,
         isConnected: true,
-        isConnecting,
+        isConnecting: false,
       });
     }
   }, [
@@ -215,9 +270,12 @@ export function useWallet() {
     setWallet,
   ]);
 
+  // Re-sync whenever thirdweb hooks change
   useEffect(() => {
     void syncWalletStore();
   }, [syncWalletStore]);
+
+  // ---- Disconnect detection -----------------------------------------------
 
   useEffect(() => {
     const isConnected = connectionStatus === 'connected';
@@ -235,6 +293,29 @@ export function useWallet() {
     }
   }, [connectionStatus, resetWallet]);
 
+  // ---- Background balance polling (every 30s when connected) --------------
+
+  useEffect(() => {
+    clearInterval(balanceIntervalRef.current);
+
+    if (!wallet.isConnected || !wallet.address) return;
+
+    balanceIntervalRef.current = setInterval(async () => {
+      const provider = getStoreProvider();
+      if (!provider || !wallet.address) return;
+      try {
+        const raw = await provider.getBalance(wallet.address);
+        setWallet({ balance: ethers.formatEther(raw) });
+      } catch {
+        // Silent — don't spam user with toast on background poll failure
+      }
+    }, 30_000);
+
+    return () => clearInterval(balanceIntervalRef.current);
+  }, [wallet.isConnected, wallet.address, setWallet]);
+
+  // ---- Connect wallet -----------------------------------------------------
+
   const connectWallet = useCallback(async () => {
     if (!thirdwebClient || !isThirdwebConfigured) {
       const msg =
@@ -250,7 +331,8 @@ export function useWallet() {
     setError(null);
 
     try {
-      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://fueki.io';
+      const origin =
+        typeof window !== 'undefined' ? window.location.origin : 'https://fueki-tech.com';
 
       const connectedWallet = await connect({
         client: thirdwebClient,
@@ -272,16 +354,20 @@ export function useWallet() {
 
       const connectedAddress = connectedWallet.getAccount()?.address;
       if (connectedAddress) {
-        toast.success(`Wallet connected: ${connectedAddress.slice(0, 6)}...${connectedAddress.slice(-4)}`);
+        toast.success(
+          `Connected: ${connectedAddress.slice(0, 6)}...${connectedAddress.slice(-4)}`,
+        );
       }
     } catch (err: unknown) {
       logger.error('Wallet connection failed:', err);
       const message = parseWalletError(err);
       setError(message);
-      setWallet({ isConnecting: false });
       if (!/cancelled/i.test(message)) {
         toast.error(message);
       }
+    } finally {
+      // Always clear isConnecting — syncWalletStore will set the real state.
+      setWallet({ isConnecting: false });
     }
   }, [
     activeWalletChain,
@@ -290,6 +376,8 @@ export function useWallet() {
     isModalConnecting,
     setWallet,
   ]);
+
+  // ---- Disconnect wallet --------------------------------------------------
 
   const disconnectWallet = useCallback(() => {
     if (activeWallet) {
@@ -301,6 +389,8 @@ export function useWallet() {
     setError(null);
     toast.success('Wallet disconnected');
   }, [activeWallet, disconnect, resetWallet]);
+
+  // ---- Switch network with verification -----------------------------------
 
   const switchNetwork = useCallback(
     async (chainId: number) => {
@@ -319,35 +409,41 @@ export function useWallet() {
         return;
       }
 
+      setIsSwitchingNetwork(true);
+
       try {
         await switchActiveWalletChain(chain);
         setError(null);
+        // syncWalletStore will fire when activeWalletChain updates
       } catch (err: unknown) {
         const message = parseWalletError(err);
         setError(message);
         toast.error(message);
+      } finally {
+        setIsSwitchingNetwork(false);
       }
     },
     [activeWallet, switchActiveWalletChain],
   );
 
+  // ---- Manual balance refresh ---------------------------------------------
+
   const refreshBalance = useCallback(async () => {
     if (!wallet.address || !wallet.isConnected) return;
 
-    try {
-      const provider = getStoreProvider();
-      if (!provider) return;
-      const balance = await provider.getBalance(wallet.address);
-      setWallet({ balance: ethers.formatEther(balance) });
-    } catch (err) {
-      logger.error('Failed to refresh balance:', err);
-      toast.error('Failed to refresh wallet balance');
-    }
+    const provider = getStoreProvider();
+    if (!provider) return;
+
+    const balance = await fetchBalanceWithRetry(provider, wallet.address);
+    setWallet({ balance });
   }, [setWallet, wallet.address, wallet.isConnected]);
+
+  // ---- Public API ---------------------------------------------------------
 
   return {
     ...wallet,
     error,
+    isSwitchingNetwork,
     connectWallet,
     disconnectWallet,
     switchNetwork,

@@ -32,22 +32,30 @@ interface NetworkOption {
   shortName: string;
   explorerUrl: string;
   color: string;
+  /** Whether this is a testnet (shown with a label in the UI). */
+  isTestnet: boolean;
+  /** Whether contracts are deployed on this network. */
+  hasContracts: boolean;
 }
 
-const NETWORKS: NetworkOption[] = [
+const ALL_NETWORKS: NetworkOption[] = [
   {
     chainId: 1,
     name: 'Ethereum Mainnet',
     shortName: 'Ethereum',
     explorerUrl: 'https://etherscan.io',
     color: '#627EEA',
+    isTestnet: false,
+    hasContracts: true,
   },
   {
     chainId: 17000,
-    name: 'Holesky',
+    name: 'Holesky Testnet',
     shortName: 'Holesky',
     explorerUrl: 'https://holesky.etherscan.io',
     color: '#E8B44A',
+    isTestnet: true,
+    hasContracts: true,
   },
   {
     chainId: 11155111,
@@ -55,6 +63,8 @@ const NETWORKS: NetworkOption[] = [
     shortName: 'Sepolia',
     explorerUrl: 'https://sepolia.etherscan.io',
     color: '#CFB5F0',
+    isTestnet: true,
+    hasContracts: false,
   },
   {
     chainId: 137,
@@ -62,6 +72,8 @@ const NETWORKS: NetworkOption[] = [
     shortName: 'Polygon',
     explorerUrl: 'https://polygonscan.com',
     color: '#8247E5',
+    isTestnet: false,
+    hasContracts: false,
   },
   {
     chainId: 42161,
@@ -69,6 +81,8 @@ const NETWORKS: NetworkOption[] = [
     shortName: 'Arbitrum',
     explorerUrl: 'https://arbiscan.io',
     color: '#28A0F0',
+    isTestnet: false,
+    hasContracts: false,
   },
   {
     chainId: 421614,
@@ -76,6 +90,8 @@ const NETWORKS: NetworkOption[] = [
     shortName: 'Arb Sepolia',
     explorerUrl: 'https://sepolia.arbiscan.io',
     color: '#28A0F0',
+    isTestnet: true,
+    hasContracts: false,
   },
   {
     chainId: 8453,
@@ -83,6 +99,8 @@ const NETWORKS: NetworkOption[] = [
     shortName: 'Base',
     explorerUrl: 'https://basescan.org',
     color: '#0052FF',
+    isTestnet: false,
+    hasContracts: false,
   },
   {
     chainId: 31337,
@@ -90,8 +108,15 @@ const NETWORKS: NetworkOption[] = [
     shortName: 'Localhost',
     explorerUrl: '',
     color: '#4ADE80',
+    isTestnet: true,
+    hasContracts: true,
   },
 ];
+
+// Hide Localhost in production builds
+const NETWORKS: NetworkOption[] = import.meta.env.DEV
+  ? ALL_NETWORKS
+  : ALL_NETWORKS.filter((n) => n.chainId !== 31337);
 
 // ---------------------------------------------------------------------------
 // Navigation items -- clean text, no icons
@@ -152,18 +177,24 @@ function NetworkBadge() {
   return (
     <div
       className={clsx(
-        'hidden items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-medium sm:flex',
+        'flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium',
         'border border-white/[0.06] bg-white/[0.03] text-gray-400',
+        currentNetwork.isTestnet && 'border-amber-500/15 bg-amber-500/[0.04]',
       )}
     >
       <span
-        className="h-1.5 w-1.5 rounded-full"
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
         style={{
           backgroundColor: currentNetwork.color,
           boxShadow: `0 0 6px ${currentNetwork.color}50`,
         }}
       />
-      <span>{currentNetwork.shortName}</span>
+      <span className="hidden sm:inline">{currentNetwork.shortName}</span>
+      {currentNetwork.isTestnet && (
+        <span className="hidden sm:inline rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-400">
+          Testnet
+        </span>
+      )}
     </div>
   );
 }
@@ -174,8 +205,9 @@ function NetworkBadge() {
 
 function NetworkSelector({ compact = false }: { compact?: boolean }) {
   const wallet = useWalletStore((s) => s.wallet);
-  const { switchNetwork, isConnected } = useWallet();
+  const { switchNetwork, isConnected, isSwitchingNetwork } = useWallet();
   const [isOpen, setIsOpen] = useState(false);
+  const [switchingTo, setSwitchingTo] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const close = useCallback(() => setIsOpen(false), []);
@@ -193,34 +225,103 @@ function NetworkSelector({ compact = false }: { compact?: boolean }) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
+  // Clear switchingTo when the chain actually changes or switching completes
+  useEffect(() => {
+    if (!isSwitchingNetwork && switchingTo !== null) {
+      setSwitchingTo(null);
+    }
+  }, [isSwitchingNetwork, switchingTo]);
+
   const currentNetwork = useMemo(
     () => NETWORKS.find((n) => n.chainId === wallet.chainId) ?? null,
     [wallet.chainId],
   );
 
+  // Separate mainnets and testnets for grouped display
+  const mainnets = useMemo(() => NETWORKS.filter((n) => !n.isTestnet), []);
+  const testnets = useMemo(() => NETWORKS.filter((n) => n.isTestnet), []);
+
   if (!isConnected) return null;
+
+  const handleSwitchNetwork = async (chainId: number) => {
+    if (chainId === wallet.chainId) {
+      setIsOpen(false);
+      return;
+    }
+    setSwitchingTo(chainId);
+    await switchNetwork(chainId);
+    setIsOpen(false);
+  };
+
+  const renderNetworkButton = (network: NetworkOption) => {
+    const isActive = network.chainId === wallet.chainId;
+    const isSwitching = switchingTo === network.chainId;
+
+    return (
+      <button
+        key={network.chainId}
+        type="button"
+        disabled={isSwitching}
+        onClick={() => void handleSwitchNetwork(network.chainId)}
+        className={clsx(
+          'flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-sm transition-all duration-150',
+          isActive
+            ? 'bg-white/[0.08] text-white'
+            : 'text-gray-400 hover:bg-white/[0.04] hover:text-white',
+          isSwitching && 'opacity-70',
+        )}
+      >
+        <span
+          className={clsx('h-3 w-3 shrink-0 rounded-full', isSwitching && 'animate-pulse')}
+          style={{
+            backgroundColor: network.color,
+            boxShadow: isActive ? `0 0 10px ${network.color}50` : 'none',
+          }}
+        />
+        <span className="flex-1 font-medium">
+          {network.name}
+          {!network.hasContracts && (
+            <span className="ml-1.5 text-[10px] text-gray-500">(Coming Soon)</span>
+          )}
+        </span>
+        {isSwitching ? (
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-500 border-t-white" />
+        ) : isActive ? (
+          <Check className="h-4 w-4 text-cyan-300" />
+        ) : null}
+      </button>
+    );
+  };
 
   return (
     <div className="relative" ref={dropdownRef}>
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
+        disabled={isSwitchingNetwork}
         className={clsx(
           'flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium',
           'transition-all duration-200',
           'border-white/[0.06] bg-white/[0.03] text-gray-300',
           'hover:border-white/[0.1] hover:bg-white/[0.06] hover:text-white',
+          isSwitchingNetwork && 'opacity-70 cursor-wait',
           compact && 'w-full',
         )}
       >
-        <span
-          className="h-2 w-2 shrink-0 rounded-full"
-          style={{
-            backgroundColor: currentNetwork?.color ?? '#FBBF24',
-            boxShadow: `0 0 8px ${currentNetwork?.color ?? '#FBBF24'}40`,
-          }}
-        />
-        <span className="truncate">{currentNetwork?.shortName ?? 'Unknown'}</span>
+        {isSwitchingNetwork ? (
+          <span className="h-2 w-2 shrink-0 animate-spin rounded-full border border-gray-500 border-t-white" />
+        ) : (
+          <span
+            className="h-2 w-2 shrink-0 rounded-full"
+            style={{
+              backgroundColor: currentNetwork?.color ?? '#FBBF24',
+              boxShadow: `0 0 8px ${currentNetwork?.color ?? '#FBBF24'}40`,
+            }}
+          />
+        )}
+        <span className="truncate">
+          {isSwitchingNetwork ? 'Switching...' : (currentNetwork?.shortName ?? 'Unknown')}
+        </span>
         <ChevronDown
           className={clsx(
             'h-3.5 w-3.5 shrink-0 text-gray-500 transition-transform duration-200',
@@ -232,48 +333,27 @@ function NetworkSelector({ compact = false }: { compact?: boolean }) {
       {isOpen && (
         <div
           className={clsx(
-            'absolute z-50 mt-2 w-64 origin-top-right rounded-2xl p-1.5 shadow-2xl',
+            'absolute z-50 mt-2 w-72 origin-top-right rounded-2xl p-1.5 shadow-2xl',
             'border border-white/[0.06] bg-[#0D0F14]/95 backdrop-blur-xl',
             'animate-scale-in',
             compact ? 'left-0 right-0 w-full' : 'right-0',
           )}
         >
-          <div className="mb-1.5 px-3 py-2">
+          {/* Mainnets */}
+          <div className="mb-1 px-3 py-2">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-              Select Network
+              Mainnets
             </p>
           </div>
-          {NETWORKS.map((network) => (
-            <button
-              key={network.chainId}
-              type="button"
-              onClick={() => {
-                void switchNetwork(network.chainId);
-                setIsOpen(false);
-              }}
-              className={clsx(
-                'flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-sm transition-all duration-150',
-                network.chainId === wallet.chainId
-                  ? 'bg-white/[0.08] text-white'
-                  : 'text-gray-400 hover:bg-white/[0.04] hover:text-white',
-              )}
-            >
-              <span
-                className="h-3 w-3 shrink-0 rounded-full"
-                style={{
-                  backgroundColor: network.color,
-                  boxShadow:
-                    network.chainId === wallet.chainId
-                      ? `0 0 10px ${network.color}50`
-                      : 'none',
-                }}
-              />
-              <span className="flex-1 font-medium">{network.name}</span>
-              {network.chainId === wallet.chainId && (
-                <Check className="h-4 w-4 text-cyan-300" />
-              )}
-            </button>
-          ))}
+          {mainnets.map(renderNetworkButton)}
+
+          {/* Testnets */}
+          <div className="mb-1 mt-2 border-t border-white/[0.04] px-3 pt-3 pb-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-500/60">
+              Testnets
+            </p>
+          </div>
+          {testnets.map(renderNetworkButton)}
         </div>
       )}
     </div>
