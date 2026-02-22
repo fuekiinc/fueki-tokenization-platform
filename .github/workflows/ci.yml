@@ -75,19 +75,17 @@ jobs:
         if: always()
         run: |
           if [ -f coverage/coverage-summary.json ]; then
-            node --input-type=module <<'NODE' >> "$GITHUB_STEP_SUMMARY"
-            import { readFileSync } from 'node:fs';
-
-            const summary = JSON.parse(readFileSync('coverage/coverage-summary.json', 'utf8'));
-            const total = summary.total;
-            const format = (metric) => `${metric.pct.toFixed(2)}% (${metric.covered}/${metric.total})`;
-
-            console.log('### Unit Coverage');
-            console.log(`- Lines: ${format(total.lines)}`);
-            console.log(`- Functions: ${format(total.functions)}`);
-            console.log(`- Branches: ${format(total.branches)}`);
-            console.log(`- Statements: ${format(total.statements)}`);
-            NODE
+            node -e '
+              import { readFileSync } from "node:fs";
+              const summary = JSON.parse(readFileSync("coverage/coverage-summary.json", "utf8"));
+              const total = summary.total;
+              const format = (metric) => metric.pct.toFixed(2) + "% (" + metric.covered + "/" + metric.total + ")";
+              console.log("### Unit Coverage");
+              console.log("- Lines: " + format(total.lines));
+              console.log("- Functions: " + format(total.functions));
+              console.log("- Branches: " + format(total.branches));
+              console.log("- Statements: " + format(total.statements));
+            ' --input-type=module >> "$GITHUB_STEP_SUMMARY"
           else
             echo 'coverage-summary.json was not generated.' >> "$GITHUB_STEP_SUMMARY"
           fi
