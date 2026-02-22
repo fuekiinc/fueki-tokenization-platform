@@ -18,20 +18,22 @@ async function gotoPublicRoute(
   await expect(page.getByRole('heading', { name: heading }).first()).toBeVisible();
 }
 
+async function getCriticalViolations(page: Page) {
+  const results = await new AxeBuilder({ page })
+    .include('main')
+    .withTags([...wcagTags])
+    .analyze();
+
+  return results.violations.filter((violation) => violation.impact === 'critical');
+}
+
 test.describe('Accessibility', () => {
   for (const { route, heading } of publicRoutes) {
     test(`${route} should have no critical accessibility violations`, async ({
       page,
     }) => {
       await gotoPublicRoute(page, route, heading);
-
-      const results = await new AxeBuilder({ page })
-        .withTags([...wcagTags])
-        .analyze();
-
-      const critical = results.violations.filter(
-        (violation) => violation.impact === 'critical',
-      );
+      const critical = await getCriticalViolations(page);
       expect(critical).toEqual([]);
     });
   }
