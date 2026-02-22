@@ -73,7 +73,7 @@ export default function Tooltip({
   const [resolvedPos, setResolvedPos] = useState(position);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
-  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pinnedRef = useRef(false);
   const tooltipId = useId();
 

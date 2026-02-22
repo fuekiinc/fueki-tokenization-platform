@@ -137,7 +137,7 @@ export function useWallet() {
   const syncVersionRef = useRef(0);
 
   // Background balance polling interval
-  const balanceIntervalRef = useRef<ReturnType<typeof setInterval>>();
+  const balanceIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   // ---- ENS resolution (mainnet only) --------------------------------------
 
