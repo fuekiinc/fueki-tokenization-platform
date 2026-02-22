@@ -13,9 +13,22 @@ export const thirdwebClient = THIRDWEB_CLIENT_ID
   ? createThirdwebClient({ clientId: THIRDWEB_CLIENT_ID })
   : null;
 
+/** Holesky testnet with explicit RPC and metadata so ThirdWeb can reliably
+ *  create providers and prompt wallet_addEthereumChain when needed. */
+const holesky = defineChain({
+  id: 17000,
+  name: 'Holesky',
+  nativeCurrency: { name: 'Holesky ETH', symbol: 'ETH', decimals: 18 },
+  rpc: 'https://holesky.drpc.org',
+  testnet: true,
+  blockExplorers: [
+    { name: 'Blockscout', url: 'https://eth-holesky.blockscout.com' },
+  ],
+});
+
 export const THIRDWEB_SUPPORTED_CHAINS: Chain[] = [
   ethereum,
-  defineChain(17000), // Holesky
+  holesky,
   sepolia,
   polygon,
   arbitrum,
@@ -24,7 +37,7 @@ export const THIRDWEB_SUPPORTED_CHAINS: Chain[] = [
   defineChain(31337), // Hardhat local
 ];
 
-export const THIRDWEB_DEFAULT_CHAIN = ethereum;
+export const THIRDWEB_DEFAULT_CHAIN = holesky;
 
 const chainById = new Map<number, Chain>(
   THIRDWEB_SUPPORTED_CHAINS.map((chain) => [chain.id, chain]),

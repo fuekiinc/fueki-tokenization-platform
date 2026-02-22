@@ -257,7 +257,7 @@ export default function TradeForm({
           }
         } else {
           // ERC-20: fetch balance + allowance against AssetBackedExchange
-          const currentChainId = chainId ?? 31337;
+          const currentChainId = chainId!;
           const config = getNetworkConfig(currentChainId);
           const spender = config?.assetBackedExchangeAddress;
 
@@ -349,7 +349,7 @@ export default function TradeForm({
         parsedSellAmount,
       );
       setTxHash(tx.hash);
-      const currentChainId = chainId ?? 31337;
+      const currentChainId = chainId!;
       txSubmittedToast(tx.hash, currentChainId, 'Approving token spend...');
 
       await contractService.waitForTransaction(tx);
@@ -402,7 +402,7 @@ export default function TradeForm({
     // Track tx hash locally so the catch block can reference it even though
     // React state updates are asynchronous.
     let submittedHash: string | null = null;
-    const currentChainId = chainId ?? 31337;
+    const currentChainId = chainId!;
 
     try {
       let tx: ethers.ContractTransactionResponse;
@@ -562,7 +562,7 @@ export default function TradeForm({
 
     // Check approval for non-ETH tokens
     if (!sellIsETH) {
-      const currentChainId = chainId ?? 31337;
+      const currentChainId = chainId!;
       const config = getNetworkConfig(currentChainId);
       const ammAddress = config?.ammAddress;
 
@@ -596,7 +596,7 @@ export default function TradeForm({
     // Calculate min output with slippage
     const minOut = ammQuote - (ammQuote * BigInt(Math.round(slippage * 10)) / 1000n);
 
-    const swapChainId = chainId ?? 31337;
+    const swapChainId = chainId!;
     let submittedSwapHash: string | null = null;
 
     try {

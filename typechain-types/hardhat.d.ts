@@ -142,6 +142,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.TransferRules__factory>;
     getContractFactory(
+      name: "TestWBTC",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.TestWBTC__factory>;
+    getContractFactory(
       name: "WrappedAsset",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.WrappedAsset__factory>;
@@ -311,6 +315,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.TransferRules>;
     getContractAt(
+      name: "TestWBTC",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.TestWBTC>;
+    getContractAt(
       name: "WrappedAsset",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -450,6 +459,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.TransferRules>;
     deployContract(
+      name: "TestWBTC",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.TestWBTC>;
+    deployContract(
       name: "WrappedAsset",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.WrappedAsset>;
@@ -618,6 +631,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.TransferRules>;
+    deployContract(
+      name: "TestWBTC",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.TestWBTC>;
     deployContract(
       name: "WrappedAsset",
       args: any[],

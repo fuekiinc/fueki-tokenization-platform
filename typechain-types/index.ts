@@ -64,6 +64,8 @@ export type { SecurityTokenFactory } from "./contracts/security-token/SecurityTo
 export { SecurityTokenFactory__factory } from "./factories/contracts/security-token/SecurityTokenFactory__factory";
 export type { TransferRules } from "./contracts/security-token/TransferRules";
 export { TransferRules__factory } from "./factories/contracts/security-token/TransferRules__factory";
+export type { TestWBTC } from "./contracts/TestWBTC";
+export { TestWBTC__factory } from "./factories/contracts/TestWBTC__factory";
 export type { WrappedAsset } from "./contracts/WrappedAsset";
 export { WrappedAsset__factory } from "./factories/contracts/WrappedAsset__factory";
 export type { WrappedAssetFactory } from "./contracts/WrappedAssetFactory";

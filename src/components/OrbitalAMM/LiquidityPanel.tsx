@@ -323,7 +323,7 @@ export default function LiquidityPanel({
     if (!contractService || !selectedPool || !anyAddAmount) return;
     if (txStatus !== 'idle' && txStatus !== 'confirmed') return;
 
-    const orbChainId = chainId ?? 31337;
+    const orbChainId = chainId!;
 
     // 1. Approve all tokens for the ROUTER (which does transferFrom)
     setTxStatus('approving');
@@ -445,7 +445,7 @@ export default function LiquidityPanel({
           selectedPool.address,
           parsedRemoveAmount,
         );
-        txSubmittedToast(approveTx.hash, chainId ?? 31337, 'Approving LP tokens...');
+        txSubmittedToast(approveTx.hash, chainId!, 'Approving LP tokens...');
         await contractService.waitForTransaction(approveTx);
         txConfirmedToast(approveTx.hash, 'LP tokens approved');
       }
@@ -475,7 +475,7 @@ export default function LiquidityPanel({
         deadline,
       );
       submittedRemoveHash = tx.hash;
-      txSubmittedToast(tx.hash, chainId ?? 31337, 'Removing liquidity...');
+      txSubmittedToast(tx.hash, chainId!, 'Removing liquidity...');
       await contractService.waitForTransaction(tx);
       txConfirmedToast(tx.hash, 'Liquidity removed!');
       setTxStatus('confirmed');

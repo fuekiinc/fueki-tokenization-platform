@@ -10,5 +10,6 @@ export type { orbital };
 import type * as securityToken from "./security-token";
 export type { securityToken };
 export type { AssetExchange } from "./AssetExchange";
+export type { TestWBTC } from "./TestWBTC";
 export type { WrappedAsset } from "./WrappedAsset";
 export type { WrappedAssetFactory } from "./WrappedAssetFactory";

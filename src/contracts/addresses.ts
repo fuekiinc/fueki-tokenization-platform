@@ -82,7 +82,7 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     exchangeAddress: '0x573d253D0826FB6EeECBa3cD430D74d74955A608',
     securityTokenFactoryAddress: '0x117cf62686D23a5478DaFCcBC575c0d833606E61',
     assetBackedExchangeAddress: '0x6C9217850317e61544a3d5bFD3b3C6CA3ADE6660',
-    wethAddress: '',
+    wethAddress: '0x94373a4919B3240D86eA41593D5eBa789FEF3848',
     wbtcAddress: '',
     ammAddress: '',
     orbitalFactoryAddress: '0xd951A80Efd159B35A7c66f830ca77980476D9305',
@@ -205,8 +205,9 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   },
 };
 
-/** Default chain ID used when no network preference is specified. */
-export const DEFAULT_CHAIN_ID = 1;
+/** Default chain ID used when no network preference is specified.
+ *  Set to Holesky (17000) since it is the primary testnet with full deployments. */
+export const DEFAULT_CHAIN_ID = 17000;
 
 // ---------------------------------------------------------------------------
 // Lookup helpers

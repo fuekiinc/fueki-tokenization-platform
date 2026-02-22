@@ -215,7 +215,7 @@ export default function LiquidityPanel({
   const handleCreatePool = useCallback(async () => {
     if (!contractService || !tokenA || !tokenB) return;
     setTxStatus('submitting');
-    const liqChainId = chainId ?? 31337;
+    const liqChainId = chainId!;
     try {
       const tx = await contractService.createPool(tokenA, tokenB);
       txSubmittedToast(tx.hash, liqChainId, 'Creating pool...');
@@ -236,7 +236,7 @@ export default function LiquidityPanel({
     const config = chainId ? getNetworkConfig(chainId) : null;
     const ammAddress = config?.ammAddress;
 
-    const liqChainId = chainId ?? 31337;
+    const liqChainId = chainId!;
 
     // Approve tokenA if not ETH
     if (!tokenAIsETH && ammAddress) {
@@ -317,7 +317,7 @@ export default function LiquidityPanel({
     if (!contractService || !tokenA || !tokenB || parsedRemoveAmount === 0n) return;
     if (txStatus !== 'idle') return;
 
-    const liqChainId = chainId ?? 31337;
+    const liqChainId = chainId!;
     setTxStatus('submitting');
     let submittedRemoveHash: string | null = null;
     try {
