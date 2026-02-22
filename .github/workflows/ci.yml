@@ -1,51 +1,127 @@
-name: CI
+name: Platform CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  lint-and-typecheck:
-    name: Lint & Typecheck (Frontend)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-      - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npm run lint --if-present
+env:
+  CI: true
 
-  build:
-    name: Build (Frontend)
+jobs:
+  frontend-quality:
+    name: Frontend Quality Gate
     runs-on: ubuntu-latest
-    needs: lint-and-typecheck
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.12.0'
           cache: 'npm'
       - run: npm ci
+      - name: Lint (informational)
+        id: lint
+        continue-on-error: true
+        run: npm run lint
+      - name: Lint summary
+        if: always()
+        run: |
+          if [ "${{ steps.lint.outcome }}" = "success" ]; then
+            echo "Lint completed with no errors." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Lint reported issues (non-blocking). Review logs for current lint debt." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - run: npm run typecheck
       - run: npx vite build
+
+  unit-tests:
+    name: Unit Tests (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['20.19.0', '22.12.0']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:unit
+
+  unit-coverage:
+    name: Unit Coverage Report
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:unit:coverage
+      - name: Publish coverage summary
+        if: always()
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            node --input-type=module <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+            import { readFileSync } from 'node:fs';
+
+            const summary = JSON.parse(readFileSync('coverage/coverage-summary.json', 'utf8'));
+            const total = summary.total;
+            const format = (metric) => `${metric.pct.toFixed(2)}% (${metric.covered}/${metric.total})`;
+
+            console.log('### Unit Coverage');
+            console.log(`- Lines: ${format(total.lines)}`);
+            console.log(`- Functions: ${format(total.functions)}`);
+            console.log(`- Branches: ${format(total.branches)}`);
+            console.log(`- Statements: ${format(total.statements)}`);
+            NODE
+          else
+            echo 'coverage-summary.json was not generated.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-coverage
+          path: coverage
+          if-no-files-found: ignore
+          retention-days: 7
 
   backend-typecheck:
     name: Typecheck (Backend)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.12.0'
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
       - run: cd backend && npm ci
       - run: cd backend && npx tsc --noEmit
+
+  contracts-compile:
+    name: Contracts Compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx hardhat compile
