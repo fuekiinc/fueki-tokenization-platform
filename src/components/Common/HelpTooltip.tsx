@@ -229,7 +229,12 @@ export default function HelpTooltip({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? popoverId : undefined}
-        onClick={() => {
+        onClick={(e) => {
+          // Prevent <label> from forwarding click to the associated input,
+          // which would trigger the outside-click handler and immediately
+          // close the popover.
+          e.preventDefault();
+          e.stopPropagation();
           if (open) {
             closePopover();
             return;

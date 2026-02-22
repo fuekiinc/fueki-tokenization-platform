@@ -146,16 +146,26 @@ export function useWallet() {
       const provider = new ethers.BrowserProvider(eip1193Provider as ethers.Eip1193Provider);
       const signer = await provider.getSigner();
       const address = await signer.getAddress();
-      const balance = await provider.getBalance(address);
 
+      // Set provider and signer FIRST so they're available even if balance
+      // fetch fails (e.g. slow RPC on testnets like Holesky).
       setProvider(provider);
       setSigner(signer);
+
+      let balance = '0';
+      try {
+        const rawBalance = await provider.getBalance(address);
+        balance = ethers.formatEther(rawBalance);
+      } catch (balanceErr) {
+        logger.error('Failed to fetch balance (provider still usable):', balanceErr);
+      }
+
       setWallet({
         address,
         chainId: chain.id,
         isConnected: true,
         isConnecting,
-        balance: ethers.formatEther(balance),
+        balance,
       });
 
       persistConnection();
@@ -163,14 +173,33 @@ export function useWallet() {
       setError(null);
     } catch (err) {
       logger.error('Failed to sync thirdweb wallet into ethers provider:', err);
+
+      // Still try to create provider from the wallet's native EIP-1193
+      // interface as a fallback before giving up entirely.
+      try {
+        const fallbackEip1193 = EIP1193.toProvider({
+          wallet: activeWallet,
+          chain,
+          client: thirdwebClient,
+        });
+        const fallbackProvider = new ethers.BrowserProvider(
+          fallbackEip1193 as ethers.Eip1193Provider,
+        );
+        setProvider(fallbackProvider);
+        const fallbackSigner = await fallbackProvider.getSigner();
+        setSigner(fallbackSigner);
+        logger.info('Fallback provider/signer created successfully');
+      } catch {
+        setProvider(null);
+        setSigner(null);
+      }
+
       setWallet({
         address: activeAccount.address,
         chainId: chain.id,
         isConnected: true,
         isConnecting,
       });
-      setProvider(null);
-      setSigner(null);
     }
   }, [
     activeAccount,

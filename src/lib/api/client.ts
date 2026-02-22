@@ -28,10 +28,19 @@ if (!baseURL && import.meta.env.DEV) {
 const apiClient = axios.create({
   baseURL: baseURL ?? 'https://fueki-backend-114394197024.us-central1.run.app',
   timeout: 15_000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
   withCredentials: true, // Send httpOnly refresh token cookie automatically
+});
+
+// ---------------------------------------------------------------------------
+// Request interceptor -- set Content-Type (skip for FormData so axios can
+// auto-set multipart/form-data with the correct boundary)
+// ---------------------------------------------------------------------------
+
+apiClient.interceptors.request.use((config) => {
+  if (!(config.data instanceof FormData)) {
+    config.headers['Content-Type'] = 'application/json';
+  }
+  return config;
 });
 
 // ---------------------------------------------------------------------------

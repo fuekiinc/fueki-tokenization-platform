@@ -56,6 +56,7 @@ export interface InfoTooltipProps {
 // ---------------------------------------------------------------------------
 
 const EDGE_MARGIN = 12; // px from viewport edge before flipping
+const HIDE_DELAY = 120; // ms before hiding -- allows mouse to bridge the gap
 
 // ---------------------------------------------------------------------------
 // Tooltip Component
@@ -72,6 +73,8 @@ export default function Tooltip({
   const [resolvedPos, setResolvedPos] = useState(position);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const pinnedRef = useRef(false);
   const tooltipId = useId();
 
   // ---- Resolve position (flip if near viewport edge) ----------------------
@@ -96,22 +99,44 @@ export default function Tooltip({
   // ---- Show / Hide handlers -----------------------------------------------
 
   const show = useCallback(() => {
+    clearTimeout(hideTimeoutRef.current);
     resolvePosition();
     setVisible(true);
   }, [resolvePosition]);
 
   const hide = useCallback(() => {
+    if (pinnedRef.current) return;
+    clearTimeout(hideTimeoutRef.current);
+    hideTimeoutRef.current = setTimeout(() => {
+      setVisible(false);
+    }, HIDE_DELAY);
+  }, []);
+
+  const dismiss = useCallback(() => {
+    clearTimeout(hideTimeoutRef.current);
+    pinnedRef.current = false;
     setVisible(false);
   }, []);
 
-  // Toggle for mobile tap
-  const toggle = useCallback(() => {
-    if (visible) {
-      hide();
+  // Cleanup timeout on unmount
+  useEffect(() => () => clearTimeout(hideTimeoutRef.current), []);
+
+  // Reset pinned state when tooltip hides
+  useEffect(() => {
+    if (!visible) pinnedRef.current = false;
+  }, [visible]);
+
+  // Click handler: pin on first click, dismiss on second (for mobile/touch)
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (pinnedRef.current) {
+      dismiss();
     } else {
+      pinnedRef.current = true;
       show();
     }
-  }, [visible, show, hide]);
+  }, [show, dismiss]);
 
   // ---- Close on outside click (mobile) ------------------------------------
 
@@ -126,7 +151,7 @@ export default function Tooltip({
         bubbleRef.current &&
         !bubbleRef.current.contains(target)
       ) {
-        hide();
+        dismiss();
       }
     }
 
@@ -136,7 +161,7 @@ export default function Tooltip({
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('touchstart', handleClickOutside);
     };
-  }, [visible, hide]);
+  }, [visible, dismiss]);
 
   // ---- Close on Escape ----------------------------------------------------
 
@@ -145,7 +170,7 @@ export default function Tooltip({
 
     function handleEscape(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        hide();
+        dismiss();
         // Return focus to the trigger element
         triggerRef.current?.focus();
       }
@@ -153,7 +178,7 @@ export default function Tooltip({
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [visible, hide]);
+  }, [visible, dismiss]);
 
   // ---- Position classes ---------------------------------------------------
 
@@ -174,7 +199,7 @@ export default function Tooltip({
       onMouseLeave={hide}
       onFocus={show}
       onBlur={hide}
-      onClick={toggle}
+      onClick={handleClick}
       tabIndex={0}
       aria-describedby={visible ? tooltipId : undefined}
     >
@@ -186,8 +211,10 @@ export default function Tooltip({
         id={tooltipId}
         role="tooltip"
         aria-hidden={!visible}
+        onMouseEnter={show}
+        onMouseLeave={hide}
         className={clsx(
-          'absolute z-[100] pointer-events-none',
+          'absolute z-[100]',
           positionClasses[resolvedPos],
           // Glass-morphism styling
           'rounded-lg px-3.5 py-2.5',
@@ -200,7 +227,7 @@ export default function Tooltip({
           'transition-all duration-150 ease-out motion-reduce:transition-none',
           visible
             ? 'opacity-100 scale-100'
-            : 'opacity-0 scale-95',
+            : 'opacity-0 scale-95 pointer-events-none',
         )}
         style={{ maxWidth, width: 'max-content' }}
       >

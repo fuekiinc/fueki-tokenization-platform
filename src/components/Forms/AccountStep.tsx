@@ -220,20 +220,30 @@ export default function AccountStep({ defaultValues, onNext }: AccountStepProps)
       {/* Terms of Service */}
       <div className="space-y-1.5">
         <label className="flex items-start gap-3 cursor-pointer group">
-          <input
-            type="checkbox"
-            className={clsx(
-              'mt-0.5 h-4 w-4 shrink-0 rounded border appearance-none cursor-pointer',
-              'border-[var(--border-primary)] bg-[var(--bg-tertiary)]',
-              'checked:bg-indigo-600 checked:border-indigo-600',
-              'focus:ring-2 focus:ring-[var(--accent-primary)]/30 focus:ring-offset-0',
-              'transition-colors duration-150',
-              errors.acceptTerms && 'border-[var(--danger)]',
-            )}
-            aria-invalid={errors.acceptTerms ? true : undefined}
-            aria-describedby={errors.acceptTerms ? 'signup-terms-error' : undefined}
-            {...register('acceptTerms')}
-          />
+          <span className="relative mt-0.5 shrink-0">
+            <input
+              type="checkbox"
+              className={clsx(
+                'peer h-4 w-4 rounded border appearance-none cursor-pointer',
+                'border-[var(--border-primary)] bg-[var(--bg-tertiary)]',
+                'checked:bg-indigo-600 checked:border-indigo-600',
+                'focus:ring-2 focus:ring-[var(--accent-primary)]/30 focus:ring-offset-0',
+                'transition-colors duration-150',
+                errors.acceptTerms && 'border-[var(--danger)]',
+              )}
+              aria-invalid={errors.acceptTerms ? true : undefined}
+              aria-describedby={errors.acceptTerms ? 'signup-terms-error' : undefined}
+              {...register('acceptTerms')}
+            />
+            <svg
+              className="pointer-events-none absolute inset-0 h-4 w-4 text-white opacity-0 peer-checked:opacity-100 transition-opacity"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path d="M4 8.5L6.5 11L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
           <span className="text-sm text-[var(--text-secondary)] leading-relaxed group-hover:text-[var(--text-primary)] transition-colors">
             I agree to the{' '}
             <a
