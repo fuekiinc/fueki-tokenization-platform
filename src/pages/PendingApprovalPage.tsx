@@ -431,13 +431,16 @@ export default function PendingApprovalPage() {
                 <CreditCard className="h-4 w-4 text-indigo-400 mt-0.5 shrink-0" />
                 <div>
                   <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-                    You will be receiving an email with an invoice to pay for the
-                    subscription required to access the tokenization platform. You
-                    can either pay <strong className="text-[var(--text-primary)]">$200 per month</strong> or{' '}
-                    <strong className="text-[var(--text-primary)]">$1,800 per year</strong>, or
-                    select <strong className="text-[var(--text-primary)]">Full Service</strong> with
-                    bespoke pricing (invoice sent based on your requirements). Platform access is
-                    required in order to interact, transfer, and distribute your security tokens.
+                    You will receive an email with an invoice for the subscription
+                    you selected on the previous page. If you selected{' '}
+                    <strong className="text-[var(--text-primary)]">Full Service</strong>,
+                    you will first receive an inquiry email to determine the specific
+                    requirements for your tokenization, after which an invoice tailored
+                    to your case will be sent. Regardless of which service level you
+                    choose, platform access is required in order to interact with,
+                    transfer, and distribute your assets. Failure to pay your
+                    subscription will result in your access to the platform being
+                    revoked until the balance is rectified.
                   </p>
                 </div>
               </div>

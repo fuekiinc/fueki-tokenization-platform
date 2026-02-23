@@ -1,9 +1,10 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import clsx from 'clsx';
 import {
-  FileText,
-  Repeat,
-  Shield,
+  Wallet,
+  Coins,
+  ShieldCheck,
+  ArrowRightLeft,
   Copy,
   Globe,
 } from 'lucide-react';
@@ -38,53 +39,39 @@ import { CARD_CLASSES } from '../lib/designTokens';
 
 const GLASS = CARD_CLASSES.base;
 
-const GLASS_HOVER =
-  'hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20 transition-all duration-300';
-
 // ---------------------------------------------------------------------------
-// Feature card for the not-connected hero
+// Getting-started step card
 // ---------------------------------------------------------------------------
 
-function FeatureCard({
+function StepCard({
+  step,
   icon: Icon,
   title,
-  description,
-  gradientFrom,
-  gradientTo,
+  children,
+  accentColor,
 }: {
+  step: number;
   icon: React.ElementType;
   title: string;
-  description: string;
-  gradientFrom: string;
-  gradientTo: string;
+  children: React.ReactNode;
+  accentColor: string;
 }) {
   return (
-    <div
-      className={clsx(
-        GLASS,
-        GLASS_HOVER,
-        'group relative overflow-hidden p-6 sm:p-10 text-center',
-      )}
-    >
-      {/* Background glow */}
-      <div
-        className="absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-        style={{
-          background: `radial-gradient(ellipse at 50% 0%, ${gradientFrom}08, transparent 70%)`,
-        }}
-      />
-
-      <div className="relative">
+    <div className={clsx(GLASS, 'relative overflow-hidden p-6')}>
+      <div className="flex items-start gap-4">
         <div
-          className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl"
-          style={{
-            background: `linear-gradient(135deg, ${gradientFrom}20, ${gradientTo}20)`,
-          }}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+          style={{ background: `${accentColor}18` }}
         >
-          <Icon className="h-7 w-7" style={{ color: gradientFrom }} />
+          <Icon className="h-5 w-5" style={{ color: accentColor }} />
         </div>
-        <h2 className="mb-3 text-lg font-semibold text-white">{title}</h2>
-        <p className="text-sm leading-relaxed text-gray-400">{description}</p>
+        <div className="min-w-0">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-widest" style={{ color: accentColor }}>
+            Step {step}
+          </p>
+          <h3 className="mb-2 text-base font-semibold text-white">{title}</h3>
+          <div className="text-sm leading-relaxed text-gray-400">{children}</div>
+        </div>
       </div>
     </div>
   );
@@ -386,51 +373,82 @@ export default function DashboardPage() {
         </div>
 
         {/* ---- Hero content ---- */}
-        <div className="relative z-10 flex flex-col items-center justify-center px-4 py-16 text-center sm:px-8 md:px-12 md:py-28 lg:py-36">
+        <div className="relative z-10 flex flex-col items-center px-4 py-16 text-center sm:px-8 md:px-12 md:py-24 lg:py-28">
           <FuekiBrand
             variant="full"
             className="justify-center mb-4"
             imageClassName="h-20 w-auto drop-shadow-[0_20px_44px_rgba(8,24,38,0.45)]"
           />
 
-          <p className="mb-12 text-sm font-medium uppercase tracking-[0.25em] text-gray-500">
+          <p className="mb-4 text-sm font-medium uppercase tracking-[0.25em] text-gray-500">
             Institutional-Grade Asset Tokenization
           </p>
 
-          <h1 className="mx-auto max-w-3xl text-3xl font-extrabold leading-tight text-white sm:text-4xl md:text-5xl lg:text-6xl">
-            Tokenize, Trade &{' '}
-            <span className="bg-gradient-to-r from-blue-400 via-violet-400 to-cyan-400 bg-clip-text text-transparent">
-              Verify
-            </span>{' '}
-            Real-World Assets
-          </h1>
-
-          <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-gray-400">
-          Wall Street Infrastructure. Main Street Access.
+          <p className="mx-auto max-w-xl text-lg leading-relaxed text-gray-400">
+            Wall Street Infrastructure. Main Street Access.
           </p>
 
-          <div className="mx-auto mt-12 sm:mt-24 grid w-full max-w-4xl grid-cols-1 gap-5 sm:grid-cols-3 sm:gap-10">
-            <FeatureCard
-              icon={FileText}
-              title="Tokenize Assets"
-              description="Upload financial documents, parse their content, and mint security tokens backed by your assets in one seamless flow."
-              gradientFrom="#3B82F6"
-              gradientTo="#6366F1"
-            />
-            <FeatureCard
-              icon={Repeat}
-              title="Trade P2P"
-              description="List and fill orders on a fully decentralized exchange with other KYC'd and accredited investors. No intermediaries, no custody risk."
-              gradientFrom="#8B5CF6"
-              gradientTo="#A855F7"
-            />
-            <FeatureCard
-              icon={Shield}
-              title="Full Transparency"
-              description="Every mint, burn, and transfer is recorded on-chain with verifiable document hashes and audit trails."
-              gradientFrom="#06B6D4"
-              gradientTo="#14B8A6"
-            />
+          {/* Getting Started Guide */}
+          <div className="mx-auto mt-12 w-full max-w-2xl">
+            <h2 className="mb-8 text-2xl font-bold text-white sm:text-3xl">
+              Getting Started
+            </h2>
+
+            <div className="space-y-4 text-left">
+              <StepCard step={1} icon={Wallet} title="Download a Crypto Wallet" accentColor="#3B82F6">
+                <p>
+                  To use the platform you need an external crypto wallet. If you don't
+                  already have one, download any of the following:
+                </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li><strong className="text-gray-300">MetaMask</strong> &mdash; available as a browser extension and mobile app</li>
+                  <li><strong className="text-gray-300">Trust Wallet</strong> &mdash; mobile-first wallet with broad token support</li>
+                  <li><strong className="text-gray-300">Phantom</strong> &mdash; multi-chain wallet for browser and mobile</li>
+                </ul>
+              </StepCard>
+
+              <StepCard step={2} icon={Coins} title="Connect Your Wallet" accentColor="#8B5CF6">
+                <p>
+                  Once your wallet is set up, click the{' '}
+                  <strong className="text-gray-300">"Connect Wallet"</strong> button in
+                  the upper-right corner of the screen and approve the connection in
+                  your wallet.
+                </p>
+              </StepCard>
+
+              <StepCard step={3} icon={ShieldCheck} title="Mint Your Tokens" accentColor="#06B6D4">
+                <p>
+                  With your wallet connected you can begin creating assets:
+                </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>
+                    <strong className="text-gray-300">Fungible Tokens</strong> &mdash;
+                    go to the Mint page to create standard fungible tokens.
+                  </li>
+                  <li>
+                    <strong className="text-gray-300">Security Tokens</strong> &mdash;
+                    navigate to Security Tokens to mint and configure ERC-1404F
+                    compliant security tokens with built-in transfer restrictions.
+                  </li>
+                </ul>
+              </StepCard>
+
+              <StepCard step={4} icon={ArrowRightLeft} title="Trade & Monetize" accentColor="#F59E0B">
+                <p>
+                  Once your tokens are minted, you can monetize them through:
+                </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>
+                    <strong className="text-gray-300">Exchange</strong> &mdash;
+                    list and fill peer-to-peer orders with other verified investors.
+                  </li>
+                  <li>
+                    <strong className="text-gray-300">Orbital AMM</strong> &mdash;
+                    provide liquidity or swap tokens using the automated market maker.
+                  </li>
+                </ul>
+              </StepCard>
+            </div>
           </div>
         </div>
 
