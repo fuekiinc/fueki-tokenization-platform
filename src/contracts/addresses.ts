@@ -123,7 +123,7 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     exchangeAddress: '0xd60A930605442226e80f2577e4a4B985e3d56977',
     securityTokenFactoryAddress: '0x8b167fE578F62D317674EA47a3F0Dd3Ce13d747f',
     assetBackedExchangeAddress: '0x099df34B1855C9D54eC232916970db13666b50be',
-    wethAddress: '0x2836dA53C1fBcCf717A0a4b0dE45F8aF805c4966',
+    wethAddress: '0xE591bf0A0CF924A0674d7792db046B23CEbF5f34',
     wbtcAddress: '0x60206E675Bd801cDE1F584aD7e234F3214076839',
     ammAddress: '0xa9b60375A6433a6697F020F67Dd69851F861DFb8',
     orbitalFactoryAddress: '0x95187b0e6A6639083C58932C8841A30C75eE70e8',
