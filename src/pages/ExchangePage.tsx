@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useWallet } from '../hooks/useWallet';
@@ -110,6 +111,8 @@ function GlassCard({
 // ---------------------------------------------------------------------------
 
 export default function ExchangePage() {
+  const navigate = useNavigate();
+
   // ---- Wallet & store -----------------------------------------------------
 
   const {
@@ -153,6 +156,7 @@ export default function ExchangePage() {
 
   const isNetworkReady = capabilities?.exchangeOrderbook ?? false;
   const isAMMReady = capabilities?.exchangeAMM ?? false;
+  const isOrbitalReady = capabilities?.orbitalAMM ?? false;
 
   // ---- Initialize ContractService -----------------------------------------
 
@@ -708,6 +712,7 @@ export default function ExchangePage() {
                       contractService={contractService}
                       onOrderCreated={handleRefresh}
                       enableAMM={isAMMReady}
+                      orbitalFallbackEnabled={!isAMMReady && isOrbitalReady}
                     />
                   </ComponentErrorBoundary>
                 </div>
@@ -847,7 +852,37 @@ export default function ExchangePage() {
           </div>
         )}
 
-        {assets.length > 0 && !isAMMReady && (
+        {assets.length > 0 && !isAMMReady && isOrbitalReady && (
+          <div className="mt-10 sm:mt-14">
+            <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.06] p-6 sm:p-8">
+              <div className="flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-center">
+                <div>
+                  <h3 className="text-lg font-semibold text-cyan-200">
+                    Orbital AMM Is Available on This Network
+                  </h3>
+                  <p className="mt-2 max-w-2xl text-sm leading-relaxed text-cyan-100/80">
+                    Holesky currently supports Orbital AMM pools while the legacy AMM module is not deployed.
+                    Continue with concentrated pools, swaps, and liquidity from the Orbital AMM page.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/advanced')}
+                  className={clsx(
+                    'inline-flex items-center gap-2 rounded-xl border border-cyan-400/30',
+                    'bg-cyan-500/15 px-5 py-2.5 text-sm font-semibold text-cyan-200',
+                    'transition-colors hover:bg-cyan-500/25 hover:text-cyan-100',
+                  )}
+                >
+                  <Zap className="h-4 w-4" />
+                  Open Orbital AMM
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {assets.length > 0 && !isAMMReady && !isOrbitalReady && (
           <div className="mt-10 sm:mt-14">
             <NetworkCapabilityGuard
               chainId={wallet.chainId}

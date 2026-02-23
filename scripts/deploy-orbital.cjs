@@ -2,9 +2,10 @@ const hre = require("hardhat");
 
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
+  const network = await hre.ethers.provider.getNetwork();
 
   console.log("=".repeat(60));
-  console.log("Deploying Orbital AMM contracts to Holesky testnet");
+  console.log(`Deploying Orbital AMM contracts to ${hre.network.name} (chainId: ${network.chainId})`);
   console.log("=".repeat(60));
   console.log("Deployer address:", deployer.address);
 
@@ -12,7 +13,7 @@ async function main() {
   console.log("Deployer balance:", hre.ethers.formatEther(balance), "ETH");
 
   if (balance === 0n) {
-    console.error("ERROR: Deployer has zero balance. Fund the account with Holesky ETH first.");
+    console.error("ERROR: Deployer has zero balance. Fund the deployer account before retrying.");
     process.exit(1);
   }
 
@@ -40,7 +41,7 @@ async function main() {
   // ---------------------------------------------------------------
   console.log("[2/2] Deploying OrbitalRouter...");
   const OrbitalRouter = await hre.ethers.getContractFactory("OrbitalRouter");
-  const orbitalRouter = await OrbitalRouter.deploy(orbitalFactoryAddress);
+  const orbitalRouter = await OrbitalRouter.deploy(orbitalFactoryAddress, deployer.address);
   await orbitalRouter.waitForDeployment();
   const orbitalRouterAddress = await orbitalRouter.getAddress();
   console.log("  OrbitalRouter deployed to:", orbitalRouterAddress);
@@ -50,7 +51,7 @@ async function main() {
   // ---------------------------------------------------------------
   console.log("");
   console.log("=".repeat(60));
-  console.log("ORBITAL AMM DEPLOYMENT COMPLETE - Holesky (Chain ID: 17000)");
+  console.log(`ORBITAL AMM DEPLOYMENT COMPLETE - ${hre.network.name} (chainId: ${network.chainId})`);
   console.log("=".repeat(60));
   console.log("OrbitalFactory:  ", orbitalFactoryAddress);
   console.log("OrbitalRouter:   ", orbitalRouterAddress);

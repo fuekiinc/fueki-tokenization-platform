@@ -21,7 +21,7 @@ const kycSchema = z.object({
   zipCode: z.string().min(1),
   country: z.string().min(1),
   documentType: z.enum(VALID_DOC_TYPES),
-  subscriptionPlan: z.enum(['monthly', 'annual']),
+  subscriptionPlan: z.enum(['monthly', 'annual', 'full_service']),
 });
 
 // POST /api/kyc/submit

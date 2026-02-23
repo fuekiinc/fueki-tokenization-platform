@@ -79,6 +79,11 @@ const INPUT_CLASS =
 const BUTTON_CLASS =
   'bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl px-6 py-3 font-medium transition-colors';
 
+const ANALYTICS_LOOKBACK_BLOCKS = 50_000;
+const DEFAULT_LOG_QUERY_CHUNK_SIZE = 9_000;
+const MIN_LOG_QUERY_CHUNK_SIZE = 500;
+const LOG_RANGE_LIMIT_RE = /ranges over .*blocks|block range|over\s+\d+\s+blocks|more than\s+\d+\s+blocks/i;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -99,6 +104,54 @@ async function resolveBlockTimestamp(
   } catch {
     return null;
   }
+}
+
+function isLogRangeLimitError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return LOG_RANGE_LIMIT_RE.test(message);
+}
+
+async function queryLogsChunked(
+  contract: ethers.Contract,
+  filter: ethers.DeferredTopicFilter,
+  fromBlock: number,
+  toBlock: number,
+): Promise<ethers.EventLog[]> {
+  const events: ethers.EventLog[] = [];
+
+  let cursor = fromBlock;
+  let chunkSize = DEFAULT_LOG_QUERY_CHUNK_SIZE;
+
+  while (cursor <= toBlock) {
+    const chunkEnd = Math.min(toBlock, cursor + chunkSize - 1);
+
+    try {
+      const chunk = await contract.queryFilter(filter, cursor, chunkEnd);
+      for (const log of chunk) {
+        events.push(log as ethers.EventLog);
+      }
+      cursor = chunkEnd + 1;
+    } catch (error) {
+      if (isLogRangeLimitError(error) && chunkSize > MIN_LOG_QUERY_CHUNK_SIZE) {
+        chunkSize = Math.max(MIN_LOG_QUERY_CHUNK_SIZE, Math.floor(chunkSize / 2));
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return events;
+}
+
+async function queryRecentLogsChunked(
+  contract: ethers.Contract,
+  filter: ethers.DeferredTopicFilter,
+  provider: ethers.BrowserProvider,
+  lookbackBlocks = ANALYTICS_LOOKBACK_BLOCKS,
+): Promise<ethers.EventLog[]> {
+  const currentBlock = await provider.getBlockNumber();
+  const fromBlock = Math.max(0, currentBlock - lookbackBlocks);
+  return queryLogsChunked(contract, filter, fromBlock, currentBlock);
 }
 
 // ---------------------------------------------------------------------------
@@ -127,9 +180,7 @@ function SupplyGauges({ tokenAddress }: { tokenAddress: string }) {
           contract.decimals() as Promise<bigint>,
         ]);
 
-        // Query mint/burn from Transfer events
-        const currentBlock = await provider.getBlockNumber();
-        const fromBlock = Math.max(0, currentBlock - 50_000);
+        // Query mint/burn from recent Transfer events.
         const zeroAddr = ethers.ZeroAddress;
 
         const [mintFilter, burnFilter] = [
@@ -138,8 +189,8 @@ function SupplyGauges({ tokenAddress }: { tokenAddress: string }) {
         ];
 
         const [mintLogs, burnLogs] = await Promise.all([
-          contract.queryFilter(mintFilter, fromBlock),
-          contract.queryFilter(burnFilter, fromBlock),
+          queryRecentLogsChunked(contract, mintFilter, provider),
+          queryRecentLogsChunked(contract, burnFilter, provider),
         ]);
 
         let minted = 0n;
@@ -292,15 +343,13 @@ function HolderDistribution({ tokenAddress }: { tokenAddress: string }) {
       }
 
       try {
-        const currentBlock = await provider.getBlockNumber();
-        const fromBlock = Math.max(0, currentBlock - 50_000);
         const filter = contract.filters.AddressTransferGroup();
-        const logs = await contract.queryFilter(filter, fromBlock);
+        const logs = await queryRecentLogsChunked(contract, filter, provider);
 
         // Build a map of address -> most recent group assignment
         const addrGroup = new Map<string, number>();
         for (const log of logs) {
-          const args = (log as ethers.EventLog).args;
+          const args = log.args;
           const addr = (args[1] as string).toLowerCase();
           const groupId = Number(args[2] as bigint);
           addrGroup.set(addr, groupId);
@@ -533,14 +582,12 @@ function TimelocksSummary({ tokenAddress }: { tokenAddress: string }) {
 
       try {
         // Find addresses with timelocks via ScheduleFunded events
-        const currentBlock = await provider.getBlockNumber();
-        const fromBlock = Math.max(0, currentBlock - 50_000);
         const filter = contract.filters.ScheduleFunded();
-        const logs = await contract.queryFilter(filter, fromBlock);
+        const logs = await queryRecentLogsChunked(contract, filter, provider);
 
         const recipients = new Set<string>();
         for (const log of logs) {
-          const args = (log as ethers.EventLog).args;
+          const args = log.args;
           recipients.add(args[1] as string);
         }
 
@@ -676,16 +723,14 @@ function PendingDividends({ tokenAddress }: { tokenAddress: string }) {
       }
 
       try {
-        const currentBlock = await provider.getBlockNumber();
-        const fromBlock = Math.max(0, currentBlock - 50_000);
         const filter = contract.filters.Funded();
-        const logs = await contract.queryFilter(filter, fromBlock);
+        const logs = await queryRecentLogsChunked(contract, filter, provider);
 
         // Collect unique (token, snapshotId) pairs from Funded events
         const seen = new Set<string>();
         const entries: { token: string; snapshotId: bigint }[] = [];
         for (const log of logs) {
-          const args = (log as ethers.EventLog).args;
+          const args = log.args;
           const token = args[1] as string;
           const snapshotId = args[3] as bigint;
           const key = `${token}-${snapshotId}`;
@@ -802,14 +847,12 @@ function SwapVolume({ tokenAddress }: { tokenAddress: string }) {
       }
 
       try {
-        const currentBlock = await provider.getBlockNumber();
-        const fromBlock = Math.max(0, currentBlock - 50_000);
         const filter = contract.filters.SwapComplete();
-        const logs = await contract.queryFilter(filter, fromBlock);
+        const logs = await queryRecentLogsChunked(contract, filter, provider);
 
         let totalVolume = 0n;
         for (const log of logs) {
-          const args = (log as ethers.EventLog).args;
+          const args = log.args;
           totalVolume += args[2] as bigint; // restrictedTokenAmount
         }
 
@@ -874,16 +917,13 @@ function SnapshotTimeline({ tokenAddress }: { tokenAddress: string }) {
       }
 
       try {
-        const currentBlock = await provider.getBlockNumber();
-        const fromBlock = Math.max(0, currentBlock - 50_000);
         const filter = contract.filters.Snapshot();
-        const logs = await contract.queryFilter(filter, fromBlock);
+        const logs = await queryRecentLogsChunked(contract, filter, provider);
 
         const entries: SnapshotEntry[] = [];
         for (const log of logs) {
-          const eventLog = log as ethers.EventLog;
-          const id = eventLog.args[0] as bigint;
-          const ts = await resolveBlockTimestamp(provider, eventLog.blockNumber);
+          const id = log.args[0] as bigint;
+          const ts = await resolveBlockTimestamp(provider, log.blockNumber);
 
           let totalSupplyAtSnapshot: bigint | null = null;
           try {
@@ -894,7 +934,7 @@ function SnapshotTimeline({ tokenAddress }: { tokenAddress: string }) {
 
           entries.push({
             id,
-            blockNumber: eventLog.blockNumber,
+            blockNumber: log.blockNumber,
             timestamp: ts,
             totalSupply: totalSupplyAtSnapshot,
           });

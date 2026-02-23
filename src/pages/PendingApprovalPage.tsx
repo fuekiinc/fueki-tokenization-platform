@@ -434,9 +434,10 @@ export default function PendingApprovalPage() {
                     You will be receiving an email with an invoice to pay for the
                     subscription required to access the tokenization platform. You
                     can either pay <strong className="text-[var(--text-primary)]">$200 per month</strong> or{' '}
-                    <strong className="text-[var(--text-primary)]">$1,800 per year</strong> for
-                    access, and you will require access in order to interact/transfer/distribute
-                    your security tokens.
+                    <strong className="text-[var(--text-primary)]">$1,800 per year</strong>, or
+                    select <strong className="text-[var(--text-primary)]">Full Service</strong> with
+                    bespoke pricing (invoice sent based on your requirements). Platform access is
+                    required in order to interact, transfer, and distribute your security tokens.
                   </p>
                 </div>
               </div>

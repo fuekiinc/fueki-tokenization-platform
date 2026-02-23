@@ -33,6 +33,7 @@ export interface DocumentValidation {
 export interface DocumentState {
   parsedDocuments: ParsedDocument[];
   currentDocument: ParsedDocument | null;
+  currentDocumentFile: File | null;
   uploads: UploadProgress[];
   validations: Map<string, DocumentValidation>;
   isParsingDocument: boolean;
@@ -43,6 +44,7 @@ export interface DocumentActions {
   addDocument: (doc: ParsedDocument) => void;
   removeDocument: (hash: string) => void;
   setCurrentDocument: (doc: ParsedDocument | null) => void;
+  setCurrentDocumentFile: (file: File | null) => void;
   clearDocuments: () => void;
   // Upload management
   startUpload: (fileId: string, fileName: string) => void;
@@ -72,6 +74,7 @@ export type DocumentStore = DocumentState & DocumentActions;
 const initialDocumentsState: DocumentState = {
   parsedDocuments: [],
   currentDocument: null,
+  currentDocumentFile: null,
   uploads: [],
   validations: new Map(),
   isParsingDocument: false,
@@ -106,10 +109,13 @@ export const useDocumentStore = create<DocumentStore>()((set, get) => ({
 
   setCurrentDocument: (doc) => set({ currentDocument: doc }),
 
+  setCurrentDocumentFile: (file) => set({ currentDocumentFile: file }),
+
   clearDocuments: () =>
     set({
       parsedDocuments: [],
       currentDocument: null,
+      currentDocumentFile: null,
       parseError: null,
     }),
 
@@ -187,6 +193,8 @@ export const selectParsedDocuments = (state: DocumentStore) =>
   state.parsedDocuments;
 export const selectCurrentDocument = (state: DocumentStore) =>
   state.currentDocument;
+export const selectCurrentDocumentFile = (state: DocumentStore) =>
+  state.currentDocumentFile;
 export const selectUploads = (state: DocumentStore) => state.uploads;
 export const selectActiveUploads = (state: DocumentStore) =>
   state.uploads.filter((u) => u.status === 'uploading' || u.status === 'parsing');

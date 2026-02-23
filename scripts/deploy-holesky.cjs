@@ -2,9 +2,10 @@ const hre = require("hardhat");
 
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
+  const network = await hre.ethers.provider.getNetwork();
 
   console.log("=".repeat(60));
-  console.log("Deploying contracts to Holesky testnet");
+  console.log(`Deploying contracts to ${hre.network.name} (chainId: ${network.chainId})`);
   console.log("=".repeat(60));
   console.log("Deployer address:", deployer.address);
 
@@ -12,7 +13,7 @@ async function main() {
   console.log("Deployer balance:", hre.ethers.formatEther(balance), "ETH");
 
   if (balance === 0n) {
-    console.error("ERROR: Deployer has zero balance. Fund the account with Holesky ETH first.");
+    console.error("ERROR: Deployer has zero balance. Fund the deployer account before retrying.");
     process.exit(1);
   }
 
@@ -63,7 +64,7 @@ async function main() {
   // ---------------------------------------------------------------
   console.log("[5/6] Deploying AssetBackedExchange...");
   const AssetBackedExchange = await hre.ethers.getContractFactory("AssetBackedExchange");
-  const assetBackedExchange = await AssetBackedExchange.deploy();
+  const assetBackedExchange = await AssetBackedExchange.deploy(deployer.address);
   await assetBackedExchange.waitForDeployment();
   const assetBackedExchangeAddress = await assetBackedExchange.getAddress();
   console.log("  AssetBackedExchange deployed to:", assetBackedExchangeAddress);
@@ -73,7 +74,7 @@ async function main() {
   // ---------------------------------------------------------------
   console.log("[6/6] Deploying LiquidityPoolAMM...");
   const LiquidityPoolAMM = await hre.ethers.getContractFactory("LiquidityPoolAMM");
-  const liquidityPoolAMM = await LiquidityPoolAMM.deploy();
+  const liquidityPoolAMM = await LiquidityPoolAMM.deploy(deployer.address);
   await liquidityPoolAMM.waitForDeployment();
   const liquidityPoolAMMAddress = await liquidityPoolAMM.getAddress();
   console.log("  LiquidityPoolAMM deployed to:", liquidityPoolAMMAddress);
@@ -83,7 +84,7 @@ async function main() {
   // ---------------------------------------------------------------
   console.log("");
   console.log("=".repeat(60));
-  console.log("DEPLOYMENT COMPLETE - Holesky Testnet (Chain ID: 17000)");
+  console.log(`DEPLOYMENT COMPLETE - ${hre.network.name} (chainId: ${network.chainId})`);
   console.log("=".repeat(60));
   console.log("WrappedAssetFactory:      ", wrappedAssetFactoryAddress);
   console.log("AssetExchange:            ", assetExchangeAddress);

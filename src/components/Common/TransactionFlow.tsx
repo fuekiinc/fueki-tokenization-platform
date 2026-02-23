@@ -60,6 +60,7 @@ import { SUPPORTED_NETWORKS } from '../../contracts/addresses.ts';
 import { useWalletStore, getProvider } from '../../store/walletStore.ts';
 import { addPendingTransaction } from '../../lib/transactionRecovery.ts';
 import type { PendingTransaction } from '../../lib/transactionRecovery.ts';
+import { parseContractError } from '../../lib/blockchain/contracts.ts';
 import Spinner from './Spinner.tsx';
 import OctopusLoader from './OctopusLoader.tsx';
 
@@ -729,14 +730,12 @@ export function useTransactionFlow(): UseTransactionFlowReturn {
             walletTimeoutRef.current = null;
           }
 
-          const message =
-            err instanceof Error ? err.message : 'Transaction failed';
+          const rawMessage = err instanceof Error ? err.message : String(err);
+          const message = parseContractError(err);
 
           // User rejected -- go back to review
           const isUserRejection =
-            message.includes('user rejected') ||
-            message.includes('ACTION_REJECTED') ||
-            message.includes('User denied');
+            /user rejected|ACTION_REJECTED|user denied/i.test(rawMessage);
 
           if (isUserRejection) {
             setPhase('review');

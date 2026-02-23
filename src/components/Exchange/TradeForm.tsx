@@ -23,6 +23,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { Link } from 'react-router-dom';
 import {
   ArrowDown,
   Check,
@@ -61,6 +62,8 @@ interface TradeFormProps {
   onOrderCreated: () => void;
   /** Disable AMM mode when AMM contracts are not deployed on the active chain. */
   enableAMM?: boolean;
+  /** Show Orbital AMM fallback when the legacy AMM is unavailable. */
+  orbitalFallbackEnabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +75,7 @@ export default function TradeForm({
   contractService,
   onOrderCreated,
   enableAMM = true,
+  orbitalFallbackEnabled = false,
 }: TradeFormProps) {
   const addTrade = useTradeStore((s) => s.addTrade);
 
@@ -738,7 +742,23 @@ export default function TradeForm({
 
       {!enableAMM && (
         <div className="rounded-xl border border-amber-500/15 bg-amber-500/[0.05] px-4 py-3 text-xs text-amber-300">
-          AMM unavailable on this network. Limit orders remain fully available.
+          <p>
+            {orbitalFallbackEnabled
+              ? 'Legacy AMM is not deployed on this network. Limit orders remain fully available.'
+              : 'AMM unavailable on this network. Limit orders remain fully available.'}
+          </p>
+          {orbitalFallbackEnabled && (
+            <Link
+              to="/advanced"
+              className={clsx(
+                'mt-3 inline-flex items-center rounded-lg border border-cyan-400/30',
+                'bg-cyan-500/10 px-3 py-1.5 text-[11px] font-semibold text-cyan-300',
+                'transition-colors hover:bg-cyan-500/20 hover:text-cyan-200',
+              )}
+            >
+              Open Orbital AMM
+            </Link>
+          )}
         </div>
       )}
 

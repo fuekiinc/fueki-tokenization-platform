@@ -24,6 +24,7 @@ const PLANS: {
   price: string;
   period: string;
   detail: string;
+  subDetail?: string;
   badge?: string;
 }[] = [
   {
@@ -40,6 +41,17 @@ const PLANS: {
     period: '/year',
     detail: 'Billed annually. Save $600 per year.',
     badge: 'Save 25%',
+  },
+  {
+    id: 'full_service',
+    name: 'Full Service',
+    price: 'Bespoke pricing',
+    period: '',
+    detail:
+      'The Fueki team personally handles your tokenization process.',
+    subDetail:
+      'You still get full platform access to view, manage, and interact with your token supply and monetize while we provide white-glove configuration and deployment support.',
+    badge: 'White Glove',
   },
 ];
 
@@ -106,7 +118,10 @@ export default function PlanStep({ defaultValue, onNext, onBack }: PlanStepProps
 
                 {/* Plan info */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline gap-1.5">
+                  <p className="text-xs font-semibold tracking-[0.08em] uppercase text-[var(--text-secondary)]">
+                    {plan.name}
+                  </p>
+                  <div className="mt-0.5 flex items-baseline gap-1.5">
                     <span
                       className={clsx(
                         'text-lg font-bold',
@@ -115,9 +130,16 @@ export default function PlanStep({ defaultValue, onNext, onBack }: PlanStepProps
                     >
                       {plan.price}
                     </span>
-                    <span className="text-sm text-[var(--text-muted)]">{plan.period}</span>
+                    {plan.period && (
+                      <span className="text-sm text-[var(--text-muted)]">{plan.period}</span>
+                    )}
                   </div>
                   <p className="text-sm text-[var(--text-muted)] mt-0.5">{plan.detail}</p>
+                  {plan.subDetail && (
+                    <p className="text-xs text-[var(--text-muted)] mt-1.5 leading-relaxed">
+                      {plan.subDetail}
+                    </p>
+                  )}
                 </div>
               </div>
             </button>
@@ -127,7 +149,8 @@ export default function PlanStep({ defaultValue, onNext, onBack }: PlanStepProps
 
       <p className="text-xs text-[var(--text-muted)] leading-relaxed">
         After your application is approved, you will receive an invoice via email
-        for the plan you selected above.
+        for the plan you selected above. Full Service is bespoke priced and
+        invoiced based on your specific requirements.
       </p>
 
       {/* Navigation */}

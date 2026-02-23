@@ -9,6 +9,7 @@ import authRoutes from './routes/auth';
 import kycRoutes from './routes/kyc';
 import adminRoutes from './routes/admin';
 import supportRoutes from './routes/support';
+import mintRequestRoutes from './routes/mintRequests';
 
 const app = express();
 
@@ -50,6 +51,17 @@ const supportLimiter = rateLimit({
   message: { error: { message: 'Too many support requests, please try again later', code: 'RATE_LIMIT' } },
 });
 
+const mintRequestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: {
+    error: {
+      message: 'Too many mint approval submissions, please try again later',
+      code: 'RATE_LIMIT',
+    },
+  },
+});
+
 // Body parsing
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
@@ -64,6 +76,7 @@ app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/kyc', kycRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/support', supportLimiter, supportRoutes);
+app.use('/api/mint-requests', mintRequestLimiter, mintRequestRoutes);
 
 // Global error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

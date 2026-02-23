@@ -20,9 +20,15 @@ import { OrbitalFactoryABI } from '../../contracts/abis/OrbitalFactory.ts';
 import { OrbitalRouterABI } from '../../contracts/abis/OrbitalRouter.ts';
 import { OrbitalPoolABI } from '../../contracts/abis/OrbitalPool.ts';
 import { WrappedAssetABI } from '../../contracts/abis/WrappedAsset.ts';
-import { getNetworkConfig } from '../../contracts/addresses';
+import { getNetworkConfig, getNetworkMetadata } from '../../contracts/addresses';
 import { multicallSameTarget } from './multicall.ts';
 import { parseContractError } from './contracts.ts';
+import {
+  getOrderedRpcEndpoints,
+  isRetryableRpcError,
+  reportRpcEndpointFailure,
+  reportRpcEndpointSuccess,
+} from '../rpc/endpoints';
 import {
   getCached,
   invalidateChainCache,
@@ -65,10 +71,12 @@ export interface OrbitalTokenInfo {
 export class OrbitalContractService {
   private provider: ethers.BrowserProvider;
   private chainId: number;
+  private readProviders: Map<string, ethers.JsonRpcProvider>;
 
   constructor(provider: ethers.BrowserProvider, chainId: number) {
     this.provider = provider;
     this.chainId = chainId;
+    this.readProviders = new Map();
   }
 
   private cacheKey(key: string): string {
@@ -85,6 +93,50 @@ export class OrbitalContractService {
 
   async getSigner(): Promise<ethers.Signer> {
     return this.provider.getSigner();
+  }
+
+  private getReadProvider(endpoint: string): ethers.JsonRpcProvider {
+    const cached = this.readProviders.get(endpoint);
+    if (cached) return cached;
+
+    const provider = new ethers.JsonRpcProvider(endpoint, this.chainId);
+    this.readProviders.set(endpoint, provider);
+    return provider;
+  }
+
+  private async withReadProvider<T>(
+    operation: string,
+    callback: (provider: ethers.Provider) => Promise<T>,
+  ): Promise<T> {
+    const endpoints = getOrderedRpcEndpoints(this.chainId);
+    if (endpoints.length === 0) {
+      return callback(this.provider);
+    }
+
+    let lastError: unknown = null;
+
+    for (const endpoint of endpoints) {
+      const readProvider = this.getReadProvider(endpoint);
+      try {
+        const result = await callback(readProvider);
+        reportRpcEndpointSuccess(this.chainId, endpoint);
+        return result;
+      } catch (error) {
+        lastError = error;
+        if (isRetryableRpcError(error)) {
+          reportRpcEndpointFailure(this.chainId, endpoint);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    logger.warn(
+      `[OrbitalContractService] ${operation} exhausted configured RPC endpoints; falling back to wallet provider.`,
+      lastError instanceof Error ? lastError.message : String(lastError),
+    );
+
+    return callback(this.provider);
   }
 
   // -----------------------------------------------------------------------
@@ -153,9 +205,11 @@ export class OrbitalContractService {
     const cached = getCached<string[]>(cacheKey);
     if (cached) return cached;
 
-    const factory = this.getFactoryContract();
     try {
-      const result: string[] = await factory.getAllPools();
+      const result = await this.withReadProvider('getAllPools', async (readProvider) => {
+        const factory = this.getFactoryContract(readProvider);
+        return (await factory.getAllPools()) as string[];
+      });
       setCache(cacheKey, result, TTL_POOL);
       return result;
     } catch (error: unknown) {
@@ -169,9 +223,11 @@ export class OrbitalContractService {
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
 
-    const factory = this.getFactoryContract();
     try {
-      const result: bigint = await factory.totalPools();
+      const result = await this.withReadProvider('getTotalPools', async (readProvider) => {
+        const factory = this.getFactoryContract(readProvider);
+        return BigInt(await factory.totalPools());
+      });
       setCache(cacheKey, result, TTL_POOL);
       return result;
     } catch (error: unknown) {
@@ -186,9 +242,14 @@ export class OrbitalContractService {
     const cached = getCached<string[]>(cacheKey);
     if (cached) return cached;
 
-    const factory = this.getFactoryContract();
     try {
-      const result: string[] = await factory.getPoolsForToken(token);
+      const result = await this.withReadProvider(
+        'getPoolsForToken',
+        async (readProvider) => {
+          const factory = this.getFactoryContract(readProvider);
+          return (await factory.getPoolsForToken(token)) as string[];
+        },
+      );
       setCache(cacheKey, result, TTL_POOL);
       return result;
     } catch (error: unknown) {
@@ -198,9 +259,11 @@ export class OrbitalContractService {
 
   /** Look up the pool address for a given token set and concentration. */
   async getPool(tokens: string[], concentration: number): Promise<string> {
-    const factory = this.getFactoryContract();
     try {
-      return await factory.getPool(tokens, concentration);
+      return await this.withReadProvider('getPool', async (readProvider) => {
+        const factory = this.getFactoryContract(readProvider);
+        return (await factory.getPool(tokens, concentration)) as string;
+      });
     } catch (error: unknown) {
       throw new Error(`Failed to look up pool address: ${parseContractError(error)}`);
     }
@@ -223,20 +286,22 @@ export class OrbitalContractService {
     if (cached) return cached;
 
     try {
-      const results = await multicallSameTarget(
-        this.provider,
-        poolAddress,
-        OrbitalPoolABI,
-        [
-          { functionName: 'name' },
-          { functionName: 'symbol' },
-          { functionName: 'getTokens' },
-          { functionName: 'getReserves' },
-          { functionName: 'concentration' },
-          { functionName: 'swapFeeBps' },
-          { functionName: 'totalSupply' },
-          { functionName: 'getInvariant' },
-        ],
+      const results = await this.withReadProvider('getPoolInfo', async (readProvider) =>
+        multicallSameTarget(
+          readProvider,
+          poolAddress,
+          OrbitalPoolABI,
+          [
+            { functionName: 'name' },
+            { functionName: 'symbol' },
+            { functionName: 'getTokens' },
+            { functionName: 'getReserves' },
+            { functionName: 'concentration' },
+            { functionName: 'swapFeeBps' },
+            { functionName: 'totalSupply' },
+            { functionName: 'getInvariant' },
+          ],
+        ),
       );
 
       const info: OrbitalPoolInfo = {
@@ -267,9 +332,11 @@ export class OrbitalContractService {
     const cached = getCached<bigint[]>(cacheKey);
     if (cached) return cached;
 
-    const pool = this.getPoolContract(poolAddress);
     try {
-      const raw: bigint[] = await pool.getReserves();
+      const raw = await this.withReadProvider('getReserves', async (readProvider) => {
+        const pool = this.getPoolContract(poolAddress, readProvider);
+        return (await pool.getReserves()) as bigint[];
+      });
       const reserves = raw.map((r) => BigInt(r));
       setCache(cacheKey, reserves, TTL_POOL);
       return reserves;
@@ -289,9 +356,11 @@ export class OrbitalContractService {
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
 
-    const pool = this.getPoolContract(poolAddress);
     try {
-      const price = BigInt(await pool.getSpotPrice(tokenAIndex, tokenBIndex));
+      const price = await this.withReadProvider('getSpotPrice', async (readProvider) => {
+        const pool = this.getPoolContract(poolAddress, readProvider);
+        return BigInt(await pool.getSpotPrice(tokenAIndex, tokenBIndex));
+      });
       setCache(cacheKey, price, TTL_POOL);
       return price;
     } catch (error: unknown) {
@@ -307,9 +376,18 @@ export class OrbitalContractService {
     amountIn: bigint,
   ): Promise<{ amountOut: bigint; feeAmount: bigint }> {
     this.validateAddress(poolAddress, 'pool');
-    const pool = this.getPoolContract(poolAddress);
     try {
-      const [amountOut, feeAmount] = await pool.getAmountOut(tokenInIndex, tokenOutIndex, amountIn);
+      const [amountOut, feeAmount] = await this.withReadProvider(
+        'getPoolAmountOut',
+        async (readProvider) => {
+          const pool = this.getPoolContract(poolAddress, readProvider);
+          return (await pool.getAmountOut(
+            tokenInIndex,
+            tokenOutIndex,
+            amountIn,
+          )) as [bigint, bigint];
+        },
+      );
       return { amountOut: BigInt(amountOut), feeAmount: BigInt(feeAmount) };
     } catch (error: unknown) {
       throw new Error(`Failed to get swap quote: ${parseContractError(error)}`);
@@ -327,15 +405,17 @@ export class OrbitalContractService {
     if (cached) return cached;
 
     try {
-      const results = await multicallSameTarget(
-        this.provider,
-        tokenAddress,
-        WrappedAssetABI,
-        [
-          { functionName: 'name' },
-          { functionName: 'symbol' },
-          { functionName: 'decimals' },
-        ],
+      const results = await this.withReadProvider('getTokenInfo', async (readProvider) =>
+        multicallSameTarget(
+          readProvider,
+          tokenAddress,
+          WrappedAssetABI,
+          [
+            { functionName: 'name' },
+            { functionName: 'symbol' },
+            { functionName: 'decimals' },
+          ],
+        ),
       );
 
       const info: OrbitalTokenInfo = {
@@ -360,9 +440,11 @@ export class OrbitalContractService {
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
 
-    const pool = this.getPoolContract(poolAddress);
     try {
-      const balance = BigInt(await pool.balanceOf(user));
+      const balance = await this.withReadProvider('getLPBalance', async (readProvider) => {
+        const pool = this.getPoolContract(poolAddress, readProvider);
+        return BigInt(await pool.balanceOf(user));
+      });
       setCache(cacheKey, balance, TTL_BALANCE);
       return balance;
     } catch (error: unknown) {
@@ -378,9 +460,11 @@ export class OrbitalContractService {
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
 
-    const token = this.getTokenContract(tokenAddress);
     try {
-      const balance = BigInt(await token.balanceOf(user));
+      const balance = await this.withReadProvider('getTokenBalance', async (readProvider) => {
+        const token = this.getTokenContract(tokenAddress, readProvider);
+        return BigInt(await token.balanceOf(user));
+      });
       setCache(cacheKey, balance, TTL_BALANCE);
       return balance;
     } catch (error: unknown) {
@@ -397,9 +481,14 @@ export class OrbitalContractService {
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
 
-    const token = this.getTokenContract(tokenAddress);
     try {
-      const allowance = BigInt(await token.allowance(owner, spender));
+      const allowance = await this.withReadProvider(
+        'getTokenAllowance',
+        async (readProvider) => {
+          const token = this.getTokenContract(tokenAddress, readProvider);
+          return BigInt(await token.allowance(owner, spender));
+        },
+      );
       setCache(cacheKey, allowance, TTL_BALANCE);
       return allowance;
     } catch (error: unknown) {
@@ -421,9 +510,19 @@ export class OrbitalContractService {
     this.validateAddress(poolAddress, 'pool');
     this.validateAddress(tokenIn, 'tokenIn');
     this.validateAddress(tokenOut, 'tokenOut');
-    const router = this.getRouterContract();
     try {
-      const [amountOut, feeAmount] = await router.getAmountOut(poolAddress, tokenIn, tokenOut, amountIn);
+      const [amountOut, feeAmount] = await this.withReadProvider(
+        'getRouterAmountOut',
+        async (readProvider) => {
+          const router = this.getRouterContract(readProvider);
+          return (await router.getAmountOut(
+            poolAddress,
+            tokenIn,
+            tokenOut,
+            amountIn,
+          )) as [bigint, bigint];
+        },
+      );
       return { amountOut: BigInt(amountOut), feeAmount: BigInt(feeAmount) };
     } catch (error: unknown) {
       throw new Error(`Failed to get router quote: ${parseContractError(error)}`);
@@ -441,7 +540,7 @@ export class OrbitalContractService {
     swapFeeBps: number,
     name: string,
     symbol: string,
-  ): Promise<ethers.ContractTransactionResponse> {
+  ): Promise<ethers.TransactionResponse> {
     for (let i = 0; i < tokens.length; i++) {
       this.validateAddress(tokens[i], `tokens[${i}]`);
     }
@@ -474,7 +573,7 @@ export class OrbitalContractService {
     amountIn: bigint,
     minAmountOut: bigint,
     deadline: bigint,
-  ): Promise<ethers.ContractTransactionResponse> {
+  ): Promise<ethers.TransactionResponse> {
     this.validateAddress(poolAddress, 'pool');
     this.validateAddress(tokenIn, 'tokenIn');
     this.validateAddress(tokenOut, 'tokenOut');
@@ -510,7 +609,7 @@ export class OrbitalContractService {
     amounts: bigint[],
     minLiquidity: bigint,
     deadline: bigint,
-  ): Promise<ethers.ContractTransactionResponse> {
+  ): Promise<ethers.TransactionResponse> {
     this.validateAddress(poolAddress, 'pool');
     const signer = await this.getSigner();
     const router = this.getRouterContract(signer);
@@ -538,7 +637,7 @@ export class OrbitalContractService {
     liquidity: bigint,
     minAmounts: bigint[],
     deadline: bigint,
-  ): Promise<ethers.ContractTransactionResponse> {
+  ): Promise<ethers.TransactionResponse> {
     this.validateAddress(poolAddress, 'pool');
     const signer = await this.getSigner();
     const router = this.getRouterContract(signer);
@@ -562,7 +661,7 @@ export class OrbitalContractService {
     tokenAddress: string,
     spender: string,
     amount: bigint,
-  ): Promise<ethers.ContractTransactionResponse> {
+  ): Promise<ethers.TransactionResponse> {
     this.validateAddress(tokenAddress, 'token');
     this.validateAddress(spender, 'spender');
     const signer = await this.getSigner();
@@ -576,7 +675,7 @@ export class OrbitalContractService {
   async approveRouter(
     tokenAddress: string,
     amount: bigint,
-  ): Promise<ethers.ContractTransactionResponse> {
+  ): Promise<ethers.TransactionResponse> {
     const config = getNetworkConfig(this.chainId);
     if (!config || !config.orbitalRouterAddress) {
       throw new Error(`OrbitalRouter not deployed on chain ${this.chainId}`);
@@ -589,7 +688,7 @@ export class OrbitalContractService {
     tokenAddress: string,
     poolAddress: string,
     amount: bigint,
-  ): Promise<ethers.ContractTransactionResponse> {
+  ): Promise<ethers.TransactionResponse> {
     return this.approveToken(tokenAddress, poolAddress, amount);
   }
 
@@ -621,7 +720,7 @@ export class OrbitalContractService {
 
   /** Wait for a transaction to be mined and return the receipt. */
   async waitForTransaction(
-    tx: ethers.ContractTransactionResponse,
+    tx: ethers.TransactionResponse,
     confirmations = 1,
   ): Promise<ethers.TransactionReceipt> {
     const receipt = await tx.wait(confirmations);
@@ -652,25 +751,256 @@ export class OrbitalContractService {
    * Execute a write transaction with upfront gas estimation.
    *
    * Gas estimation serves as a dry-run: if the transaction would revert,
-   * the estimateGas call fails first with a descriptive Solidity error.
-   * A 20% buffer is added on top of the estimate.
+   * the estimateGas call fails first with a descriptive Solidity error. On
+   * transient RPC failures, this falls back to chain-scoped readonly RPC
+   * endpoints and finally submits without a precomputed gas limit.
    */
+  private resolveContractAddress(contract: ethers.Contract): string {
+    const target = contract.target;
+    if (typeof target === 'string' && ethers.isAddress(target)) {
+      return target;
+    }
+    throw new Error('Unable to resolve contract target address');
+  }
+
+  private async estimateGasWithFallback(
+    contract: ethers.Contract,
+    method: string,
+    args: unknown[],
+    signerAddress: string,
+    overrides?: ethers.Overrides,
+  ): Promise<bigint | null> {
+    const methodRef = (contract as Record<string, unknown>)[method] as {
+      estimateGas: (...params: unknown[]) => Promise<bigint>;
+      populateTransaction: (...params: unknown[]) => Promise<ethers.TransactionRequest>;
+    } | undefined;
+
+    if (!methodRef || typeof methodRef.estimateGas !== 'function') {
+      throw new Error(`Contract method unavailable: ${method}`);
+    }
+
+    try {
+      return await methodRef.estimateGas(...args, overrides ?? {});
+    } catch (error) {
+      if (!isRetryableRpcError(error)) {
+        throw error;
+      }
+
+      const populated = await methodRef.populateTransaction(...args, overrides ?? {});
+      const toAddress = (typeof populated.to === 'string' && populated.to) || this.resolveContractAddress(contract);
+
+      try {
+        return await this.withReadProvider(
+          `${method}:estimateGas`,
+          async (readProvider) => readProvider.estimateGas({
+            from: signerAddress,
+            to: toAddress,
+            data: populated.data,
+            value: populated.value,
+          }),
+        );
+      } catch (fallbackError) {
+        if (!isRetryableRpcError(fallbackError)) {
+          throw fallbackError;
+        }
+
+        logger.warn(
+          `[OrbitalContractService] ${method} gas estimation failed on all RPC endpoints; submitting without fixed gas limit.`,
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+        );
+        return null;
+      }
+    }
+  }
+
+  private getWalletChainParams(preferredRpcUrl?: string): {
+    chainId: string;
+    chainName: string;
+    nativeCurrency: { name: string; symbol: string; decimals: number };
+    rpcUrls: string[];
+    blockExplorerUrls?: string[];
+  } {
+    const metadata = getNetworkMetadata(this.chainId);
+    const chainName = metadata?.name ?? `Chain ${this.chainId}`;
+    const nativeCurrency = metadata?.nativeCurrency ?? {
+      name: 'Ether',
+      symbol: 'ETH',
+      decimals: 18,
+    };
+    const orderedEndpoints = getOrderedRpcEndpoints(this.chainId);
+    const rpcUrls = preferredRpcUrl
+      ? [preferredRpcUrl, ...orderedEndpoints.filter((endpoint) => endpoint !== preferredRpcUrl)]
+      : orderedEndpoints;
+    const blockExplorerUrls = metadata?.blockExplorer
+      ? [metadata.blockExplorer]
+      : undefined;
+
+    return {
+      chainId: ethers.toQuantity(this.chainId),
+      chainName,
+      nativeCurrency,
+      rpcUrls,
+      blockExplorerUrls,
+    };
+  }
+
+  private async reconfigureWalletRpc(preferredRpcUrl: string): Promise<void> {
+    const params = this.getWalletChainParams(preferredRpcUrl);
+    const chainRef = { chainId: params.chainId };
+    let addError: unknown = null;
+
+    try {
+      await this.provider.send('wallet_addEthereumChain', [params]);
+    } catch (error) {
+      addError = error;
+    }
+
+    try {
+      await this.provider.send('wallet_switchEthereumChain', [chainRef]);
+    } catch (switchError) {
+      if (addError) {
+        throw addError;
+      }
+      throw switchError;
+    }
+  }
+
+  private async tryWalletRpcFailoverAndSend(
+    signer: ethers.Signer,
+    txRequest: ethers.TransactionRequest,
+  ): Promise<ethers.TransactionResponse | null> {
+    const endpoints = getOrderedRpcEndpoints(this.chainId);
+    const fallbackEndpoints = endpoints.slice(1);
+    if (fallbackEndpoints.length === 0) {
+      return null;
+    }
+
+    let lastError: unknown = null;
+
+    for (const endpoint of fallbackEndpoints) {
+      try {
+        await this.reconfigureWalletRpc(endpoint);
+      } catch (error) {
+        lastError = error;
+        continue;
+      }
+
+      try {
+        const tx = await signer.sendTransaction(txRequest);
+        reportRpcEndpointSuccess(this.chainId, endpoint);
+        return tx;
+      } catch (error) {
+        lastError = error;
+        if (isRetryableRpcError(error)) {
+          reportRpcEndpointFailure(this.chainId, endpoint);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    logger.warn(
+      '[OrbitalContractService] Wallet RPC endpoint failover did not recover sendTransaction.',
+      lastError instanceof Error ? lastError.message : String(lastError),
+    );
+    return null;
+  }
+
+  private async signAndBroadcastWithReadRpcFallback(
+    signer: ethers.Signer,
+    signerAddress: string,
+    txRequest: ethers.TransactionRequest,
+  ): Promise<ethers.TransactionResponse> {
+    const [nonce, feeData] = await Promise.all([
+      this.withReadProvider('getTransactionCount', async (provider) =>
+        provider.getTransactionCount(signerAddress, 'pending'),
+      ),
+      this.withReadProvider('getFeeData', async (provider) => provider.getFeeData()),
+    ]);
+
+    const signingRequest: ethers.TransactionRequest = {
+      ...txRequest,
+      chainId: this.chainId,
+      nonce,
+    };
+
+    const hasEip1559 =
+      feeData.maxFeePerGas !== null && feeData.maxPriorityFeePerGas !== null;
+    if (hasEip1559) {
+      signingRequest.type = 2;
+      signingRequest.maxFeePerGas =
+        signingRequest.maxFeePerGas ?? feeData.maxFeePerGas ?? undefined;
+      signingRequest.maxPriorityFeePerGas =
+        signingRequest.maxPriorityFeePerGas ??
+        feeData.maxPriorityFeePerGas ??
+        undefined;
+      delete signingRequest.gasPrice;
+    } else if (feeData.gasPrice !== null && signingRequest.gasPrice == null) {
+      signingRequest.gasPrice = feeData.gasPrice;
+    }
+
+    const signedRawTx = await signer.signTransaction(signingRequest);
+    return this.withReadProvider('broadcastTransaction', async (provider) =>
+      provider.broadcastTransaction(signedRawTx),
+    );
+  }
+
   private async executeWrite(
     contract: ethers.Contract,
     method: string,
     args: unknown[],
     overrides?: ethers.Overrides,
-  ): Promise<ethers.ContractTransactionResponse> {
+  ): Promise<ethers.TransactionResponse> {
+    const methodRef = (contract as Record<string, unknown>)[method] as {
+      populateTransaction: (...params: unknown[]) => Promise<ethers.TransactionRequest>;
+    } | undefined;
+
+    if (!methodRef || typeof methodRef.populateTransaction !== 'function') {
+      throw new Error(`Contract method unavailable: ${method}`);
+    }
+
     try {
-      const gasEstimate: bigint = await contract[method].estimateGas(
-        ...args,
-        overrides ?? {},
+      const signer = await this.getSigner();
+      const signerAddress = await signer.getAddress();
+      const populated = await methodRef.populateTransaction(...args, overrides ?? {});
+      const toAddress = (typeof populated.to === 'string' && populated.to) || this.resolveContractAddress(contract);
+
+      const gasEstimate = await this.estimateGasWithFallback(
+        contract,
+        method,
+        args,
+        signerAddress,
+        overrides,
       );
-      const gasLimit = (gasEstimate * 120n) / 100n;
-      return await contract[method](...args, {
+
+      const txRequest: ethers.TransactionRequest = {
+        ...populated,
         ...(overrides ?? {}),
-        gasLimit,
-      });
+        to: toAddress,
+      };
+
+      if (gasEstimate !== null) {
+        txRequest.gasLimit = (gasEstimate * 120n) / 100n;
+      }
+
+      try {
+        return await signer.sendTransaction(txRequest);
+      } catch (sendError) {
+        if (!isRetryableRpcError(sendError)) {
+          throw sendError;
+        }
+
+        const failoverTx = await this.tryWalletRpcFailoverAndSend(signer, txRequest);
+        if (failoverTx) {
+          return failoverTx;
+        }
+
+        return await this.signAndBroadcastWithReadRpcFallback(
+          signer,
+          signerAddress,
+          txRequest,
+        );
+      }
     } catch (err: unknown) {
       const userMessage = parseContractError(err);
       logger.error(`[OrbitalContractService] ${method} failed:`, err);

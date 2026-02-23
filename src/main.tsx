@@ -14,8 +14,21 @@ import {
   THIRDWEB_WALLETS,
   thirdwebClient,
 } from './lib/thirdweb'
+import { installThirdwebNetworkGuard } from './lib/thirdwebNetworkGuard'
 import { WalletConnectionController } from './wallet/WalletConnectionController'
 
+installThirdwebNetworkGuard()
+
+function isLikelyExtensionNoise(message: string, filename?: string) {
+  const lowerMessage = message.toLowerCase()
+  const lowerFilename = (filename ?? '').toLowerCase()
+
+  if (lowerFilename.startsWith('chrome-extension://')) return true
+  if (lowerFilename.startsWith('moz-extension://')) return true
+  if (lowerMessage.includes('message port closed before a response was received')) return true
+  if (lowerMessage.includes('net::err_file_not_found')) return true
+  return false
+}
 
 datadogRum.init({
     applicationId: '1ba97554-02c8-446b-acc7-89d85d2b7295',
@@ -42,6 +55,15 @@ datadogRum.init({
 // ---------------------------------------------------------------------------
 
 window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
+  const reason =
+    event.reason instanceof Error
+      ? event.reason.message
+      : String(event.reason ?? '')
+
+  if (isLikelyExtensionNoise(reason)) {
+    return
+  }
+
   const classified = classifyError(event.reason)
   logger.error(
     `[global] Unhandled promise rejection [${classified.category}]: ${classified.message}`,
@@ -59,6 +81,7 @@ window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => 
 window.addEventListener('error', (event: ErrorEvent) => {
   // Ignore ResizeObserver errors (benign browser noise).
   if (event.message?.includes('ResizeObserver')) return
+  if (isLikelyExtensionNoise(event.message ?? '', event.filename)) return
 
   const classified = classifyError(event.error ?? event.message)
   logger.error(

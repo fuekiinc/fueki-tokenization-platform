@@ -241,6 +241,13 @@ export default function TermsContent() {
             $1,800.00 USD per year, billed annually (equivalent to
             $150.00 per month).
           </li>
+          <li>
+            <span className="font-medium text-[var(--text-primary)]">Full Service Plan:</span>{' '}
+            Bespoke pricing for white-glove tokenization support, where the Fueki
+            team manages token configuration and deployment while you retain platform
+            access to manage and monetize your token supply. Pricing is invoiced
+            based on your specific requirements.
+          </li>
         </ul>
         <p className="text-[var(--text-secondary)] leading-relaxed mt-3 mb-3">
           All fees are non-refundable except as expressly set forth herein

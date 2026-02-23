@@ -75,6 +75,12 @@ export const config = {
     requestRecipient: process.env.SUPPORT_EMAIL_TO || 'mark@fueki-tech.com',
   },
 
+  // Mint approval workflow inbox and action-link TTL
+  mintApproval: {
+    requestRecipient: process.env.MINT_APPROVAL_EMAIL_TO || 'mark@fueki-tech.com',
+    actionTokenTtlHours: parseInt(process.env.MINT_APPROVAL_TOKEN_TTL_HOURS || '168', 10), // 7 days
+  },
+
   // Local upload fallback (dev only, not used on Cloud Run)
   upload: {
     dir: process.env.UPLOAD_DIR || './uploads',

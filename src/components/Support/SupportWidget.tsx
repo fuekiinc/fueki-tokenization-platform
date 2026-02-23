@@ -6,6 +6,7 @@ import { datadogRum } from '@datadog/browser-rum';
 import { LifeBuoy, Loader2, Send, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useLocation } from 'react-router-dom';
+import { useTheme } from '../../hooks/useTheme';
 import { submitSupportRequest } from '../../lib/api/support';
 import logger from '../../lib/logger';
 import { useAuthStore } from '../../store/authStore';
@@ -51,6 +52,7 @@ const DEFAULT_FORM_STATE: SupportFormState = {
 export default function SupportWidget() {
   const user = useAuthStore((s) => s.user);
   const location = useLocation();
+  const { isDark } = useTheme();
 
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -253,7 +255,10 @@ export default function SupportWidget() {
           aria-describedby={descId}
           className={clsx(
             'w-[min(92vw,24rem)] rounded-2xl border border-[var(--border-primary)]',
-            'bg-[color:rgba(5,25,39,0.92)] backdrop-blur-xl shadow-2xl shadow-black/30',
+            isDark
+              ? 'bg-[color:rgba(5,25,39,0.92)] shadow-2xl shadow-black/30'
+              : 'bg-[color:rgba(255,255,255,0.96)] shadow-2xl shadow-slate-900/10',
+            'backdrop-blur-xl',
             'px-4 py-4 sm:px-5 sm:py-5',
           )}
         >
@@ -469,8 +474,11 @@ export default function SupportWidget() {
         onClick={toggle}
         className={clsx(
           'group inline-flex h-12 w-12 items-center justify-center rounded-full',
-          'border border-[var(--border-accent)] bg-[color:rgba(12,36,53,0.94)] text-[var(--accent-secondary)]',
-          'shadow-lg shadow-black/30 transition-transform hover:-translate-y-0.5 hover:shadow-xl',
+          'border border-[var(--border-accent)]',
+          isDark
+            ? 'bg-[color:rgba(12,36,53,0.94)] text-[var(--accent-secondary)] shadow-lg shadow-black/30'
+            : 'bg-[color:rgba(255,255,255,0.96)] text-[var(--accent-primary)] shadow-lg shadow-slate-900/10',
+          'transition-transform hover:-translate-y-0.5 hover:shadow-xl',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)]',
         )}
       >

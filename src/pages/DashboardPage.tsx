@@ -501,11 +501,6 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           {/* Left: title + subtitle */}
           <div className="min-w-0">
-            <FuekiBrand
-              variant="full"
-              className="mb-4"
-              imageClassName="h-10 w-auto drop-shadow-[0_12px_26px_rgba(8,24,38,0.35)]"
-            />
             <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
               {getGreeting()}, {displayName}
             </h1>

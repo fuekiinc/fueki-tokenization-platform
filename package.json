@@ -16,7 +16,9 @@
     "test:all": "npm run test:unit && npm run test:e2e:smoke",
     "preview": "vite preview",
     "frontend:update": "tsc -b && vite build && gcloud run deploy fueki-frontend --source . --region us-central1",
-    "backend:update": "cd backend && npm run build && cd .. && gcloud run deploy fueki-backend --source backend --region us-central1"
+    "backend:update": "cd backend && npm run build && cd .. && gcloud run deploy fueki-backend --source backend --region us-central1",
+    "frontend:europe": "tsc -b && vite build && gcloud run deploy fueki-frontend --source . --region europe-west1",
+    "backend:europe": "cd backend && npm run build && cd .. && gcloud run deploy fueki-backend --source backend --region europe-west1"
   },
   "dependencies": {
     "@datadog/browser-logs": "^6.27.1",

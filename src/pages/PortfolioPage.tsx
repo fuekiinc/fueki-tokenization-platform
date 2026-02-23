@@ -141,6 +141,11 @@ function pnlColorClass(value: number): string {
   return 'text-gray-500';
 }
 
+function hasPositiveBalance(asset: WrappedAsset): boolean {
+  const balance = Number.parseFloat(asset.balance ?? '0');
+  return Number.isFinite(balance) && balance > 0;
+}
+
 // ---------------------------------------------------------------------------
 // Skeleton Loaders
 // ---------------------------------------------------------------------------
@@ -594,8 +599,13 @@ export default function PortfolioPage() {
 
   // ---- Derived data --------------------------------------------------------
 
+  const visibleWrappedAssets = useMemo(
+    () => wrappedAssets.filter(hasPositiveBalance),
+    [wrappedAssets],
+  );
+
   const filteredAssets = useMemo(() => {
-    let result = [...wrappedAssets];
+    let result = [...visibleWrappedAssets];
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -626,7 +636,7 @@ export default function PortfolioPage() {
     });
 
     return result;
-  }, [wrappedAssets, searchQuery, sortField, sortDir]);
+  }, [visibleWrappedAssets, searchQuery, sortField, sortDir]);
 
   // Pre-compute performance data for each filtered asset
   const performanceMap = useMemo(() => {
@@ -932,9 +942,9 @@ export default function PortfolioPage() {
 
   // ---- Connected -----------------------------------------------------------
 
-  const portfolioValue = computePortfolioValue(wrappedAssets);
-  const totalLocked = computeTotalLocked(wrappedAssets);
-  const uniqueDocTypes = computeUniqueDocTypes(wrappedAssets);
+  const portfolioValue = computePortfolioValue(visibleWrappedAssets);
+  const totalLocked = computeTotalLocked(visibleWrappedAssets);
+  const uniqueDocTypes = computeUniqueDocTypes(visibleWrappedAssets);
   const hasTrades = tradeHistory.length > 0;
 
   return (
@@ -992,10 +1002,10 @@ export default function PortfolioPage() {
       {/* ================================================================== */}
       {/* Performance Metrics                                                */}
       {/* ================================================================== */}
-      {!isLoadingAssets && wrappedAssets.length > 0 && (
+      {!isLoadingAssets && visibleWrappedAssets.length > 0 && (
         <div className="mb-12 sm:mb-16">
           <PerformanceMetrics
-            assets={wrappedAssets}
+            assets={visibleWrappedAssets}
             trades={tradeHistory}
           />
         </div>
@@ -1055,7 +1065,7 @@ export default function PortfolioPage() {
                 'hover:-translate-y-0.5 hover:border-white/[0.10] hover:shadow-lg hover:shadow-black/20',
               )}
               role="group"
-              aria-label={`Total Assets: ${wrappedAssets.length}`}
+              aria-label={`Total Assets: ${visibleWrappedAssets.length}`}
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 ring-1 ring-white/[0.06]">
@@ -1066,7 +1076,7 @@ export default function PortfolioPage() {
                 </p>
               </div>
               <p className="mt-6 text-3xl font-bold tracking-tight text-white">
-                {wrappedAssets.length}
+                {visibleWrappedAssets.length}
               </p>
             </div>
 
@@ -1128,14 +1138,14 @@ export default function PortfolioPage() {
       {/* ================================================================== */}
       {/* Charts Section                                                     */}
       {/* ================================================================== */}
-      {(wrappedAssets.length > 0 || isLoadingAssets) && (
+      {(visibleWrappedAssets.length > 0 || isLoadingAssets) && (
         <div className="mb-12 sm:mb-16 grid grid-cols-1 gap-6 sm:gap-8 lg:grid-cols-2">
           <PortfolioValueChart
-            assets={wrappedAssets}
+            assets={visibleWrappedAssets}
             isLoading={isLoadingAssets}
           />
           <AssetAllocationChart
-            assets={wrappedAssets}
+            assets={visibleWrappedAssets}
             isLoading={isLoadingAssets}
           />
         </div>
@@ -1276,12 +1286,16 @@ export default function PortfolioPage() {
             title={
               searchQuery
                 ? 'No assets match your search'
-                : 'No tokenized assets yet'
+                : wrappedAssets.length > 0
+                  ? 'No assets with a non-zero balance'
+                  : 'No tokenized assets yet'
             }
             description={
               searchQuery
                 ? 'Try adjusting your search query or clearing filters.'
-                : 'Upload a document and mint your first wrapped asset to get started.'
+                : wrappedAssets.length > 0
+                  ? 'Your wallet currently holds zero units of all tracked assets. Mint or receive tokens to populate this view.'
+                  : 'Upload a document and mint your first wrapped asset to get started.'
             }
             action={
               !searchQuery ? (

@@ -72,6 +72,39 @@ function dedupeStable(values: string[]): string[] {
   return result;
 }
 
+function extractErrorMessage(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+  const candidate = error as {
+    message?: unknown;
+    shortMessage?: unknown;
+    details?: unknown;
+    cause?: unknown;
+  };
+  if (typeof candidate?.shortMessage === 'string') return candidate.shortMessage;
+  if (typeof candidate?.message === 'string') return candidate.message;
+  if (typeof candidate?.details === 'string') return candidate.details;
+  if (candidate?.cause) return extractErrorMessage(candidate.cause);
+  return String(error);
+}
+
+const RETRYABLE_RPC_ERROR_PATTERNS = [
+  /rpc endpoint returned too many errors/i,
+  /too many requests|rate\s*limit|http\s*429/i,
+  /temporarily unavailable|service unavailable/i,
+  /bad gateway|gateway timeout|http\s*50[234]/i,
+  /timeout|timed out|etimedout/i,
+  /failed to fetch|networkerror|network request failed/i,
+  /econnreset|econnrefused|ehostunreach|enotfound/i,
+  /socket hang up|fetch failed|upstream/i,
+];
+
+export function isRetryableRpcError(error: unknown): boolean {
+  const message = extractErrorMessage(error);
+  if (!message) return false;
+  return RETRYABLE_RPC_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
 export function getRpcEnvVarName(chainId: number): string | null {
   return RPC_ENV_BY_CHAIN[chainId] ?? null;
 }
@@ -113,6 +146,13 @@ export function selectRpcEndpoint(chainId: number): string {
     endpoint: endpoints[0],
   });
   return endpoints[0];
+}
+
+export function getOrderedRpcEndpoints(chainId: number): string[] {
+  const endpoints = getRpcEndpoints(chainId);
+  if (endpoints.length <= 1) return endpoints;
+  const preferred = selectRpcEndpoint(chainId);
+  return [preferred, ...endpoints.filter((endpoint) => endpoint !== preferred)];
 }
 
 export function getPrimaryRpcUrl(chainId: number): string {

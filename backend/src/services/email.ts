@@ -155,6 +155,19 @@ interface KYCReviewEmailData {
   submittedAt: string;
 }
 
+function formatSubscriptionPlanForEmail(plan: string): string {
+  switch (plan) {
+    case 'annual':
+      return '$1,800/year (Annual)';
+    case 'monthly':
+      return '$200/month (Monthly)';
+    case 'full_service':
+      return 'Full Service (Bespoke pricing - invoice based on requirements)';
+    default:
+      return plan;
+  }
+}
+
 export async function sendKYCReviewEmail(data: KYCReviewEmailData): Promise<void> {
   if (config.adminEmails.length === 0) {
     console.warn('[EMAIL] No ADMIN_EMAILS configured, skipping KYC review notification');
@@ -241,7 +254,7 @@ export async function sendKYCReviewEmail(data: KYCReviewEmailData): Promise<void
                       </tr>
                       <tr>
                         <td style="padding:6px 0;color:#6b7280;font-size:13px;">Subscription</td>
-                        <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:700;">${data.subscriptionPlan === 'annual' ? '$1,800/year (Annual)' : '$200/month (Monthly)'}</td>
+                        <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:700;">${formatSubscriptionPlanForEmail(data.subscriptionPlan)}</td>
                       </tr>
                       <tr>
                         <td style="padding:6px 0;color:#6b7280;font-size:13px;">Submitted</td>
@@ -296,7 +309,7 @@ Email: ${data.userEmail}
 DOB: ${data.dateOfBirth}
 Address: ${data.addressLine1}, ${data.city}, ${data.state} ${data.zipCode}, ${data.country}
 Document: ${data.documentType === 'drivers_license' ? "Driver's License" : 'Passport'}
-Subscription Plan: ${data.subscriptionPlan === 'annual' ? '$1,800/year (Annual)' : '$200/month (Monthly)'}
+Subscription Plan: ${formatSubscriptionPlanForEmail(data.subscriptionPlan)}
 Submitted: ${data.submittedAt}
 
 Approve: ${approveUrl}
@@ -318,6 +331,171 @@ These links expire in 7 days and can only be used once.
     console.log('[DEV EMAIL] KYC review notification sent');
     console.log('[DEV EMAIL] Approve URL:', approveUrl);
     console.log('[DEV EMAIL] Reject URL:', rejectUrl);
+    console.log('[DEV EMAIL] Message ID:', info.messageId);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mint Approval Request Email
+// ---------------------------------------------------------------------------
+
+interface MintApprovalRequestEmailData {
+  requestId: string;
+  requesterUserId: string;
+  requesterEmail: string;
+  chainId: number;
+  tokenName: string;
+  tokenSymbol: string;
+  mintAmount: string;
+  recipient: string;
+  documentHash: string;
+  documentType: string;
+  originalValue: string;
+  currency: string;
+  submittedAtIso: string;
+  approveUrl: string;
+  rejectUrl: string;
+  attachmentFileName: string;
+  attachmentMimeType: string;
+  attachmentContent: Buffer;
+}
+
+function escapeHtmlForEmail(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+export async function sendMintApprovalRequestEmail(
+  data: MintApprovalRequestEmailData,
+): Promise<void> {
+  const recipient = config.mintApproval.requestRecipient;
+  const escapedTokenName = escapeHtmlForEmail(data.tokenName);
+  const escapedTokenSymbol = escapeHtmlForEmail(data.tokenSymbol);
+  const escapedRecipient = escapeHtmlForEmail(data.recipient);
+  const escapedDocHash = escapeHtmlForEmail(data.documentHash);
+  const escapedDocType = escapeHtmlForEmail(data.documentType);
+  const escapedCurrency = escapeHtmlForEmail(data.currency);
+  const escapedFileName = escapeHtmlForEmail(data.attachmentFileName);
+  const escapedRequesterEmail = escapeHtmlForEmail(data.requesterEmail);
+  const escapedRequesterUserId = escapeHtmlForEmail(data.requesterUserId);
+
+  const subjectLine =
+    `[Mint Approval] ${data.tokenName} (${data.tokenSymbol}) ` +
+    `on chain ${data.chainId} by ${data.requesterEmail}`;
+
+  const htmlBody = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mint Approval Request</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f7;padding:36px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="700" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.08);">
+          <tr>
+            <td style="background-color:#0f172a;padding:28px 36px;">
+              <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Fueki Mint Approval Request</h1>
+              <p style="margin:10px 0 0;color:#93c5fd;font-size:13px;">Request ID: ${data.requestId}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px 36px;">
+              <p style="margin:0 0 18px;color:#374151;font-size:14px;line-height:1.6;">
+                A user submitted a wrapped-asset mint request. Review the details below and use an action button.
+              </p>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:14px;">
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;width:170px;">Requester Email</td><td style="padding:7px 0;color:#111827;font-size:14px;font-weight:600;">${escapedRequesterEmail}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Requester User ID</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapedRequesterUserId}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Submitted At</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtmlForEmail(data.submittedAtIso)}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Network (chainId)</td><td style="padding:7px 0;color:#111827;font-size:14px;">${data.chainId}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Token Name</td><td style="padding:7px 0;color:#111827;font-size:14px;font-weight:600;">${escapedTokenName}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Token Symbol</td><td style="padding:7px 0;color:#111827;font-size:14px;font-weight:600;">${escapedTokenSymbol}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Mint Amount</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtmlForEmail(data.mintAmount)} ${escapedCurrency}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Original Document Value</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtmlForEmail(data.originalValue)} ${escapedCurrency}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Recipient</td><td style="padding:7px 0;color:#111827;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Courier New',monospace;">${escapedRecipient}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Document Type</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapedDocType}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Document Hash</td><td style="padding:7px 0;color:#111827;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Courier New',monospace;word-break:break-all;">${escapedDocHash}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Attached File</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapedFileName}</td></tr>
+              </table>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
+                <tr>
+                  <td align="center" style="padding-right:8px;">
+                    <a href="${data.approveUrl}" target="_blank" style="display:inline-block;padding:12px 32px;background:#059669;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">
+                      Approve Mint
+                    </a>
+                  </td>
+                  <td align="center" style="padding-left:8px;">
+                    <a href="${data.rejectUrl}" target="_blank" style="display:inline-block;padding:12px 32px;background:#dc2626;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">
+                      Reject Mint
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:20px 0 0;color:#6b7280;font-size:12px;">
+                Action links are one-time use and expire automatically.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const textBody = `Mint Approval Request
+
+Request ID: ${data.requestId}
+Requester: ${data.requesterEmail} (${data.requesterUserId})
+Submitted At: ${data.submittedAtIso}
+Chain ID: ${data.chainId}
+
+Token Name: ${data.tokenName}
+Token Symbol: ${data.tokenSymbol}
+Mint Amount: ${data.mintAmount} ${data.currency}
+Original Value: ${data.originalValue} ${data.currency}
+Recipient: ${data.recipient}
+
+Document Type: ${data.documentType}
+Document Hash: ${data.documentHash}
+Attachment: ${data.attachmentFileName}
+
+Approve: ${data.approveUrl}
+Reject: ${data.rejectUrl}
+`;
+
+  const info = await transporter.sendMail({
+    from: config.smtp.from,
+    to: recipient,
+    replyTo: data.requesterEmail,
+    subject: subjectLine,
+    text: textBody,
+    html: htmlBody,
+    attachments: [
+      {
+        filename: data.attachmentFileName,
+        content: data.attachmentContent,
+        contentType: data.attachmentMimeType,
+      },
+    ],
+  });
+
+  if (!config.smtp.user) {
+    console.log('[DEV EMAIL] Mint approval request sent');
+    console.log('[DEV EMAIL] Recipient:', recipient);
+    console.log('[DEV EMAIL] Approve URL:', data.approveUrl);
+    console.log('[DEV EMAIL] Reject URL:', data.rejectUrl);
     console.log('[DEV EMAIL] Message ID:', info.messageId);
   }
 }

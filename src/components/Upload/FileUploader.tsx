@@ -106,6 +106,7 @@ function formatBytes(bytes: number): string {
 
 export default function FileUploader() {
   const setCurrentDocument = useDocumentStore((s) => s.setCurrentDocument);
+  const setCurrentDocumentFile = useDocumentStore((s) => s.setCurrentDocumentFile);
   const addDocument = useDocumentStore((s) => s.addDocument);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -127,12 +128,14 @@ export default function FileUploader() {
     setParseError(null);
     setParsedDoc(null);
     setCurrentDocument(null);
+    setCurrentDocumentFile(null);
 
     if (acceptedFiles.length === 0) return;
 
     const file = acceptedFiles[0];
     setSelectedFile(file);
-  }, [setCurrentDocument]);
+    setCurrentDocumentFile(file);
+  }, [setCurrentDocument, setCurrentDocumentFile]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -228,6 +231,7 @@ export default function FileUploader() {
     setParsedDoc(null);
     setParseError(null);
     setCurrentDocument(null);
+    setCurrentDocumentFile(null);
   };
 
   // ---- Render -------------------------------------------------------------

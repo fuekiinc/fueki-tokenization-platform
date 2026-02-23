@@ -15,9 +15,15 @@ import { SecurityTokenFactoryABI } from '../../contracts/abis/SecurityTokenFacto
 import { SecurityTokenABI } from '../../contracts/abis/SecurityToken.ts';
 import { AssetBackedExchangeABI } from '../../contracts/abis/AssetBackedExchange.ts';
 import { LiquidityPoolAMMABI } from '../../contracts/abis/LiquidityPoolAMM.ts';
-import { getNetworkConfig } from '../../contracts/addresses';
+import { getNetworkConfig, getNetworkMetadata } from '../../contracts/addresses';
 import { multicall, multicallSameTarget } from './multicall.ts';
 import type { MulticallRequest, MulticallResult } from './multicall.ts';
+import {
+  getOrderedRpcEndpoints,
+  isRetryableRpcError,
+  reportRpcEndpointFailure,
+  reportRpcEndpointSuccess,
+} from '../rpc/endpoints';
 import {
   getCached,
   invalidateCacheForAsset as invalidateCacheForAssetGlobal,
@@ -112,6 +118,51 @@ export function isETH(address: string | null): boolean {
   return address.toLowerCase() === ETH_SENTINEL.toLowerCase();
 }
 
+const CUSTOM_ERROR_SELECTOR_MESSAGES: Record<string, string> = {
+  // EasyAccessControl (security token)
+  '0x54f7a00c': 'Your connected wallet does not have the Wallets Admin role required for this action.',
+  '0xc2df30cc': 'Your connected wallet does not have the Contract Admin role required for this action.',
+  '0x6570a0de': 'Your connected wallet does not have the Transfer Admin role required for this action.',
+  '0xb32a86ea': 'Your connected wallet does not have the Reserve Admin role required for this action.',
+  '0xa7829562': 'Your connected wallet needs either Wallets Admin or Reserve Admin role for this action.',
+  '0x8a90727a': 'The target address does not currently have the specified role(s).',
+  '0xd92e233d': 'A required address parameter cannot be the zero address.',
+  '0xd954416a': 'The requested role value is invalid.',
+
+  // Common security-token custom errors
+  '0x84bc5401': 'Recipient address cannot be the zero address.',
+  '0x66736f63': 'Recipient address cannot be the zero address.',
+  '0x4a76e5b5': 'Sender or recipient address cannot be the zero address.',
+  '0xc7be2851': 'Mint amount exceeds the max total supply configured for this token.',
+  '0xf1b7e15e': 'Insufficient token balance for this action.',
+  '0x15c840d8': 'Requested amount exceeds unlocked balance for this address.',
+};
+
+function extractErrorDataHex(err: unknown): string | null {
+  const candidates: unknown[] = [
+    (err as { data?: unknown })?.data,
+    (err as { error?: { data?: unknown } })?.error?.data,
+    (err as { info?: { error?: { data?: unknown } } })?.info?.error?.data,
+    (err as { error?: { error?: { data?: unknown } } })?.error?.error?.data,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && /^0x[0-9a-fA-F]+$/.test(candidate)) {
+      return candidate.toLowerCase();
+    }
+    if (
+      candidate &&
+      typeof candidate === 'object' &&
+      typeof (candidate as { data?: unknown }).data === 'string' &&
+      /^0x[0-9a-fA-F]+$/.test((candidate as { data: string }).data)
+    ) {
+      return (candidate as { data: string }).data.toLowerCase();
+    }
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -132,6 +183,33 @@ export function parseContractError(err: unknown): string {
 
   // 2. Map known Solidity revert strings / custom error names.
   const reason = revertReason ?? (err instanceof Error ? err.message : String(err));
+  const errorData = extractErrorDataHex(err);
+
+  if (errorData && errorData.length >= 10) {
+    const selector = errorData.slice(0, 10);
+    const mapped = CUSTOM_ERROR_SELECTOR_MESSAGES[selector];
+    if (mapped) return mapped;
+  }
+
+  if (/DoesNotHaveWalletsAdminRole/i.test(reason)) {
+    return 'Your connected wallet does not have the Wallets Admin role required for this action.';
+  }
+
+  if (/DoesNotHaveContractAdminRole/i.test(reason)) {
+    return 'Your connected wallet does not have the Contract Admin role required for this action.';
+  }
+
+  if (/DoesNotHaveTransferAdminRole/i.test(reason)) {
+    return 'Your connected wallet does not have the Transfer Admin role required for this action.';
+  }
+
+  if (/DoesNotHaveReserveAdminRole/i.test(reason)) {
+    return 'Your connected wallet does not have the Reserve Admin role required for this action.';
+  }
+
+  if (/DoesNotHaveWalletsOrReserveAdminRole/i.test(reason)) {
+    return 'Your connected wallet needs either Wallets Admin or Reserve Admin role for this action.';
+  }
 
   // User rejected from wallet
   if (/user (rejected|denied)|ACTION_REJECTED/i.test(reason)) {
@@ -158,6 +236,11 @@ export function parseContractError(err: unknown): string {
     return 'Network is busy (rate limited). Please wait a moment and try again.';
   }
 
+  // RPC endpoint circuit-breaker/cooldown messages from upstream providers
+  if (/rpc endpoint returned too many errors|retrying in|different rpc endpoint/i.test(reason)) {
+    return 'RPC endpoint is temporarily overloaded. Please retry in a few seconds.';
+  }
+
   // RPC timeout
   if (/timeout|ETIMEDOUT|ECONNREFUSED/i.test(reason)) {
     return 'Network request timed out. Please check your internet connection and try again.';
@@ -173,7 +256,10 @@ export function parseContractError(err: unknown): string {
         return `Transaction reverted: ${cleanReason}`;
       }
     }
-    return 'Transaction would revert on-chain. Please check your inputs and try again.';
+    if (/unknown custom error/i.test(reason) && errorData) {
+      return `Transaction reverted with custom contract error (${errorData.slice(0, 10)}).`;
+    }
+    return 'Transaction would revert on-chain. Please check your inputs and permissions and try again.';
   }
 
   // Transfer amount exceeds balance
@@ -230,10 +316,12 @@ export class ContractService {
   private provider: ethers.BrowserProvider;
   private signer: ethers.Signer | null = null;
   private chainId: number;
+  private readProviders: Map<string, ethers.JsonRpcProvider>;
 
   constructor(provider: ethers.BrowserProvider, chainId: number) {
     this.provider = provider;
     this.chainId = chainId;
+    this.readProviders = new Map();
   }
 
   private cacheKey(key: string): string {
@@ -263,6 +351,46 @@ export class ContractService {
   async getSigner(): Promise<ethers.Signer> {
     this.signer = await this.provider.getSigner();
     return this.signer;
+  }
+
+  private getReadProvider(endpoint: string): ethers.JsonRpcProvider {
+    const cached = this.readProviders.get(endpoint);
+    if (cached) return cached;
+
+    const provider = new ethers.JsonRpcProvider(endpoint, this.chainId);
+    this.readProviders.set(endpoint, provider);
+    return provider;
+  }
+
+  private async withReadProvider<T>(
+    callback: (provider: ethers.Provider) => Promise<T>,
+  ): Promise<T> {
+    const endpoints = getOrderedRpcEndpoints(this.chainId);
+    if (endpoints.length === 0) {
+      return callback(this.provider);
+    }
+
+    let lastError: unknown = null;
+    for (const endpoint of endpoints) {
+      const readProvider = this.getReadProvider(endpoint);
+      try {
+        const result = await callback(readProvider);
+        reportRpcEndpointSuccess(this.chainId, endpoint);
+        return result;
+      } catch (error) {
+        lastError = error;
+        if (isRetryableRpcError(error)) {
+          reportRpcEndpointFailure(this.chainId, endpoint);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+    return callback(this.provider);
   }
 
   // -----------------------------------------------------------------------
@@ -1553,30 +1681,236 @@ export class ContractService {
    * Execute a write transaction with upfront gas estimation.
    *
    * Gas estimation serves as a dry-run: if the transaction would revert,
-   * the estimateGas call fails first with a descriptive Solidity error
-   * (custom error or revert string). This gives the caller a clear
-   * message before the wallet even shows a confirmation dialog.
-   *
-   * A 20 % buffer is added on top of the estimate to account for
-   * state changes between estimation and mining.
+   * the estimateGas call fails first with a descriptive Solidity error.
+   * On transient RPC overload failures, this method retries via configured
+   * fallback endpoints and wallet RPC reconfiguration before surfacing an error.
    */
+  private resolveContractAddress(contract: ethers.Contract): string {
+    const target = contract.target;
+    if (typeof target === 'string' && ethers.isAddress(target)) {
+      return target;
+    }
+    throw new Error('Unable to resolve contract target address');
+  }
+
+  private getWalletChainParams(preferredRpcUrl?: string): {
+    chainId: string;
+    chainName: string;
+    nativeCurrency: { name: string; symbol: string; decimals: number };
+    rpcUrls: string[];
+    blockExplorerUrls?: string[];
+  } {
+    const metadata = getNetworkMetadata(this.chainId);
+    const orderedEndpoints = getOrderedRpcEndpoints(this.chainId);
+    const rpcUrls = preferredRpcUrl
+      ? [preferredRpcUrl, ...orderedEndpoints.filter((endpoint) => endpoint !== preferredRpcUrl)]
+      : orderedEndpoints;
+
+    return {
+      chainId: ethers.toQuantity(this.chainId),
+      chainName: metadata?.name ?? `Chain ${this.chainId}`,
+      nativeCurrency: metadata?.nativeCurrency ?? {
+        name: 'Ether',
+        symbol: 'ETH',
+        decimals: 18,
+      },
+      rpcUrls,
+      ...(metadata?.blockExplorer ? { blockExplorerUrls: [metadata.blockExplorer] } : {}),
+    };
+  }
+
+  private async reconfigureWalletRpc(preferredRpcUrl: string): Promise<void> {
+    const params = this.getWalletChainParams(preferredRpcUrl);
+    const chainRef = { chainId: params.chainId };
+
+    try {
+      await this.provider.send('wallet_addEthereumChain', [params]);
+    } catch {
+      // Ignore add errors; switch may still work if chain already exists.
+    }
+    await this.provider.send('wallet_switchEthereumChain', [chainRef]);
+  }
+
+  private async tryWalletRpcFailoverAndSend(
+    signer: ethers.Signer,
+    txRequest: ethers.TransactionRequest,
+  ): Promise<ethers.ContractTransactionResponse | null> {
+    const endpoints = getOrderedRpcEndpoints(this.chainId);
+    const fallbackEndpoints = endpoints.slice(1);
+    if (fallbackEndpoints.length === 0) return null;
+
+    let lastError: unknown = null;
+
+    for (const endpoint of fallbackEndpoints) {
+      try {
+        await this.reconfigureWalletRpc(endpoint);
+      } catch (error) {
+        lastError = error;
+        continue;
+      }
+
+      try {
+        const tx = await signer.sendTransaction(txRequest);
+        reportRpcEndpointSuccess(this.chainId, endpoint);
+        return tx as unknown as ethers.ContractTransactionResponse;
+      } catch (error) {
+        lastError = error;
+        if (isRetryableRpcError(error)) {
+          reportRpcEndpointFailure(this.chainId, endpoint);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+    return null;
+  }
+
+  private async signAndBroadcastWithReadRpcFallback(
+    signer: ethers.Signer,
+    signerAddress: string,
+    txRequest: ethers.TransactionRequest,
+  ): Promise<ethers.ContractTransactionResponse> {
+    const [nonce, feeData] = await Promise.all([
+      this.withReadProvider((provider) =>
+        provider.getTransactionCount(signerAddress, 'pending'),
+      ),
+      this.withReadProvider((provider) => provider.getFeeData()),
+    ]);
+
+    const signingRequest: ethers.TransactionRequest = {
+      ...txRequest,
+      chainId: this.chainId,
+      nonce,
+    };
+
+    const hasEip1559 =
+      feeData.maxFeePerGas !== null && feeData.maxPriorityFeePerGas !== null;
+    if (hasEip1559) {
+      signingRequest.type = 2;
+      signingRequest.maxFeePerGas =
+        signingRequest.maxFeePerGas ?? feeData.maxFeePerGas ?? undefined;
+      signingRequest.maxPriorityFeePerGas =
+        signingRequest.maxPriorityFeePerGas ??
+        feeData.maxPriorityFeePerGas ??
+        undefined;
+      delete signingRequest.gasPrice;
+    } else if (feeData.gasPrice !== null && signingRequest.gasPrice == null) {
+      signingRequest.gasPrice = feeData.gasPrice;
+    }
+
+    const signedRawTx = await signer.signTransaction(signingRequest);
+    const broadcastTx = await this.withReadProvider((provider) =>
+      provider.broadcastTransaction(signedRawTx),
+    );
+    return broadcastTx as unknown as ethers.ContractTransactionResponse;
+  }
+
+  private async estimateGasWithFallback(
+    contract: ethers.Contract,
+    method: string,
+    args: unknown[],
+    signerAddress: string,
+    overrides?: ethers.Overrides,
+  ): Promise<bigint | null> {
+    const methodRef = (contract as Record<string, unknown>)[method] as {
+      estimateGas: (...params: unknown[]) => Promise<bigint>;
+      populateTransaction: (...params: unknown[]) => Promise<ethers.TransactionRequest>;
+    } | undefined;
+
+    if (!methodRef || typeof methodRef.estimateGas !== 'function') {
+      throw new Error(`Contract method unavailable: ${method}`);
+    }
+
+    try {
+      return await methodRef.estimateGas(...args, overrides ?? {});
+    } catch (error) {
+      if (!isRetryableRpcError(error)) {
+        throw error;
+      }
+
+      const populated = await methodRef.populateTransaction(...args, overrides ?? {});
+      const toAddress = (typeof populated.to === 'string' && populated.to) || this.resolveContractAddress(contract);
+
+      try {
+        return await this.withReadProvider((readProvider) =>
+          readProvider.estimateGas({
+            from: signerAddress,
+            to: toAddress,
+            data: populated.data,
+            value: populated.value,
+          }),
+        );
+      } catch (fallbackError) {
+        if (!isRetryableRpcError(fallbackError)) {
+          throw fallbackError;
+        }
+        // Fall back to wallet-provided estimation on sendTransaction.
+        return null;
+      }
+    }
+  }
+
   private async executeWrite(
     contract: ethers.Contract,
     method: string,
     args: unknown[],
     overrides?: ethers.Overrides,
   ): Promise<ethers.ContractTransactionResponse> {
+    const methodRef = (contract as Record<string, unknown>)[method] as {
+      populateTransaction: (...params: unknown[]) => Promise<ethers.TransactionRequest>;
+    } | undefined;
+
+    if (!methodRef || typeof methodRef.populateTransaction !== 'function') {
+      throw new Error(`Contract method unavailable: ${method}`);
+    }
+
     try {
-      const gasEstimate: bigint = await contract[method].estimateGas(
-        ...args,
-        overrides ?? {},
+      const signer = await this.getSigner();
+      const signerAddress = await signer.getAddress();
+      const populated = await methodRef.populateTransaction(...args, overrides ?? {});
+      const toAddress = (typeof populated.to === 'string' && populated.to) || this.resolveContractAddress(contract);
+
+      const gasEstimate = await this.estimateGasWithFallback(
+        contract,
+        method,
+        args,
+        signerAddress,
+        overrides,
       );
-      // 20 % buffer: gasEstimate * 120 / 100
-      const gasLimit = (gasEstimate * 120n) / 100n;
-      return await contract[method](...args, {
+
+      const txRequest: ethers.TransactionRequest = {
+        ...populated,
         ...(overrides ?? {}),
-        gasLimit,
-      });
+        to: toAddress,
+      };
+
+      if (gasEstimate !== null) {
+        // 20% buffer: gasEstimate * 120 / 100
+        txRequest.gasLimit = (gasEstimate * 120n) / 100n;
+      }
+
+      try {
+        const tx = await signer.sendTransaction(txRequest);
+        return tx as unknown as ethers.ContractTransactionResponse;
+      } catch (sendError) {
+        if (!isRetryableRpcError(sendError)) {
+          throw sendError;
+        }
+
+        const failoverTx = await this.tryWalletRpcFailoverAndSend(signer, txRequest);
+        if (failoverTx) {
+          return failoverTx;
+        }
+        return await this.signAndBroadcastWithReadRpcFallback(
+          signer,
+          signerAddress,
+          txRequest,
+        );
+      }
     } catch (err: unknown) {
       // Re-throw with a user-friendly message via parseContractError.
       const userMessage = parseContractError(err);

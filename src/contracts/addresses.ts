@@ -5,7 +5,7 @@
  *   - Ethereum Mainnet (chainId: 1) -- partial deployment
  *   - Holesky Testnet (chainId: 17000) -- full deployment (primary testnet)
  *   - Arbitrum One (chainId: 42161) -- not yet deployed
- *   - Arbitrum Sepolia (chainId: 421614) -- not yet deployed
+ *   - Arbitrum Sepolia (chainId: 421614) -- full deployment (testnet)
  *   - Base Sepolia (chainId: 84532) -- metadata only, no deployments yet
  *   - Hardhat Local (chainId: 31337) -- local development
  *
@@ -119,15 +119,15 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     rpcUrl: getPrimaryRpcUrl(421614),
     blockExplorer: 'https://sepolia.arbiscan.io',
     blockExplorerApi: 'https://api-sepolia.arbiscan.io/api',
-    factoryAddress: '',
-    exchangeAddress: '',
-    securityTokenFactoryAddress: '',
-    assetBackedExchangeAddress: '',
-    wethAddress: '',
-    wbtcAddress: '',
-    ammAddress: '',
-    orbitalFactoryAddress: '',
-    orbitalRouterAddress: '',
+    factoryAddress: '0x0ad0bc183acb2f2124A6e8C40216af852d3c1C9b',
+    exchangeAddress: '0xd60A930605442226e80f2577e4a4B985e3d56977',
+    securityTokenFactoryAddress: '0x8b167fE578F62D317674EA47a3F0Dd3Ce13d747f',
+    assetBackedExchangeAddress: '0x099df34B1855C9D54eC232916970db13666b50be',
+    wethAddress: '0x2836dA53C1fBcCf717A0a4b0dE45F8aF805c4966',
+    wbtcAddress: '0x60206E675Bd801cDE1F584aD7e234F3214076839',
+    ammAddress: '0xa9b60375A6433a6697F020F67Dd69851F861DFb8',
+    orbitalFactoryAddress: '0x95187b0e6A6639083C58932C8841A30C75eE70e8',
+    orbitalRouterAddress: '0xD66b939e2701f61559CB7BccdEb7fbBDe49A35E9',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   },
 

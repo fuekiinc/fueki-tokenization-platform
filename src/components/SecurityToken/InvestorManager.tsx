@@ -13,7 +13,7 @@
 import { useState, useCallback } from 'react';
 import { ethers } from 'ethers';
 import { SecurityTokenABI } from '../../contracts/abis/SecurityToken';
-import { getProvider, getSigner } from '../../store/walletStore';
+import { useWalletStore, getProvider, getSigner } from '../../store/walletStore';
 import { parseContractError } from '../../lib/blockchain/contracts';
 import {
   formatWeiAmount,
@@ -88,6 +88,8 @@ const GROUP_PRESETS = [
   { label: 'Reg CF', id: 2 },
   { label: 'Reg S', id: 3 },
 ] as const;
+
+const ROLE_WALLETS_ADMIN = 4;
 
 function emptyBatchRow(): BatchRow {
   return {
@@ -238,6 +240,7 @@ function InvestorRegistry({ tokenAddress }: { tokenAddress: string }) {
 // ---------------------------------------------------------------------------
 
 function TransferGroupAssignment({ tokenAddress }: { tokenAddress: string }) {
+  const walletAddress = useWalletStore((s) => s.wallet.address);
   const [addr, setAddr] = useState('');
   const [groupId, setGroupId] = useState('1');
   const [loading, setLoading] = useState(false);
@@ -265,11 +268,39 @@ function TransferGroupAssignment({ tokenAddress }: { tokenAddress: string }) {
       return;
     }
 
+    const signer = getSigner();
+    if (!signer) {
+      setError('Wallet signer unavailable. Please reconnect your wallet.');
+      return;
+    }
+
+    const normalizedAddr = ethers.getAddress(addr);
+
     setLoading(true);
     try {
-      const tx = await contract.setTransferGroup(addr, gid);
+      const caller = await signer.getAddress();
+      const hasWalletsAdmin: boolean = await contract.hasRole(caller, ROLE_WALLETS_ADMIN);
+      if (!hasWalletsAdmin) {
+        setError(
+          `Connected wallet ${truncateAddress(caller)} is missing Wallets Admin role (4). Ask a Contract Admin to grant it before assigning transfer groups.`,
+        );
+        return;
+      }
+
+      const currentGroup = Number(await contract.getTransferGroup(normalizedAddr));
+      if (currentGroup === gid) {
+        setSuccess(
+          `${truncateAddress(normalizedAddr)} is already in Group ${gid}. No update needed.`,
+        );
+        return;
+      }
+
+      // Preflight estimation provides clearer revert diagnostics before wallet prompt.
+      await contract.setTransferGroup.estimateGas(normalizedAddr, gid);
+
+      const tx = await contract.setTransferGroup(normalizedAddr, gid);
       await tx.wait();
-      setSuccess(`Group assignment updated to Group ${gid} for ${truncateAddress(addr)}.`);
+      setSuccess(`Group assignment updated to Group ${gid} for ${truncateAddress(normalizedAddr)}.`);
       setAddr('');
     } catch (err) {
       setError(parseContractError(err));
@@ -327,6 +358,10 @@ function TransferGroupAssignment({ tokenAddress }: { tokenAddress: string }) {
         >
           {loading ? <Spinner size="xs" /> : 'Set Transfer Group'}
         </button>
+
+        <p className="text-[10px] text-gray-600">
+          Requires Wallets Admin role on this token. Connected wallet: {walletAddress ? truncateAddress(walletAddress) : 'not connected'}.
+        </p>
 
         {error && (
           <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm text-red-400">

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import clsx from 'clsx';
 import {
   Upload,
@@ -14,6 +14,8 @@ import FileUploader from '../components/Upload/FileUploader';
 import TransactionPreview from '../components/Upload/TransactionPreview';
 import MintForm from '../components/Mint/MintForm';
 import MintHistory from '../components/Mint/MintHistory';
+import PendingTokensPanel from '../components/Mint/PendingTokensPanel';
+import type { MintApprovalRequestItem } from '../types/mintApproval';
 
 // ---------------------------------------------------------------------------
 // Step indicator configuration
@@ -246,6 +248,8 @@ function SectionCard({
 export default function MintPage() {
   const currentDocument = useDocumentStore((s) => s.currentDocument);
   const tradeHistory = useTradeStore((s) => s.tradeHistory);
+  const [selectedMintRequest, setSelectedMintRequest] =
+    useState<MintApprovalRequestItem | null>(null);
 
   const hasMinted = tradeHistory.some(
     (t) => t.type === 'mint' && t.status === 'confirmed',
@@ -344,12 +348,23 @@ export default function MintPage() {
           <SectionCard
             stepNumber={3}
             title="Configure and mint asset"
-            subtitle="Set token name, symbol, amount, and recipient address."
+            subtitle="Review pending approvals and finalize minting after banker approval."
             icon={Coins}
             isActive={activeStep >= 2 && activeStep < 4}
             isCompleted={activeStep === 4}
           >
-            <MintForm document={currentDocument} />
+            <div className="space-y-6">
+              <PendingTokensPanel
+                selectedRequestId={selectedMintRequest?.id ?? null}
+                onSelectRequest={setSelectedMintRequest}
+              />
+              <div className="h-px bg-gradient-to-r from-white/[0.08] via-white/[0.04] to-transparent" />
+              <MintForm
+                document={currentDocument}
+                selectedRequest={selectedMintRequest}
+                onClearSelectedRequest={() => setSelectedMintRequest(null)}
+              />
+            </div>
           </SectionCard>
 
           <SectionCard

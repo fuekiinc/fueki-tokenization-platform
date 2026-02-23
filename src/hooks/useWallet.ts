@@ -9,9 +9,12 @@ import {
   useDisconnect,
   useSwitchActiveWalletChain,
 } from 'thirdweb/react';
+import { EIP1193 } from 'thirdweb/wallets';
 
 import logger from '../lib/logger';
 import { getProvider as getStoreProvider, useWalletStore } from '../store/walletStore.ts';
+import { getNetworkMetadata } from '../contracts/addresses';
+import { getRpcEndpoints } from '../lib/rpc/endpoints';
 import {
   THIRDWEB_DEFAULT_CHAIN,
   THIRDWEB_SUPPORTED_CHAINS,
@@ -94,6 +97,55 @@ export function useWallet() {
   const { connect, isConnecting: isModalConnecting } = useConnectModal();
   const { disconnect } = useDisconnect();
   const switchActiveWalletChain = useSwitchActiveWalletChain();
+
+  const primeWalletChainRpcConfig = useCallback(
+    async (targetChainId: number) => {
+      if (!activeWallet || !thirdwebClient) return;
+      const chain = getThirdwebChain(targetChainId);
+      if (!chain) return;
+
+      const rpcUrls = getRpcEndpoints(targetChainId);
+      if (rpcUrls.length === 0) return;
+
+      const metadata = getNetworkMetadata(targetChainId);
+      const chainName =
+        metadata?.name ||
+        chain.name ||
+        `Chain ${targetChainId}`;
+      const nativeCurrency = metadata?.nativeCurrency ?? {
+        name: 'Ether',
+        symbol: 'ETH',
+        decimals: 18,
+      };
+      const blockExplorerUrls = metadata?.blockExplorer
+        ? [metadata.blockExplorer]
+        : undefined;
+
+      const eip1193Provider = EIP1193.toProvider({
+        wallet: activeWallet,
+        chain,
+        client: thirdwebClient,
+      });
+
+      try {
+        await eip1193Provider.request({
+          method: 'wallet_addEthereumChain',
+          params: [
+            {
+              chainId: ethers.toQuantity(targetChainId),
+              chainName,
+              nativeCurrency,
+              rpcUrls,
+              ...(blockExplorerUrls ? { blockExplorerUrls } : {}),
+            },
+          ],
+        });
+      } catch (err) {
+        logger.debug('wallet_addEthereumChain preflight failed; continuing with switch flow', err);
+      }
+    },
+    [activeWallet],
+  );
 
   const connectWallet = useCallback(async () => {
     if (!thirdwebClient || !isThirdwebConfigured) {
@@ -199,6 +251,7 @@ export function useWallet() {
       clearWalletBoundStores();
 
       try {
+        await primeWalletChainRpcConfig(chainId);
         await switchActiveWalletChain(chain);
         setLastError(null);
       } catch (err: unknown) {
@@ -211,6 +264,7 @@ export function useWallet() {
       activeWallet,
       beginChainSwitch,
       failChainSwitch,
+      primeWalletChainRpcConfig,
       setLastError,
       switchActiveWalletChain,
     ],

@@ -374,7 +374,7 @@ function NetworkSelector({ compact = false }: { compact?: boolean }) {
 // ---------------------------------------------------------------------------
 
 function WalletButton({ compact = false }: { compact?: boolean }) {
-  const { isConnecting, error: walletError } = useWallet();
+  const { isConnecting, error: walletError, address } = useWallet();
 
   if (!thirdwebClient || !isThirdwebConfigured) {
     return (
@@ -395,6 +395,10 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
   }
 
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://fueki.io';
+  const connectedAccountName = address
+    ? `${address.slice(0, 6)}...${address.slice(-4)}`
+    : 'Connected';
+  const connectedAccountAvatarUrl = `${origin}/fueki-logo.jpg`;
 
   return (
     <div className={clsx('wallet-connect-shell', compact && 'w-full')}>
@@ -411,6 +415,8 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
         }}
         detailsButton={{
           className: clsx('fueki-wallet-details-button', compact && 'w-full justify-between'),
+          connectedAccountName,
+          connectedAccountAvatarUrl,
         }}
         connectModal={{
           title: 'Connect to Fueki',
@@ -422,6 +428,8 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
         showAllWallets={true}
         detailsModal={{
           showTestnetFaucet: true,
+          connectedAccountName,
+          connectedAccountAvatarUrl,
         }}
         walletConnect={
           THIRDWEB_WALLETCONNECT_PROJECT_ID
@@ -513,6 +521,7 @@ function MobileSlideOver({
         <div className="flex items-center justify-between px-6 py-6">
           <FuekiBrand
             variant="full"
+            tight
             imageClassName="h-8 w-auto drop-shadow-[0_8px_20px_rgba(8,24,38,0.45)]"
           />
           <button
@@ -595,6 +604,7 @@ function MobileSlideOver({
           <FuekiBrand
             variant="full"
             className="justify-center"
+            tight
             imageClassName="h-6 w-auto opacity-85"
           />
           <p className="mt-2 text-center text-[11px] text-gray-500">
@@ -683,11 +693,12 @@ export default function Navbar() {
               {/* Logo */}
               <Link
                 to="/"
-                className="group flex items-center transition-opacity duration-200 hover:opacity-90 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+                className="group relative flex items-center rounded-2xl border border-white/[0.08] bg-gradient-to-b from-white/[0.06] to-white/[0.02] px-3 py-2 shadow-[0_10px_32px_rgba(8,24,38,0.28)] transition-all duration-200 hover:border-cyan-300/35 hover:from-white/[0.08] hover:to-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
               >
                 <FuekiBrand
                   variant="full"
-                  imageClassName="h-9 w-auto drop-shadow-[0_10px_24px_rgba(12,44,67,0.55)]"
+                  tight
+                  imageClassName="h-10 w-auto sm:h-11 lg:h-12 drop-shadow-[0_14px_30px_rgba(12,44,67,0.6)]"
                 />
               </Link>
 

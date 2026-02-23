@@ -40,6 +40,7 @@ import Card from '../Common/Card';
 import Spinner from '../Common/Spinner';
 import EmptyState from '../Common/EmptyState';
 import Modal from '../Common/Modal';
+import { InfoTooltip } from '../Common/Tooltip';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -93,6 +94,13 @@ const BTN_SECONDARY =
 
 const SECONDS_PER_DAY = 86400;
 const SECONDS_PER_MONTH = 2592000; // 30 days
+
+const SCHEDULE_FIELD_TOOLTIPS = {
+  releaseCount:
+    'Total number of vesting unlock events in this schedule. If set to 1, there is a single unlock after the initial delay. If set to 12, tokens unlock in 12 separate releases.',
+  delayUntilFirstRelease:
+    'Number of seconds from timelock commencement until the first release occurs. Example: 2592000 = 30 days. Set to 0 for no initial delay.',
+} as const;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -968,7 +976,10 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
               {/* Release Count */}
               <div>
                 <label className="block text-xs text-gray-500 mb-1.5">
-                  Release Count
+                  <span className="inline-flex items-center gap-1.5">
+                    <span>Release Count</span>
+                    <InfoTooltip content={SCHEDULE_FIELD_TOOLTIPS.releaseCount} />
+                  </span>
                 </label>
                 <input
                   type="number"
@@ -983,7 +994,12 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
               {/* Delay Until First Release */}
               <div>
                 <label className="block text-xs text-gray-500 mb-1.5">
-                  Delay Until First Release (seconds)
+                  <span className="inline-flex items-center gap-1.5">
+                    <span>Delay Until First Release (seconds)</span>
+                    <InfoTooltip
+                      content={SCHEDULE_FIELD_TOOLTIPS.delayUntilFirstRelease}
+                    />
+                  </span>
                 </label>
                 <input
                   type="number"

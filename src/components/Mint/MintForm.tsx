@@ -25,6 +25,7 @@ import NetworkCapabilityGuard from '../Common/NetworkCapabilityGuard';
 import { useWallet } from '../../hooks/useWallet';
 import { useTradeStore } from '../../store/tradeStore.ts';
 import { useAssetStore } from '../../store/assetStore.ts';
+import { useDocumentStore } from '../../store/documentStore.ts';
 import { getProvider } from '../../store/walletStore.ts';
 import { formatAddress, generateId, copyToClipboard } from '../../lib/utils/helpers';
 import { txSubmittedToast, txConfirmedToast, txFailedToast } from '../../lib/utils/txToast';
@@ -33,7 +34,13 @@ import { getNetworkConfig, getNetworkMetadata } from '../../contracts/addresses'
 import { getNetworkCapabilities } from '../../contracts/networkCapabilities';
 import { sanitizePastedAddress, validateTokenSymbol, validatePositiveAmount } from '../../lib/utils/validation';
 import { INPUT_CLASSES } from '../../lib/designTokens';
+import { getMintApprovalStatus, submitMintApprovalRequest } from '../../lib/api/mintRequests';
 import type { ParsedDocument, TradeHistory } from '../../types';
+import type {
+  MintApprovalRequestItem,
+  MintApprovalStatus,
+  MintApprovalStatusQuery,
+} from '../../types/mintApproval';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,6 +48,8 @@ import type { ParsedDocument, TradeHistory } from '../../types';
 
 interface MintFormProps {
   document: ParsedDocument | null;
+  selectedRequest?: MintApprovalRequestItem | null;
+  onClearSelectedRequest?: () => void;
 }
 
 type TxState = 'idle' | 'pending' | 'confirmed' | 'failed';
@@ -69,6 +78,33 @@ function formatNumberDisplay(value: string): string {
   return formatTokenAmount(cleaned);
 }
 
+function sanitizeAmountInput(value: string): string {
+  const cleaned = value.replace(/[,\s]/g, '');
+  const parts = cleaned.split('.');
+  if (parts.length === 2 && parts[1].length > 18) {
+    return `${parts[0]}.${parts[1].substring(0, 18)}`;
+  }
+  return cleaned;
+}
+
+function extractApiErrorMessage(
+  err: unknown,
+  fallback = 'Request failed. Please try again.',
+): string {
+  const candidate = err as {
+    response?: { data?: { error?: { message?: string } } };
+    message?: string;
+  };
+  const apiMessage = candidate?.response?.data?.error?.message;
+  if (typeof apiMessage === 'string' && apiMessage.trim()) {
+    return apiMessage.trim();
+  }
+  if (typeof candidate?.message === 'string' && candidate.message.trim()) {
+    return candidate.message.trim();
+  }
+  return fallback;
+}
+
 // ---------------------------------------------------------------------------
 // Shared input styles (from design system)
 // ---------------------------------------------------------------------------
@@ -79,10 +115,15 @@ const inputClasses = INPUT_CLASSES.base;
 // Component
 // ---------------------------------------------------------------------------
 
-export default function MintForm({ document }: MintFormProps) {
+export default function MintForm({
+  document,
+  selectedRequest = null,
+  onClearSelectedRequest,
+}: MintFormProps) {
   const { address, chainId, isConnected, connectWallet, switchNetwork } = useWallet();
   const addTrade = useTradeStore((s) => s.addTrade);
   const addAsset = useAssetStore((s) => s.addAsset);
+  const currentDocumentFile = useDocumentStore((s) => s.currentDocumentFile);
 
   // ---- Form state ---------------------------------------------------------
 
@@ -115,10 +156,34 @@ export default function MintForm({ document }: MintFormProps) {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [txError, setTxError] = useState<string | null>(null);
 
+  // ---- Mint approval lifecycle -------------------------------------------
+
+  const [approvalStatus, setApprovalStatus] = useState<MintApprovalStatus>('none');
+  const [approvalRequestId, setApprovalRequestId] = useState<string | null>(null);
+  const [approvalReviewNotes, setApprovalReviewNotes] = useState<string | null>(null);
+  const [approvalSubmittedAt, setApprovalSubmittedAt] = useState<string | null>(null);
+  const [approvalReviewedAt, setApprovalReviewedAt] = useState<string | null>(null);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+
   // ---- Derived values -----------------------------------------------------
 
-  const documentHash = document?.documentHash ?? '';
-  const documentType = document?.fileType?.toUpperCase() ?? '';
+  const contextFileName = selectedRequest?.fileName ?? document?.fileName ?? '';
+  const contextDocumentHash =
+    selectedRequest?.documentHash ?? document?.documentHash ?? '';
+  const contextDocumentType =
+    selectedRequest?.documentType?.toUpperCase() ??
+    document?.fileType?.toUpperCase() ??
+    '';
+  const contextOriginalValue =
+    selectedRequest?.originalValue ?? String(document?.totalValue ?? '');
+  const contextOriginalValueNumeric = Number(contextOriginalValue);
+  const contextCurrency = selectedRequest?.currency ?? document?.currency ?? '';
+  const hasMintContext = Boolean(
+    contextDocumentHash &&
+      contextDocumentType &&
+      contextCurrency &&
+      contextOriginalValue,
+  );
   // Use getNetworkMetadata (not getNetworkConfig) so the block explorer URL
   // is available even on chains where the platform contracts are not deployed.
   // getNetworkConfig returns undefined when factory/exchange addresses are empty.
@@ -139,24 +204,30 @@ export default function MintForm({ document }: MintFormProps) {
       setTxHash(null);
       setTxError(null);
     }
+    setApprovalStatus('none');
+    setApprovalRequestId(null);
+    setApprovalReviewNotes(null);
+    setApprovalSubmittedAt(null);
+    setApprovalReviewedAt(null);
+    setApprovalError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [document?.documentHash]);
 
   // ---- Pre-fill from document & wallet ------------------------------------
 
   useEffect(() => {
-    if (document) {
+    if (document && !selectedRequest) {
       setMintAmount(String(document.totalValue));
     }
-  }, [document]);
+  }, [document, selectedRequest]);
 
   // Pre-fill recipient with the connected wallet address. If the user has
   // not manually edited the field, keep it in sync with wallet changes.
   useEffect(() => {
-    if (address && !recipientManuallyEdited) {
+    if (address && !recipientManuallyEdited && !selectedRequest) {
       setRecipient(address);
     }
-  }, [address, recipientManuallyEdited]);
+  }, [address, recipientManuallyEdited, selectedRequest]);
 
   // ---- Auto-derive symbol from name --------------------------------------
 
@@ -189,11 +260,12 @@ export default function MintForm({ document }: MintFormProps) {
       if (amtErr) {
         errors.mintAmount = amtErr;
       } else if (
-        document &&
+        hasMintContext &&
         !isNaN(Number(sanitized)) &&
-        Number(sanitized) > document.totalValue
+        !isNaN(contextOriginalValueNumeric) &&
+        Number(sanitized) > contextOriginalValueNumeric
       ) {
-        errors.mintAmount = `Cannot exceed document value (${document.totalValue} ${document.currency})`;
+        errors.mintAmount = `Cannot exceed document value (${contextOriginalValue} ${contextCurrency})`;
       }
     }
 
@@ -209,7 +281,136 @@ export default function MintForm({ document }: MintFormProps) {
     }
 
     return errors;
-  }, [tokenName, tokenSymbol, mintAmount, recipient, touched, document]);
+  }, [
+    tokenName,
+    tokenSymbol,
+    mintAmount,
+    recipient,
+    touched,
+    hasMintContext,
+    contextOriginalValueNumeric,
+    contextOriginalValue,
+    contextCurrency,
+  ]);
+
+  const approvalQuery = useMemo<MintApprovalStatusQuery | null>(() => {
+    if (!hasMintContext || !chainId) return null;
+    const sanitizedMintAmount = sanitizeAmountInput(mintAmount);
+    if (
+      !tokenName.trim() ||
+      !tokenSymbol.trim() ||
+      !sanitizedMintAmount ||
+      isNaN(Number(sanitizedMintAmount)) ||
+      Number(sanitizedMintAmount) <= 0 ||
+      !recipient ||
+      !ethers.isAddress(recipient)
+    ) {
+      return null;
+    }
+    return {
+      tokenName: tokenName.trim(),
+      tokenSymbol: tokenSymbol.trim().toUpperCase(),
+      mintAmount: sanitizedMintAmount,
+      recipient,
+      documentHash: contextDocumentHash,
+      chainId,
+    };
+  }, [
+    hasMintContext,
+    chainId,
+    tokenName,
+    tokenSymbol,
+    mintAmount,
+    recipient,
+    contextDocumentHash,
+  ]);
+
+  const applyApprovalStatus = useCallback(
+    (
+      status: MintApprovalStatus,
+      details: {
+        requestId?: string | null;
+        reviewNotes?: string | null;
+        submittedAt?: string | null;
+        reviewedAt?: string | null;
+      } = {},
+    ) => {
+      setApprovalStatus(status);
+      setApprovalRequestId(details.requestId ?? null);
+      setApprovalReviewNotes(details.reviewNotes ?? null);
+      setApprovalSubmittedAt(details.submittedAt ?? null);
+      setApprovalReviewedAt(details.reviewedAt ?? null);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!selectedRequest) return;
+
+    setTokenName(selectedRequest.tokenName);
+    setTokenSymbol(selectedRequest.tokenSymbol);
+    setMintAmount(selectedRequest.mintAmount);
+    setRecipient(selectedRequest.recipient);
+    setRecipientManuallyEdited(true);
+    setSymbolManuallyEdited(true);
+    setTouched({});
+    setRecipientPasteStatus('idle');
+    setTxState('idle');
+    setTxHash(null);
+    setTxError(null);
+    setApprovalError(null);
+
+    applyApprovalStatus(selectedRequest.status, {
+      requestId: selectedRequest.id,
+      reviewNotes: selectedRequest.reviewNotes,
+      submittedAt: selectedRequest.submittedAt,
+      reviewedAt: selectedRequest.reviewedAt,
+    });
+  }, [applyApprovalStatus, selectedRequest, setTouched]);
+
+  useEffect(() => {
+    if (!isConnected || !approvalQuery) {
+      if (approvalStatus !== 'none') {
+        applyApprovalStatus('none');
+      }
+      return;
+    }
+
+    let cancelled = false;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const fetchStatus = async () => {
+      try {
+        const status = await getMintApprovalStatus(approvalQuery);
+        if (cancelled) return;
+        setApprovalError(null);
+        applyApprovalStatus(status.status, {
+          requestId: status.requestId,
+          reviewNotes: status.reviewNotes,
+          submittedAt: status.submittedAt,
+          reviewedAt: status.reviewedAt,
+        });
+      } catch (err) {
+        if (cancelled) return;
+        setApprovalError(
+          extractApiErrorMessage(err, 'Unable to check mint approval status.'),
+        );
+      }
+    };
+
+    void fetchStatus();
+
+    if (approvalStatus === 'pending') {
+      pollTimer = setInterval(() => {
+        void fetchStatus();
+      }, 15_000);
+    }
+
+    return () => {
+      cancelled = true;
+      if (pollTimer) clearInterval(pollTimer);
+    };
+  }, [approvalQuery, approvalStatus, applyApprovalStatus, isConnected]);
 
   // ---- Validation ---------------------------------------------------------
 
@@ -223,20 +424,163 @@ export default function MintForm({ document }: MintFormProps) {
     // CRITICAL: Enforce that mint amount does not exceed the parsed document value.
     // Without this check a user could edit the input (or manipulate React state via
     // devtools) to mint more tokens than the underlying document justifies.
-    if (document && Number(sanitizedAmount) > document.totalValue)
-      return `Mint amount cannot exceed the document value (${document.totalValue} ${document.currency})`;
+    if (
+      !isNaN(contextOriginalValueNumeric) &&
+      Number(sanitizedAmount) > contextOriginalValueNumeric
+    ) {
+      return `Mint amount cannot exceed the document value (${contextOriginalValue} ${contextCurrency})`;
+    }
     if (!recipient || !ethers.isAddress(recipient))
       return 'A valid recipient address is required';
     if (recipient === ethers.ZeroAddress)
       return 'Recipient cannot be the zero address';
-    if (!documentHash) return 'No document is loaded';
+    if (!contextDocumentHash) return 'No approved document context is loaded';
     return null;
-  }, [tokenName, tokenSymbol, mintAmount, recipient, documentHash, document]);
+  }, [
+    tokenName,
+    tokenSymbol,
+    mintAmount,
+    recipient,
+    contextOriginalValueNumeric,
+    contextOriginalValue,
+    contextCurrency,
+    contextDocumentHash,
+  ]);
+
+  const handleSubmitMintRequest = useCallback(async () => {
+    if (isSubmitting) return;
+
+    const validationError = validate();
+    if (validationError) {
+      setTouched({
+        tokenName: true,
+        tokenSymbol: true,
+        mintAmount: true,
+        recipient: true,
+      });
+      toast.error(validationError);
+      return;
+    }
+
+    if (!isConnected || !chainId) {
+      toast.error('Please connect your wallet before submitting a mint request.');
+      return;
+    }
+
+    if (!currentDocumentFile) {
+      toast.error(
+        'Original document file is required to submit a mint request. Re-upload the document and try again.',
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
+    setApprovalError(null);
+    setApprovalStatus('pending');
+
+    try {
+      const sanitizedMintAmount = sanitizeAmountInput(mintAmount);
+      const sanitizedOriginalValue = sanitizeAmountInput(contextOriginalValue);
+
+      const response = await submitMintApprovalRequest({
+        tokenName: tokenName.trim(),
+        tokenSymbol: tokenSymbol.trim().toUpperCase(),
+        mintAmount: sanitizedMintAmount,
+        recipient,
+        documentHash: contextDocumentHash,
+        chainId,
+        documentType: contextDocumentType,
+        originalValue: sanitizedOriginalValue,
+        currency: contextCurrency,
+        file: currentDocumentFile,
+      });
+
+      applyApprovalStatus(response.status, {
+        requestId: response.requestId,
+        reviewNotes: response.reviewNotes,
+        submittedAt: response.submittedAt,
+        reviewedAt: response.reviewedAt,
+      });
+
+      if (response.status === 'approved') {
+        toast.success(
+          response.reused
+            ? 'Mint request is already approved. You can mint now.'
+            : 'Mint request approved. You can mint now.',
+        );
+      } else if (response.reused) {
+        toast.success('An existing mint request is already pending banker review.');
+      } else {
+        toast.success(
+          'Mint request submitted to banker. Minting will unlock after approval.',
+        );
+      }
+    } catch (err) {
+      const message = extractApiErrorMessage(
+        err,
+        'Failed to submit mint request. Please try again.',
+      );
+      setApprovalError(message);
+      setApprovalStatus('none');
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [
+    isSubmitting,
+    validate,
+    isConnected,
+    chainId,
+    currentDocumentFile,
+    mintAmount,
+    tokenName,
+    tokenSymbol,
+    recipient,
+    contextDocumentHash,
+    contextDocumentType,
+    contextOriginalValue,
+    contextCurrency,
+    applyApprovalStatus,
+    setTouched,
+  ]);
 
   // ---- Mint handler -------------------------------------------------------
 
   const handleMint = async () => {
     if (isSubmitting) return;
+
+    if (approvalStatus !== 'approved') {
+      toast.error(
+        'Minting is locked until banker approval. Submit a mint request first.',
+      );
+      return;
+    }
+
+    if (approvalQuery) {
+      try {
+        const status = await getMintApprovalStatus(approvalQuery);
+        applyApprovalStatus(status.status, {
+          requestId: status.requestId,
+          reviewNotes: status.reviewNotes,
+          submittedAt: status.submittedAt,
+          reviewedAt: status.reviewedAt,
+        });
+        if (status.status !== 'approved') {
+          toast.error(
+            'Mint approval is no longer active. Please submit a fresh request.',
+          );
+          return;
+        }
+      } catch (err) {
+        toast.error(
+          extractApiErrorMessage(
+            err,
+            'Could not verify mint approval status. Please try again.',
+          ),
+        );
+        return;
+      }
+    }
 
     const validationError = validate();
     if (validationError) {
@@ -278,7 +622,7 @@ export default function MintForm({ document }: MintFormProps) {
         return cleaned;
       };
       const sanitizedMintAmount = sanitizeAmount(mintAmount);
-      const sanitizedOriginalValue = sanitizeAmount(String(document?.totalValue ?? '0'));
+      const sanitizedOriginalValue = sanitizeAmount(contextOriginalValue);
 
       if (isNaN(Number(sanitizedMintAmount)) || Number(sanitizedMintAmount) <= 0) {
         toast.error('Mint amount must be a valid positive number');
@@ -317,8 +661,8 @@ export default function MintForm({ document }: MintFormProps) {
       const tx = await service.createWrappedAsset(
         tokenName.trim(),
         tokenSymbol.trim(),
-        documentHash,
-        documentType,
+        contextDocumentHash,
+        contextDocumentType,
         originalValueWei,
         mintAmountWei,
         recipient,
@@ -395,8 +739,8 @@ export default function MintForm({ document }: MintFormProps) {
         symbol: tokenSymbol.trim(),
         totalSupply: mintAmountWei.toString(),
         balance: mintAmountWei.toString(),
-        documentHash,
-        documentType,
+        documentHash: contextDocumentHash,
+        documentType: contextDocumentType,
         originalValue: originalValueWei.toString(),
         createdAt: Date.now(),
       });
@@ -434,6 +778,20 @@ export default function MintForm({ document }: MintFormProps) {
     }
   };
 
+  const handlePrimaryAction = useCallback(async () => {
+    if (approvalStatus === 'approved') {
+      await handleMint();
+      return;
+    }
+
+    if (approvalStatus === 'pending') {
+      toast('Mint request is pending banker approval.');
+      return;
+    }
+
+    await handleSubmitMintRequest();
+  }, [approvalStatus, handleSubmitMintRequest, handleMint]);
+
   // ---- Reset after success ------------------------------------------------
 
   const handleReset = () => {
@@ -446,6 +804,13 @@ export default function MintForm({ document }: MintFormProps) {
     setTxState('idle');
     setTxHash(null);
     setTxError(null);
+    setApprovalStatus('none');
+    setApprovalRequestId(null);
+    setApprovalReviewNotes(null);
+    setApprovalSubmittedAt(null);
+    setApprovalReviewedAt(null);
+    setApprovalError(null);
+    onClearSelectedRequest?.();
   };
 
   // ---- Not connected prompt -----------------------------------------------
@@ -477,7 +842,7 @@ export default function MintForm({ document }: MintFormProps) {
 
   // ---- No document loaded -------------------------------------------------
 
-  if (!document) {
+  if (!document && !selectedRequest) {
     return (
       <section aria-label="Document required" className="flex flex-col items-center justify-center py-12 sm:py-20 text-center px-4">
         <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-gray-500/10 to-gray-600/10 border border-white/[0.06]">
@@ -662,17 +1027,24 @@ export default function MintForm({ document }: MintFormProps) {
   const amountExceedsDocValue =
     !isNaN(parsedMintAmount) &&
     parsedMintAmount > 0 &&
-    document != null &&
-    parsedMintAmount > document.totalValue;
+    !isNaN(contextOriginalValueNumeric) &&
+    parsedMintAmount > contextOriginalValueNumeric;
 
   const canSubmit =
-    !!(tokenName.trim() && tokenSymbol.trim() && mintAmount && recipient && documentHash) &&
+    !!(
+      tokenName.trim() &&
+      tokenSymbol.trim() &&
+      mintAmount &&
+      recipient &&
+      contextDocumentHash &&
+      hasMintContext
+    ) &&
     !amountExceedsDocValue;
 
   return (
     <form
       className="space-y-6"
-      onSubmit={(e) => { e.preventDefault(); void handleMint(); }}
+      onSubmit={(e) => { e.preventDefault(); void handlePrimaryAction(); }}
       aria-label="Mint wrapped asset token"
       noValidate
     >
@@ -689,6 +1061,35 @@ export default function MintForm({ document }: MintFormProps) {
           }
           switchChainIds={[17000, 1, 31337]}
         />
+      )}
+
+      {selectedRequest && (
+        <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.08] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-cyan-200">
+                Pending Token Selected
+              </p>
+              <p className="mt-1 text-xs text-cyan-100/80">
+                Request ID: <span className="font-mono">{selectedRequest.id}</span>
+              </p>
+              <p className="mt-1 text-xs text-cyan-100/80">
+                {selectedRequest.tokenName} ({selectedRequest.tokenSymbol}) on{' '}
+                {getNetworkMetadata(selectedRequest.chainId)?.name ??
+                  `Chain ${selectedRequest.chainId}`}
+              </p>
+            </div>
+            {onClearSelectedRequest && (
+              <button
+                type="button"
+                onClick={onClearSelectedRequest}
+                className="inline-flex min-h-[44px] items-center rounded-xl border border-cyan-500/30 bg-cyan-500/[0.12] px-3.5 py-2 text-xs font-semibold text-cyan-100 transition-all hover:bg-cyan-500/[0.18]"
+              >
+                Clear Selection
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       {/* ---- Section: Token Configuration ---- */}
@@ -768,7 +1169,7 @@ export default function MintForm({ document }: MintFormProps) {
           error={fieldErrors.mintAmount}
           hint={
             !fieldErrors.mintAmount && mintAmount && !isNaN(Number(mintAmount.replace(/[,\s]/g, '')))
-              ? `${formatNumberDisplay(mintAmount)} of ${formatNumberDisplay(String(document.totalValue))} ${document.currency} max`
+              ? `${formatNumberDisplay(mintAmount)} of ${formatNumberDisplay(contextOriginalValue)} ${contextCurrency} max`
               : undefined
           }
           required
@@ -791,18 +1192,20 @@ export default function MintForm({ document }: MintFormProps) {
             />
             <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
               {/* Max button -- fills the input with the document's total value */}
-              {String(mintAmount).replace(/[,\s]/g, '') !== String(document.totalValue) && (
+              {contextOriginalValue &&
+                String(mintAmount).replace(/[,\s]/g, '') !==
+                  String(contextOriginalValue) && (
                 <button
                   type="button"
-                  onClick={() => setMintAmount(String(document.totalValue))}
+                  onClick={() => setMintAmount(String(contextOriginalValue))}
                   className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 min-h-[44px] text-[10px] font-semibold uppercase tracking-wide text-indigo-400 transition-all hover:bg-indigo-500/20 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                  aria-label={`Set maximum amount: ${document.totalValue} ${document.currency}`}
+                  aria-label={`Set maximum amount: ${contextOriginalValue} ${contextCurrency}`}
                 >
                   Max
                 </button>
               )}
               <span className="text-xs font-medium text-gray-500">
-                {document.currency}
+                {contextCurrency}
               </span>
             </div>
           </div>
@@ -889,7 +1292,7 @@ export default function MintForm({ document }: MintFormProps) {
           <div className="flex items-center justify-between py-3 first:pt-0">
             <span className="text-sm text-gray-400">Document</span>
             <span className="text-sm font-medium text-white truncate max-w-[220px] font-mono">
-              {document.fileName}
+              {contextFileName}
             </span>
           </div>
 
@@ -897,7 +1300,7 @@ export default function MintForm({ document }: MintFormProps) {
           <div className="flex items-center justify-between py-3">
             <span className="text-sm text-gray-400">Type</span>
             <span className="inline-flex items-center rounded-lg bg-indigo-500/10 px-2.5 py-0.5 text-xs font-semibold text-indigo-400 ring-1 ring-inset ring-indigo-500/20 uppercase">
-              {documentType}
+              {contextDocumentType}
             </span>
           </div>
 
@@ -914,9 +1317,9 @@ export default function MintForm({ document }: MintFormProps) {
             <div className="flex items-center gap-2">
               <Hash className="h-3 w-3 text-gray-600" />
               <span className="font-mono text-xs text-white">
-                {documentHash.length > 18
-                  ? `${documentHash.substring(0, 10)}...${documentHash.substring(documentHash.length - 6)}`
-                  : documentHash}
+                {contextDocumentHash.length > 18
+                  ? `${contextDocumentHash.substring(0, 10)}...${contextDocumentHash.substring(contextDocumentHash.length - 6)}`
+                  : contextDocumentHash}
               </span>
             </div>
           </div>
@@ -925,20 +1328,98 @@ export default function MintForm({ document }: MintFormProps) {
           <div className="flex items-center justify-between py-3 last:pb-0">
             <span className="text-sm text-gray-400">Total Value</span>
             <span className="text-sm font-bold text-white tabular-nums font-mono">
-              {formatTokenAmount(document.totalValue, 2)}{' '}
-              <span className="text-xs font-medium text-gray-500">{document.currency}</span>
+              {formatTokenAmount(contextOriginalValue, 2)}{' '}
+              <span className="text-xs font-medium text-gray-500">{contextCurrency}</span>
             </span>
           </div>
         </div>
       </div>
 
+      {/* ---- Section: Approval Workflow ---- */}
+      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 sm:p-5">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+          Mint Approval Workflow
+        </p>
+        <p className="mt-2 text-sm leading-relaxed text-gray-400">
+          Submit your mint request to banker review first. Once approved, the
+          mint action unlocks and you can sign the on-chain transaction.
+        </p>
+        <ol className="mt-3 space-y-1.5 text-xs text-gray-500">
+          <li>1. Submit mint request to banker (with attached document)</li>
+          <li>2. Banker approves or rejects request</li>
+          <li>3. Approved request unlocks mint button</li>
+        </ol>
+      </div>
+
+      {approvalStatus === 'pending' && (
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.08] p-4">
+          <p className="text-sm font-semibold text-amber-300">
+            Mint request submitted. Awaiting banker approval.
+          </p>
+          {approvalRequestId && (
+            <p className="mt-1 text-xs text-amber-300/80">
+              Request ID: <span className="font-mono">{approvalRequestId}</span>
+            </p>
+          )}
+          {approvalSubmittedAt && (
+            <p className="mt-1 text-xs text-amber-300/70">
+              Submitted: {new Date(approvalSubmittedAt).toLocaleString()}
+            </p>
+          )}
+        </div>
+      )}
+
+      {approvalStatus === 'approved' && (
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.08] p-4">
+          <p className="text-sm font-semibold text-emerald-300">
+            Banker approved this mint request. You can mint now.
+          </p>
+          {approvalReviewedAt && (
+            <p className="mt-1 text-xs text-emerald-300/70">
+              Approved: {new Date(approvalReviewedAt).toLocaleString()}
+            </p>
+          )}
+        </div>
+      )}
+
+      {approvalStatus === 'rejected' && (
+        <div className="rounded-2xl border border-red-500/20 bg-red-500/[0.08] p-4">
+          <p className="text-sm font-semibold text-red-300">
+            This mint request was rejected by banker review.
+          </p>
+          {approvalReviewNotes && (
+            <p className="mt-1 text-xs text-red-300/80">{approvalReviewNotes}</p>
+          )}
+          <p className="mt-1 text-xs text-red-300/70">
+            Update details if needed, then submit a new request.
+          </p>
+        </div>
+      )}
+
+      {approvalError && (
+        <p className="text-xs text-red-400" role="alert">
+          {approvalError}
+        </p>
+      )}
+
       {/* ---- Submit Button ---- */}
       {(() => {
-        // Determine the button label with a clear reason when disabled
-        let buttonLabel = 'Mint Token';
+        const mintUnlocked = approvalStatus === 'approved';
+        const approvalPending = approvalStatus === 'pending';
+        const approvalRejected = approvalStatus === 'rejected';
+
+        let buttonLabel = mintUnlocked
+          ? 'Mint Token'
+          : approvalRejected
+            ? 'Resubmit Mint Request to Banker'
+            : 'Submit Mint Request to Banker';
         let buttonDisabledReason = '';
+
         if (isSubmitting) {
-          buttonLabel = 'Submitting...';
+          buttonLabel = mintUnlocked ? 'Submitting mint...' : 'Submitting request...';
+        } else if (approvalPending) {
+          buttonLabel = 'Awaiting Banker Approval';
+          buttonDisabledReason = 'Mint request pending banker approval';
         } else if (!tokenName.trim()) {
           buttonDisabledReason = 'Enter a token name';
         } else if (!tokenSymbol.trim()) {
@@ -946,14 +1427,20 @@ export default function MintForm({ document }: MintFormProps) {
         } else if (!mintAmount || isNaN(parsedMintAmount) || parsedMintAmount <= 0) {
           buttonDisabledReason = 'Enter a mint amount';
         } else if (amountExceedsDocValue) {
-          buttonDisabledReason = `Exceeds document value (${formatNumberDisplay(String(document.totalValue))} ${document.currency})`;
+          buttonDisabledReason = `Exceeds document value (${formatNumberDisplay(contextOriginalValue)} ${contextCurrency})`;
         } else if (!recipient) {
           buttonDisabledReason = 'Enter a recipient address';
         } else if (!ethers.isAddress(recipient)) {
           buttonDisabledReason = 'Invalid recipient address';
+        } else if (!mintUnlocked && !currentDocumentFile) {
+          buttonDisabledReason = 'Upload the source document file before submitting request';
         }
 
-        const isDisabled = !canSubmit || isSubmitting;
+        const isDisabled =
+          !canSubmit ||
+          isSubmitting ||
+          approvalPending ||
+          (!mintUnlocked && !currentDocumentFile);
 
         return (
           <>
@@ -961,7 +1448,13 @@ export default function MintForm({ document }: MintFormProps) {
               type="submit"
               disabled={isDisabled}
               aria-disabled={isDisabled}
-              aria-label={isDisabled ? buttonDisabledReason : 'Mint token'}
+              aria-label={
+                isDisabled
+                  ? buttonDisabledReason
+                  : mintUnlocked
+                    ? 'Mint token'
+                    : 'Submit mint request to banker'
+              }
               className="group relative flex w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 px-6 py-4 min-h-[44px] text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-all duration-200 hover:shadow-indigo-500/30 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:shadow-none disabled:hover:brightness-100 disabled:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]"
             >
               {/* Button shimmer effect */}
@@ -972,17 +1465,17 @@ export default function MintForm({ document }: MintFormProps) {
               {isSubmitting ? (
                 <>
                   <Loader2 className="relative h-4.5 w-4.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                  <span className="relative">Submitting...</span>
+                  <span className="relative">{buttonLabel}</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="relative h-4.5 w-4.5" aria-hidden="true" />
-                  <span className="relative">{buttonDisabledReason || buttonLabel}</span>
+                  <span className="relative">{buttonLabel}</span>
                 </>
               )}
             </button>
 
-            {!canSubmit && !isSubmitting && buttonDisabledReason && (
+            {(isDisabled || !canSubmit) && !isSubmitting && buttonDisabledReason && (
               <p
                 className={`text-center text-xs ${amountExceedsDocValue ? 'text-red-400' : 'text-gray-600'}`}
                 role={amountExceedsDocValue ? 'alert' : undefined}

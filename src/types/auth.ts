@@ -4,7 +4,7 @@
 
 export type KYCStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
 export type DocumentType = 'drivers_license' | 'passport' | 'national_id';
-export type SubscriptionPlan = 'monthly' | 'annual';
+export type SubscriptionPlan = 'monthly' | 'annual' | 'full_service';
 export type HelpLevel = 'novice' | 'intermediate' | 'expert';
 
 export interface User {
