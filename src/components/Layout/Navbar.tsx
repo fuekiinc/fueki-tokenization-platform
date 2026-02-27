@@ -204,9 +204,9 @@ function NetworkBadge() {
           boxShadow: `0 0 6px ${currentNetwork.color}50`,
         }}
       />
-      <span className="hidden sm:inline">{currentNetwork.shortName}</span>
+      <span className="hidden sm:inline xl:hidden 2xl:inline">{currentNetwork.shortName}</span>
       {currentNetwork.isTestnet && (
-        <span className="hidden sm:inline rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-400">
+        <span className="hidden sm:inline xl:hidden 2xl:inline rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-400">
           Testnet
         </span>
       )}
@@ -498,7 +498,7 @@ function MobileSlideOver({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation menu">
+    <div className="fixed inset-0 z-50 xl:hidden" role="dialog" aria-modal="true" aria-label="Navigation menu">
       {/* Overlay */}
       <div
         className="sidebar-overlay absolute inset-0 animate-fade-in"
@@ -701,7 +701,7 @@ export default function Navbar() {
               </Link>
 
               {/* Desktop nav links -- NavLink auto-sets aria-current="page" when active */}
-              <div className="hidden items-center gap-1 lg:flex" role="navigation" aria-label="Main navigation">
+              <div className="hidden items-center gap-1 xl:flex" role="navigation" aria-label="Main navigation">
                 {NAV_ITEMS.map((item) => (
                   <NavLink
                     key={item.to}
@@ -768,7 +768,7 @@ export default function Navbar() {
                 type="button"
                 onClick={() => setMobileMenuOpen((prev) => !prev)}
                 className={clsx(
-                  'rounded-xl p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center transition-all duration-200 lg:hidden',
+                  'rounded-xl p-2.5 min-h-[44px] min-w-[44px] flex items-center justify-center transition-all duration-200 xl:hidden',
                   'text-gray-400 hover:bg-white/[0.06] hover:text-white',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60',
                 )}
