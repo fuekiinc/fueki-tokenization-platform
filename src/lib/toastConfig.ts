@@ -19,13 +19,13 @@ import type { ToasterProps } from 'react-hot-toast';
 // ---------------------------------------------------------------------------
 
 /** Standard success toast duration. */
-export const TOAST_DURATION_SUCCESS = 4_000;
+export const TOAST_DURATION_SUCCESS = 3_000;
 
-/** Standard error toast duration -- longer so users can read. */
-export const TOAST_DURATION_ERROR = 8_000;
+/** Standard error toast duration -- slightly longer so users can read. */
+export const TOAST_DURATION_ERROR = 5_000;
 
 /** Default duration for generic toasts. */
-export const TOAST_DURATION_DEFAULT = 5_000;
+export const TOAST_DURATION_DEFAULT = 4_000;
 
 /** Loading toasts persist until explicitly dismissed. */
 export const TOAST_DURATION_LOADING = Infinity;

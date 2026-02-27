@@ -279,8 +279,9 @@ export async function deployTemplate(
     return tx;
   }
 
-  // Fallback path: wallet RPC is dead — pre-populate ALL tx fields so
-  // MetaMask doesn't need to make any RPC calls of its own.
+  // Fallback path: wallet RPC is dead — pre-populate ALL tx fields and use
+  // sendUncheckedTransaction() to bypass the getBlockNumber() / getTransaction()
+  // calls that ethers.js v6 routes through MetaMask's broken RPC.
   logger.info('[deploy] Using fallback deploy path with pre-populated tx');
 
   const signerAddress = await signer.getAddress();
@@ -302,9 +303,24 @@ export async function deployTemplate(
   };
 
   try {
-    const txResponse = await signer.sendTransaction(fullTx);
-    logger.info(`[deploy] Transaction sent via fallback: ${txResponse.hash}`);
-    return txResponse as ethers.ContractTransactionResponse;
+    // sendUncheckedTransaction() sends eth_sendTransaction directly to MetaMask
+    // without the getBlockNumber()/getTransaction() calls that fail when
+    // MetaMask's configured RPC is dead. MetaMask signs locally and broadcasts
+    // via its own RPC — which may work even if eth_blockNumber doesn't.
+    const jsonRpcSigner = signer as ethers.JsonRpcSigner;
+    const txHash = await jsonRpcSigner.sendUncheckedTransaction(fullTx);
+    logger.info(`[deploy] Transaction sent via fallback: ${txHash}`);
+
+    // We can't use signer.provider to look up the full TransactionResponse
+    // (MetaMask's RPC is dead), so return a minimal proxy object.
+    // The caller only uses .hash and passes this to waitForDeployment(),
+    // which already has fallback receipt retrieval via direct provider.
+    return {
+      hash: txHash,
+      // wait() will throw — waitForDeployment() catches network errors and
+      // falls back to a direct provider for receipt polling.
+      wait: () => Promise.reject(new Error('Network error: wallet RPC unavailable for confirmations')),
+    } as unknown as ethers.ContractTransactionResponse;
   } catch (err) {
     // If MetaMask still can't broadcast, give actionable instructions
     if (isNetworkError(err)) {

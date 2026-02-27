@@ -763,7 +763,7 @@ export default function DeployTokenPage() {
         // primary source.
         toast.success('Token deployed, but could not parse event. Check the transaction on the explorer.', {
           id: 'deploy-tx',
-          duration: 8000,
+          duration: 5000,
         });
         setDeployResult({
           txHash: receipt.hash,
@@ -774,7 +774,7 @@ export default function DeployTokenPage() {
       } else {
         toast.success('Security token deployed successfully!', {
           id: 'deploy-tx',
-          duration: 6000,
+          duration: 4000,
         });
         setDeployResult({
           txHash: receipt.hash,
@@ -785,7 +785,7 @@ export default function DeployTokenPage() {
       }
     } catch (err) {
       const msg = parseContractError(err);
-      toast.error(msg, { id: 'deploy-tx', duration: 6000 });
+      toast.error(msg, { id: 'deploy-tx', duration: 5000 });
       console.error('Deployment error:', err);
     } finally {
       setIsDeploying(false);

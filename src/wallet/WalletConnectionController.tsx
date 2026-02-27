@@ -17,6 +17,7 @@ import {
   thirdwebClient,
 } from '../lib/thirdweb';
 import { clearWalletBoundStores } from './walletBoundStores';
+import { findHealthyEndpoint } from '../lib/rpc/endpoints';
 
 function parseConnectionError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
@@ -51,20 +52,38 @@ function parseConnectionError(err: unknown): string {
 async function fetchBalanceWithRetry(
   provider: ethers.BrowserProvider,
   address: string,
+  chainId?: number | null,
   retries = 2,
 ): Promise<string> {
+  // Try the wallet's own provider first.
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const raw = await provider.getBalance(address);
       return ethers.formatEther(raw);
     } catch (err) {
       if (attempt === retries) {
-        logger.error('Balance fetch failed after retries:', err);
-        return '0';
+        logger.debug('Balance fetch via wallet provider failed after retries:', err);
+      } else {
+        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
       }
-      await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
     }
   }
+
+  // Fallback: use a healthy public RPC endpoint for balance lookup.
+  if (chainId) {
+    try {
+      const rpcUrl = await findHealthyEndpoint(chainId);
+      if (rpcUrl) {
+        const fallback = new ethers.JsonRpcProvider(rpcUrl);
+        const raw = await fallback.getBalance(address);
+        fallback.destroy();
+        return ethers.formatEther(raw);
+      }
+    } catch (err) {
+      logger.debug('Balance fallback via healthy RPC also failed:', err);
+    }
+  }
+
   return '0';
 }
 
@@ -177,6 +196,19 @@ export function WalletConnectionController() {
       getThirdwebChain(activeWallet.getChain()?.id) ??
       THIRDWEB_DEFAULT_CHAIN;
 
+    // During a chain switch thirdweb may still report "connected" on the
+    // OLD chain while the switch is in flight.  If we proceed we'd create
+    // a provider/signer for the old chain and overwrite the "switching"
+    // state, effectively cancelling the switch.  Wait until the active
+    // chain matches the target before syncing.
+    if (
+      wallet.connectionStatus === 'switching' &&
+      wallet.switchTargetChainId != null &&
+      chain.id !== wallet.switchTargetChainId
+    ) {
+      return;
+    }
+
     try {
       const eip1193Provider = EIP1193.toProvider({
         wallet: activeWallet,
@@ -195,7 +227,7 @@ export function WalletConnectionController() {
       setProvider(provider);
       setSigner(signer);
 
-      const balance = await fetchBalanceWithRetry(provider, address);
+      const balance = await fetchBalanceWithRetry(provider, address, chain.id);
       if (isStale()) return;
 
       setWallet({
@@ -271,10 +303,18 @@ export function WalletConnectionController() {
     }
 
     if (connectionStatus === 'disconnected' && wasConnectedRef.current) {
-      wasConnectedRef.current = false;
-      resetWallet();
-      clearWalletBoundStores();
-      setLastError(null);
+      // During chain switches thirdweb may briefly report "disconnected".
+      // Read the zustand switching flag directly (not via hook selector)
+      // so we don't add a reactive dep that would cause extra re-runs.
+      const isSwitching =
+        useWalletStore.getState().wallet.connectionStatus === 'switching';
+
+      if (!isSwitching) {
+        wasConnectedRef.current = false;
+        resetWallet();
+        clearWalletBoundStores();
+        setLastError(null);
+      }
     }
   }, [connectionStatus, resetWallet, setLastError]);
 
@@ -303,6 +343,23 @@ export function WalletConnectionController() {
           setWallet({ balance: ethers.formatEther(raw), lastSyncAt: Date.now() });
           balanceFailCountRef.current = 0; // reset on success
         } catch {
+          // Wallet provider RPC failed — try a healthy public endpoint.
+          if (wallet.chainId) {
+            try {
+              const rpcUrl = await findHealthyEndpoint(wallet.chainId);
+              if (rpcUrl) {
+                const fallback = new ethers.JsonRpcProvider(rpcUrl);
+                const raw = await fallback.getBalance(wallet.address!);
+                fallback.destroy();
+                setWallet({ balance: ethers.formatEther(raw), lastSyncAt: Date.now() });
+                balanceFailCountRef.current = 0;
+                scheduleBalancePoll();
+                return;
+              }
+            } catch {
+              // fallback also failed
+            }
+          }
           balanceFailCountRef.current++;
         }
         scheduleBalancePoll();
@@ -312,7 +369,7 @@ export function WalletConnectionController() {
     scheduleBalancePoll();
 
     return () => clearTimeout(balanceIntervalRef.current);
-  }, [wallet.isConnected, wallet.address, setWallet]);
+  }, [wallet.isConnected, wallet.address, wallet.chainId, setWallet]);
 
   return null;
 }

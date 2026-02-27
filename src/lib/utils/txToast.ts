@@ -241,5 +241,5 @@ export function txFailedToast(
   txHash: string,
   message = 'Transaction failed',
 ): void {
-  toast.error(message, { id: `tx-${txHash}`, duration: 8_000 });
+  toast.error(message, { id: `tx-${txHash}`, duration: 5_000 });
 }

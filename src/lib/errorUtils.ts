@@ -535,8 +535,8 @@ export function showError(error: unknown, context?: string): void {
     return;
   }
 
-  // Critical errors get a longer duration so the user can read them.
-  const duration = classified.severity === 'critical' ? 10_000 : 6_000;
+  // Critical errors get a slightly longer duration so the user can read them.
+  const duration = classified.severity === 'critical' ? 5_000 : 4_000;
   toast.error(display, { duration });
 }
 
@@ -561,6 +561,6 @@ export function showDetailedError(error: unknown, context?: string): void {
     return;
   }
 
-  const duration = classified.severity === 'critical' ? 12_000 : 8_000;
+  const duration = classified.severity === 'critical' ? 5_000 : 4_000;
   toast.error(`${title}\n${classified.suggestedAction}`, { duration });
 }

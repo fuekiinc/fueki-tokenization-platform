@@ -314,7 +314,7 @@ export function DeployWizard({ template }: DeployWizardProps) {
 
       toast.success('Contract deployed successfully!', {
         id: 'contract-deploy-tx',
-        duration: 6000,
+        duration: 4000,
       });
     } catch (err) {
       const message =
@@ -324,7 +324,7 @@ export function DeployWizard({ template }: DeployWizardProps) {
 
       toast.error(message, {
         id: 'contract-deploy-tx',
-        duration: 6000,
+        duration: 5000,
       });
     }
   }, [
