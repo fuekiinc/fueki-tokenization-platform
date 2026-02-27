@@ -28,15 +28,29 @@ const RPC_ENV_BY_CHAIN: Record<number, string> = {
 };
 
 const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
-  1: ['https://ethereum-rpc.publicnode.com'],
+  1: [
+    'https://ethereum-rpc.publicnode.com',
+    'https://eth.drpc.org',
+  ],
   137: ['https://polygon-rpc.com'],
   31337: ['http://127.0.0.1:8545'],
   8453: ['https://mainnet.base.org'],
   84532: ['https://sepolia.base.org'],
-  17000: ['https://holesky.drpc.org'],
+  17000: [
+    'https://holesky.drpc.org',
+    'https://ethereum-holesky-rpc.publicnode.com',
+    'https://1rpc.io/holesky',
+    'https://rpc.holesky.ethpandaops.io',
+  ],
   42161: ['https://arb1.arbitrum.io/rpc'],
-  421614: ['https://sepolia-rollup.arbitrum.io/rpc'],
-  11155111: ['https://rpc.sepolia.org'],
+  421614: [
+    'https://sepolia-rollup.arbitrum.io/rpc',
+    'https://arbitrum-sepolia-rpc.publicnode.com',
+  ],
+  11155111: [
+    'https://rpc.sepolia.org',
+    'https://ethereum-sepolia-rpc.publicnode.com',
+  ],
 };
 
 function endpointKey(chainId: number, url: string): string {
@@ -174,6 +188,76 @@ export function reportRpcEndpointFailure(chainId: number, url: string): void {
       failures,
       cooldownMs: COOLDOWN_MS,
     });
+  }
+}
+
+/**
+ * Probe RPC endpoints for a chain **in parallel** and return the first one that
+ * responds to `eth_blockNumber`. This avoids 5-second serial timeouts per dead
+ * endpoint — a single healthy endpoint responds almost instantly.
+ *
+ * Returns the first healthy URL, or `null` if all fail.
+ */
+export async function findHealthyEndpoint(
+  chainId: number,
+  timeoutMs = 5_000,
+): Promise<string | null> {
+  const endpoints = getRpcEndpoints(chainId);
+  if (endpoints.length === 0) return null;
+
+  /** Probe a single endpoint; resolves with its URL on success, rejects on failure. */
+  const probe = (url: string): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error('timeout'));
+      }, timeoutMs);
+
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'eth_blockNumber',
+          params: [],
+        }),
+        signal: controller.signal,
+      })
+        .then(async (res) => {
+          clearTimeout(timer);
+          if (!res.ok) {
+            reportRpcEndpointFailure(chainId, url);
+            reject(new Error(`HTTP ${res.status}`));
+            return;
+          }
+          const json = (await res.json()) as {
+            result?: string;
+            error?: unknown;
+          };
+          if (json.result) {
+            log.info(`RPC probe success on chain ${chainId}`, { endpoint: url });
+            reportRpcEndpointSuccess(chainId, url);
+            resolve(url);
+          } else {
+            reportRpcEndpointFailure(chainId, url);
+            reject(new Error('no result'));
+          }
+        })
+        .catch((err) => {
+          clearTimeout(timer);
+          reportRpcEndpointFailure(chainId, url);
+          reject(err);
+        });
+    });
+
+  try {
+    // Promise.any resolves as soon as ANY probe succeeds.
+    return await Promise.any(endpoints.map(probe));
+  } catch {
+    // AggregateError — all probes failed.
+    return null;
   }
 }
 

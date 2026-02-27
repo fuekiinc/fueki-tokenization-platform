@@ -4,12 +4,16 @@
  * Provides a best-effort gas cost preview before the user confirms deployment.
  * Estimation failures are non-blocking -- the function returns null so the UI
  * can gracefully hide the cost preview rather than preventing deployment.
+ *
+ * When the wallet's RPC is down, estimation uses a direct JsonRpcProvider
+ * obtained from `ensureWalletRpcHealthy()` so the cost preview still works.
  */
 
 import { ethers } from 'ethers';
 import type { ContractTemplate, GasEstimate } from '../../types/contractDeployer';
 import { encodeConstructorArgs } from './constructorEncoder';
 import { getProvider, getSigner } from '../../store/walletStore';
+import { ensureWalletRpcHealthy } from './deploy';
 import logger from '../logger';
 
 // ---------------------------------------------------------------------------
@@ -34,11 +38,16 @@ export async function estimateDeployGas(
 ): Promise<GasEstimate | null> {
   try {
     const signer = getSigner();
-    const provider = getProvider();
+    const walletProvider = getProvider();
 
-    if (!signer || !provider) {
+    if (!signer || !walletProvider) {
       return null;
     }
+
+    // Ensure the wallet's RPC is reachable before estimating. If it's down,
+    // we get back a direct JsonRpcProvider to use instead.
+    const fallbackProvider = await ensureWalletRpcHealthy();
+    const provider = fallbackProvider ?? walletProvider;
 
     const args = encodeConstructorArgs(template, constructorValues);
 
@@ -50,7 +59,10 @@ export async function estimateDeployGas(
 
     // Build the deployment transaction and estimate gas
     const deployTx = await factory.getDeployTransaction(...args);
-    const gasUnits = await signer.estimateGas(deployTx);
+    const gasUnits = await provider.estimateGas({
+      ...deployTx,
+      from: await signer.getAddress(),
+    });
 
     // Fetch current fee data for cost calculation
     const feeData = await provider.getFeeData();
