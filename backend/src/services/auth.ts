@@ -1,9 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
 import { config } from '../config';
-
-const prisma = new PrismaClient();
+import { prisma } from '../prisma';
 const SALT_ROUNDS = 12;
 
 export async function hashPassword(password: string): Promise<string> {
@@ -48,9 +46,10 @@ export async function createSession(
   const accessToken = generateAccessToken(userId);
   const refreshToken = generateRefreshToken(userId);
 
-  // Store refresh token in DB with 7 day expiry
+  // Keep non-remembered sessions short-lived even if the browser stays open.
+  const sessionTtlSeconds = rememberMe ? config.jwt.refreshExpiresIn : 24 * 60 * 60;
   const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
+  expiresAt.setTime(expiresAt.getTime() + sessionTtlSeconds * 1000);
 
   await prisma.session.create({
     data: {

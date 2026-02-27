@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
 import { encrypt } from './encryption';
 import { saveEncryptedDocument } from './storage';
 import { sendKYCReviewEmail } from './email';
-
-const prisma = new PrismaClient();
+import { prisma } from '../prisma';
 
 interface KYCInput {
   userId: string;

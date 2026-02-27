@@ -19,8 +19,9 @@ import { useWallet } from '../hooks/useWallet';
 import { useWalletStore, getProvider } from '../store/walletStore.ts';
 import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
 import { ContractService } from '../lib/blockchain/contracts';
+import { retryAsync } from '../lib/utils/retry';
 import logger from '../lib/logger';
-import { getNetworkMetadata } from '../contracts/addresses';
+import { DEFAULT_SWITCH_CHAIN_IDS, getNetworkMetadata } from '../contracts/addresses';
 import { getNetworkCapabilities } from '../contracts/networkCapabilities';
 import { formatAddress } from '../lib/utils/helpers';
 // Card is available in Common but not needed in this layout
@@ -201,8 +202,11 @@ export default function ExchangePage() {
     setLoadingAssets(true);
 
     try {
-      // Get total number of assets from factory
-      const totalAssets = await contractService.getTotalAssets();
+      // Get total number of assets from factory (retry on transient RPC failures)
+      const totalAssets = await retryAsync(
+        () => contractService.getTotalAssets(),
+        { maxAttempts: 3, baseDelayMs: 1_500, label: 'exchange:getTotalAssets' },
+      );
       if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
       if (totalAssets === 0n) {
         setLocalAssets([]);
@@ -210,10 +214,13 @@ export default function ExchangePage() {
         return;
       }
 
-      // Get user's own assets
+      // Get user's own assets (retry on transient RPC failures)
       let userAssetAddresses: string[] = [];
       try {
-        userAssetAddresses = await contractService.getUserAssets(address);
+        userAssetAddresses = await retryAsync(
+          () => contractService.getUserAssets(address),
+          { maxAttempts: 3, baseDelayMs: 1_500, label: 'exchange:getUserAssets' },
+        );
       } catch (err) {
         logger.error('Failed to fetch user assets:', err);
         toast.error('Unable to load your token list. Some tokens may be missing.');
@@ -275,7 +282,11 @@ export default function ExchangePage() {
       setAssets(assetList);
     } catch (err) {
       logger.error('Failed to fetch assets:', err);
-      toast.error('Unable to load your tokens. Check your connection and try again.');
+      const msg =
+        err instanceof Error && /network|timeout|fetch|rpc|connect/i.test(err.message)
+          ? 'Network error — unable to reach the RPC node. The node may be temporarily overloaded. Please try again in a moment.'
+          : 'Unable to load your tokens. Check your connection and try again.';
+      toast.error(msg);
     } finally {
       setLocalLoadingAssets(false);
       setLoadingAssets(false);
@@ -417,7 +428,7 @@ export default function ExchangePage() {
             switchNetwork={switchNetwork}
             title="Network Not Supported"
             description="The exchange contracts are not deployed on your current network. Please switch to a supported network to start trading."
-            switchChainIds={[17000, 1, 31337]}
+            switchChainIds={DEFAULT_SWITCH_CHAIN_IDS}
           />
         </div>
       </div>
@@ -861,7 +872,8 @@ export default function ExchangePage() {
                     Orbital AMM Is Available on This Network
                   </h3>
                   <p className="mt-2 max-w-2xl text-sm leading-relaxed text-cyan-100/80">
-                    Holesky currently supports Orbital AMM pools while the legacy AMM module is not deployed.
+                    {(networkConfig?.name ?? 'This network')} supports Orbital AMM pools while the
+                    legacy AMM module is not deployed.
                     Continue with concentrated pools, swaps, and liquidity from the Orbital AMM page.
                   </p>
                 </div>
@@ -890,7 +902,7 @@ export default function ExchangePage() {
               switchNetwork={switchNetwork}
               title="AMM Unavailable on This Network"
               description="Order-book trading is available, but AMM liquidity pools are not deployed on this network."
-              switchChainIds={[17000, 1, 31337]}
+              switchChainIds={DEFAULT_SWITCH_CHAIN_IDS}
             />
           </div>
         )}

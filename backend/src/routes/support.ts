@@ -1,11 +1,10 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { authenticateOptional } from '../middleware/auth';
 import { sendSupportRequestEmail } from '../services/email';
+import { prisma } from '../prisma';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const supportCategorySchema = z.enum([
   'general',

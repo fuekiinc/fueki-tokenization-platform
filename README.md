@@ -229,11 +229,17 @@ npx hardhat compile
 # Deploy to Holesky testnet
 npx hardhat run scripts/deploy-holesky.cjs --network holesky
 
+# Deploy to Arbitrum Sepolia testnet
+npx hardhat run scripts/deploy-holesky.cjs --network arbitrumSepolia
+
 # Deploy to mainnet
 npx hardhat run scripts/deploy-mainnet.cjs --network mainnet
 
-# Deploy Orbital protocol
+# Deploy Orbital protocol (Holesky)
 npx hardhat run scripts/deploy-orbital.cjs --network holesky
+
+# Deploy Orbital protocol (Arbitrum Sepolia)
+npx hardhat run scripts/deploy-orbital.cjs --network arbitrumSepolia
 
 # Verify on Etherscan
 npx hardhat run scripts/verify-wrapped-asset-factory.cjs --network holesky
@@ -271,6 +277,7 @@ ENCRYPTION_KEY=                             # 32-byte hex string for AES-256-GCM
 CORS_ORIGIN=http://localhost:5173
 PORT=8080
 NODE_ENV=development
+AUTH_COOKIE_SAMESITE=lax                     # use "none" for cross-domain prod frontend/backend
 
 GCS_BUCKET=                                 # Google Cloud Storage bucket for KYC docs
 GCS_KEY_FILE=                               # path to GCS service account key (optional in Cloud Run)
@@ -291,6 +298,7 @@ BACKEND_URL=http://localhost:8080           # used in email links
 DEPLOYER_PRIVATE_KEY=                       # without 0x prefix
 MAINNET_RPC_URL=                            # optional, defaults in hardhat config
 HOLESKY_RPC_URL=
+ARBITRUM_SEPOLIA_RPC_URL=
 ETHERSCAN_API_KEY=                          # for contract verification
 ```
 
@@ -302,11 +310,16 @@ Both the frontend and backend have Dockerfiles and deploy to Google Cloud Run.
 
 ```bash
 # Frontend
-gcloud run deploy fueki --source . --region europe-west1
+gcloud run deploy fueki --source . --region europe-west1 \
+  --set-build-env-vars \
+VITE_API_URL=https://<your-backend-domain>,\
+VITE_THIRDWEB_CLIENT_ID=<your-thirdweb-client-id>,\
+VITE_RPC_421614_URLS=https://sepolia-rollup.arbitrum.io/rpc
 
 # Backend
 cd backend
-gcloud run deploy fueki-backend --source . --region us-central1
+gcloud run deploy fueki-backend --source . --region us-central1 \
+  --set-env-vars AUTH_COOKIE_SAMESITE=none
 ```
 
 The frontend Dockerfile builds with Vite and serves static files. The backend Dockerfile compiles TypeScript, generates the Prisma client, and runs the Express server. Both run as non-root users.

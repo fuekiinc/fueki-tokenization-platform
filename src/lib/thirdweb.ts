@@ -1,7 +1,6 @@
 import { createThirdwebClient, defineChain } from 'thirdweb';
 import {
   arbitrum,
-  arbitrumSepolia,
   base,
   ethereum,
   polygon,
@@ -20,16 +19,29 @@ export const isThirdwebConfigured = Boolean(THIRDWEB_CLIENT_ID);
 export const thirdwebClient = THIRDWEB_CLIENT_ID
   ? createThirdwebClient({
       clientId: THIRDWEB_CLIENT_ID,
-      // Public/testnet RPC providers can reject large JSON-RPC batches.
-      // Keep thirdweb batching conservative to avoid Holesky free-tier failures.
+      // Allow moderate batching to reduce total RPC requests while staying
+      // within typical free-tier limits.  maxBatchSize=1 (the previous value)
+      // sent every call individually, which quickly exhausted rate limits.
       config: {
         rpc: {
-          maxBatchSize: 1,
-          batchTimeoutMs: 0,
+          maxBatchSize: 10,
+          batchTimeoutMs: 50,
         },
       },
     })
   : null;
+
+/** Arbitrum Sepolia with dynamic RPC metadata for wallet_addEthereumChain prompts. */
+const arbitrumSepoliaChain = defineChain({
+  id: 421614,
+  name: 'Arbitrum Sepolia',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpc: getPrimaryRpcUrl(421614),
+  testnet: true,
+  blockExplorers: [
+    { name: 'Arbiscan', url: 'https://sepolia.arbiscan.io' },
+  ],
+});
 
 /** Holesky testnet with dynamic RPC metadata for wallet_addEthereumChain prompts. */
 const holesky = defineChain({
@@ -57,17 +69,17 @@ const baseSepoliaChain = defineChain({
 
 export const THIRDWEB_SUPPORTED_CHAINS: Chain[] = [
   ethereum,
+  arbitrumSepoliaChain,
   holesky,
   sepolia,
   polygon,
   arbitrum,
-  arbitrumSepolia,
   base,
   baseSepoliaChain,
   defineChain(31337), // Hardhat local
 ];
 
-export const THIRDWEB_DEFAULT_CHAIN = holesky;
+export const THIRDWEB_DEFAULT_CHAIN = ethereum;
 
 const chainById = new Map<number, Chain>(
   THIRDWEB_SUPPORTED_CHAINS.map((chain) => [chain.id, chain]),

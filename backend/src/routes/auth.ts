@@ -1,14 +1,13 @@
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { hashPassword, verifyPassword, createSession, refreshSession, invalidateSession, invalidateAllSessions } from '../services/auth';
 import { authenticate } from '../middleware/auth';
 import { config } from '../config';
 import { sendPasswordResetEmail } from '../services/email';
+import { prisma } from '../prisma';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // ---------------------------------------------------------------------------
 // Cookie configuration for refresh tokens
@@ -21,18 +20,19 @@ function setRefreshCookie(
   refreshToken: string,
   rememberMe = true,
 ): void {
-  const isProduction = config.nodeEnv === 'production';
+  const secureCookies =
+    config.nodeEnv === 'production' || config.auth.refreshCookieSameSite === 'none';
 
   const cookieOptions: {
     httpOnly: boolean;
     secure: boolean;
-    sameSite: 'strict' | 'lax';
+    sameSite: 'strict' | 'lax' | 'none';
     path: string;
     maxAge?: number;
   } = {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'strict' : 'lax',
+    secure: secureCookies,
+    sameSite: config.auth.refreshCookieSameSite,
     path: '/api/auth',
   };
 
@@ -44,12 +44,13 @@ function setRefreshCookie(
 }
 
 function clearRefreshCookie(res: Response): void {
-  const isProduction = config.nodeEnv === 'production';
+  const secureCookies =
+    config.nodeEnv === 'production' || config.auth.refreshCookieSameSite === 'none';
 
   (res as any).cookie(REFRESH_COOKIE_NAME, '', {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'strict' : 'lax',
+    secure: secureCookies,
+    sameSite: config.auth.refreshCookieSameSite,
     path: '/api/auth',
     maxAge: 0,
   });

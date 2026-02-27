@@ -36,6 +36,7 @@ import { useWallet } from '../hooks/useWallet.ts';
 import { SecurityTokenFactoryABI } from '../contracts/abis/SecurityTokenFactory.ts';
 import { TRANSFER_RULES_BYTECODE, RESTRICTED_SWAP_BYTECODE } from '../contracts/bytecodes.ts';
 import {
+  DEFAULT_SWITCH_CHAIN_IDS,
   SUPPORTED_NETWORKS,
   getExplorerTxUrl,
   getExplorerAddressUrl,
@@ -61,9 +62,18 @@ const DEFAULT_MAX_RELEASE_DELAY_DAYS = 365;
 
 /** Networks that have the SecurityTokenFactory deployed. */
 function getSupportedDeployNetworks() {
+  const preferredRank = new Map<number, number>(
+    DEFAULT_SWITCH_CHAIN_IDS.map((chainId, idx) => [chainId, idx]),
+  );
+
   return Object.values(SUPPORTED_NETWORKS).filter(
     (n) => n.securityTokenFactoryAddress.length > 0,
-  );
+  ).sort((a, b) => {
+    const aRank = preferredRank.get(a.chainId) ?? Number.MAX_SAFE_INTEGER;
+    const bRank = preferredRank.get(b.chainId) ?? Number.MAX_SAFE_INTEGER;
+    if (aRank !== bRank) return aRank - bRank;
+    return a.chainId - b.chainId;
+  });
 }
 
 // ---------------------------------------------------------------------------

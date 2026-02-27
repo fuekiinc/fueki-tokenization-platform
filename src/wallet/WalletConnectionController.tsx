@@ -91,7 +91,9 @@ export function WalletConnectionController() {
 
   const wasConnectedRef = useRef(false);
   const syncVersionRef = useRef(0);
-  const balanceIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const balanceIntervalRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** Consecutive balance poll failures -- used for exponential backoff. */
+  const balanceFailCountRef = useRef(0);
 
   const resolveEnsName = useCallback(
     async (address: string, provider: ethers.BrowserProvider) => {
@@ -277,22 +279,39 @@ export function WalletConnectionController() {
   }, [connectionStatus, resetWallet, setLastError]);
 
   useEffect(() => {
-    clearInterval(balanceIntervalRef.current);
+    clearTimeout(balanceIntervalRef.current);
 
-    if (!wallet.isConnected || !wallet.address) return;
+    if (!wallet.isConnected || !wallet.address) {
+      balanceFailCountRef.current = 0;
+      return;
+    }
 
-    balanceIntervalRef.current = setInterval(async () => {
-      const provider = getProvider();
-      if (!provider || !wallet.address) return;
-      try {
-        const raw = await provider.getBalance(wallet.address);
-        setWallet({ balance: ethers.formatEther(raw), lastSyncAt: Date.now() });
-      } catch {
-        // Background poll failures are intentionally silent.
-      }
-    }, 30_000);
+    const BASE_INTERVAL = 60_000; // 60 s (was 30 s -- reduces RPC load)
+    const MAX_INTERVAL = 5 * 60_000; // cap at 5 minutes on repeated failures
 
-    return () => clearInterval(balanceIntervalRef.current);
+    function scheduleBalancePoll() {
+      const backoff = Math.min(
+        BASE_INTERVAL * Math.pow(2, balanceFailCountRef.current),
+        MAX_INTERVAL,
+      );
+
+      balanceIntervalRef.current = setTimeout(async () => {
+        const provider = getProvider();
+        if (!provider || !wallet.address) return;
+        try {
+          const raw = await provider.getBalance(wallet.address);
+          setWallet({ balance: ethers.formatEther(raw), lastSyncAt: Date.now() });
+          balanceFailCountRef.current = 0; // reset on success
+        } catch {
+          balanceFailCountRef.current++;
+        }
+        scheduleBalancePoll();
+      }, backoff);
+    }
+
+    scheduleBalancePoll();
+
+    return () => clearTimeout(balanceIntervalRef.current);
   }, [wallet.isConnected, wallet.address, setWallet]);
 
   return null;

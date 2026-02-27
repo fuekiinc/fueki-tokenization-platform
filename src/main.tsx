@@ -141,7 +141,11 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, EBState> {
         `User Agent: ${navigator.userAgent}`,
       ].join('\n'),
     )
-    window.open(`mailto:mark@fueki-tech.com?subject=${subject}&body=${body}`, '_blank')
+    window.open(
+      `mailto:mark@fueki-tech.com?subject=${subject}&body=${body}`,
+      '_blank',
+      'noopener,noreferrer',
+    )
   }
 
   render() {

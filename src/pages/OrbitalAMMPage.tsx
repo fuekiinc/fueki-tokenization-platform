@@ -14,11 +14,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useWallet } from '../hooks/useWallet';
-import { useWalletStore, getProvider } from '../store/walletStore.ts';
+import { getProvider, useWalletStore } from '../store/walletStore.ts';
 import { useAssetStore } from '../store/assetStore.ts';
 import { OrbitalContractService } from '../lib/blockchain/orbitalContracts';
 import logger from '../lib/logger';
-import { getNetworkMetadata } from '../contracts/addresses';
+import { DEFAULT_SWITCH_CHAIN_IDS, getNetworkMetadata } from '../contracts/addresses';
 import { getNetworkCapabilities } from '../contracts/networkCapabilities';
 import { formatAddress } from '../lib/utils/helpers';
 import HelpTooltip from '../components/Common/HelpTooltip';
@@ -31,19 +31,19 @@ import LiquidityPanel from '../components/OrbitalAMM/LiquidityPanel';
 import CreatePoolForm from '../components/OrbitalAMM/CreatePoolForm';
 
 import {
-  Orbit,
+  Activity,
   ArrowDownUp,
+  BarChart3,
   Droplets,
-  PlusCircle,
+  Globe,
   Layers,
   Loader2,
+  Orbit,
+  PlusCircle,
+  RefreshCw,
+  Shield,
   Wallet,
   Zap,
-  Shield,
-  Globe,
-  RefreshCw,
-  BarChart3,
-  Activity,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -118,13 +118,11 @@ export default function OrbitalAMMPage() {
 
   // ---- Local state ----------------------------------------------------------
 
-  const [contractService, setContractService] = useState<OrbitalContractService | null>(null);
   const [activeTab, setActiveTab] = useState<OrbitalTab>('pools');
   const [selectedPoolAddress, setSelectedPoolAddress] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [tokenAddresses, setTokenAddresses] = useState<string[]>([]);
-  const [initError, setInitError] = useState<string | null>(null);
+  const initErrorToastRef = useRef<string | null>(null);
 
   // ---- Timer refs for cleanup -----------------------------------------------
 
@@ -154,36 +152,57 @@ export default function OrbitalAMMPage() {
 
   // ---- Initialize OrbitalContractService ------------------------------------
 
-  useEffect(() => {
+  const contractInit = useMemo(() => {
     if (!isConnected || !wallet.chainId || !isOrbitalReady) {
-      setContractService(null);
-      return;
+      return {
+        service: null as OrbitalContractService | null,
+        error: null as string | null,
+      };
     }
 
     const provider = getProvider();
     if (!provider) {
-      setContractService(null);
-      return;
+      return {
+        service: null as OrbitalContractService | null,
+        error: null as string | null,
+      };
     }
 
     try {
-      const service = new OrbitalContractService(provider, wallet.chainId);
-      setContractService(service);
-      setInitError(null);
+      return {
+        service: new OrbitalContractService(provider, wallet.chainId),
+        error: null as string | null,
+      };
     } catch (err) {
       logger.error('Failed to initialize OrbitalContractService:', err);
-      toast.error('Failed to initialize AMM contracts');
-      setContractService(null);
-      setInitError('Failed to initialize AMM contracts. Please check your network connection and try again.');
+      return {
+        service: null as OrbitalContractService | null,
+        error: 'Failed to initialize AMM contracts. Please check your network connection and try again.',
+      };
     }
   }, [isConnected, isOrbitalReady, wallet.chainId]);
 
-  // ---- Collect known token addresses from wrapped assets --------------------
+  const contractService = contractInit.service;
+  const initError = contractInit.error;
 
   useEffect(() => {
-    const addrs = wrappedAssets.map((a) => a.address);
-    setTokenAddresses(addrs);
-  }, [wrappedAssets]);
+    if (!initError) {
+      initErrorToastRef.current = null;
+      return;
+    }
+    if (initErrorToastRef.current === initError) {
+      return;
+    }
+    initErrorToastRef.current = initError;
+    toast.error('Failed to initialize AMM contracts');
+  }, [initError]);
+
+  // ---- Collect known token addresses from wrapped assets --------------------
+
+  const tokenAddresses = useMemo(
+    () => wrappedAssets.map((asset) => asset.address),
+    [wrappedAssets],
+  );
 
   // ---- Pool selection handler (navigates to swap tab) -----------------------
 
@@ -314,7 +333,7 @@ export default function OrbitalAMMPage() {
             switchNetwork={switchNetwork}
             title="Network Not Supported"
             description="The Orbital AMM contracts are not deployed on your current network. Please switch to a supported network to use concentrated liquidity pools."
-            switchChainIds={[17000, 1, 31337]}
+            switchChainIds={DEFAULT_SWITCH_CHAIN_IDS}
           />
         </div>
       </div>
@@ -337,9 +356,9 @@ export default function OrbitalAMMPage() {
         {/* ================================================================= */}
         {/* Page header                                                       */}
         {/* ================================================================= */}
-        <div className="mb-10 sm:mb-14 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mb-10 sm:mb-14 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           {/* Left: Title + subtitle */}
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-2.5 min-w-0">
             <h1 className="flex items-center gap-3.5 text-2xl sm:text-3xl font-bold tracking-tight text-white">
               <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600/20 to-cyan-600/20 ring-1 ring-white/[0.08]">
                 <Orbit className="h-5 w-5 text-indigo-400" />

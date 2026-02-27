@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { requireRole } from '../middleware/rbac';
 import { approveKYC, rejectKYC } from '../services/kyc';
 import { decrypt } from '../services/encryption';
+import { prisma } from '../prisma';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // All admin routes require at least "admin" role
 const adminOnly = requireRole('admin', 'super_admin');

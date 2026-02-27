@@ -14,6 +14,16 @@ function requireEnv(name: string): string {
 }
 
 const isProduction = process.env.NODE_ENV === 'production';
+type CookieSameSite = 'strict' | 'lax' | 'none';
+
+function resolveRefreshCookieSameSite(): CookieSameSite {
+  const raw = (process.env.AUTH_COOKIE_SAMESITE || '').trim().toLowerCase();
+  if (raw === 'strict' || raw === 'lax' || raw === 'none') {
+    return raw;
+  }
+  // Cross-domain frontend/backend deployments need SameSite=None for refresh cookies.
+  return isProduction ? 'none' : 'lax';
+}
 
 export const config = {
   port: parseInt(process.env.PORT || '8080', 10),
@@ -44,6 +54,10 @@ export const config = {
       .split(',')
       .map((o) => o.trim().replace(/\/+$/, ''))
       .filter(Boolean),
+  },
+
+  auth: {
+    refreshCookieSameSite: resolveRefreshCookieSameSite(),
   },
 
   // Google Cloud Storage for KYC document uploads

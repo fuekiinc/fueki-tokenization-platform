@@ -3,9 +3,9 @@
  *
  * Supported networks:
  *   - Ethereum Mainnet (chainId: 1) -- partial deployment
- *   - Holesky Testnet (chainId: 17000) -- full deployment (primary testnet)
+ *   - Holesky Testnet (chainId: 17000) -- full deployment (secondary testnet)
  *   - Arbitrum One (chainId: 42161) -- not yet deployed
- *   - Arbitrum Sepolia (chainId: 421614) -- full deployment (testnet)
+ *   - Arbitrum Sepolia (chainId: 421614) -- full deployment (primary testnet)
  *   - Base Sepolia (chainId: 84532) -- metadata only, no deployments yet
  *   - Hardhat Local (chainId: 31337) -- local development
  *
@@ -74,7 +74,7 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   },
 
-  // ---- Holesky Testnet (primary testnet) ----------------------------------
+  // ---- Holesky Testnet (secondary testnet) --------------------------------
   17000: {
     chainId: 17000,
     name: 'Holesky',
@@ -227,9 +227,16 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   },
 };
 
-/** Default chain ID used when no network preference is specified.
- *  Set to Holesky (17000) since it is the primary testnet with full deployments. */
-export const DEFAULT_CHAIN_ID = 17000;
+/** Default chain ID used when no network preference is specified. */
+export const DEFAULT_CHAIN_ID = 1;
+
+/**
+ * Preferred switch-network CTA order for capability guards and onboarding.
+ * Ethereum Mainnet is surfaced first, then Arbitrum Sepolia, Holesky, Localhost.
+ */
+export const DEFAULT_SWITCH_CHAIN_IDS: number[] = Array.from(
+  new Set([DEFAULT_CHAIN_ID, 421614, 17000, 31337]),
+);
 
 // ---------------------------------------------------------------------------
 // Lookup helpers
@@ -311,7 +318,18 @@ export function getExplorerAddressUrl(chainId: number, address: string): string 
  * Return an array of chain IDs where the platform has deployed contracts.
  */
 export function getDeployedChainIds(): number[] {
-  return Object.values(SUPPORTED_NETWORKS)
+  const deployed = Object.values(SUPPORTED_NETWORKS)
     .filter((c) => c.factoryAddress && c.exchangeAddress)
     .map((c) => c.chainId);
+
+  const orderRank = new Map<number, number>(
+    DEFAULT_SWITCH_CHAIN_IDS.map((chainId, idx) => [chainId, idx]),
+  );
+
+  return deployed.sort((a, b) => {
+    const aRank = orderRank.get(a) ?? Number.MAX_SAFE_INTEGER;
+    const bRank = orderRank.get(b) ?? Number.MAX_SAFE_INTEGER;
+    if (aRank !== bRank) return aRank - bRank;
+    return a - b;
+  });
 }

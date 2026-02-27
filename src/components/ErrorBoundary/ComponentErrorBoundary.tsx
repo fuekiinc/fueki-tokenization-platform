@@ -125,6 +125,7 @@ export class ComponentErrorBoundary extends Component<
     window.open(
       `mailto:mark@fueki-tech.com?subject=${subject}&body=${body}`,
       '_blank',
+      'noopener,noreferrer',
     );
   };
 

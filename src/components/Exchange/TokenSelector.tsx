@@ -21,6 +21,7 @@ import type { WrappedAsset } from '../../types';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { ETH_SENTINEL, isETH } from '../../lib/blockchain/contracts';
 import { useWalletStore } from '../../store/walletStore';
+import { DEFAULT_CHAIN_ID } from '../../contracts/addresses';
 import {
   getRpcEndpoints,
   getPrimaryRpcUrl,
@@ -282,7 +283,7 @@ export default function TokenSelector({
           name = result.name || 'Unknown Token';
           symbol = result.symbol || '???';
         } else {
-          const fallbackChainId = chainId ?? 17000;
+          const fallbackChainId = chainId ?? DEFAULT_CHAIN_ID;
           const endpoints = getRpcEndpoints(fallbackChainId);
           const primaryEndpoint = getPrimaryRpcUrl(fallbackChainId);
           const orderedEndpoints = [

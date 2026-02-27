@@ -36,6 +36,10 @@ const SecurityTokenPage = lazyWithRetry(() => import('./pages/SecurityTokenPage'
 const DeployTokenPage = lazyWithRetry(() => import('./pages/DeployTokenPage'))
 const TermsPage = lazyWithRetry(() => import('./pages/TermsPage'))
 const PrivacyPage = lazyWithRetry(() => import('./pages/PrivacyPage'))
+const ContractBrowserPage = lazyWithRetry(() => import('./pages/ContractBrowserPage'))
+const ContractDeployPage = lazyWithRetry(() => import('./pages/ContractDeployPage'))
+const ContractInteractPage = lazyWithRetry(() => import('./pages/ContractInteractPage'))
+const ContractHistoryPage = lazyWithRetry(() => import('./pages/ContractHistoryPage'))
 
 // ---------------------------------------------------------------------------
 // Page title map for document.title updates and screen reader announcements
@@ -57,6 +61,9 @@ const PAGE_TITLES: Record<string, string> = {
   '/explore': 'Explore',
   '/security-tokens': 'Security Tokens',
   '/security-tokens/deploy': 'Deploy Token',
+  '/contracts': 'Smart Contracts',
+  '/contracts/deploy': 'Deploy Contract',
+  '/contracts/history': 'Deployed Contracts',
   '/terms': 'Terms of Service',
   '/privacy': 'Privacy Policy',
 }
@@ -162,6 +169,10 @@ export default function App() {
             <Route path="advanced" element={<Suspense fallback={<PageLoader />}><OrbitalAMMPage /></Suspense>} />
             <Route path="security-tokens" element={<Suspense fallback={<PageLoader />}><SecurityTokenPage /></Suspense>} />
             <Route path="security-tokens/deploy" element={<Suspense fallback={<PageLoader />}><DeployTokenPage /></Suspense>} />
+            <Route path="contracts" element={<Suspense fallback={<PageLoader />}><ContractBrowserPage /></Suspense>} />
+            <Route path="contracts/deploy/:templateId" element={<Suspense fallback={<PageLoader />}><ContractDeployPage /></Suspense>} />
+            <Route path="contracts/history" element={<Suspense fallback={<PageLoader />}><ContractHistoryPage /></Suspense>} />
+            <Route path="contracts/:chainId/:address" element={<Suspense fallback={<PageLoader />}><ContractInteractPage /></Suspense>} />
             <Route path="settings" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
             <Route path="admin" element={<Suspense fallback={<PageLoader />}><AdminPage /></Suspense>} />
           </Route>

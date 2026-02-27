@@ -1,15 +1,14 @@
 import { Router, type Response } from 'express';
 import crypto from 'node:crypto';
 import multer from 'multer';
-import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
 import { mintApprovalUpload } from '../middleware/upload';
 import { config } from '../config';
 import { sendMintApprovalRequestEmail } from '../services/email';
+import { prisma } from '../prisma';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 type MintRequestStatus = 'pending' | 'approved' | 'rejected';
 

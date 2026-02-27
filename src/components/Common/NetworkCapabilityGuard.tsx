@@ -1,12 +1,14 @@
 import { AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
-import { getNetworkMetadata } from '../../contracts/addresses';
+import {
+  DEFAULT_CHAIN_ID,
+  DEFAULT_SWITCH_CHAIN_IDS,
+  getNetworkMetadata,
+} from '../../contracts/addresses';
 import {
   type NetworkCapabilityKey,
   getNetworkCapabilities,
 } from '../../contracts/networkCapabilities';
-
-const DEFAULT_SWITCH_CHAIN_IDS = [17000, 1, 31337];
 
 interface NetworkCapabilityGuardProps {
   chainId: number | null | undefined;
@@ -87,7 +89,7 @@ export default function NetworkCapabilityGuard({
             onClick={() => void switchNetwork(id)}
             className={clsx(
               'inline-flex items-center gap-2 rounded-xl border px-5 py-2.5 text-sm transition-all',
-              id === 17000
+              id === DEFAULT_CHAIN_ID
                 ? 'border-cyan-500/35 bg-cyan-500/15 font-semibold text-cyan-300 hover:bg-cyan-500/25 hover:text-cyan-200'
                 : id === 1
                   ? 'border-indigo-500/25 bg-indigo-500/15 font-semibold text-indigo-300 hover:bg-indigo-500/25 hover:text-indigo-200'

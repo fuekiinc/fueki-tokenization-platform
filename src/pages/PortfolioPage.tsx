@@ -680,7 +680,11 @@ export default function PortfolioPage() {
   const handleViewExplorer = useCallback(
     (asset: WrappedAsset) => {
       if (explorerBaseUrl) {
-        window.open(`${explorerBaseUrl}/address/${asset.address}`, '_blank');
+        window.open(
+          `${explorerBaseUrl}/address/${asset.address}`,
+          '_blank',
+          'noopener,noreferrer',
+        );
       }
     },
     [explorerBaseUrl],

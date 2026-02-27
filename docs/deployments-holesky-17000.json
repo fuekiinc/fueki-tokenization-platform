@@ -1,0 +1,104 @@
+{
+  "network": "holesky",
+  "chainId": 17000,
+  "deployer": "0x78471C356a55613D5eeEC7fcb5c21cA3D79E1Ee0",
+  "timestamp": "2026-02-27T07:50:13.830Z",
+  "contracts": [
+    {
+      "id": "simple-token",
+      "address": "0x0ad0bc183acb2f2124A6e8C40216af852d3c1C9b",
+      "txHash": "0x5ab82d06d15863661a9a029293b73b9b3e0c96c68aedcdf78a5faaa7954e57e1",
+      "gasUsed": "642253"
+    },
+    {
+      "id": "voting-token",
+      "address": "0xd60A930605442226e80f2577e4a4B985e3d56977",
+      "txHash": "0x8a25486dbd8e977ed303ab8d295e045cb46d987f88da1e9b1a7ea02817bcaac7",
+      "gasUsed": "2064211"
+    },
+    {
+      "id": "antibot-erc20",
+      "address": "0x0EF785eE549c4D92218c85d9aa00e28eC0E4FF2b",
+      "txHash": "0xa3ff221db100f217cd25aa08445f23f05320995dbe133e21a590ae698e10ac1c",
+      "gasUsed": "1430395"
+    },
+    {
+      "id": "soulbound-nft",
+      "address": "0x8b167fE578F62D317674EA47a3F0Dd3Ce13d747f",
+      "txHash": "0x1e8141df73d14a40988e4354786c91a9951cf739f94a0d7d7fc7e4df74ee808e",
+      "gasUsed": "1717357"
+    },
+    {
+      "id": "simple-multi-nft",
+      "address": "0x099df34B1855C9D54eC232916970db13666b50be",
+      "txHash": "0x4b07d151f0dee77e559e57ac173feac6339e13e02fc3082b444a04249872146a",
+      "gasUsed": "1729751"
+    },
+    {
+      "id": "simple-staking",
+      "address": "0xa9b60375A6433a6697F020F67Dd69851F861DFb8",
+      "txHash": "0xe160f225c1e18140ef4dc432c1ec88dd5c2c124d25b06f401d45aabc2c523f00",
+      "gasUsed": "1980161"
+    },
+    {
+      "id": "token-staking",
+      "address": "0x95187b0e6A6639083C58932C8841A30C75eE70e8",
+      "txHash": "0xd4d5034db358db16e97b214cc2aa133e9f9d68473a62944bbe5e474f00f073c1",
+      "gasUsed": "1206897"
+    },
+    {
+      "id": "nft-staking-rewards",
+      "address": "0xD66b939e2701f61559CB7BccdEb7fbBDe49A35E9",
+      "txHash": "0x654fb63111232c0f40bd08a77ac2d9aa714e6da3e8a65d72e2f8c4894fe40899",
+      "gasUsed": "531002"
+    },
+    {
+      "id": "linear-vesting",
+      "address": "0x60206E675Bd801cDE1F584aD7e234F3214076839",
+      "txHash": "0xd765a713baf9d121b5396c8b89972609ccee7a99568a35f2a481a4dc0c2ca1f7",
+      "gasUsed": "1036590"
+    },
+    {
+      "id": "dutch-auction",
+      "address": "0xe4307A62165e7e4C4Fa5B46b50857C33A51b15cd",
+      "txHash": "0x194fee437a9635740bbe7f2741dad35b7274a65780f9f58b21514d3c23abc6a3",
+      "gasUsed": "783294"
+    },
+    {
+      "id": "presale",
+      "address": "0xd01A47a5366e778Eb8ACC41C43F41ef1feCb88b9",
+      "txHash": "0xd8e6f842c0332bb5055f20a7a1b19a0f822cc497be6b47dd84da0a8f0bfea32b",
+      "gasUsed": "1842747"
+    },
+    {
+      "id": "escrow-agent",
+      "address": "0xf35a2232056b4a47C42eeBA1bcBf4076DF67946D",
+      "txHash": "0x5ac898fd2e008dfed2e5591e4abbe1139f73074a97cee9a37848708b90119430",
+      "gasUsed": "405844"
+    },
+    {
+      "id": "escrow-dual",
+      "address": "0xA7e8a1B8836326Ebb88d911118121304EF2c931d",
+      "txHash": "0x7afa796274e63181e00f37a3c5f362c925f54cfc6c5c20dd2f62a6293b3f0124",
+      "gasUsed": "1851970"
+    },
+    {
+      "id": "royalty-splitter",
+      "address": "0x7bd566Cb7EB5B512c0Ae74CE62CF9301a0760AA5",
+      "txHash": "0x8e14819c13459f4d96edcdaf60271a07642e3bc7cbc6bd9cd13bb3a919d91d80",
+      "gasUsed": "728309"
+    },
+    {
+      "id": "lottery",
+      "address": "0x40dE51e0Ccf9e67E2064e7f731f5bd771ec19dD5",
+      "txHash": "0x3f61ba456021c031bf16c32768f1456614f95a6559aeb43384de5ec334dee132",
+      "gasUsed": "535824"
+    }
+  ],
+  "failures": [
+    {
+      "id": "buyback-baby-token",
+      "error": "execution reverted"
+    }
+  ]
+}

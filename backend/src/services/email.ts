@@ -1,9 +1,7 @@
 import nodemailer from 'nodemailer';
 import crypto from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
 import { config } from '../config';
-
-const prisma = new PrismaClient();
+import { prisma } from '../prisma';
 
 /**
  * Create a reusable SMTP transporter.

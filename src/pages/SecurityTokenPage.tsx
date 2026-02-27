@@ -26,6 +26,7 @@ import {
 import { SecurityTokenABI } from '../contracts/abis/SecurityToken';
 import { useWalletStore, getProvider } from '../store/walletStore';
 import { formatWeiAmount, truncateAddress } from '../lib/formatters';
+import { retryAsync } from '../lib/utils/retry';
 import Spinner from '../components/Common/Spinner';
 import Badge from '../components/Common/Badge';
 
@@ -106,13 +107,17 @@ export default function SecurityTokenPage() {
     setStatsLoading(true);
     try {
       const contract = new ethers.Contract(selectedToken, SecurityTokenABI, provider);
-      const [name, symbol, totalSupply, decimals, isPaused] = await Promise.all([
-        contract.name() as Promise<string>,
-        contract.symbol() as Promise<string>,
-        contract.totalSupply() as Promise<bigint>,
-        contract.decimals() as Promise<bigint>,
-        contract.isPaused() as Promise<boolean>,
-      ]);
+      const [name, symbol, totalSupply, decimals, isPaused] = await retryAsync(
+        () =>
+          Promise.all([
+            contract.name() as Promise<string>,
+            contract.symbol() as Promise<string>,
+            contract.totalSupply() as Promise<bigint>,
+            contract.decimals() as Promise<bigint>,
+            contract.isPaused() as Promise<boolean>,
+          ]),
+        { maxAttempts: 3, baseDelayMs: 1_500, label: 'securityToken:quickStats' },
+      );
       setQuickStats({
         name,
         symbol,

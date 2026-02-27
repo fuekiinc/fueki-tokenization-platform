@@ -23,6 +23,7 @@ import { useWalletStore, getProvider } from '../../store/walletStore';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { truncateAddress } from '../../lib/formatters';
 import { parseContractError } from '../../lib/blockchain/contracts';
+import { retryAsync } from '../../lib/utils/retry';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -91,7 +92,10 @@ export default function TokenSelector({
         provider,
       );
 
-      const tokenAddresses: string[] = await factory.getUserTokens(address);
+      const tokenAddresses: string[] = await retryAsync(
+        () => factory.getUserTokens(address) as Promise<string[]>,
+        { maxAttempts: 3, baseDelayMs: 1_500, label: 'securityToken:getUserTokens' },
+      );
 
       if (tokenAddresses.length === 0) {
         setTokens([]);
@@ -125,7 +129,14 @@ export default function TokenSelector({
         onSelectToken(resolved[0].address);
       }
     } catch (err) {
-      setError(parseContractError(err));
+      const isNetwork =
+        err instanceof Error &&
+        /network|timeout|fetch|rpc|connect|server/i.test(err.message);
+      setError(
+        isNetwork
+          ? 'Network error — unable to reach the RPC node. Please try again in a moment.'
+          : parseContractError(err),
+      );
       setTokens([]);
     } finally {
       setLoading(false);

@@ -30,7 +30,11 @@ import { getProvider } from '../../store/walletStore.ts';
 import { formatAddress, generateId, copyToClipboard } from '../../lib/utils/helpers';
 import { txSubmittedToast, txConfirmedToast, txFailedToast } from '../../lib/utils/txToast';
 import { formatTokenAmount } from '../../lib/formatters';
-import { getNetworkConfig, getNetworkMetadata } from '../../contracts/addresses';
+import {
+  DEFAULT_SWITCH_CHAIN_IDS,
+  getNetworkConfig,
+  getNetworkMetadata,
+} from '../../contracts/addresses';
 import { getNetworkCapabilities } from '../../contracts/networkCapabilities';
 import { sanitizePastedAddress, validateTokenSymbol, validatePositiveAmount } from '../../lib/utils/validation';
 import { INPUT_CLASSES } from '../../lib/designTokens';
@@ -1059,7 +1063,7 @@ export default function MintForm({
           description={
             `Contracts are not deployed on ${networkName}. Switch to a supported network to mint tokens.`
           }
-          switchChainIds={[17000, 1, 31337]}
+          switchChainIds={DEFAULT_SWITCH_CHAIN_IDS}
         />
       )}
 

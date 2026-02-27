@@ -45,8 +45,9 @@ interface ResolvedTransaction extends PendingTransaction {
 // Constants
 // ---------------------------------------------------------------------------
 
-/** How often we poll for on-chain status (ms). */
-const POLL_INTERVAL_MS = 10_000;
+/** Base polling interval for on-chain status (ms).  Raised from 10 s to
+ *  reduce RPC load.  The component backs off further on consecutive errors. */
+const POLL_INTERVAL_MS = 30_000;
 
 /** How long a resolved TX stays visible before being removed (ms). */
 const RESOLVED_DISPLAY_MS = 4_000;
@@ -219,7 +220,7 @@ export default function PendingTransactions() {
     }
   }, []);
 
-  // ---- Polling lifecycle ----
+  // ---- Polling lifecycle (with exponential backoff on errors) ----
   useEffect(() => {
     if (!isConnected) {
       setPendingTxs([]);
@@ -233,16 +234,27 @@ export default function PendingTransactions() {
     // Immediately check statuses on mount.
     void checkStatuses();
 
-    // Poll every POLL_INTERVAL_MS.
-    pollTimerRef.current = setInterval(() => {
-      refreshFromStorage();
-      void checkStatuses();
-    }, POLL_INTERVAL_MS);
+    // Use setTimeout-based loop so we can widen the interval on errors.
+    const MAX_INTERVAL = 3 * 60_000; // 3 minutes cap
+
+    function scheduleNextPoll() {
+      const backoff = Math.min(
+        POLL_INTERVAL_MS * Math.pow(1.5, checkErrorCount),
+        MAX_INTERVAL,
+      );
+
+      pollTimerRef.current = setTimeout(() => {
+        refreshFromStorage();
+        void checkStatuses().finally(scheduleNextPoll);
+      }, backoff) as unknown as ReturnType<typeof setInterval>;
+    }
+
+    scheduleNextPoll();
 
     return () => {
-      clearInterval(pollTimerRef.current);
+      clearTimeout(pollTimerRef.current as unknown as ReturnType<typeof setTimeout>);
     };
-  }, [isConnected, refreshFromStorage, checkStatuses]);
+  }, [isConnected, refreshFromStorage, checkStatuses, checkErrorCount]);
 
   // ---- Clean up resolved timers on unmount ----
   useEffect(() => {

@@ -10,15 +10,16 @@ import { useAuthStore } from '../../store/authStore';
 import { ComponentErrorBoundary } from '../ErrorBoundary';
 import logger from '../../lib/logger';
 import {
+  getThirdwebAppMetadata,
+  isThirdwebConfigured,
   THIRDWEB_DEFAULT_CHAIN,
   THIRDWEB_SUPPORTED_CHAINS,
   THIRDWEB_THEME,
-  THIRDWEB_WALLETS,
   THIRDWEB_WALLETCONNECT_PROJECT_ID,
-  getThirdwebAppMetadata,
-  isThirdwebConfigured,
+  THIRDWEB_WALLETS,
   thirdwebClient,
 } from '../../lib/thirdweb';
+import { getNetworkConfig } from '../../contracts/addresses';
 import ThemeToggle from './ThemeToggle';
 import PendingTransactions from './PendingTransactions';
 
@@ -38,6 +39,10 @@ interface NetworkOption {
   hasContracts: boolean;
 }
 
+function hasDeployedContracts(chainId: number): boolean {
+  return Boolean(getNetworkConfig(chainId));
+}
+
 const ALL_NETWORKS: NetworkOption[] = [
   {
     chainId: 1,
@@ -46,43 +51,7 @@ const ALL_NETWORKS: NetworkOption[] = [
     explorerUrl: 'https://etherscan.io',
     color: '#627EEA',
     isTestnet: false,
-    hasContracts: true,
-  },
-  {
-    chainId: 17000,
-    name: 'Holesky Testnet',
-    shortName: 'Holesky',
-    explorerUrl: 'https://holesky.etherscan.io',
-    color: '#E8B44A',
-    isTestnet: true,
-    hasContracts: true,
-  },
-  {
-    chainId: 11155111,
-    name: 'Sepolia Testnet',
-    shortName: 'Sepolia',
-    explorerUrl: 'https://sepolia.etherscan.io',
-    color: '#CFB5F0',
-    isTestnet: true,
-    hasContracts: false,
-  },
-  {
-    chainId: 137,
-    name: 'Polygon',
-    shortName: 'Polygon',
-    explorerUrl: 'https://polygonscan.com',
-    color: '#8247E5',
-    isTestnet: false,
-    hasContracts: false,
-  },
-  {
-    chainId: 42161,
-    name: 'Arbitrum One',
-    shortName: 'Arbitrum',
-    explorerUrl: 'https://arbiscan.io',
-    color: '#28A0F0',
-    isTestnet: false,
-    hasContracts: false,
+    hasContracts: hasDeployedContracts(1),
   },
   {
     chainId: 421614,
@@ -91,7 +60,43 @@ const ALL_NETWORKS: NetworkOption[] = [
     explorerUrl: 'https://sepolia.arbiscan.io',
     color: '#28A0F0',
     isTestnet: true,
-    hasContracts: false,
+    hasContracts: hasDeployedContracts(421614),
+  },
+  {
+    chainId: 17000,
+    name: 'Holesky Testnet',
+    shortName: 'Holesky',
+    explorerUrl: 'https://holesky.etherscan.io',
+    color: '#E8B44A',
+    isTestnet: true,
+    hasContracts: hasDeployedContracts(17000),
+  },
+  {
+    chainId: 11155111,
+    name: 'Sepolia Testnet',
+    shortName: 'Sepolia',
+    explorerUrl: 'https://sepolia.etherscan.io',
+    color: '#CFB5F0',
+    isTestnet: true,
+    hasContracts: hasDeployedContracts(11155111),
+  },
+  {
+    chainId: 137,
+    name: 'Polygon',
+    shortName: 'Polygon',
+    explorerUrl: 'https://polygonscan.com',
+    color: '#8247E5',
+    isTestnet: false,
+    hasContracts: hasDeployedContracts(137),
+  },
+  {
+    chainId: 42161,
+    name: 'Arbitrum One',
+    shortName: 'Arbitrum',
+    explorerUrl: 'https://arbiscan.io',
+    color: '#28A0F0',
+    isTestnet: false,
+    hasContracts: hasDeployedContracts(42161),
   },
   {
     chainId: 8453,
@@ -100,7 +105,7 @@ const ALL_NETWORKS: NetworkOption[] = [
     explorerUrl: 'https://basescan.org',
     color: '#0052FF',
     isTestnet: false,
-    hasContracts: false,
+    hasContracts: hasDeployedContracts(8453),
   },
   {
     chainId: 84532,
@@ -109,7 +114,7 @@ const ALL_NETWORKS: NetworkOption[] = [
     explorerUrl: 'https://sepolia.basescan.org',
     color: '#4F46E5',
     isTestnet: true,
-    hasContracts: false,
+    hasContracts: hasDeployedContracts(84532),
   },
   {
     chainId: 31337,
@@ -118,7 +123,7 @@ const ALL_NETWORKS: NetworkOption[] = [
     explorerUrl: '',
     color: '#4ADE80',
     isTestnet: true,
-    hasContracts: true,
+    hasContracts: hasDeployedContracts(31337),
   },
 ];
 
@@ -140,6 +145,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', to: '/dashboard' },
   { label: 'Mint', to: '/mint' },
   { label: 'Security Tokens', to: '/security-tokens' },
+  { label: 'Contracts', to: '/contracts' },
   { label: 'Portfolio', to: '/portfolio' },
   { label: 'Exchange', to: '/exchange' },
   { label: 'Orbital AMM', to: '/advanced' },
@@ -216,7 +222,6 @@ function NetworkSelector({ compact = false }: { compact?: boolean }) {
   const wallet = useWalletStore((s) => s.wallet);
   const { switchNetwork, isConnected, isSwitchingNetwork } = useWallet();
   const [isOpen, setIsOpen] = useState(false);
-  const [switchingTo, setSwitchingTo] = useState<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const close = useCallback(() => setIsOpen(false), []);
@@ -234,13 +239,6 @@ function NetworkSelector({ compact = false }: { compact?: boolean }) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
-  // Clear switchingTo when the chain actually changes or switching completes
-  useEffect(() => {
-    if (!isSwitchingNetwork && switchingTo !== null) {
-      setSwitchingTo(null);
-    }
-  }, [isSwitchingNetwork, switchingTo]);
-
   const currentNetwork = useMemo(
     () => NETWORKS.find((n) => n.chainId === wallet.chainId) ?? null,
     [wallet.chainId],
@@ -257,14 +255,14 @@ function NetworkSelector({ compact = false }: { compact?: boolean }) {
       setIsOpen(false);
       return;
     }
-    setSwitchingTo(chainId);
     await switchNetwork(chainId);
     setIsOpen(false);
   };
 
   const renderNetworkButton = (network: NetworkOption) => {
     const isActive = network.chainId === wallet.chainId;
-    const isSwitching = switchingTo === network.chainId;
+    const isSwitching =
+      isSwitchingNetwork && wallet.switchTargetChainId === network.chainId;
 
     return (
       <button
@@ -693,7 +691,7 @@ export default function Navbar() {
               {/* Logo */}
               <Link
                 to="/"
-                className="group relative flex items-center rounded-2xl border border-white/[0.08] bg-gradient-to-b from-white/[0.06] to-white/[0.02] px-3 py-2 shadow-[0_10px_32px_rgba(8,24,38,0.28)] transition-all duration-200 hover:border-cyan-300/35 hover:from-white/[0.08] hover:to-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+                className="group relative flex shrink-0 items-center rounded-2xl border border-white/[0.08] bg-gradient-to-b from-white/[0.06] to-white/[0.02] px-3 py-2 shadow-[0_10px_32px_rgba(8,24,38,0.28)] transition-all duration-200 hover:border-cyan-300/35 hover:from-white/[0.08] hover:to-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
               >
                 <FuekiBrand
                   variant="full"

@@ -22,6 +22,7 @@ model User {
   sessions             Session[]
   passwordResetTokens  PasswordResetToken[]
   mintApprovalRequests MintApprovalRequest[]
+  deployedContracts   DeployedContract[]
 
   @@index([email])
   @@index([walletAddress])
@@ -137,4 +138,26 @@ model MintApprovalActionToken {
 
   @@index([token])
   @@index([requestId])
+}
+
+model DeployedContract {
+  id               String   @id @default(uuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateId       String
+  templateName     String
+  contractAddress  String
+  deployerAddress  String
+  chainId          Int
+  txHash           String
+  constructorArgs  Json     @default("{}")
+  abi              Json     @default("[]")
+  blockNumber      Int?
+  gasUsed          String?
+  deployedAt       DateTime @default(now())
+  createdAt        DateTime @default(now())
+
+  @@unique([chainId, contractAddress])
+  @@index([userId])
+  @@index([chainId])
 }

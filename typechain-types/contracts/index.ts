@@ -9,6 +9,8 @@ import type * as orbital from "./orbital";
 export type { orbital };
 import type * as securityToken from "./security-token";
 export type { securityToken };
+import type * as templates from "./templates";
+export type { templates };
 export type { AssetExchange } from "./AssetExchange";
 export type { TestWBTC } from "./TestWBTC";
 export type { WrappedAsset } from "./WrappedAsset";

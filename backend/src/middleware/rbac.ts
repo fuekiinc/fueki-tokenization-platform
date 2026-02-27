@@ -1,8 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate } from './auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '../prisma';
 
 /**
  * Express middleware factory that enforces role-based access control.

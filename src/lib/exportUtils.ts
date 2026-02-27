@@ -323,15 +323,24 @@ export function exportToPDF(
   }
 
   const html = buildPrintHTML(filtered, cols, filename);
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) return;
+  const htmlBlob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const htmlUrl = URL.createObjectURL(htmlBlob);
+  const printWindow = window.open(htmlUrl, '_blank', 'noopener,noreferrer');
 
-  printWindow.document.write(html);
-  printWindow.document.close();
+  if (!printWindow) {
+    URL.revokeObjectURL(htmlUrl);
+    return;
+  }
+
+  const revokeHtmlUrl = () => URL.revokeObjectURL(htmlUrl);
 
   // Wait for the document to fully render before triggering print.
   printWindow.addEventListener('load', () => {
     printWindow.focus();
     printWindow.print();
-  });
+  }, { once: true });
+
+  // Revoke blob URL once printing finishes (or after a timeout fallback).
+  printWindow.addEventListener('afterprint', revokeHtmlUrl, { once: true });
+  window.setTimeout(revokeHtmlUrl, 60_000);
 }

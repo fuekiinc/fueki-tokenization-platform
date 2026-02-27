@@ -38,18 +38,27 @@ function applyTheme(theme: Theme): void {
 }
 
 // ---------------------------------------------------------------------------
-// Initialise theme from localStorage or system preference (runs once)
+// Initialise theme from localStorage (runs once)
+//
+// A one-time migration resets every user to dark mode.  After the migration
+// key is written, subsequent visits honour the user's saved preference.
+// Bump THEME_VERSION to force-reset everyone to dark again in the future.
 // ---------------------------------------------------------------------------
 
-function initTheme(): void {
-  const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
+const THEME_VERSION_KEY = 'fueki-theme-v';
+const THEME_VERSION = '2'; // bump to force-reset to dark
 
-  if (stored === 'light' || stored === 'dark') {
-    currentTheme = stored;
-  } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
-    currentTheme = 'light';
-  } else {
+function initTheme(): void {
+  const migrated = localStorage.getItem(THEME_VERSION_KEY);
+
+  if (migrated !== THEME_VERSION) {
+    // Force dark and mark migration as done
+    localStorage.setItem(STORAGE_KEY, 'dark');
+    localStorage.setItem(THEME_VERSION_KEY, THEME_VERSION);
     currentTheme = 'dark';
+  } else {
+    const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
+    currentTheme = stored === 'light' ? 'light' : 'dark';
   }
 
   document.documentElement.setAttribute('data-theme', currentTheme);

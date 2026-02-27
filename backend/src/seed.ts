@@ -1,8 +1,6 @@
 import 'dotenv/config';
-import { PrismaClient } from '@prisma/client';
 import { hashPassword } from './services/auth';
-
-const prisma = new PrismaClient();
+import { prisma } from './prisma';
 
 async function main() {
   const email = 'mark@fueki-tech.com';
