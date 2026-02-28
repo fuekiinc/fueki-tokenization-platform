@@ -4,7 +4,13 @@
 
 export type KYCStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
 export type DocumentType = 'drivers_license' | 'passport' | 'national_id';
-export type SubscriptionPlan = 'monthly' | 'annual' | 'full_service';
+export type SubscriptionPlan =
+  | 'monthly'
+  | 'annual'
+  | 'full_service'
+  | 'contract_deployment_monthly'
+  | 'contract_deployment_annual'
+  | 'contract_deployment_white_glove';
 export type HelpLevel = 'novice' | 'intermediate' | 'expert';
 
 export interface User {
@@ -15,6 +21,7 @@ export interface User {
   walletAddress: string | null;
   kycStatus: KYCStatus;
   helpLevel: HelpLevel;
+  subscriptionPlan?: SubscriptionPlan | null;
   role?: string;
   createdAt: string;
   updatedAt: string;

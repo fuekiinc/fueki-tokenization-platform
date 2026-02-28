@@ -95,7 +95,7 @@ export const addressSchema = z.object({
     .string()
     .min(1, 'Enter your postal code')
     .regex(
-      /^[A-Za-z0-9\s\-]{3,10}$/,
+      /^[A-Za-z0-9\s-]{3,10}$/,
       'Enter a valid postal code',
     ),
   country: z.string().min(1, 'Select your country'),
@@ -239,7 +239,7 @@ export const STEP_META = [
   },
   {
     title: 'Choose your plan',
-    description: 'Select a subscription to access the platform',
+    description: 'Select a platform plan or deployer-only access plan',
   },
   {
     title: 'Identity verification',

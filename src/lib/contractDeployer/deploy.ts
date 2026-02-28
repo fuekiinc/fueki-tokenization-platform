@@ -22,6 +22,7 @@ import { getNetworkMetadata } from '../../contracts/addresses';
 import {
   findHealthyEndpoint,
   getOrderedRpcEndpoints,
+  getWalletSwitchRpcUrls,
 } from '../rpc/endpoints';
 import logger from '../logger';
 
@@ -42,6 +43,17 @@ const RETRY_DELAY_MS = 1500;
  */
 const FALLBACK_GAS_LIMIT = 3_000_000n;
 
+/**
+ * Disabled by default because automatic wallet RPC reconfiguration can cause
+ * wallet-session instability for some connectors. Enable explicitly only if
+ * you want this behavior.
+ */
+const ENABLE_WALLET_RPC_RECONFIG = ['1', 'true', 'yes', 'on'].includes(
+  String(import.meta.env.VITE_ENABLE_WALLET_RPC_RECONFIG ?? '')
+    .trim()
+    .toLowerCase(),
+);
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -60,6 +72,25 @@ function isNetworkError(err: unknown): boolean {
   return /failed to fetch|network|timeout|econnrefused|enotfound|fetch failed|socket/i.test(
     msg,
   );
+}
+
+function dedupeUrls(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const url of urls) {
+    const normalized = url.trim().toLowerCase();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    deduped.push(url);
+  }
+  return deduped;
+}
+
+function makeProxyTxResponse(txHash: string): ethers.ContractTransactionResponse {
+  return {
+    hash: txHash,
+    wait: () => Promise.reject(new Error('Network error: wallet RPC unavailable for confirmations')),
+  } as unknown as ethers.ContractTransactionResponse;
 }
 
 // ---------------------------------------------------------------------------
@@ -98,11 +129,13 @@ async function tryReconfigureWalletRpc(
   const metadata = getNetworkMetadata(chainId);
   if (!metadata) return false;
 
+  const walletSafeEndpoints = getWalletSwitchRpcUrls(chainId);
   const orderedEndpoints = getOrderedRpcEndpoints(chainId);
-  const rpcUrls = [
+  const rpcUrls = dedupeUrls([
     healthyUrl,
+    ...walletSafeEndpoints.filter((e) => e !== healthyUrl),
     ...orderedEndpoints.filter((e) => e !== healthyUrl),
-  ];
+  ]);
 
   const params = {
     chainId: ethers.toQuantity(chainId),
@@ -161,18 +194,20 @@ export async function ensureWalletRpcHealthy(): Promise<ethers.JsonRpcProvider |
 
   logger.info(`[deploy] Found healthy RPC: ${healthyUrl}`);
 
-  // Try to reconfigure the wallet — works for custom-added chains
-  const reconfigured = await tryReconfigureWalletRpc(chainId, healthyUrl);
-  if (reconfigured) {
-    logger.info('[deploy] Wallet RPC reconfigured successfully');
-    return null; // Wallet is now healthy — use normal deploy path
+  if (ENABLE_WALLET_RPC_RECONFIG) {
+    // Optional mode: attempt wallet-side RPC reconfiguration for custom chains.
+    const reconfigured = await tryReconfigureWalletRpc(chainId, healthyUrl);
+    if (reconfigured) {
+      logger.info('[deploy] Wallet RPC reconfigured successfully');
+      return null; // Wallet is now healthy — use normal deploy path
+    }
+    logger.warn(
+      '[deploy] Wallet RPC reconfiguration was enabled but did not recover the wallet provider.',
+    );
   }
 
-  // Wallet still broken (built-in chain, can't update RPC).
-  // Return a direct provider so the caller can use it for pre-flight operations.
-  logger.warn(
-    '[deploy] Could not reconfigure wallet RPC. Using direct provider for pre-flight.',
-  );
+  // Default path: avoid mutating wallet network configuration; use direct RPC.
+  logger.info('[deploy] Using direct provider fallback for deploy pre-flight checks.');
   return new ethers.JsonRpcProvider(healthyUrl, chainId);
 }
 
@@ -204,6 +239,74 @@ async function estimateGasWithRetry(
   return null;
 }
 
+async function sendDeploymentViaFallback(
+  signer: ethers.Signer,
+  deployTx: ethers.TransactionRequest,
+  gasLimit: bigint,
+  chainId: number,
+  fallbackProvider: ethers.JsonRpcProvider,
+): Promise<ethers.ContractTransactionResponse> {
+  logger.info('[deploy] Using fallback deploy path with pre-populated tx');
+
+  const signerAddress = await signer.getAddress();
+
+  const [nonce, feeData] = await Promise.all([
+    fallbackProvider.getTransactionCount(signerAddress, 'pending'),
+    fallbackProvider.getFeeData(),
+  ]);
+
+  const fullTx: ethers.TransactionRequest = {
+    ...deployTx,
+    from: signerAddress,
+    nonce,
+    gasLimit,
+    chainId,
+    type: 2,
+    maxFeePerGas: feeData.maxFeePerGas ?? feeData.gasPrice ?? undefined,
+    maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ?? undefined,
+  };
+
+  const sendUnchecked = async () => {
+    const jsonRpcSigner = signer as ethers.JsonRpcSigner;
+    return jsonRpcSigner.sendUncheckedTransaction(fullTx);
+  };
+
+  try {
+    const txHash = await sendUnchecked();
+    logger.info(`[deploy] Transaction sent via fallback: ${txHash}`);
+    return makeProxyTxResponse(txHash);
+  } catch (err) {
+    if (!isNetworkError(err)) {
+      throw err;
+    }
+
+    const rpcUrl = fallbackProvider._getConnection?.().url ?? '';
+    if (rpcUrl) {
+      try {
+        const reconfigured = await tryReconfigureWalletRpc(chainId, rpcUrl);
+        if (reconfigured) {
+          const txHash = await sendUnchecked();
+          logger.info(`[deploy] Transaction sent after wallet RPC reconfiguration: ${txHash}`);
+          return makeProxyTxResponse(txHash);
+        }
+      } catch (reconfigureErr) {
+        logger.warn('[deploy] Wallet RPC reconfiguration retry failed', reconfigureErr);
+      }
+    }
+
+    const chainName = getNetworkMetadata(chainId)?.name ?? `Chain ${chainId}`;
+    const recommendedRpc = rpcUrl || 'a working RPC endpoint';
+    throw new Error(
+      `Your wallet's RPC endpoint for ${chainName} is down and could not be ` +
+        `updated automatically.\n\n` +
+        `To fix this, update the RPC URL in your wallet:\n` +
+        `1. Open MetaMask → Settings → Networks → ${chainName}\n` +
+        `2. Replace the RPC URL with:\n   ${recommendedRpc}\n` +
+        `3. Save and try deploying again.`,
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Deployment
 // ---------------------------------------------------------------------------
@@ -228,6 +331,9 @@ export async function deployTemplate(
   }
 
   const chainId = useWalletStore.getState().wallet.chainId;
+  if (!chainId) {
+    throw new Error('No target chain selected. Please reconnect your wallet.');
+  }
 
   // Pre-flight: ensure the wallet's RPC is reachable. If the current endpoint
   // is down, this returns a direct JsonRpcProvider we can use for gas / nonce.
@@ -271,74 +377,34 @@ export async function deployTemplate(
   // --- Deploy (with fallback pre-population when wallet RPC is down) -------
 
   if (!fallbackProvider) {
-    // Normal path: wallet RPC is healthy, deploy via ContractFactory
-    const contract = await factory.deploy(...args, { gasLimit });
-    const tx = contract.deploymentTransaction();
-    if (!tx) throw new Error('Deployment transaction not available');
-    logger.info(`[deploy] Transaction sent: ${tx.hash}`);
-    return tx;
-  }
+    try {
+      // Normal path: wallet RPC is healthy, deploy via ContractFactory.
+      const contract = await factory.deploy(...args, { gasLimit });
+      const tx = contract.deploymentTransaction();
+      if (!tx) throw new Error('Deployment transaction not available');
+      logger.info(`[deploy] Transaction sent: ${tx.hash}`);
+      return tx;
+    } catch (err) {
+      if (!isNetworkError(err)) {
+        throw err;
+      }
 
-  // Fallback path: wallet RPC is dead — pre-populate ALL tx fields and use
-  // sendUncheckedTransaction() to bypass the getBlockNumber() / getTransaction()
-  // calls that ethers.js v6 routes through MetaMask's broken RPC.
-  logger.info('[deploy] Using fallback deploy path with pre-populated tx');
-
-  const signerAddress = await signer.getAddress();
-
-  const [nonce, feeData] = await Promise.all([
-    fallbackProvider.getTransactionCount(signerAddress, 'pending'),
-    fallbackProvider.getFeeData(),
-  ]);
-
-  const fullTx: ethers.TransactionRequest = {
-    ...deployTx,
-    from: signerAddress,
-    nonce,
-    gasLimit,
-    chainId,
-    type: 2, // EIP-1559
-    maxFeePerGas: feeData.maxFeePerGas ?? feeData.gasPrice ?? undefined,
-    maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ?? undefined,
-  };
-
-  try {
-    // sendUncheckedTransaction() sends eth_sendTransaction directly to MetaMask
-    // without the getBlockNumber()/getTransaction() calls that fail when
-    // MetaMask's configured RPC is dead. MetaMask signs locally and broadcasts
-    // via its own RPC — which may work even if eth_blockNumber doesn't.
-    const jsonRpcSigner = signer as ethers.JsonRpcSigner;
-    const txHash = await jsonRpcSigner.sendUncheckedTransaction(fullTx);
-    logger.info(`[deploy] Transaction sent via fallback: ${txHash}`);
-
-    // We can't use signer.provider to look up the full TransactionResponse
-    // (MetaMask's RPC is dead), so return a minimal proxy object.
-    // The caller only uses .hash and passes this to waitForDeployment(),
-    // which already has fallback receipt retrieval via direct provider.
-    return {
-      hash: txHash,
-      // wait() will throw — waitForDeployment() catches network errors and
-      // falls back to a direct provider for receipt polling.
-      wait: () => Promise.reject(new Error('Network error: wallet RPC unavailable for confirmations')),
-    } as unknown as ethers.ContractTransactionResponse;
-  } catch (err) {
-    // If MetaMask still can't broadcast, give actionable instructions
-    if (isNetworkError(err)) {
-      const rpcUrl = (fallbackProvider as ethers.JsonRpcProvider)._getConnection?.().url
-        ?? 'a working RPC endpoint';
-      const chainName = getNetworkMetadata(chainId ?? 0)?.name ?? `Chain ${chainId}`;
-
-      throw new Error(
-        `Your wallet's RPC endpoint for ${chainName} is down and could not be ` +
-          `updated automatically.\n\n` +
-          `To fix this, update the RPC URL in your wallet:\n` +
-          `1. Open MetaMask → Settings → Networks → ${chainName}\n` +
-          `2. Replace the RPC URL with:\n   ${rpcUrl}\n` +
-          `3. Save and try deploying again.`,
+      logger.warn(
+        '[deploy] Normal deploy path failed with network/RPC error; retrying via fallback provider',
+        err,
       );
+
+      const healthyUrl = await findHealthyEndpoint(chainId);
+      if (!healthyUrl) {
+        throw err;
+      }
+
+      const recoveryProvider = new ethers.JsonRpcProvider(healthyUrl, chainId);
+      return sendDeploymentViaFallback(signer, deployTx, gasLimit, chainId, recoveryProvider);
     }
-    throw err;
   }
+
+  return sendDeploymentViaFallback(signer, deployTx, gasLimit, chainId, fallbackProvider);
 }
 
 // ---------------------------------------------------------------------------

@@ -9,11 +9,11 @@ import {
 import { EIP1193 } from 'thirdweb/wallets';
 
 import logger from '../lib/logger';
-import { getProvider, useWalletStore } from '../store/walletStore';
+import { getProvider, isSwitchInProgress, useWalletStore } from '../store/walletStore';
 import {
-  THIRDWEB_DEFAULT_CHAIN,
   getThirdwebChain,
   isThirdwebConfigured,
+  THIRDWEB_DEFAULT_CHAIN,
   thirdwebClient,
 } from '../lib/thirdweb';
 import { clearWalletBoundStores } from './walletBoundStores';
@@ -96,7 +96,6 @@ export function WalletConnectionController() {
   const setWallet = useWalletStore((s) => s.setWallet);
   const setProvider = useWalletStore((s) => s.setProvider);
   const setSigner = useWalletStore((s) => s.setSigner);
-  const resetWallet = useWalletStore((s) => s.resetWallet);
   const setEnsName = useWalletStore((s) => s.setEnsName);
   const persistConnection = useWalletStore((s) => s.persistConnection);
   const setConnectionStatus = useWalletStore((s) => s.setConnectionStatus);
@@ -113,6 +112,8 @@ export function WalletConnectionController() {
   const balanceIntervalRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** Consecutive balance poll failures -- used for exponential backoff. */
   const balanceFailCountRef = useRef(0);
+  /** Debounce timer for disconnect detection during chain switches. */
+  const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const resolveEnsName = useCallback(
     async (address: string, provider: ethers.BrowserProvider) => {
@@ -206,7 +207,17 @@ export function WalletConnectionController() {
       wallet.switchTargetChainId != null &&
       chain.id !== wallet.switchTargetChainId
     ) {
-      return;
+      // Keep waiting while an explicit switch request is still in-flight.
+      if (isSwitchInProgress()) {
+        return;
+      }
+
+      // Recovery path: thirdweb can occasionally remain on the old chain even
+      // after a switch call resolves. Do not deadlock in "switching" forever.
+      logger.warn('Recovering from stale switching state after chain mismatch', {
+        expectedChainId: wallet.switchTargetChainId,
+        activeChainId: chain.id,
+      });
     }
 
     try {
@@ -299,24 +310,38 @@ export function WalletConnectionController() {
 
     if (connected) {
       wasConnectedRef.current = true;
-      return;
+      // Cancel any pending disconnect timer — we're connected again.
+      clearTimeout(disconnectTimerRef.current);
+      return () => clearTimeout(disconnectTimerRef.current);
     }
 
     if (connectionStatus === 'disconnected' && wasConnectedRef.current) {
-      // During chain switches thirdweb may briefly report "disconnected".
-      // Read the zustand switching flag directly (not via hook selector)
-      // so we don't add a reactive dep that would cause extra re-runs.
-      const isSwitching =
-        useWalletStore.getState().wallet.connectionStatus === 'switching';
+      // During chain switches thirdweb may briefly report "disconnected"
+      // for several hundred milliseconds before re-establishing the
+      // connection on the new chain.  We debounce disconnect handling so
+      // that transient blips don't nuke the wallet state.
+      clearTimeout(disconnectTimerRef.current);
+      disconnectTimerRef.current = setTimeout(() => {
+        // Check BOTH the zustand 'switching' flag AND the module-level
+        // _switchInProgress flag.  The module-level flag survives the
+        // race window where failChainSwitch() clears 'switching' from
+        // zustand before this timer fires.
+        const latest = useWalletStore.getState().wallet;
+        const isSwitching = latest.connectionStatus === 'switching' || isSwitchInProgress();
+        const hasActiveSession = Boolean(activeWallet) || Boolean(activeAccount?.address);
 
-      if (!isSwitching) {
-        wasConnectedRef.current = false;
-        resetWallet();
-        clearWalletBoundStores();
-        setLastError(null);
-      }
+        // Never hard-reset while a wallet/account session is still present.
+        // Some connectors emit temporary disconnect states during chain hops.
+        if (!isSwitching && !hasActiveSession) {
+          wasConnectedRef.current = false;
+          clearWalletBoundStores();
+          setLastError(null);
+        }
+      }, 2_500);
     }
-  }, [connectionStatus, resetWallet, setLastError]);
+
+    return () => clearTimeout(disconnectTimerRef.current);
+  }, [activeAccount?.address, activeWallet, connectionStatus, setLastError]);
 
   useEffect(() => {
     clearTimeout(balanceIntervalRef.current);
@@ -345,12 +370,12 @@ export function WalletConnectionController() {
         } catch {
           // Wallet provider RPC failed — try a healthy public endpoint.
           if (wallet.chainId) {
+            let fallback: ethers.JsonRpcProvider | undefined;
             try {
               const rpcUrl = await findHealthyEndpoint(wallet.chainId);
               if (rpcUrl) {
-                const fallback = new ethers.JsonRpcProvider(rpcUrl);
+                fallback = new ethers.JsonRpcProvider(rpcUrl);
                 const raw = await fallback.getBalance(wallet.address!);
-                fallback.destroy();
                 setWallet({ balance: ethers.formatEther(raw), lastSyncAt: Date.now() });
                 balanceFailCountRef.current = 0;
                 scheduleBalancePoll();
@@ -358,6 +383,8 @@ export function WalletConnectionController() {
               }
             } catch {
               // fallback also failed
+            } finally {
+              fallback?.destroy();
             }
           }
           balanceFailCountRef.current++;

@@ -157,7 +157,7 @@ function classifyNetworkError(error: unknown): ClassifiedError | null {
   ) {
     return {
       category: 'network',
-      message: 'Network error. Unable to reach the server.',
+      message: 'Network error. Unable to reach the RPC/API endpoint.',
       suggestedAction: 'Check your internet connection and try again.',
       severity: 'error',
       recovery: 'retry',

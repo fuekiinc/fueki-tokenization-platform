@@ -9,7 +9,8 @@ import {
 import type { Chain } from 'thirdweb/chains';
 import { darkTheme } from 'thirdweb/react';
 import { createWallet } from 'thirdweb/wallets';
-import { getPrimaryRpcUrl } from './rpc/endpoints';
+import { getNetworkMetadata } from '../contracts/addresses';
+import { getPrimaryRpcUrl, getWalletSwitchRpcUrls } from './rpc/endpoints';
 
 const THIRDWEB_CLIENT_ID = import.meta.env.VITE_THIRDWEB_CLIENT_ID?.trim();
 export const THIRDWEB_WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID?.trim();
@@ -31,12 +32,16 @@ export const thirdwebClient = THIRDWEB_CLIENT_ID
     })
   : null;
 
+function getWalletSwitchPrimaryRpc(chainId: number): string {
+  return getWalletSwitchRpcUrls(chainId)[0] ?? getPrimaryRpcUrl(chainId);
+}
+
 /** Arbitrum Sepolia with dynamic RPC metadata for wallet_addEthereumChain prompts. */
 const arbitrumSepoliaChain = defineChain({
   id: 421614,
   name: 'Arbitrum Sepolia',
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpc: getPrimaryRpcUrl(421614),
+  rpc: getWalletSwitchPrimaryRpc(421614),
   testnet: true,
   blockExplorers: [
     { name: 'Arbiscan', url: 'https://sepolia.arbiscan.io' },
@@ -48,7 +53,7 @@ const holesky = defineChain({
   id: 17000,
   name: 'Holesky',
   nativeCurrency: { name: 'Holesky ETH', symbol: 'ETH', decimals: 18 },
-  rpc: getPrimaryRpcUrl(17000),
+  rpc: getWalletSwitchPrimaryRpc(17000),
   testnet: true,
   blockExplorers: [
     { name: 'Blockscout', url: 'https://eth-holesky.blockscout.com' },
@@ -60,7 +65,7 @@ const baseSepoliaChain = defineChain({
   id: 84532,
   name: 'Base Sepolia',
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpc: getPrimaryRpcUrl(84532),
+  rpc: getWalletSwitchPrimaryRpc(84532),
   testnet: true,
   blockExplorers: [
     { name: 'BaseScan', url: 'https://sepolia.basescan.org' },
@@ -85,9 +90,54 @@ const chainById = new Map<number, Chain>(
   THIRDWEB_SUPPORTED_CHAINS.map((chain) => [chain.id, chain]),
 );
 
+const KNOWN_TESTNET_CHAINS = new Set<number>([
+  17000,
+  31337,
+  421614,
+  84532,
+  11155111,
+]);
+
 export function getThirdwebChain(chainId: number | null | undefined): Chain | null {
   if (!chainId) return null;
   return chainById.get(chainId) ?? defineChain(chainId);
+}
+
+/**
+ * Build a chain descriptor for runtime chain switches, optionally pinning a
+ * preferred RPC endpoint that was recently health-checked in the browser.
+ */
+export function getThirdwebChainForSwitch(
+  chainId: number,
+  preferredRpcUrl?: string | null,
+): Chain {
+  const walletSwitchPrimaryRpc = getWalletSwitchRpcUrls(chainId)[0];
+  const metadata = getNetworkMetadata(chainId);
+  if (!metadata) {
+    const rpcForSwitch = preferredRpcUrl ?? walletSwitchPrimaryRpc;
+    if (!rpcForSwitch) {
+      return getThirdwebChain(chainId) ?? defineChain(chainId);
+    }
+    return defineChain({
+      id: chainId,
+      rpc: rpcForSwitch,
+    });
+  }
+
+  const rpcForSwitch = preferredRpcUrl ?? walletSwitchPrimaryRpc ?? metadata.rpcUrl;
+
+  return defineChain({
+    id: chainId,
+    name: metadata.name,
+    nativeCurrency: metadata.nativeCurrency,
+    rpc: rpcForSwitch,
+    ...(metadata.blockExplorer
+      ? {
+          blockExplorers: [{ name: 'Explorer', url: metadata.blockExplorer }],
+        }
+      : {}),
+    ...(KNOWN_TESTNET_CHAINS.has(chainId) ? { testnet: true as const } : {}),
+  });
 }
 
 export const THIRDWEB_WALLETS = [

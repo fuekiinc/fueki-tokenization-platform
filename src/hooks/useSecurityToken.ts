@@ -18,13 +18,17 @@ import { useCallback } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import logger from '../lib/logger';
-import { useWalletStore, getProvider } from '../store/walletStore';
+import { getProvider, useWalletStore } from '../store/walletStore';
 import { useSecurityTokenStore } from '../store/securityTokenStore';
-import { SecurityTokenABI, ALL_ROLES } from '../contracts/abis/SecurityToken';
+import { ALL_ROLES, SecurityTokenABI } from '../contracts/abis/SecurityToken';
 import { parseContractError } from '../lib/blockchain/contracts';
 import type { SecurityTokenDetails } from '../lib/blockchain/contracts';
 import { ContractService } from '../lib/blockchain/contracts';
 import { multicallSameTarget } from '../lib/blockchain/multicall';
+import {
+  findHealthyEndpoint,
+  isRetryableRpcError,
+} from '../lib/rpc/endpoints';
 import {
   getCached,
   invalidateCacheForAsset,
@@ -119,15 +123,105 @@ async function executeWrite(
   args: unknown[],
   overrides?: ethers.Overrides,
 ): Promise<ethers.ContractTransactionResponse> {
-  const gasEstimate: bigint = await contract[method].estimateGas(
-    ...args,
-    overrides ?? {},
-  );
-  const gasLimit = (gasEstimate * 120n) / 100n;
-  return await contract[method](...args, {
-    ...(overrides ?? {}),
-    gasLimit,
-  });
+  const sendWithGasEstimate = async () => {
+    const gasEstimate: bigint = await contract[method].estimateGas(
+      ...args,
+      overrides ?? {},
+    );
+    const gasLimit = (gasEstimate * 120n) / 100n;
+    return contract[method](...args, {
+      ...(overrides ?? {}),
+      gasLimit,
+    }) as Promise<ethers.ContractTransactionResponse>;
+  };
+
+  try {
+    return await sendWithGasEstimate();
+  } catch (error) {
+    if (!isRetryableRpcError(error)) {
+      throw error;
+    }
+
+    const chainId = useWalletStore.getState().wallet.chainId;
+    if (!chainId) {
+      throw error;
+    }
+
+    const healthyRpcUrl = await findHealthyEndpoint(chainId);
+    if (!healthyRpcUrl) {
+      throw error;
+    }
+
+    const signer = contract.runner as ethers.Signer | null;
+    if (!signer || typeof signer.sendTransaction !== 'function') {
+      throw error;
+    }
+
+    const signerAddress = await signer.getAddress();
+    const directProvider = new ethers.JsonRpcProvider(healthyRpcUrl, chainId);
+
+    const methodRef = (contract as Record<string, unknown>)[method] as {
+      populateTransaction: (...params: unknown[]) => Promise<ethers.TransactionRequest>;
+    } | undefined;
+
+    if (!methodRef || typeof methodRef.populateTransaction !== 'function') {
+      throw error;
+    }
+
+    const populated = await methodRef.populateTransaction(...args, overrides ?? {});
+    const toAddress =
+      (typeof populated.to === 'string' && populated.to) ||
+      (typeof contract.target === 'string' ? contract.target : '');
+    if (!toAddress || !ethers.isAddress(toAddress)) {
+      throw error;
+    }
+
+    const [nonce, feeData, gasEstimate] = await Promise.all([
+      directProvider.getTransactionCount(signerAddress, 'pending'),
+      directProvider.getFeeData(),
+      directProvider.estimateGas({
+        from: signerAddress,
+        to: toAddress,
+        data: populated.data,
+        value: populated.value,
+      }),
+    ]);
+
+    const txRequest: ethers.TransactionRequest = {
+      ...populated,
+      ...(overrides ?? {}),
+      chainId,
+      nonce,
+      gasLimit: (gasEstimate * 120n) / 100n,
+      to: toAddress,
+    };
+
+    try {
+      if (
+        feeData.maxFeePerGas !== null &&
+        feeData.maxPriorityFeePerGas !== null
+      ) {
+        txRequest.type = 2;
+        txRequest.maxFeePerGas =
+          txRequest.maxFeePerGas ?? feeData.maxFeePerGas ?? undefined;
+        txRequest.maxPriorityFeePerGas =
+          txRequest.maxPriorityFeePerGas ??
+          feeData.maxPriorityFeePerGas ??
+          undefined;
+        delete txRequest.gasPrice;
+      } else if (feeData.gasPrice !== null && txRequest.gasPrice == null) {
+        txRequest.gasPrice = feeData.gasPrice;
+      }
+
+      const tx = await signer.sendTransaction(txRequest);
+      log.warn(
+        `[useSecurityToken] ${method} recovered via read-RPC fallback ${healthyRpcUrl}`,
+      );
+      return tx as ethers.ContractTransactionResponse;
+    } finally {
+      directProvider.destroy();
+    }
+  }
 }
 
 function chainScopedKey(chainId: number | null, key: string): string {
@@ -762,7 +856,7 @@ export function useSecurityToken() {
       store.getState().setError(msg);
       throw err;
     }
-  }, [address, chainId, requireConnected, validateAddress, store]);
+  }, [chainId, requireConnected, validateAddress, store]);
 
   /**
    * Burn tokens from an address. Requires RESERVE_ADMIN role.
@@ -798,7 +892,7 @@ export function useSecurityToken() {
       store.getState().setError(msg);
       throw err;
     }
-  }, [address, chainId, requireConnected, validateAddress, store]);
+  }, [chainId, requireConnected, validateAddress, store]);
 
   /**
    * Pause all transfers on the token. Requires CONTRACT_ADMIN role.

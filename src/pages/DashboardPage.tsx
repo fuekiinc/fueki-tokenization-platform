@@ -1,24 +1,26 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import {
-  Wallet,
-  Coins,
-  ShieldCheck,
   ArrowRightLeft,
+  Coins,
   Copy,
   Globe,
+  ShieldCheck,
+  Wallet,
 } from 'lucide-react';
 import { ethers } from 'ethers';
 import logger from '../lib/logger';
-import { showError } from '../lib/errorUtils';
-import { useWalletStore, getProvider } from '../store/walletStore.ts';
-import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
+import { classifyError, showError } from '../lib/errorUtils';
+import { getProvider, useWalletStore } from '../store/walletStore.ts';
+import { getAssetFetchGeneration, nextAssetFetchGeneration, useAssetStore } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
 import { useExchangeStore } from '../store/exchangeStore.ts';
 import { useAuthStore } from '../store/authStore';
 import { useWallet } from '../hooks/useWallet';
 import { ContractService } from '../lib/blockchain/contracts';
-import { formatAddress, copyToClipboard } from '../lib/utils/helpers';
+import { isRetryableRpcError } from '../lib/rpc/endpoints';
+import { retryAsync } from '../lib/utils/retry';
+import { copyToClipboard, formatAddress } from '../lib/utils/helpers';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
 
 // Dashboard sub-components
@@ -92,7 +94,7 @@ function getNetworkName(chainId: number | null): string {
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
-  const { isConnected, address } = useWallet();
+  const { isConnected, address, isSwitchingNetwork } = useWallet();
   const user = useAuthStore((s) => s.user);
   const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
   const tradeHistory = useTradeStore((s) => s.tradeHistory);
@@ -102,6 +104,7 @@ export default function DashboardPage() {
   const setTrades = useTradeStore((s) => s.setTrades);
   const setLoadingAssets = useAssetStore((s) => s.setLoadingAssets);
   const chainId = useWalletStore((s) => s.wallet.chainId);
+  const providerReady = useWalletStore((s) => s.wallet.providerReady);
 
   // Track whether the initial data fetch is still in progress
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -124,15 +127,20 @@ export default function DashboardPage() {
   const fetchData = useCallback(async () => {
     setLoadError(null);
 
-    if (!isConnected || !address || !chainId) {
+    if (!isConnected || !address || !chainId || isSwitchingNetwork) {
       setIsInitialLoading(false);
+      return;
+    }
+
+    // Wallet may report connected before BrowserProvider/signer are hydrated.
+    // Keep skeleton state until provider is actually ready.
+    if (!providerReady) {
       return;
     }
 
     const provider = getProvider();
     if (!provider) {
-      setIsInitialLoading(false);
-      setLoadError('Please connect your wallet to view dashboard data.');
+      logger.debug('Dashboard data fetch deferred: provider not yet available');
       return;
     }
 
@@ -150,14 +158,30 @@ export default function DashboardPage() {
     const gen = nextAssetFetchGeneration();
     setLoadingAssets(true);
     try {
-      const totalAssetCount = await service.getTotalAssets();
+      const totalAssetCount = await retryAsync(
+        () => service.getTotalAssets(),
+        {
+          maxAttempts: 3,
+          baseDelayMs: 800,
+          label: 'dashboard:getTotalAssets',
+          isRetryable: isRetryableRpcError,
+        },
+      );
       if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
       if (totalAssetCount === 0n) {
         setAssets([]);
       } else {
         let userAssetAddresses: string[] = [];
         try {
-          userAssetAddresses = await service.getUserAssets(address);
+          userAssetAddresses = await retryAsync(
+            () => service.getUserAssets(address),
+            {
+              maxAttempts: 3,
+              baseDelayMs: 800,
+              label: 'dashboard:getUserAssets',
+              isRetryable: isRetryableRpcError,
+            },
+          );
         } catch (error) {
           showError(error, 'Unable to fetch your token list');
         }
@@ -195,7 +219,21 @@ export default function DashboardPage() {
         setAssets(assetList);
       }
     } catch (error) {
-      showError(error, 'Unable to load your assets. Check your connection and try again.');
+      const classified = classifyError(error);
+      if (classified.category === 'network') {
+        logger.warn('Dashboard asset load degraded by network/RPC issue', error);
+        if (wrappedAssetsRef.current.length === 0) {
+          // Degrade gracefully: do not hard-fail dashboard for transient RPC outages.
+          setAssets([]);
+        }
+      } else {
+        showError(error, 'Unable to load assets from blockchain RPC');
+        if (wrappedAssetsRef.current.length === 0) {
+          setLoadError(
+            'Unable to load your assets from the current network. Please retry, then verify your wallet network and RPC connectivity.',
+          );
+        }
+      }
     } finally {
       setLoadingAssets(false);
     }
@@ -316,7 +354,17 @@ export default function DashboardPage() {
     }
 
     setIsInitialLoading(false);
-  }, [isConnected, address, chainId, setAssets, setLoadingAssets, setUserOrders, setTrades]);
+  }, [
+    isConnected,
+    address,
+    chainId,
+    providerReady,
+    isSwitchingNetwork,
+    setAssets,
+    setLoadingAssets,
+    setUserOrders,
+    setTrades,
+  ]);
 
   useEffect(() => {
     void fetchData();

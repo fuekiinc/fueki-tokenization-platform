@@ -31,6 +31,27 @@ const WALLET_PERSISTENCE_KEY = 'fueki:wallet:connected';
 let _provider: BrowserProvider | null = null;
 let _signer: JsonRpcSigner | null = null;
 
+/**
+ * Module-level flag that stays `true` for the entire duration of a
+ * `switchNetwork()` call in `useWallet`.  The disconnect-detection effect
+ * in `WalletConnectionController` checks this flag so it can ignore the
+ * transient "disconnected" status that thirdweb may fire mid-switch.
+ *
+ * Unlike the zustand `connectionStatus === 'switching'` check, this flag
+ * is never cleared by `failChainSwitch()` before the disconnect effect
+ * has a chance to read it — preventing the race condition that caused the
+ * disconnect loop.
+ */
+let _switchInProgress = false;
+
+export function isSwitchInProgress(): boolean {
+  return _switchInProgress;
+}
+
+export function setSwitchInProgress(value: boolean): void {
+  _switchInProgress = value;
+}
+
 export function getProvider(): BrowserProvider | null {
   return _provider;
 }

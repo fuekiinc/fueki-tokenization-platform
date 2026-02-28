@@ -78,6 +78,32 @@ const updatePreferencesSchema = z.object({
   helpLevel: helpLevelSchema,
 });
 
+function mapUserResponse(
+  user: {
+    id: string;
+    email: string;
+    role: string;
+    walletAddress: string | null;
+    kycStatus: string;
+    helpLevel: string;
+    createdAt: Date;
+    updatedAt: Date;
+    kycData?: { subscriptionPlan: string | null } | null;
+  },
+) {
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    walletAddress: user.walletAddress,
+    kycStatus: user.kycStatus,
+    helpLevel: user.helpLevel,
+    subscriptionPlan: user.kycData?.subscriptionPlan ?? null,
+    createdAt: user.createdAt.toISOString(),
+    updatedAt: user.updatedAt.toISOString(),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/auth/register
 // ---------------------------------------------------------------------------
@@ -107,16 +133,7 @@ router.post('/register', async (req, res) => {
 
     // Return only the access token in the response body
     res.status(201).json({
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        walletAddress: user.walletAddress,
-        kycStatus: user.kycStatus,
-        helpLevel: user.helpLevel,
-        createdAt: user.createdAt.toISOString(),
-        updatedAt: user.updatedAt.toISOString(),
-      },
+      user: mapUserResponse(user),
       tokens: {
         accessToken: tokens.accessToken,
       },
@@ -139,7 +156,16 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password, rememberMe } = loginSchema.parse(req.body);
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: {
+        kycData: {
+          select: {
+            subscriptionPlan: true,
+          },
+        },
+      },
+    });
     if (!user) {
       res.status(401).json({ error: { message: 'Invalid email or password', code: 'INVALID_CREDENTIALS' } });
       return;
@@ -158,16 +184,7 @@ router.post('/login', async (req, res) => {
 
     // Return only the access token in the response body
     res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        walletAddress: user.walletAddress,
-        kycStatus: user.kycStatus,
-        helpLevel: user.helpLevel,
-        createdAt: user.createdAt.toISOString(),
-        updatedAt: user.updatedAt.toISOString(),
-      },
+      user: mapUserResponse(user),
       tokens: {
         accessToken: tokens.accessToken,
       },
@@ -213,6 +230,13 @@ router.get('/me', authenticate, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.userId },
+      include: {
+        kycData: {
+          select: {
+            subscriptionPlan: true,
+          },
+        },
+      },
     });
 
     if (!user) {
@@ -220,16 +244,7 @@ router.get('/me', authenticate, async (req, res) => {
       return;
     }
 
-    res.json({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      walletAddress: user.walletAddress,
-      kycStatus: user.kycStatus,
-      helpLevel: user.helpLevel,
-      createdAt: user.createdAt.toISOString(),
-      updatedAt: user.updatedAt.toISOString(),
-    });
+    res.json(mapUserResponse(user));
   } catch (err) {
     console.error('Profile error:', err);
     res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
@@ -247,18 +262,16 @@ router.put('/preferences', authenticate, async (req, res) => {
     const user = await prisma.user.update({
       where: { id: req.userId },
       data: { helpLevel },
+      include: {
+        kycData: {
+          select: {
+            subscriptionPlan: true,
+          },
+        },
+      },
     });
 
-    res.json({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      walletAddress: user.walletAddress,
-      kycStatus: user.kycStatus,
-      helpLevel: user.helpLevel,
-      createdAt: user.createdAt.toISOString(),
-      updatedAt: user.updatedAt.toISOString(),
-    });
+    res.json(mapUserResponse(user));
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({

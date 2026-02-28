@@ -46,14 +46,7 @@ export default function ConstructorForm({
   return (
     <div className="space-y-6">
       {/* Template description */}
-      <div>
-        <h2 className="text-lg font-semibold text-white mb-1">
-          Configure Parameters
-        </h2>
-        <p className="text-sm text-gray-500 leading-relaxed">
-          {template.description}
-        </p>
-      </div>
+      <p className="text-sm text-gray-500 leading-relaxed">{template.description}</p>
 
       {/* No-params message */}
       {params.length === 0 && (

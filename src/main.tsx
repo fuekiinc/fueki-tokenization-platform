@@ -10,7 +10,6 @@ import logger from './lib/logger'
 import { classifyError } from './lib/errorUtils'
 import {
   getThirdwebAppMetadata,
-  THIRDWEB_DEFAULT_CHAIN,
   THIRDWEB_WALLETS,
   thirdwebClient,
 } from './lib/thirdweb'
@@ -299,7 +298,6 @@ createRoot(document.getElementById('root')!).render(
             client={thirdwebClient}
             wallets={THIRDWEB_WALLETS}
             appMetadata={getThirdwebAppMetadata()}
-            chain={THIRDWEB_DEFAULT_CHAIN}
           />
         )}
         <WalletConnectionController />

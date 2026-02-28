@@ -161,6 +161,12 @@ function formatSubscriptionPlanForEmail(plan: string): string {
       return '$200/month (Monthly)';
     case 'full_service':
       return 'Full Service (Bespoke pricing - invoice based on requirements)';
+    case 'contract_deployment_monthly':
+      return '$50/month (Smart Contract Deployment Only) + per-contract fee';
+    case 'contract_deployment_annual':
+      return '$600/year (Smart Contract Deployment Only) + per-contract fee';
+    case 'contract_deployment_white_glove':
+      return 'White Glove Smart Contract Deployment (Bespoke pricing - invoice estimate based on requirements)';
     default:
       return plan;
   }

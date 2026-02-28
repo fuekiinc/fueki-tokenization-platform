@@ -15,12 +15,14 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { ethers } from 'ethers';
 import { useWallet } from '../hooks/useWallet';
 import { useWalletStore, getProvider } from '../store/walletStore.ts';
 import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
 import { ContractService } from '../lib/blockchain/contracts';
 import { retryAsync } from '../lib/utils/retry';
 import logger from '../lib/logger';
+import { findHealthyEndpoint, getOrderedRpcEndpoints } from '../lib/rpc/endpoints';
 import { DEFAULT_SWITCH_CHAIN_IDS, getNetworkMetadata } from '../contracts/addresses';
 import { getNetworkCapabilities } from '../contracts/networkCapabilities';
 import { formatAddress } from '../lib/utils/helpers';
@@ -121,6 +123,7 @@ export default function ExchangePage() {
     isConnected,
     connectWallet,
     isConnecting,
+    isSwitchingNetwork,
     switchNetwork,
   } = useWallet();
   const wallet = useWalletStore((s) => s.wallet);
@@ -162,7 +165,7 @@ export default function ExchangePage() {
   // ---- Initialize ContractService -----------------------------------------
 
   useEffect(() => {
-    if (!isConnected || !wallet.chainId || !isNetworkReady) {
+    if (!isConnected || !wallet.chainId || !isNetworkReady || isSwitchingNetwork) {
       setContractService(null);
       return;
     }
@@ -183,7 +186,7 @@ export default function ExchangePage() {
       setContractService(null);
       setInitError('Failed to initialize exchange contracts. Please check your network.');
     }
-  }, [isConnected, isNetworkReady, wallet.chainId]);
+  }, [isConnected, isNetworkReady, isSwitchingNetwork, wallet.chainId]);
 
   // ---- Fetch all wrapped assets -------------------------------------------
 
@@ -195,7 +198,7 @@ export default function ExchangePage() {
   }, [wrappedAssets]);
 
   const fetchAssets = useCallback(async () => {
-    if (!contractService || !address) return;
+    if (!contractService || !address || isSwitchingNetwork) return;
 
     const gen = nextAssetFetchGeneration();
     setLocalLoadingAssets(true);
@@ -281,6 +284,7 @@ export default function ExchangePage() {
       setLocalAssets(assetList);
       setAssets(assetList);
     } catch (err) {
+      if (isSwitchingNetwork) return;
       logger.error('Failed to fetch assets:', err);
       const msg =
         err instanceof Error && /network|timeout|fetch|rpc|connect/i.test(err.message)
@@ -291,7 +295,7 @@ export default function ExchangePage() {
       setLocalLoadingAssets(false);
       setLoadingAssets(false);
     }
-  }, [contractService, address, setAssets, setLoadingAssets]);
+  }, [contractService, address, isSwitchingNetwork, setAssets, setLoadingAssets]);
 
   useEffect(() => {
     void fetchAssets();
@@ -301,21 +305,61 @@ export default function ExchangePage() {
 
   useEffect(() => {
     async function loadEthBalance() {
-      if (!contractService || !address) return;
+      if (!contractService || !address || !wallet.chainId || isSwitchingNetwork) return;
+      const fallbackProviders: ethers.JsonRpcProvider[] = [];
       try {
         const signer = await contractService.getSigner();
         const provider = signer.provider;
         if (provider) {
-          const bal = await provider.getBalance(address);
+          const bal = await retryAsync(
+            () => provider.getBalance(address),
+            { maxAttempts: 2, baseDelayMs: 500, label: 'exchange:getEthBalance:wallet' },
+          );
           setEthBalance(bal.toString());
+          return;
         }
+
+        const healthyEndpoint = await findHealthyEndpoint(wallet.chainId, 3_000).catch(() => null);
+        const endpointCandidates = [
+          ...(healthyEndpoint ? [healthyEndpoint] : []),
+          ...getOrderedRpcEndpoints(wallet.chainId),
+        ];
+        const uniqueEndpoints = Array.from(new Set(endpointCandidates));
+
+        let lastError: unknown = null;
+        for (const endpoint of uniqueEndpoints) {
+          const rpcProvider = new ethers.JsonRpcProvider(endpoint, wallet.chainId);
+          fallbackProviders.push(rpcProvider);
+
+          try {
+            const bal = await retryAsync(
+              () => rpcProvider.getBalance(address),
+              { maxAttempts: 2, baseDelayMs: 500, label: 'exchange:getEthBalance:fallback' },
+            );
+            setEthBalance(bal.toString());
+            return;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        throw lastError ?? new Error('No RPC endpoint available for native balance lookup');
       } catch (error) {
-        logger.error('Failed to fetch ETH balance:', error);
-        toast.error('Unable to fetch your ETH balance. Try refreshing the page.');
+        logger.warn('Failed to fetch ETH balance:', error);
+        if (
+          !(error instanceof Error) ||
+          !/network|timeout|fetch|rpc|connect|429|50[234]/i.test(error.message)
+        ) {
+          toast.error('Unable to fetch your ETH balance. Try refreshing the page.');
+        }
+      } finally {
+        for (const provider of fallbackProviders) {
+          provider.destroy();
+        }
       }
     }
     void loadEthBalance();
-  }, [contractService, address, refreshKey]);
+  }, [contractService, address, isSwitchingNetwork, refreshKey, wallet.chainId]);
 
   // ---- Refresh handler (shared across child components) -------------------
 

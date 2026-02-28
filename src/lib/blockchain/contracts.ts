@@ -15,7 +15,7 @@ import { SecurityTokenFactoryABI } from '../../contracts/abis/SecurityTokenFacto
 import { SecurityTokenABI } from '../../contracts/abis/SecurityToken.ts';
 import { AssetBackedExchangeABI } from '../../contracts/abis/AssetBackedExchange.ts';
 import { LiquidityPoolAMMABI } from '../../contracts/abis/LiquidityPoolAMM.ts';
-import { getNetworkConfig, getNetworkMetadata } from '../../contracts/addresses';
+import { getNetworkConfig } from '../../contracts/addresses';
 import { multicall, multicallSameTarget } from './multicall.ts';
 import type { MulticallRequest, MulticallResult } from './multicall.ts';
 import {
@@ -99,6 +99,23 @@ export interface SecurityTokenDetails {
   createdAt: bigint;
 }
 
+type BigNumberishLike = string | number | bigint;
+
+interface RawSecurityTokenDetails {
+  tokenAddress?: string;
+  transferRulesAddress?: string;
+  creator?: string;
+  name?: string;
+  symbol?: string;
+  decimals?: BigNumberishLike;
+  totalSupply?: BigNumberishLike;
+  maxTotalSupply?: BigNumberishLike;
+  documentHash?: string;
+  documentType?: string;
+  originalValue?: BigNumberishLike;
+  createdAt?: BigNumberishLike;
+}
+
 /** On-chain representation of an AMM liquidity pool. */
 export interface Pool {
   token0: string;
@@ -107,6 +124,15 @@ export interface Pool {
   reserve1: bigint;
   totalLiquidity: bigint;
   kLast: bigint;
+}
+
+interface RawPool {
+  token0?: string;
+  token1?: string;
+  reserve0?: BigNumberishLike;
+  reserve1?: BigNumberishLike;
+  totalLiquidity?: BigNumberishLike;
+  kLast?: BigNumberishLike;
 }
 
 /** Sentinel address representing native ETH in AssetBackedExchange orders. */
@@ -353,9 +379,22 @@ export class ContractService {
     return this.signer;
   }
 
+  /** Maximum cached read providers to prevent unbounded memory growth. */
+  private static readonly MAX_READ_PROVIDERS = 10;
+
   private getReadProvider(endpoint: string): ethers.JsonRpcProvider {
     const cached = this.readProviders.get(endpoint);
     if (cached) return cached;
+
+    // Evict the oldest entry if the cache is full.
+    if (this.readProviders.size >= ContractService.MAX_READ_PROVIDERS) {
+      const oldest = this.readProviders.keys().next().value;
+      if (oldest !== undefined) {
+        const evicted = this.readProviders.get(oldest);
+        this.readProviders.delete(oldest);
+        evicted?.destroy();
+      }
+    }
 
     const provider = new ethers.JsonRpcProvider(endpoint, this.chainId);
     this.readProviders.set(endpoint, provider);
@@ -366,9 +405,7 @@ export class ContractService {
     callback: (provider: ethers.Provider) => Promise<T>,
   ): Promise<T> {
     const endpoints = getOrderedRpcEndpoints(this.chainId);
-    if (endpoints.length === 0) {
-      return callback(this.provider);
-    }
+    if (endpoints.length === 0) return callback(this.provider);
 
     let lastError: unknown = null;
     for (const endpoint of endpoints) {
@@ -387,10 +424,22 @@ export class ContractService {
       }
     }
 
-    if (lastError) {
+    // Final fallback: the wallet-connected BrowserProvider may still be healthy
+    // even when public RPC endpoints are degraded or blocked.
+    try {
+      return await callback(this.provider);
+    } catch (providerError) {
+      if (!lastError) throw providerError;
+      if (!isRetryableRpcError(providerError)) throw providerError;
       throw lastError;
     }
-    return callback(this.provider);
+  }
+
+  private async withContractRead<T>(
+    contractFactory: (provider: ethers.Provider) => ethers.Contract,
+    callback: (contract: ethers.Contract) => Promise<T>,
+  ): Promise<T> {
+    return this.withReadProvider((provider) => callback(contractFactory(provider)));
   }
 
   // -----------------------------------------------------------------------
@@ -552,9 +601,11 @@ export class ContractService {
     const cacheKey = this.cacheKey(`factory:assets:${userAddress}`);
     const cached = getCached<string[]>(cacheKey);
     if (cached) return cached;
-    const factory = this.getFactoryContract();
     try {
-      const result = await factory.getUserAssets(userAddress);
+      const result = await this.withContractRead(
+        (provider) => this.getFactoryContract(provider),
+        (factory) => factory.getUserAssets(userAddress) as Promise<string[]>,
+      );
       setCache(cacheKey, result as string[]);
       return result;
     } catch (error: unknown) {
@@ -569,9 +620,11 @@ export class ContractService {
     const cacheKey = this.cacheKey('factory:totalAssets');
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
-    const factory = this.getFactoryContract();
     try {
-      const result: bigint = await factory.getTotalAssets();
+      const result = await this.withContractRead(
+        (provider) => this.getFactoryContract(provider),
+        (factory) => factory.getTotalAssets() as Promise<bigint>,
+      );
       setCache(cacheKey, result);
       return result;
     } catch (error: unknown) {
@@ -583,9 +636,11 @@ export class ContractService {
 
   /** Retrieve the asset address at a given index in the factory's global list. */
   async getAssetAtIndex(index: bigint | number): Promise<string> {
-    const factory = this.getFactoryContract();
     try {
-      return await factory.getAssetAtIndex(index);
+      return await this.withContractRead(
+        (provider) => this.getFactoryContract(provider),
+        (factory) => factory.getAssetAtIndex(index) as Promise<string>,
+      );
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch asset at index ${index}: ${error instanceof Error ? error.message : String(error)}`,
@@ -612,18 +667,20 @@ export class ContractService {
 
     try {
       // Batch all token property reads into a single RPC call via Multicall3.
-      const results = await multicallSameTarget(
-        this.provider,
-        assetAddress,
-        WrappedAssetABI,
-        [
-          { functionName: 'name' },
-          { functionName: 'symbol' },
-          { functionName: 'totalSupply' },
-          { functionName: 'documentHash' },
-          { functionName: 'documentType' },
-          { functionName: 'originalValue' },
-        ],
+      const results = await this.withReadProvider((provider) =>
+        multicallSameTarget(
+          provider,
+          assetAddress,
+          WrappedAssetABI,
+          [
+            { functionName: 'name' },
+            { functionName: 'symbol' },
+            { functionName: 'totalSupply' },
+            { functionName: 'documentHash' },
+            { functionName: 'documentType' },
+            { functionName: 'originalValue' },
+          ],
+        ),
       );
 
       const name = results[0].success ? (results[0].data as string) : '';
@@ -636,9 +693,13 @@ export class ContractService {
       // Attempt to resolve the creator from the factory's AssetCreated event log.
       let creator = ethers.ZeroAddress;
       try {
-        const factory = this.getFactoryContract();
-        const filter = factory.filters.AssetCreated(null, assetAddress);
-        const events = await factory.queryFilter(filter);
+        const events = await this.withContractRead(
+          (provider) => this.getFactoryContract(provider),
+          async (factory) => {
+            const filter = factory.filters.AssetCreated(null, assetAddress);
+            return factory.queryFilter(filter);
+          },
+        );
         if (events.length > 0) {
           creator = (events[0] as ethers.EventLog).args[0]; // first indexed param = creator
         }
@@ -677,18 +738,20 @@ export class ContractService {
     if (cached) return cached;
     try {
       // Batch all property reads into a single RPC call via Multicall3.
-      const results = await multicallSameTarget(
-        this.provider,
-        assetAddress,
-        WrappedAssetABI,
-        [
-          { functionName: 'name' },
-          { functionName: 'symbol' },
-          { functionName: 'totalSupply' },
-          { functionName: 'documentHash' },
-          { functionName: 'documentType' },
-          { functionName: 'originalValue' },
-        ],
+      const results = await this.withReadProvider((provider) =>
+        multicallSameTarget(
+          provider,
+          assetAddress,
+          WrappedAssetABI,
+          [
+            { functionName: 'name' },
+            { functionName: 'symbol' },
+            { functionName: 'totalSupply' },
+            { functionName: 'documentHash' },
+            { functionName: 'documentType' },
+            { functionName: 'originalValue' },
+          ],
+        ),
       );
 
       const result: AssetDetails = {
@@ -732,7 +795,9 @@ export class ContractService {
         }
       }
 
-      const results: MulticallResult[] = await multicall(this.provider, requests);
+      const results: MulticallResult[] = await this.withReadProvider((provider) =>
+        multicall(provider, requests),
+      );
       const assets: (AssetDetails | null)[] = [];
 
       for (let i = 0; i < assetAddresses.length; i++) {
@@ -778,9 +843,11 @@ export class ContractService {
     const cacheKey = this.cacheKey(`asset:${assetAddress}:balance:${userAddress}`);
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
-    const asset = this.getAssetContract(assetAddress);
     try {
-      const result: bigint = await asset.balanceOf(userAddress);
+      const result = await this.withContractRead(
+        (provider) => this.getAssetContract(assetAddress, provider),
+        (asset) => asset.balanceOf(userAddress) as Promise<bigint>,
+      );
       setCache(cacheKey, result);
       return result;
     } catch (error: unknown) {
@@ -802,9 +869,11 @@ export class ContractService {
     const cacheKey = this.cacheKey(`asset:${assetAddress}:allowance:${ownerAddress}:${spenderAddress}`);
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
-    const asset = this.getAssetContract(assetAddress);
     try {
-      const result: bigint = await asset.allowance(ownerAddress, spenderAddress);
+      const result = await this.withContractRead(
+        (provider) => this.getAssetContract(assetAddress, provider),
+        (asset) => asset.allowance(ownerAddress, spenderAddress) as Promise<bigint>,
+      );
       setCache(cacheKey, result);
       return result;
     } catch (error: unknown) {
@@ -935,9 +1004,11 @@ export class ContractService {
   async getOrders(tokenSell: string, tokenBuy: string): Promise<Order[]> {
     this.validateAddress(tokenSell, 'tokenSell');
     this.validateAddress(tokenBuy, 'tokenBuy');
-    const exchange = this.getExchangeContract();
     try {
-      const raw = await exchange.getOrders(tokenSell, tokenBuy);
+      const raw = await this.withContractRead(
+        (provider) => this.getExchangeContract(provider),
+        (exchange) => exchange.getOrders(tokenSell, tokenBuy) as Promise<Record<string, unknown>[]>,
+      );
       return raw.map((r: Record<string, unknown>) => this.parseOrder(r));
     } catch (error: unknown) {
       throw new Error(
@@ -948,9 +1019,11 @@ export class ContractService {
 
   /** Retrieve a single order by its ID. */
   async getOrder(orderId: bigint): Promise<Order> {
-    const exchange = this.getExchangeContract();
     try {
-      const raw = await exchange.getOrder(orderId);
+      const raw = await this.withContractRead(
+        (provider) => this.getExchangeContract(provider),
+        (exchange) => exchange.getOrder(orderId) as Promise<Record<string, unknown>>,
+      );
       return this.parseOrder(raw);
     } catch (error: unknown) {
       throw new Error(
@@ -968,10 +1041,14 @@ export class ContractService {
    */
   async getUserOrders(userAddress: string): Promise<bigint[]> {
     this.validateAddress(userAddress, 'user');
-    const exchange = this.getExchangeContract();
     try {
-      const filter = exchange.filters.OrderCreated(null, userAddress);
-      const events = await exchange.queryFilter(filter);
+      const events = await this.withContractRead(
+        (provider) => this.getExchangeContract(provider),
+        async (exchange) => {
+          const filter = exchange.filters.OrderCreated(null, userAddress);
+          return exchange.queryFilter(filter);
+        },
+      );
       return events.map((e) => (e as ethers.EventLog).args[0] as bigint);
     } catch (error: unknown) {
       throw new Error(
@@ -1039,9 +1116,11 @@ export class ContractService {
   /** Get all security token addresses created by a user. */
   async getUserSecurityTokens(userAddress: string): Promise<string[]> {
     this.validateAddress(userAddress, 'user');
-    const factory = this.getSecurityTokenFactoryContract();
     try {
-      return await factory.getUserTokens(userAddress);
+      return await this.withContractRead(
+        (provider) => this.getSecurityTokenFactoryContract(provider),
+        (factory) => factory.getUserTokens(userAddress) as Promise<string[]>,
+      );
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch security tokens for user: ${parseContractError(error)}`,
@@ -1051,9 +1130,11 @@ export class ContractService {
 
   /** Get total number of security tokens deployed through the factory. */
   async getTotalSecurityTokens(): Promise<bigint> {
-    const factory = this.getSecurityTokenFactoryContract();
     try {
-      return await factory.getTotalTokens();
+      return await this.withContractRead(
+        (provider) => this.getSecurityTokenFactoryContract(provider),
+        (factory) => factory.getTotalTokens() as Promise<bigint>,
+      );
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch total security tokens: ${parseContractError(error)}`,
@@ -1067,9 +1148,11 @@ export class ContractService {
     const cacheKey = this.cacheKey(`asset:${tokenAddress}:securityDetails`);
     const cached = getCached<SecurityTokenDetails>(cacheKey);
     if (cached) return cached;
-    const factory = this.getSecurityTokenFactoryContract();
     try {
-      const raw = await factory.getTokenDetails(tokenAddress);
+      const raw = await this.withContractRead(
+        (provider) => this.getSecurityTokenFactoryContract(provider),
+        (factory) => factory.getTokenDetails(tokenAddress) as Promise<RawSecurityTokenDetails>,
+      );
       const result: SecurityTokenDetails = {
         tokenAddress: raw.tokenAddress ?? tokenAddress,
         transferRulesAddress: raw.transferRulesAddress ?? ethers.ZeroAddress,
@@ -1101,9 +1184,11 @@ export class ContractService {
   async getSecurityTokenBalance(tokenAddress: string, userAddress: string): Promise<bigint> {
     this.validateAddress(tokenAddress, 'token');
     this.validateAddress(userAddress, 'user');
-    const token = this.getSecurityTokenContract(tokenAddress);
     try {
-      return await token.balanceOf(userAddress);
+      return await this.withContractRead(
+        (provider) => this.getSecurityTokenContract(tokenAddress, provider),
+        (token) => token.balanceOf(userAddress) as Promise<bigint>,
+      );
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch security token balance: ${parseContractError(error)}`,
@@ -1115,9 +1200,11 @@ export class ContractService {
   async getSecurityTokenUnlockedBalance(tokenAddress: string, userAddress: string): Promise<bigint> {
     this.validateAddress(tokenAddress, 'token');
     this.validateAddress(userAddress, 'user');
-    const token = this.getSecurityTokenContract(tokenAddress);
     try {
-      return await token.unlockedBalanceOf(userAddress);
+      return await this.withContractRead(
+        (provider) => this.getSecurityTokenContract(tokenAddress, provider),
+        (token) => token.unlockedBalanceOf(userAddress) as Promise<bigint>,
+      );
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch unlocked balance: ${parseContractError(error)}`,
@@ -1129,9 +1216,11 @@ export class ContractService {
   async getSecurityTokenLockedBalance(tokenAddress: string, userAddress: string): Promise<bigint> {
     this.validateAddress(tokenAddress, 'token');
     this.validateAddress(userAddress, 'user');
-    const token = this.getSecurityTokenContract(tokenAddress);
     try {
-      return await token.lockedAmountOf(userAddress);
+      return await this.withContractRead(
+        (provider) => this.getSecurityTokenContract(tokenAddress, provider),
+        (token) => token.lockedAmountOf(userAddress) as Promise<bigint>,
+      );
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch locked balance: ${parseContractError(error)}`,
@@ -1245,9 +1334,11 @@ export class ContractService {
 
   /** Get an order from the asset-backed exchange. */
   async getExchangeOrder(orderId: bigint): Promise<Order> {
-    const exchange = this.getAssetBackedExchangeContract();
     try {
-      const raw = await exchange.getOrder(orderId);
+      const raw = await this.withContractRead(
+        (provider) => this.getAssetBackedExchangeContract(provider),
+        (exchange) => exchange.getOrder(orderId) as Promise<Record<string, unknown>>,
+      );
       return this.parseOrder(raw);
     } catch (error: unknown) {
       throw new Error(
@@ -1259,9 +1350,11 @@ export class ContractService {
   /** Get all order IDs for a user on the asset-backed exchange. */
   async getExchangeUserOrders(userAddress: string): Promise<bigint[]> {
     this.validateAddress(userAddress, 'user');
-    const exchange = this.getAssetBackedExchangeContract();
     try {
-      return await exchange.getUserOrders(userAddress);
+      return await this.withContractRead(
+        (provider) => this.getAssetBackedExchangeContract(provider),
+        (exchange) => exchange.getUserOrders(userAddress) as Promise<bigint[]>,
+      );
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch your orders: ${parseContractError(error)}`,
@@ -1271,9 +1364,12 @@ export class ContractService {
 
   /** Get active orders for a specific trading pair on the asset-backed exchange. */
   async getExchangeActiveOrders(tokenSell: string, tokenBuy: string): Promise<Order[]> {
-    const exchange = this.getAssetBackedExchangeContract();
     try {
-      const raw = await exchange.getActiveOrders(tokenSell, tokenBuy);
+      const raw = await this.withContractRead(
+        (provider) => this.getAssetBackedExchangeContract(provider),
+        (exchange) =>
+          exchange.getActiveOrders(tokenSell, tokenBuy) as Promise<Record<string, unknown>[]>,
+      );
       return raw.map((r: Record<string, unknown>) => this.parseOrder(r));
     } catch (error: unknown) {
       throw new Error(
@@ -1285,26 +1381,30 @@ export class ContractService {
   /** Get order IDs that a user filled as a taker (via OrderFilled events). */
   async getExchangeFilledOrderIds(userAddress: string): Promise<bigint[]> {
     this.validateAddress(userAddress, 'user');
-    const exchange = this.getAssetBackedExchangeContract();
     try {
-      const filter = exchange.filters.OrderFilled(null, userAddress);
+      const events = await this.withContractRead(
+        (provider) => this.getAssetBackedExchangeContract(provider),
+        async (exchange) => {
+          const filter = exchange.filters.OrderFilled(null, userAddress);
 
-      // Public RPCs limit eth_getLogs range. Query the latest ~50 000 blocks
-      // (roughly 1 week on mainnet) to stay within typical provider limits.
-      const provider = exchange.runner && 'provider' in exchange.runner
-        ? (exchange.runner as { provider: ethers.Provider }).provider
-        : null;
-      let fromBlock: number | string = 0;
-      if (provider) {
-        try {
-          const latest = await provider.getBlockNumber();
-          fromBlock = Math.max(0, latest - 50_000);
-        } catch {
-          // Fall back to scanning all blocks if we can't get the block number
-        }
-      }
+          // Public RPCs limit eth_getLogs range. Query the latest ~50 000 blocks
+          // (roughly 1 week on mainnet) to stay within typical provider limits.
+          const provider = exchange.runner && 'provider' in exchange.runner
+            ? (exchange.runner as { provider: ethers.Provider }).provider
+            : null;
+          let fromBlock: number | string = 0;
+          if (provider) {
+            try {
+              const latest = await provider.getBlockNumber();
+              fromBlock = Math.max(0, latest - 50_000);
+            } catch {
+              // Fall back to scanning all blocks if we can't get the block number
+            }
+          }
 
-      const events = await exchange.queryFilter(filter, fromBlock);
+          return exchange.queryFilter(filter, fromBlock);
+        },
+      );
       // Deduplicate order IDs (a user can fill the same order multiple times via partial fills)
       const seen = new Set<string>();
       const ids: bigint[] = [];
@@ -1327,9 +1427,11 @@ export class ContractService {
   /** Get the ETH balance available for withdrawal from the exchange. */
   async getExchangeEthBalance(userAddress: string): Promise<bigint> {
     this.validateAddress(userAddress, 'user');
-    const exchange = this.getAssetBackedExchangeContract();
     try {
-      return await exchange.ethBalances(userAddress);
+      return await this.withContractRead(
+        (provider) => this.getAssetBackedExchangeContract(provider),
+        (exchange) => exchange.ethBalances(userAddress) as Promise<bigint>,
+      );
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch withdrawable ETH balance: ${parseContractError(error)}`,
@@ -1558,9 +1660,11 @@ export class ContractService {
     const cacheKey = this.cacheKey(`amm:pool:${tokenA}:${tokenB}`);
     const cached = getCached<Pool>(cacheKey);
     if (cached) return cached;
-    const amm = this.getAMMContract();
     try {
-      const raw = await amm.getPool(tokenA, tokenB);
+      const raw = await this.withContractRead(
+        (provider) => this.getAMMContract(provider),
+        (amm) => amm.getPool(tokenA, tokenB) as Promise<RawPool>,
+      );
       const result: Pool = {
         token0: raw.token0 ?? ethers.ZeroAddress,
         token1: raw.token1 ?? ethers.ZeroAddress,
@@ -1587,9 +1691,11 @@ export class ContractService {
     this.validateAddress(tokenA, 'tokenA');
     this.validateAddress(tokenB, 'tokenB');
     this.validateAddress(provider, 'provider');
-    const amm = this.getAMMContract();
     try {
-      return await amm.getLiquidityBalance(tokenA, tokenB, provider);
+      return await this.withContractRead(
+        (readProvider) => this.getAMMContract(readProvider),
+        (amm) => amm.getLiquidityBalance(tokenA, tokenB, provider) as Promise<bigint>,
+      );
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch LP balance: ${parseContractError(error)}`,
@@ -1605,9 +1711,11 @@ export class ContractService {
   ): Promise<bigint> {
     this.validateAddress(tokenIn, 'tokenIn');
     this.validateAddress(tokenOut, 'tokenOut');
-    const amm = this.getAMMContract();
     try {
-      return await amm.quote(tokenIn, tokenOut, amountIn);
+      return await this.withContractRead(
+        (provider) => this.getAMMContract(provider),
+        (amm) => amm.quote(tokenIn, tokenOut, amountIn) as Promise<bigint>,
+      );
     } catch (error: unknown) {
       throw new Error(
         `Failed to get swap quote: ${parseContractError(error)}`,
@@ -1618,9 +1726,11 @@ export class ContractService {
   /** Get withdrawable ETH balance from the AMM contract. */
   async getAMMEthBalance(userAddress: string): Promise<bigint> {
     this.validateAddress(userAddress, 'user');
-    const amm = this.getAMMContract();
     try {
-      return await amm.ethBalances(userAddress);
+      return await this.withContractRead(
+        (provider) => this.getAMMContract(provider),
+        (amm) => amm.ethBalances(userAddress) as Promise<bigint>,
+      );
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch AMM ETH balance: ${parseContractError(error)}`,
@@ -1683,7 +1793,8 @@ export class ContractService {
    * Gas estimation serves as a dry-run: if the transaction would revert,
    * the estimateGas call fails first with a descriptive Solidity error.
    * On transient RPC overload failures, this method retries via configured
-   * fallback endpoints and wallet RPC reconfiguration before surfacing an error.
+   * fallback read RPC endpoints without triggering implicit wallet chain/RPC
+   * reconfiguration.
    */
   private resolveContractAddress(contract: ethers.Contract): string {
     const target = contract.target;
@@ -1691,82 +1802,6 @@ export class ContractService {
       return target;
     }
     throw new Error('Unable to resolve contract target address');
-  }
-
-  private getWalletChainParams(preferredRpcUrl?: string): {
-    chainId: string;
-    chainName: string;
-    nativeCurrency: { name: string; symbol: string; decimals: number };
-    rpcUrls: string[];
-    blockExplorerUrls?: string[];
-  } {
-    const metadata = getNetworkMetadata(this.chainId);
-    const orderedEndpoints = getOrderedRpcEndpoints(this.chainId);
-    const rpcUrls = preferredRpcUrl
-      ? [preferredRpcUrl, ...orderedEndpoints.filter((endpoint) => endpoint !== preferredRpcUrl)]
-      : orderedEndpoints;
-
-    return {
-      chainId: ethers.toQuantity(this.chainId),
-      chainName: metadata?.name ?? `Chain ${this.chainId}`,
-      nativeCurrency: metadata?.nativeCurrency ?? {
-        name: 'Ether',
-        symbol: 'ETH',
-        decimals: 18,
-      },
-      rpcUrls,
-      ...(metadata?.blockExplorer ? { blockExplorerUrls: [metadata.blockExplorer] } : {}),
-    };
-  }
-
-  private async reconfigureWalletRpc(preferredRpcUrl: string): Promise<void> {
-    const params = this.getWalletChainParams(preferredRpcUrl);
-    const chainRef = { chainId: params.chainId };
-
-    try {
-      await this.provider.send('wallet_addEthereumChain', [params]);
-    } catch {
-      // Ignore add errors; switch may still work if chain already exists.
-    }
-    await this.provider.send('wallet_switchEthereumChain', [chainRef]);
-  }
-
-  private async tryWalletRpcFailoverAndSend(
-    signer: ethers.Signer,
-    txRequest: ethers.TransactionRequest,
-  ): Promise<ethers.ContractTransactionResponse | null> {
-    const endpoints = getOrderedRpcEndpoints(this.chainId);
-    const fallbackEndpoints = endpoints.slice(1);
-    if (fallbackEndpoints.length === 0) return null;
-
-    let lastError: unknown = null;
-
-    for (const endpoint of fallbackEndpoints) {
-      try {
-        await this.reconfigureWalletRpc(endpoint);
-      } catch (error) {
-        lastError = error;
-        continue;
-      }
-
-      try {
-        const tx = await signer.sendTransaction(txRequest);
-        reportRpcEndpointSuccess(this.chainId, endpoint);
-        return tx as unknown as ethers.ContractTransactionResponse;
-      } catch (error) {
-        lastError = error;
-        if (isRetryableRpcError(error)) {
-          reportRpcEndpointFailure(this.chainId, endpoint);
-          continue;
-        }
-        throw error;
-      }
-    }
-
-    if (lastError) {
-      throw lastError;
-    }
-    return null;
   }
 
   private async signAndBroadcastWithReadRpcFallback(
@@ -1800,6 +1835,15 @@ export class ContractService {
       delete signingRequest.gasPrice;
     } else if (feeData.gasPrice !== null && signingRequest.gasPrice == null) {
       signingRequest.gasPrice = feeData.gasPrice;
+    }
+
+    try {
+      const tx = await signer.sendTransaction(signingRequest);
+      return tx as unknown as ethers.ContractTransactionResponse;
+    } catch (walletRetryError) {
+      if (!isRetryableRpcError(walletRetryError)) {
+        throw walletRetryError;
+      }
     }
 
     const signedRawTx = await signer.signTransaction(signingRequest);
@@ -1901,10 +1945,6 @@ export class ContractService {
           throw sendError;
         }
 
-        const failoverTx = await this.tryWalletRpcFailoverAndSend(signer, txRequest);
-        if (failoverTx) {
-          return failoverTx;
-        }
         return await this.signAndBroadcastWithReadRpcFallback(
           signer,
           signerAddress,
@@ -1938,7 +1978,7 @@ export class ContractService {
         filledBuy: BigInt(raw.filledBuy as string | number | bigint),
         cancelled: Boolean(raw.cancelled),
       };
-    } catch (err: unknown) {
+    } catch (_err: unknown) {
       throw new Error(
         `Failed to parse order data from blockchain. The data may be corrupted or the contract interface has changed.`,
       );

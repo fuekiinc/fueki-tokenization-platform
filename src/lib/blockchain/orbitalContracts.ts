@@ -20,7 +20,7 @@ import { OrbitalFactoryABI } from '../../contracts/abis/OrbitalFactory.ts';
 import { OrbitalRouterABI } from '../../contracts/abis/OrbitalRouter.ts';
 import { OrbitalPoolABI } from '../../contracts/abis/OrbitalPool.ts';
 import { WrappedAssetABI } from '../../contracts/abis/WrappedAsset.ts';
-import { getNetworkConfig, getNetworkMetadata } from '../../contracts/addresses';
+import { getNetworkConfig } from '../../contracts/addresses';
 import { multicallSameTarget } from './multicall.ts';
 import { parseContractError } from './contracts.ts';
 import {
@@ -36,8 +36,8 @@ import {
   makeChainCacheKey,
   setCache,
   TTL_BALANCE,
-  TTL_POOL,
   TTL_METADATA,
+  TTL_POOL,
 } from './rpcCache.ts';
 import logger from '../logger';
 
@@ -95,9 +95,22 @@ export class OrbitalContractService {
     return this.provider.getSigner();
   }
 
+  /** Maximum cached read providers to prevent unbounded memory growth. */
+  private static readonly MAX_READ_PROVIDERS = 10;
+
   private getReadProvider(endpoint: string): ethers.JsonRpcProvider {
     const cached = this.readProviders.get(endpoint);
     if (cached) return cached;
+
+    // Evict the oldest entry if the cache is full.
+    if (this.readProviders.size >= OrbitalContractService.MAX_READ_PROVIDERS) {
+      const oldest = this.readProviders.keys().next().value;
+      if (oldest !== undefined) {
+        const evicted = this.readProviders.get(oldest);
+        this.readProviders.delete(oldest);
+        evicted?.destroy();
+      }
+    }
 
     const provider = new ethers.JsonRpcProvider(endpoint, this.chainId);
     this.readProviders.set(endpoint, provider);
@@ -813,99 +826,6 @@ export class OrbitalContractService {
     }
   }
 
-  private getWalletChainParams(preferredRpcUrl?: string): {
-    chainId: string;
-    chainName: string;
-    nativeCurrency: { name: string; symbol: string; decimals: number };
-    rpcUrls: string[];
-    blockExplorerUrls?: string[];
-  } {
-    const metadata = getNetworkMetadata(this.chainId);
-    const chainName = metadata?.name ?? `Chain ${this.chainId}`;
-    const nativeCurrency = metadata?.nativeCurrency ?? {
-      name: 'Ether',
-      symbol: 'ETH',
-      decimals: 18,
-    };
-    const orderedEndpoints = getOrderedRpcEndpoints(this.chainId);
-    const rpcUrls = preferredRpcUrl
-      ? [preferredRpcUrl, ...orderedEndpoints.filter((endpoint) => endpoint !== preferredRpcUrl)]
-      : orderedEndpoints;
-    const blockExplorerUrls = metadata?.blockExplorer
-      ? [metadata.blockExplorer]
-      : undefined;
-
-    return {
-      chainId: ethers.toQuantity(this.chainId),
-      chainName,
-      nativeCurrency,
-      rpcUrls,
-      blockExplorerUrls,
-    };
-  }
-
-  private async reconfigureWalletRpc(preferredRpcUrl: string): Promise<void> {
-    const params = this.getWalletChainParams(preferredRpcUrl);
-    const chainRef = { chainId: params.chainId };
-    let addError: unknown = null;
-
-    try {
-      await this.provider.send('wallet_addEthereumChain', [params]);
-    } catch (error) {
-      addError = error;
-    }
-
-    try {
-      await this.provider.send('wallet_switchEthereumChain', [chainRef]);
-    } catch (switchError) {
-      if (addError) {
-        throw addError;
-      }
-      throw switchError;
-    }
-  }
-
-  private async tryWalletRpcFailoverAndSend(
-    signer: ethers.Signer,
-    txRequest: ethers.TransactionRequest,
-  ): Promise<ethers.TransactionResponse | null> {
-    const endpoints = getOrderedRpcEndpoints(this.chainId);
-    const fallbackEndpoints = endpoints.slice(1);
-    if (fallbackEndpoints.length === 0) {
-      return null;
-    }
-
-    let lastError: unknown = null;
-
-    for (const endpoint of fallbackEndpoints) {
-      try {
-        await this.reconfigureWalletRpc(endpoint);
-      } catch (error) {
-        lastError = error;
-        continue;
-      }
-
-      try {
-        const tx = await signer.sendTransaction(txRequest);
-        reportRpcEndpointSuccess(this.chainId, endpoint);
-        return tx;
-      } catch (error) {
-        lastError = error;
-        if (isRetryableRpcError(error)) {
-          reportRpcEndpointFailure(this.chainId, endpoint);
-          continue;
-        }
-        throw error;
-      }
-    }
-
-    logger.warn(
-      '[OrbitalContractService] Wallet RPC endpoint failover did not recover sendTransaction.',
-      lastError instanceof Error ? lastError.message : String(lastError),
-    );
-    return null;
-  }
-
   private async signAndBroadcastWithReadRpcFallback(
     signer: ethers.Signer,
     signerAddress: string,
@@ -937,6 +857,14 @@ export class OrbitalContractService {
       delete signingRequest.gasPrice;
     } else if (feeData.gasPrice !== null && signingRequest.gasPrice == null) {
       signingRequest.gasPrice = feeData.gasPrice;
+    }
+
+    try {
+      return await signer.sendTransaction(signingRequest);
+    } catch (walletRetryError) {
+      if (!isRetryableRpcError(walletRetryError)) {
+        throw walletRetryError;
+      }
     }
 
     const signedRawTx = await signer.signTransaction(signingRequest);
@@ -988,11 +916,6 @@ export class OrbitalContractService {
       } catch (sendError) {
         if (!isRetryableRpcError(sendError)) {
           throw sendError;
-        }
-
-        const failoverTx = await this.tryWalletRpcFailoverAndSend(signer, txRequest);
-        if (failoverTx) {
-          return failoverTx;
         }
 
         return await this.signAndBroadcastWithReadRpcFallback(

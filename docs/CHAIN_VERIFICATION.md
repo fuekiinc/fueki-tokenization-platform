@@ -25,9 +25,9 @@ The default chain ID is correctly set to `1` (Ethereum Mainnet). No code path ov
 | AssetExchange | `0xcC54Dd0Af5AAeDfAC3bfD55dAd3884Dc4533130C` | PASS | PASS |
 | AssetBackedExchange | `0xc722789416B8F22138f93C226Ab8a8497A3deCDa` | PASS | PASS |
 | LiquidityPoolAMM | `0x4b34D01CdBB82136A593D0a96434e69a1cFbDCF2` | PASS | PASS |
-| SecurityTokenFactory | _(empty)_ | N/A -- not yet deployed on mainnet | OK |
-| OrbitalFactory | _(empty)_ | N/A -- not yet deployed on mainnet | OK |
-| OrbitalRouter | _(empty)_ | N/A -- not yet deployed on mainnet | OK |
+| SecurityTokenFactory | `0x40dE51e0Ccf9e67E2064e7f731f5bd771ec19dD5` | PASS | PASS |
+| OrbitalFactory | `0xf35a2232056b4a47C42eeBA1bcBf4076DF67946D` | PASS | PASS |
+| OrbitalRouter | `0xA7e8a1B8836326Ebb88d911118121304EF2c931d` | PASS | PASS |
 
 ### 1.3 Deployed Contract Addresses (Holesky Testnet, chain 17000)
 
@@ -268,8 +268,8 @@ No critical or high-severity issues were found. The codebase demonstrates proper
 | 1 | INFO | Polygon native currency still labeled "MATIC" (renamed to "POL" in Sep 2024) | Cosmetic only -- wallets still display "MATIC" |
 | 2 | INFO | Base network missing WBTC address | Intentional -- no canonical WBTC on Base |
 | 3 | INFO | Sepolia missing WETH address (`0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9`) | Low priority -- no contracts deployed on Sepolia |
-| 4 | INFO | SecurityTokenFactory not deployed on mainnet | Feature pending mainnet launch |
-| 5 | INFO | OrbitalFactory/Router not deployed on mainnet | Feature pending mainnet launch |
+| 4 | PASS | SecurityTokenFactory deployed on mainnet | Feature available on mainnet |
+| 5 | PASS | OrbitalFactory/Router deployed on mainnet | Feature available on mainnet |
 | 6 | INFO | Public RPC endpoints may rate-limit under load | Consider API-keyed providers for production |
 
 ---

@@ -17,6 +17,7 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useAuthStore } from '../store/authStore';
 import FuekiBrand from '../components/Brand/FuekiBrand';
+import { isContractDeploymentOnlyPlan } from '../lib/subscriptionPlans';
 import type { LoginFormValues } from '../types/auth';
 
 // ---------------------------------------------------------------------------
@@ -61,7 +62,11 @@ export default function LoginPage() {
       const user = useAuthStore.getState().user;
 
       if (user?.kycStatus === 'approved') {
-        navigate('/dashboard');
+        navigate(
+          isContractDeploymentOnlyPlan(user.subscriptionPlan)
+            ? '/contracts'
+            : '/dashboard',
+        );
       } else if (user?.kycStatus === 'pending') {
         navigate('/pending-approval');
       } else {
@@ -86,9 +91,6 @@ export default function LoginPage() {
           className="justify-center mb-6"
           imageClassName="h-20 w-auto drop-shadow-[0_20px_44px_rgba(8,24,38,0.45)]"
         />
-        <p className="mt-2 text-sm text-[var(--text-muted)] tracking-widest uppercase font-medium">
-          Tokenization Platform
-        </p>
       </div>
 
       {/* ------------------------------------------------------------------ */}

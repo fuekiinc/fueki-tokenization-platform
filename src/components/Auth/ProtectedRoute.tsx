@@ -2,6 +2,7 @@ import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { isContractDeploymentOnlyPlan } from '../../lib/subscriptionPlans';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -18,6 +19,10 @@ function hasFromPath(state: unknown): state is LocationStateWithFrom {
   const s = state as Record<string, unknown>;
   if (!('from' in s) || typeof s.from !== 'object' || s.from === null) return false;
   return typeof (s.from as Record<string, unknown>).pathname === 'string';
+}
+
+function isContractsPath(pathname: string): boolean {
+  return pathname === '/contracts' || pathname.startsWith('/contracts/');
 }
 
 // ---------------------------------------------------------------------------
@@ -69,6 +74,14 @@ function ProtectedRoute() {
     return <Navigate to="/pending-approval" replace />;
   }
 
+  // 4. Contract-deployment-only subscription -- lock access to contracts area.
+  if (
+    isContractDeploymentOnlyPlan(user?.subscriptionPlan) &&
+    !isContractsPath(location.pathname)
+  ) {
+    return <Navigate to="/contracts" replace />;
+  }
+
   // 4. Authenticated and KYC approved -- render the child routes.
   return <Outlet />;
 }
@@ -89,8 +102,16 @@ export function AuthRedirect({ children }: { children: React.ReactNode }) {
   if (isAuthenticated) {
     // KYC approved -- send them to wherever they came from, or the dashboard.
     if (user?.kycStatus === 'approved') {
+      const defaultRoute = isContractDeploymentOnlyPlan(user.subscriptionPlan)
+        ? '/contracts'
+        : '/dashboard';
       const from = hasFromPath(location.state) ? location.state.from?.pathname : undefined;
-      return <Navigate to={from ?? '/dashboard'} replace />;
+      const destination = from && (
+        !isContractDeploymentOnlyPlan(user.subscriptionPlan) || isContractsPath(from)
+      )
+        ? from
+        : defaultRoute;
+      return <Navigate to={destination ?? defaultRoute} replace />;
     }
 
     // KYC pending -- send them to the approval-pending page.

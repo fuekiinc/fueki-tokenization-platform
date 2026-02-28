@@ -248,6 +248,21 @@ export default function TermsContent() {
             access to manage and monetize your token supply. Pricing is invoiced
             based on your specific requirements.
           </li>
+          <li>
+            <span className="font-medium text-[var(--text-primary)]">Smart Contract Deployment Monthly:</span>{' '}
+            $50.00 USD per month for deployer-only access, plus a per-contract
+            deployment fee.
+          </li>
+          <li>
+            <span className="font-medium text-[var(--text-primary)]">Smart Contract Deployment Annual:</span>{' '}
+            $600.00 USD per year for deployer-only access, plus a per-contract
+            deployment fee.
+          </li>
+          <li>
+            <span className="font-medium text-[var(--text-primary)]">White Glove Smart Contract Deployment:</span>{' '}
+            Bespoke pricing for white-glove deployment and configuration. Fueki
+            will invoice an estimate based on your requirements.
+          </li>
         </ul>
         <p className="text-[var(--text-secondary)] leading-relaxed mt-3 mb-3">
           All fees are non-refundable except as expressly set forth herein
@@ -261,6 +276,10 @@ export default function TermsContent() {
           deployment gas fees, trading commissions, and network
           transaction costs. Such fees will be disclosed prior to the
           applicable transaction.
+        </p>
+        <p className="text-[var(--text-secondary)] leading-relaxed mb-3">
+          For smart-contract-deployment-only subscriptions, platform access is
+          restricted to the contract deployment and contract management workflows.
         </p>
         <p className="text-[var(--text-secondary)] leading-relaxed">
           Fueki reserves the right to modify its pricing, introduce new

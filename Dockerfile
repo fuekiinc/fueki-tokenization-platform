@@ -20,6 +20,8 @@ ARG VITE_RPC_42161_URLS=https://snowy-blue-frost.arbitrum-mainnet.quiknode.pro/a
 ARG VITE_RPC_421614_URLS=https://ancient-holy-tent.arbitrum-sepolia.quiknode.pro/53623a401aa412366b43ddea31aa6538ef24d7fd/,https://sepolia-rollup.arbitrum.io/rpc
 ARG VITE_RPC_8453_URLS=https://delicate-red-cloud.base-mainnet.quiknode.pro/3ae2b0cd08e640c9c6a3e4c0ca89351dc879e5c8/,https://mainnet.base.org
 ARG VITE_RPC_84532_URLS=https://billowing-wandering-yard.base-sepolia.quiknode.pro/70e0d692e7ba902f935ff17774c1aed59a21e0d0/,https://sepolia.base.org
+ARG VITE_ORBITAL_FACTORY_1=
+ARG VITE_ORBITAL_ROUTER_1=
 ENV VITE_API_URL=${VITE_API_URL}
 ENV VITE_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY}
 ENV VITE_THIRDWEB_CLIENT_ID=${VITE_THIRDWEB_CLIENT_ID}
@@ -29,6 +31,8 @@ ENV VITE_RPC_42161_URLS=${VITE_RPC_42161_URLS}
 ENV VITE_RPC_421614_URLS=${VITE_RPC_421614_URLS}
 ENV VITE_RPC_8453_URLS=${VITE_RPC_8453_URLS}
 ENV VITE_RPC_84532_URLS=${VITE_RPC_84532_URLS}
+ENV VITE_ORBITAL_FACTORY_1=${VITE_ORBITAL_FACTORY_1}
+ENV VITE_ORBITAL_ROUTER_1=${VITE_ORBITAL_ROUTER_1}
 
 RUN npx vite build
 

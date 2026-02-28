@@ -19,7 +19,7 @@ import { useAssetStore } from '../store/assetStore.ts';
 import { OrbitalContractService } from '../lib/blockchain/orbitalContracts';
 import logger from '../lib/logger';
 import { DEFAULT_SWITCH_CHAIN_IDS, getNetworkMetadata } from '../contracts/addresses';
-import { getNetworkCapabilities } from '../contracts/networkCapabilities';
+import { getNetworkCapabilities, getSupportedChainIdsForCapability } from '../contracts/networkCapabilities';
 import { formatAddress } from '../lib/utils/helpers';
 import HelpTooltip from '../components/Common/HelpTooltip';
 import { ErrorState } from '../components/Common/StateDisplays';
@@ -142,6 +142,10 @@ export default function OrbitalAMMPage() {
     () => (wallet.chainId ? getNetworkMetadata(wallet.chainId) ?? null : null),
     [wallet.chainId],
   );
+  const isMainnetOrbitalAddressConfigured = useMemo(() => {
+    if (wallet.chainId !== 1) return true;
+    return Boolean(networkConfig?.orbitalFactoryAddress && networkConfig?.orbitalRouterAddress);
+  }, [wallet.chainId, networkConfig]);
 
   const capabilities = useMemo(
     () => getNetworkCapabilities(wallet.chainId),
@@ -149,6 +153,17 @@ export default function OrbitalAMMPage() {
   );
 
   const isOrbitalReady = capabilities?.orbitalAMM ?? false;
+  const orbitalSupportedChainIds = useMemo(() => {
+    const supported = getSupportedChainIdsForCapability('orbitalAMM');
+    return supported.length > 0 ? supported : DEFAULT_SWITCH_CHAIN_IDS;
+  }, []);
+  const orbitalSupportedNetworkList = useMemo(
+    () =>
+      orbitalSupportedChainIds
+        .map((id) => getNetworkMetadata(id)?.name ?? `Chain ${id}`)
+        .join(', '),
+    [orbitalSupportedChainIds],
+  );
 
   // ---- Initialize OrbitalContractService ------------------------------------
 
@@ -246,7 +261,7 @@ export default function OrbitalAMMPage() {
           <GlassCard className="mx-auto max-w-2xl px-10 sm:px-14 py-20 sm:py-28 text-center">
             {/* Icon with animated ring */}
             <div className="mx-auto mb-10 flex h-24 w-24 items-center justify-center">
-              <div className="absolute h-24 w-24 animate-ping rounded-2xl bg-indigo-500/10" />
+              <div className="absolute h-24 w-24 animate-ping motion-reduce:animate-none rounded-2xl bg-indigo-500/10" />
               <div className="relative flex h-24 w-24 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600/20 to-cyan-600/20 ring-1 ring-white/[0.08]">
                 <Orbit className="h-11 w-11 text-indigo-400" />
               </div>
@@ -299,7 +314,7 @@ export default function OrbitalAMMPage() {
               <span className="absolute inset-0 -z-10 rounded-xl bg-indigo-500/20 blur-xl transition-opacity duration-300 group-hover:opacity-100 opacity-0" />
               {isConnecting ? (
                 <>
-                  <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                  <Loader2 className="h-4.5 w-4.5 animate-spin motion-reduce:animate-none" />
                   Connecting...
                 </>
               ) : (
@@ -331,9 +346,19 @@ export default function OrbitalAMMPage() {
             chainId={wallet.chainId}
             requiredCapability="orbitalAMM"
             switchNetwork={switchNetwork}
-            title="Network Not Supported"
-            description="The Orbital AMM contracts are not deployed on your current network. Please switch to a supported network to use concentrated liquidity pools."
-            switchChainIds={DEFAULT_SWITCH_CHAIN_IDS}
+            title={
+              wallet.chainId === 1
+                ? 'Orbital AMM Unavailable on Ethereum Mainnet'
+                : 'Orbital AMM Unavailable on This Network'
+            }
+            description={
+              wallet.chainId === 1
+                ? isMainnetOrbitalAddressConfigured
+                  ? `Orbital AMM contracts are unavailable on Ethereum Mainnet in this session. Switch to ${orbitalSupportedNetworkList} to continue.`
+                  : `Orbital AMM mainnet contract addresses are not configured in this frontend build. Set VITE_ORBITAL_FACTORY_1 and VITE_ORBITAL_ROUTER_1, then redeploy.`
+                : `Orbital AMM contracts are not deployed on ${networkConfig?.name ?? 'your current network'}. Switch to ${orbitalSupportedNetworkList} to continue.`
+            }
+            switchChainIds={orbitalSupportedChainIds}
           />
         </div>
       </div>
@@ -398,7 +423,7 @@ export default function OrbitalAMMPage() {
               <RefreshCw
                 className={clsx(
                   'h-4 w-4 transition-transform duration-500',
-                  isRefreshing && 'animate-spin',
+                  isRefreshing && 'animate-spin motion-reduce:animate-none',
                 )}
               />
             </button>
@@ -406,7 +431,7 @@ export default function OrbitalAMMPage() {
             {/* Network badge */}
             {networkConfig && (
               <div className="mb-0.5 hidden items-center gap-2 rounded-xl bg-[#0D0F14]/80 px-4 py-2.5 text-xs text-gray-500 ring-1 ring-white/[0.06] backdrop-blur-xl xl:flex">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse motion-reduce:animate-none" />
                 {networkConfig.name}
               </div>
             )}

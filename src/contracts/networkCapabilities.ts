@@ -1,4 +1,7 @@
 import { getNetworkMetadata } from './addresses';
+import { SUPPORTED_NETWORKS } from './addresses';
+
+const ORBITAL_SUPPORTED_CHAIN_IDS = new Set<number>([1, 17000, 42161, 421614, 8453]);
 
 export interface NetworkCapabilities {
   chainId: number;
@@ -14,6 +17,18 @@ export interface NetworkCapabilities {
 }
 
 export type NetworkCapabilityKey = keyof Omit<NetworkCapabilities, 'chainId' | 'known' | 'name'>;
+
+export function getSupportedChainIdsForCapability(
+  capability: NetworkCapabilityKey,
+): number[] {
+  return Object.keys(SUPPORTED_NETWORKS)
+    .map((id) => Number(id))
+    .filter((id) => {
+      const caps = getNetworkCapabilities(id);
+      return Boolean(caps?.known && caps[capability]);
+    })
+    .sort((a, b) => a - b);
+}
 
 export function getNetworkCapabilities(
   chainId: number | null | undefined,
@@ -39,6 +54,8 @@ export function getNetworkCapabilities(
   const hasFactory = Boolean(meta.factoryAddress);
   const hasExchange = Boolean(meta.exchangeAddress || meta.assetBackedExchangeAddress);
   const hasSecurityFactory = Boolean(meta.securityTokenFactoryAddress);
+  const hasOrbitalContracts = Boolean(meta.orbitalFactoryAddress && meta.orbitalRouterAddress);
+  const orbitalChainAllowed = ORBITAL_SUPPORTED_CHAIN_IDS.has(chainId);
 
   return {
     chainId,
@@ -49,7 +66,7 @@ export function getNetworkCapabilities(
     portfolio: hasFactory || hasSecurityFactory,
     exchangeOrderbook: hasFactory && hasExchange,
     exchangeAMM: hasFactory && hasExchange && Boolean(meta.ammAddress),
-    orbitalAMM: hasFactory && Boolean(meta.orbitalFactoryAddress && meta.orbitalRouterAddress),
+    orbitalAMM: hasFactory && hasOrbitalContracts && orbitalChainAllowed,
     wbtcPairs: Boolean(meta.wbtcAddress),
   };
 }

@@ -10,38 +10,38 @@
  *   Step 4 -- Review & Deploy (summary, chain selection, gas estimate, deploy)
  */
 
-import { useState, useCallback, useMemo, useRef, type ChangeEvent } from 'react';
+import { type ChangeEvent, useCallback, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import {
+  AlertCircle,
+  Check,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  FileDigit,
+  Loader2,
+  Rocket,
+  Settings2,
   Sparkles,
   Tag,
-  Settings2,
-  FileDigit,
-  Rocket,
-  CheckCircle2,
-  ChevronRight,
-  ChevronLeft,
   Upload,
-  AlertCircle,
-  ExternalLink,
-  Loader2,
-  Copy,
-  Check,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ethers } from 'ethers';
 
-import { useWalletStore, getProvider, getSigner } from '../store/walletStore.ts';
+import { getProvider, useWalletStore } from '../store/walletStore.ts';
 import { useWallet } from '../hooks/useWallet.ts';
 import { SecurityTokenFactoryABI } from '../contracts/abis/SecurityTokenFactory.ts';
-import { TRANSFER_RULES_BYTECODE, RESTRICTED_SWAP_BYTECODE } from '../contracts/bytecodes.ts';
+import { RESTRICTED_SWAP_BYTECODE, TRANSFER_RULES_BYTECODE } from '../contracts/bytecodes.ts';
 import {
   DEFAULT_SWITCH_CHAIN_IDS,
-  SUPPORTED_NETWORKS,
-  getExplorerTxUrl,
   getExplorerAddressUrl,
+  getExplorerTxUrl,
+  SUPPORTED_NETWORKS,
 } from '../contracts/addresses.ts';
-import { encodeDocumentHash, parseContractError } from '../lib/blockchain/contracts.ts';
+import { ContractService, encodeDocumentHash, parseContractError } from '../lib/blockchain/contracts.ts';
 import HelpTooltip, { type TooltipId } from '../components/Common/HelpTooltip';
 
 // ---------------------------------------------------------------------------
@@ -413,11 +413,8 @@ function validateStep2(form: TokenFormState): Record<string, string> {
 
   if (!form.originalValue.trim()) {
     errors.originalValue = 'Original value is required';
-  } else {
-    const val = Number(form.originalValue);
-    if (isNaN(val) || val < 0) {
-      errors.originalValue = 'Original value must be a non-negative number';
-    }
+  } else if (!/^\d+$/.test(form.originalValue.trim())) {
+    errors.originalValue = 'Original value must be a non-negative whole number';
   }
 
   return errors;
@@ -438,6 +435,39 @@ function validateStep3(form: TokenFormState): Record<string, string> {
   return errors;
 }
 
+interface PreparedDeployValues {
+  decimals: number;
+  encodedHash: string;
+  maxReleaseDelay: bigint;
+  maxTotalSupplyWei: bigint;
+  minTimelockAmountWei: bigint;
+  originalValue: bigint;
+  totalSupplyWei: bigint;
+}
+
+function prepareDeployValues(form: TokenFormState): PreparedDeployValues {
+  const decimals = form.decimals;
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
+    throw new Error('Decimals must be an integer between 0 and 18.');
+  }
+
+  if (!/^\d+$/.test(form.originalValue.trim())) {
+    throw new Error('Original value must be a non-negative whole number.');
+  }
+
+  return {
+    decimals,
+    totalSupplyWei: ethers.parseUnits(form.totalSupply || '0', decimals),
+    maxTotalSupplyWei: ethers.parseUnits(form.maxTotalSupply || '0', decimals),
+    minTimelockAmountWei: ethers.parseUnits(form.minTimelockAmount || '0', decimals),
+    maxReleaseDelay: BigInt(
+      Math.floor(Number(form.maxReleaseDelayDays || '0') * SECONDS_PER_DAY),
+    ),
+    originalValue: BigInt(form.originalValue.trim()),
+    encodedHash: encodeDocumentHash(form.documentHash),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -456,7 +486,10 @@ export default function DeployTokenPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const wallet = useWalletStore((s) => s.wallet);
-  const { switchNetwork: switchWalletNetwork } = useWallet();
+  const {
+    isSwitchingNetwork,
+    switchNetwork: switchWalletNetwork,
+  } = useWallet();
 
   // Supported deploy networks
   const deployNetworks = useMemo(() => getSupportedDeployNetworks(), []);
@@ -564,40 +597,25 @@ export default function DeployTokenPage() {
     if (!wallet.isConnected || !isOnCorrectChain) return;
 
     const provider = getProvider();
-    if (!provider) return;
+    if (!provider || !targetNetwork?.securityTokenFactoryAddress) return;
 
     setIsEstimatingGas(true);
     setGasEstimate(null);
 
     try {
-      const signer = await provider.getSigner();
-      const factory = new ethers.Contract(
-        targetNetwork!.securityTokenFactoryAddress,
-        SecurityTokenFactoryABI,
-        signer,
-      );
+      const {
+        decimals,
+        encodedHash,
+        maxReleaseDelay,
+        maxTotalSupplyWei,
+        minTimelockAmountWei,
+        originalValue,
+        totalSupplyWei,
+      } = prepareDeployValues(form);
 
-      const decimals = form.decimals;
-      const totalSupplyWei = ethers.parseUnits(
-        form.totalSupply || '0',
-        decimals,
-      );
-      const maxTotalSupplyWei = ethers.parseUnits(
-        form.maxTotalSupply || '0',
-        decimals,
-      );
-      const minTimelockAmountWei = ethers.parseUnits(
-        form.minTimelockAmount || '0',
-        decimals,
-      );
-      const maxReleaseDelay = BigInt(
-        Math.floor(Number(form.maxReleaseDelayDays || '0') * SECONDS_PER_DAY),
-      );
-      const originalValue = ethers.parseUnits(
-        form.originalValue || '0',
-        0,
-      );
-      const encodedHash = encodeDocumentHash(form.documentHash);
+      const service = new ContractService(provider, targetChainId);
+      const signer = await service.getSigner();
+      const factory = service.getSecurityTokenFactoryContract(signer);
 
       const gas = await factory.createSecurityToken.estimateGas(
         TRANSFER_RULES_BYTECODE,
@@ -615,7 +633,7 @@ export default function DeployTokenPage() {
       );
 
       const feeData = await provider.getFeeData();
-      const gasPrice = feeData.gasPrice ?? 0n;
+      const gasPrice = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;
       const estimatedCost = gas * gasPrice;
       const costEth = ethers.formatEther(estimatedCost);
       const gasFormatted = gas.toLocaleString();
@@ -627,15 +645,16 @@ export default function DeployTokenPage() {
     } finally {
       setIsEstimatingGas(false);
     }
-  }, [wallet, isOnCorrectChain, targetNetwork, form]);
+  }, [form, isOnCorrectChain, targetChainId, targetNetwork, wallet]);
 
   // -----------------------------------------------------------------------
   // Network switching
   // -----------------------------------------------------------------------
 
   const handleSwitchNetwork = useCallback(async () => {
+    if (isSwitchingNetwork || targetChainId === wallet.chainId) return;
     await switchWalletNetwork(targetChainId);
-  }, [switchWalletNetwork, targetChainId]);
+  }, [isSwitchingNetwork, switchWalletNetwork, targetChainId, wallet.chainId]);
 
   // -----------------------------------------------------------------------
   // Deploy
@@ -647,6 +666,11 @@ export default function DeployTokenPage() {
       return;
     }
 
+    if (isSwitchingNetwork) {
+      toast.error('Network switch is still in progress. Please wait a moment and try again.');
+      return;
+    }
+
     if (!isOnCorrectChain) {
       toast.error(
         `Please switch to ${targetNetwork?.name ?? 'the correct network'}`,
@@ -655,8 +679,7 @@ export default function DeployTokenPage() {
     }
 
     const provider = getProvider();
-    const signer = getSigner();
-    if (!provider || !signer) {
+    if (!provider) {
       toast.error('Please connect your wallet before deploying.');
       return;
     }
@@ -664,53 +687,31 @@ export default function DeployTokenPage() {
     setIsDeploying(true);
 
     try {
-      const factory = new ethers.Contract(
-        targetNetwork!.securityTokenFactoryAddress,
-        SecurityTokenFactoryABI,
-        signer,
-      );
-
-      const decimals = form.decimals;
-      const totalSupplyWei = ethers.parseUnits(form.totalSupply, decimals);
-      const maxTotalSupplyWei = ethers.parseUnits(
-        form.maxTotalSupply,
-        decimals,
-      );
-      const minTimelockAmountWei = ethers.parseUnits(
-        form.minTimelockAmount || '0',
-        decimals,
-      );
-      const maxReleaseDelay = BigInt(
-        Math.floor(
-          Number(form.maxReleaseDelayDays || '0') * SECONDS_PER_DAY,
-        ),
-      );
-      const originalValue = ethers.parseUnits(form.originalValue, 0);
-      const encodedHash = encodeDocumentHash(form.documentHash);
-
-      // Estimate gas with 20% buffer
-      const gasEstimateRaw =
-        await factory.createSecurityToken.estimateGas(
-          TRANSFER_RULES_BYTECODE,
-          RESTRICTED_SWAP_BYTECODE,
-          form.name,
-          form.symbol,
-          decimals,
-          totalSupplyWei,
-          maxTotalSupplyWei,
-          encodedHash,
-          form.documentType,
-          originalValue,
-          minTimelockAmountWei,
-          maxReleaseDelay,
+      const activeNetwork = await provider.getNetwork();
+      const activeChainId = Number(activeNetwork.chainId);
+      if (activeChainId !== targetChainId) {
+        throw new Error(
+          `Wallet is still connected to chain ${activeChainId}. Switch to ${targetNetwork?.name ?? targetChainId} and try again.`,
         );
-      const gasLimit = (gasEstimateRaw * 120n) / 100n;
+      }
+
+      const {
+        decimals,
+        encodedHash,
+        maxReleaseDelay,
+        maxTotalSupplyWei,
+        minTimelockAmountWei,
+        originalValue,
+        totalSupplyWei,
+      } = prepareDeployValues(form);
+
+      const service = new ContractService(provider, targetChainId);
 
       toast.loading('Confirm the transaction in your wallet...', {
         id: 'deploy-tx',
       });
 
-      const tx = await factory.createSecurityToken(
+      const tx = await service.createSecurityToken(
         TRANSFER_RULES_BYTECODE,
         RESTRICTED_SWAP_BYTECODE,
         form.name,
@@ -723,14 +724,13 @@ export default function DeployTokenPage() {
         originalValue,
         minTimelockAmountWei,
         maxReleaseDelay,
-        { gasLimit },
       );
 
       toast.loading('Transaction submitted. Waiting for confirmation...', {
         id: 'deploy-tx',
       });
 
-      const receipt = await tx.wait(1);
+      const receipt = await service.waitForTransaction(tx, 1);
 
       if (!receipt || receipt.status === 0) {
         throw new Error('Transaction reverted on-chain');
@@ -790,7 +790,7 @@ export default function DeployTokenPage() {
     } finally {
       setIsDeploying(false);
     }
-  }, [wallet, isOnCorrectChain, targetNetwork, targetChainId, form]);
+  }, [form, isOnCorrectChain, isSwitchingNetwork, targetChainId, targetNetwork, wallet]);
 
   // -----------------------------------------------------------------------
   // Summary data for step 4
@@ -1365,6 +1365,7 @@ export default function DeployTokenPage() {
                   id="targetChain"
                   className={selectClasses}
                   value={targetChainId}
+                  disabled={isDeploying || isSwitchingNetwork}
                   onChange={(e) => {
                     setTargetChainId(Number(e.target.value));
                     setGasEstimate(null);
@@ -1408,9 +1409,10 @@ export default function DeployTokenPage() {
                   <button
                     type="button"
                     onClick={handleSwitchNetwork}
+                    disabled={isSwitchingNetwork}
                     className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors shrink-0"
                   >
-                    Switch Network
+                    {isSwitchingNetwork ? 'Switching...' : 'Switch Network'}
                   </button>
                 </div>
               )}
@@ -1446,7 +1448,10 @@ export default function DeployTokenPage() {
                 type="button"
                 onClick={handleDeploy}
                 disabled={
-                  !wallet.isConnected || !isOnCorrectChain || isDeploying
+                  !wallet.isConnected ||
+                  !isOnCorrectChain ||
+                  isDeploying ||
+                  isSwitchingNetwork
                 }
                 className={clsx(
                   'w-full flex items-center justify-center gap-2',

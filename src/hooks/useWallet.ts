@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import {
+  useActiveAccount,
   useActiveWallet,
   useActiveWalletChain,
   useActiveWalletConnectionStatus,
@@ -9,26 +10,278 @@ import {
   useDisconnect,
   useSwitchActiveWalletChain,
 } from 'thirdweb/react';
-import { EIP1193 } from 'thirdweb/wallets';
 
-import logger from '../lib/logger';
-import { getProvider as getStoreProvider, useWalletStore } from '../store/walletStore.ts';
 import { getNetworkMetadata } from '../contracts/addresses';
-import { getRpcEndpoints } from '../lib/rpc/endpoints';
+import logger from '../lib/logger';
 import {
+  findHealthyEndpoint,
+  getOrderedRpcEndpoints,
+  getWalletSwitchRpcUrls,
+} from '../lib/rpc/endpoints';
+import { getProvider as getStoreProvider, setSwitchInProgress, useWalletStore } from '../store/walletStore.ts';
+import {
+  getThirdwebAppMetadata,
+  getThirdwebChainForSwitch,
+  isThirdwebConfigured,
   THIRDWEB_DEFAULT_CHAIN,
   THIRDWEB_SUPPORTED_CHAINS,
   THIRDWEB_THEME,
   THIRDWEB_WALLETCONNECT_PROJECT_ID,
   THIRDWEB_WALLETS,
-  getThirdwebAppMetadata,
-  getThirdwebChain,
-  isThirdwebConfigured,
   thirdwebClient,
 } from '../lib/thirdweb';
 import { clearWalletBoundStores } from '../wallet/walletBoundStores';
 
+const SWITCH_PRECHECK_TIMEOUT_MS = 3_500;
+const SWITCH_REQUEST_TIMEOUT_MS = 45_000;
+
+type RequestProvider = {
+  request: (args: { method: string; params?: unknown }) => Promise<unknown>;
+  providers?: unknown;
+  selectedAddress?: string;
+  isMetaMask?: boolean;
+  isCoinbaseWallet?: boolean;
+  isTrust?: boolean;
+  isTrustWallet?: boolean;
+  isRabby?: boolean;
+  isPhantom?: boolean;
+};
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
+function toErrorCode(error: unknown): number | null {
+  const maybeCode = (error as { code?: unknown })?.code;
+  return typeof maybeCode === 'number' ? maybeCode : null;
+}
+
+function isUserRejectedError(error: unknown): boolean {
+  const code = toErrorCode(error);
+  const message = error instanceof Error ? error.message : String(error);
+  return code === 4001 || /user rejected|rejected by user|ACTION_REJECTED|denied/i.test(message);
+}
+
+function isChainNotAddedError(error: unknown): boolean {
+  const code = toErrorCode(error);
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    code === 4902 ||
+    /unrecognized chain|unknown chain|chain not added|network not added|unsupported chain id/i.test(
+      message,
+    )
+  );
+}
+
+function providerMatchesWalletId(provider: RequestProvider, walletId: string): boolean {
+  switch (walletId) {
+    case 'io.metamask':
+      return Boolean(provider.isMetaMask);
+    case 'com.coinbase.wallet':
+      return Boolean(provider.isCoinbaseWallet);
+    case 'com.trustwallet.app':
+      return Boolean(provider.isTrust || provider.isTrustWallet);
+    case 'io.rabby':
+      return Boolean(provider.isRabby);
+    case 'app.phantom':
+      return Boolean(provider.isPhantom);
+    default:
+      return false;
+  }
+}
+
+function normalizeAddress(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.toLowerCase();
+}
+
+async function getProviderAccounts(provider: RequestProvider): Promise<string[]> {
+  try {
+    const result = await provider.request({ method: 'eth_accounts' });
+    if (!Array.isArray(result)) return [];
+    return result
+      .map((value) => (typeof value === 'string' ? normalizeAddress(value) : null))
+      .filter((value): value is string => Boolean(value));
+  } catch {
+    return [];
+  }
+}
+
+async function prioritizeProvidersForAddress(
+  providers: RequestProvider[],
+  activeAddress?: string | null,
+): Promise<RequestProvider[]> {
+  const normalizedActiveAddress = normalizeAddress(activeAddress);
+  if (!normalizedActiveAddress || providers.length <= 1) {
+    return providers;
+  }
+
+  const withAddress: RequestProvider[] = [];
+  const withoutAddress: RequestProvider[] = [];
+
+  for (const provider of providers) {
+    const accounts = await getProviderAccounts(provider);
+    if (accounts.includes(normalizedActiveAddress)) {
+      withAddress.push(provider);
+    } else {
+      withoutAddress.push(provider);
+    }
+  }
+
+  return [...withAddress, ...withoutAddress];
+}
+
+function getInjectedProviderCandidates(
+  activeWalletId: string,
+  activeAddress?: string | null,
+): RequestProvider[] {
+  if (typeof window === 'undefined') return [];
+
+  const ethereumAny = (window as Window & { ethereum?: unknown }).ethereum;
+  if (!ethereumAny) return [];
+
+  const baseProviders = Array.isArray((ethereumAny as { providers?: unknown }).providers)
+    ? (((ethereumAny as { providers?: unknown }).providers as unknown[]) ?? [])
+    : [ethereumAny];
+
+  const requestProviders = baseProviders.filter(
+    (provider): provider is RequestProvider =>
+      Boolean(
+        provider &&
+        typeof provider === 'object' &&
+        typeof (provider as { request?: unknown }).request === 'function',
+      ),
+  );
+
+  const matchedProviders = requestProviders.filter((provider) =>
+    providerMatchesWalletId(provider, activeWalletId),
+  );
+  const normalizedActiveAddress = normalizeAddress(activeAddress);
+  const matchingSelectedAddress = normalizedActiveAddress
+    ? requestProviders.filter(
+        (provider) =>
+          normalizeAddress(provider.selectedAddress) === normalizedActiveAddress,
+      )
+    : [];
+  const matchingWalletAndAddress = normalizedActiveAddress
+    ? matchedProviders.filter(
+        (provider) =>
+          normalizeAddress(provider.selectedAddress) === normalizedActiveAddress,
+      )
+    : [];
+
+  const prioritized = [
+    ...matchingWalletAndAddress,
+    ...matchingSelectedAddress,
+    ...matchedProviders,
+    ...requestProviders,
+  ];
+
+  const unique: RequestProvider[] = [];
+  const seen = new Set<RequestProvider>();
+  for (const provider of prioritized) {
+    if (seen.has(provider)) continue;
+    seen.add(provider);
+    unique.push(provider);
+  }
+
+  return unique;
+}
+
+function parseChainId(rawChainId: unknown): number | null {
+  if (typeof rawChainId === 'number' && Number.isFinite(rawChainId)) {
+    return rawChainId;
+  }
+  if (typeof rawChainId === 'string' && rawChainId.trim()) {
+    const value = rawChainId.trim();
+    const parsed = value.startsWith('0x')
+      ? Number.parseInt(value, 16)
+      : Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+async function getInjectedProviderChainId(
+  activeWalletId: string,
+  activeAddress?: string | null,
+): Promise<number | null> {
+  const providers = await prioritizeProvidersForAddress(
+    getInjectedProviderCandidates(activeWalletId, activeAddress),
+    activeAddress,
+  );
+  for (const provider of providers) {
+    try {
+      const chainId = parseChainId(
+        await provider.request({ method: 'eth_chainId' }),
+      );
+      if (chainId !== null) {
+        return chainId;
+      }
+    } catch {
+      // Ignore provider-level chain lookup failures and continue.
+    }
+  }
+  return null;
+}
+
+async function getResolvedWalletChainId(
+  activeWallet: ReturnType<typeof useActiveWallet>,
+  activeAddress?: string | null,
+): Promise<number | null> {
+  if (!activeWallet) return null;
+  const injectedChainId = await getInjectedProviderChainId(
+    activeWallet.id,
+    activeAddress,
+  );
+  if (injectedChainId !== null) {
+    return injectedChainId;
+  }
+  const walletChainId = parseChainId(activeWallet.getChain()?.id);
+  if (walletChainId !== null) {
+    return walletChainId;
+  }
+  return null;
+}
+
+async function waitForWalletChain(
+  activeWallet: ReturnType<typeof useActiveWallet>,
+  targetChainId: number,
+  activeAddress?: string | null,
+  timeoutMs = 12_000,
+): Promise<boolean> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const currentChainId = await getResolvedWalletChainId(
+      activeWallet,
+      activeAddress,
+    );
+    if (currentChainId === targetChainId) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return false;
+}
+
 function parseWalletError(err: unknown): string {
+  const code = toErrorCode(err);
   const message = err instanceof Error ? err.message : String(err);
 
   if (/user rejected|rejected by user|ACTION_REJECTED|denied/i.test(message)) {
@@ -43,8 +296,20 @@ function parseWalletError(err: unknown): string {
     return 'A request is already pending — please check your wallet app.';
   }
 
+  if (code === 4902 || /unrecognized chain|chain not added|network not added/i.test(message)) {
+    return 'The target network is not configured in your wallet. Please approve adding it and try again.';
+  }
+
+  if (code === 4001) {
+    return 'Request rejected. Please approve the prompt in your wallet to continue.';
+  }
+
   if (/chain.*not.*support|unsupported.*chain|network.*not.*support/i.test(message)) {
     return 'This network is not supported by your wallet. You may need to add it manually.';
+  }
+
+  if (/namespace|eip155|session.*chain|chain not approved/i.test(message)) {
+    return 'Your wallet session does not include this network. Reconnect wallet and enable the target chain.';
   }
 
   if (/insufficient funds/i.test(message)) {
@@ -60,6 +325,122 @@ function parseWalletError(err: unknown): string {
   }
 
   return 'Wallet action failed. Please try again.';
+}
+
+function dedupeUrls(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const url of urls) {
+    const normalized = url.trim().toLowerCase();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    deduped.push(url);
+  }
+  return deduped;
+}
+
+function isValidRpcUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url.trim());
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+async function attemptRawProviderChainSwitch(
+  targetChainId: number,
+  preferredRpcUrl: string | null,
+  activeWallet: ReturnType<typeof useActiveWallet>,
+  activeAddress?: string | null,
+): Promise<void> {
+  if (!activeWallet) {
+    throw new Error('Wallet is not available for direct network switching.');
+  }
+
+  const candidateProviders = getInjectedProviderCandidates(
+    activeWallet.id,
+    activeAddress,
+  );
+  const orderedProviders = await prioritizeProvidersForAddress(
+    candidateProviders,
+    activeAddress,
+  );
+  if (orderedProviders.length === 0) {
+    throw new Error('No injected wallet provider is available for fallback chain switch.');
+  }
+
+  const network = getNetworkMetadata(targetChainId);
+  const walletSafeRpcUrls = getWalletSwitchRpcUrls(targetChainId);
+  const fallbackRpcUrls = getOrderedRpcEndpoints(targetChainId);
+  const orderedRpcUrls = dedupeUrls([
+    ...(preferredRpcUrl ? [preferredRpcUrl] : []),
+    ...walletSafeRpcUrls,
+    ...fallbackRpcUrls,
+    ...(network?.rpcUrl ? [network.rpcUrl] : []),
+  ]).filter(isValidRpcUrl);
+  const rpcUrlsForChainParams =
+    orderedRpcUrls.length > 0
+      ? orderedRpcUrls
+      : (network?.rpcUrl ? [network.rpcUrl] : []);
+
+  const chainParams = {
+    chainId: ethers.toQuantity(targetChainId),
+    chainName: network?.name ?? `Chain ${targetChainId}`,
+    nativeCurrency: network?.nativeCurrency ?? {
+      name: 'Ether',
+      symbol: 'ETH',
+      decimals: 18,
+    },
+    rpcUrls: rpcUrlsForChainParams,
+    ...(network?.blockExplorer ? { blockExplorerUrls: [network.blockExplorer] } : {}),
+  };
+
+  let lastError: unknown = null;
+
+  for (const provider of orderedProviders) {
+    try {
+      try {
+        await provider.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: chainParams.chainId }],
+        });
+      } catch (switchError) {
+        if (isUserRejectedError(switchError)) {
+          throw switchError;
+        }
+
+        if (!isChainNotAddedError(switchError)) {
+          throw switchError;
+        }
+
+        await provider.request({
+          method: 'wallet_addEthereumChain',
+          params: [chainParams],
+        });
+
+        await provider.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: chainParams.chainId }],
+        });
+      }
+
+      return;
+    } catch (error) {
+      if (isUserRejectedError(error)) {
+        throw error;
+      }
+
+      lastError = error;
+      logger.debug('Raw provider chain switch fallback attempt failed', {
+        walletId: activeWallet.id,
+        chainId: targetChainId,
+        error,
+      });
+    }
+  }
+
+  throw lastError ?? new Error('Fallback chain switch failed on all injected providers.');
 }
 
 async function fetchBalanceWithRetry(
@@ -91,61 +472,13 @@ export function useWallet() {
   const beginChainSwitch = useWalletStore((s) => s.beginChainSwitch);
   const failChainSwitch = useWalletStore((s) => s.failChainSwitch);
 
+  const activeAccount = useActiveAccount();
   const activeWallet = useActiveWallet();
   const activeWalletChain = useActiveWalletChain();
   const connectionStatus = useActiveWalletConnectionStatus();
   const { connect, isConnecting: isModalConnecting } = useConnectModal();
   const { disconnect } = useDisconnect();
   const switchActiveWalletChain = useSwitchActiveWalletChain();
-
-  const primeWalletChainRpcConfig = useCallback(
-    async (targetChainId: number) => {
-      if (!activeWallet || !thirdwebClient) return;
-      const chain = getThirdwebChain(targetChainId);
-      if (!chain) return;
-
-      const rpcUrls = getRpcEndpoints(targetChainId);
-      if (rpcUrls.length === 0) return;
-
-      const metadata = getNetworkMetadata(targetChainId);
-      const chainName =
-        metadata?.name ||
-        chain.name ||
-        `Chain ${targetChainId}`;
-      const nativeCurrency = metadata?.nativeCurrency ?? {
-        name: 'Ether',
-        symbol: 'ETH',
-        decimals: 18,
-      };
-      const blockExplorerUrls = metadata?.blockExplorer
-        ? [metadata.blockExplorer]
-        : undefined;
-
-      const eip1193Provider = EIP1193.toProvider({
-        wallet: activeWallet,
-        chain,
-        client: thirdwebClient,
-      });
-
-      try {
-        await eip1193Provider.request({
-          method: 'wallet_addEthereumChain',
-          params: [
-            {
-              chainId: ethers.toQuantity(targetChainId),
-              chainName,
-              nativeCurrency,
-              rpcUrls,
-              ...(blockExplorerUrls ? { blockExplorerUrls } : {}),
-            },
-          ],
-        });
-      } catch (err) {
-        logger.debug('wallet_addEthereumChain preflight failed; continuing with switch flow', err);
-      }
-    },
-    [activeWallet],
-  );
 
   const connectWallet = useCallback(async () => {
     if (!thirdwebClient || !isThirdwebConfigured) {
@@ -239,32 +572,137 @@ export function useWallet() {
         return;
       }
 
-      const chain = getThirdwebChain(chainId);
-      if (!chain) {
-        const msg = 'Requested network is not available.';
-        setLastError(msg);
-        toast.error(msg);
+      // Prevent concurrent switch attempts from stacking.
+      if (useWalletStore.getState().wallet.connectionStatus === 'switching') {
+        logger.debug('switchNetwork: already switching, ignoring duplicate call');
         return;
       }
 
+      // Set the module-level flag BEFORE zustand state changes.  This flag
+      // survives the race window where failChainSwitch clears 'switching'
+      // status before the disconnect-detection effect fires.
+      setSwitchInProgress(true);
       beginChainSwitch(chainId);
-      clearWalletBoundStores();
 
       try {
-        await primeWalletChainRpcConfig(chainId);
-        await switchActiveWalletChain(chain);
+        const preferredRpc = await withTimeout(
+          findHealthyEndpoint(chainId),
+          SWITCH_PRECHECK_TIMEOUT_MS,
+          'RPC preflight',
+        ).catch((error) => {
+          logger.debug('switchNetwork preflight probe failed; using default chain RPC', error);
+          return null;
+        });
+
+        const chain = getThirdwebChainForSwitch(chainId, preferredRpc);
+
+        try {
+          await withTimeout(
+            switchActiveWalletChain(chain),
+            SWITCH_REQUEST_TIMEOUT_MS,
+            'Wallet network switch',
+          );
+        } catch (primaryError) {
+          logger.warn('Primary network switch failed; attempting raw provider fallback', primaryError);
+
+          let switchedViaDirectWalletApi = false;
+          let directSwitchError: unknown = null;
+
+          try {
+            await withTimeout(
+              activeWallet.switchChain(chain),
+              SWITCH_REQUEST_TIMEOUT_MS,
+              'Wallet direct network switch',
+            );
+            switchedViaDirectWalletApi = true;
+          } catch (error) {
+            directSwitchError = error;
+            logger.warn(
+              'Direct wallet switchChain fallback failed; attempting injected-provider fallback',
+              error,
+            );
+          }
+
+          // Fallback path that issues real EIP-1193 JSON-RPC requests against
+          // the injected wallet provider. This bypasses thirdweb's switchChain
+          // abstraction when wallet/provider combinations fail to route
+          // `wallet_addEthereumChain` correctly.
+          if (!switchedViaDirectWalletApi) {
+            try {
+              await withTimeout(
+                attemptRawProviderChainSwitch(
+                  chainId,
+                  preferredRpc,
+                  activeWallet,
+                  activeAccount?.address,
+                ),
+                SWITCH_REQUEST_TIMEOUT_MS,
+                'Wallet fallback network switch',
+              );
+            } catch (fallbackError) {
+              if (isUserRejectedError(fallbackError)) {
+                throw fallbackError;
+              }
+              const fallbackMessage =
+                fallbackError instanceof Error
+                  ? fallbackError.message
+                  : String(fallbackError);
+              if (/No injected wallet provider is available/i.test(fallbackMessage)) {
+                throw directSwitchError ?? primaryError;
+              }
+              throw fallbackError;
+            }
+          }
+
+          // Best effort: re-sync thirdweb's active chain after fallback.
+          await withTimeout(
+            switchActiveWalletChain(chain),
+            10_000,
+            'Wallet chain sync',
+          ).catch((syncError) => {
+            logger.debug('Post-fallback thirdweb chain sync failed; continuing', syncError);
+          });
+        }
+
+        const switched = await waitForWalletChain(
+          activeWallet,
+          chainId,
+          activeAccount?.address,
+        );
+        if (!switched) {
+          const currentChainId = await getResolvedWalletChainId(
+            activeWallet,
+            activeAccount?.address,
+          );
+          logger.warn(
+            'Network switch request completed but chain confirmation is still pending',
+            {
+              targetChainId: chainId,
+              observedChainId: currentChainId,
+              walletId: activeWallet.id,
+            },
+          );
+          // Do not hard-fail here. Some wallets update chain/session state
+          // asynchronously after returning from switch calls. The root wallet
+          // controller will reconcile once the wallet emits the final chain.
+        }
+
+        clearWalletBoundStores();
         setLastError(null);
       } catch (err: unknown) {
+        logger.error('switchNetwork failed:', err);
         const message = parseWalletError(err);
         failChainSwitch(message);
         toast.error(message);
+      } finally {
+        setSwitchInProgress(false);
       }
     },
     [
       activeWallet,
+      activeAccount?.address,
       beginChainSwitch,
       failChainSwitch,
-      primeWalletChainRpcConfig,
       setLastError,
       switchActiveWalletChain,
     ],

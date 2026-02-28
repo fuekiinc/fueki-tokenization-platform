@@ -19,6 +19,23 @@
 
 import { getPrimaryRpcUrl } from '../lib/rpc/endpoints';
 
+function readAddressEnv(name: string, fallback: string): string {
+  const raw = (import.meta as ImportMeta & { env?: Record<string, unknown> }).env?.[name];
+  if (typeof raw !== 'string') return fallback;
+  const candidate = raw.trim();
+  if (!candidate) return fallback;
+  if (!/^0x[a-fA-F0-9]{40}$/.test(candidate)) return fallback;
+  return candidate;
+}
+
+function readAddressEnvFirst(names: string[], fallback: string): string {
+  for (const name of names) {
+    const value = readAddressEnv(name, '');
+    if (value) return value;
+  }
+  return fallback;
+}
+
 export interface NetworkConfig {
   chainId: number;
   name: string;
@@ -64,13 +81,19 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     blockExplorerApi: 'https://api.etherscan.io/api',
     factoryAddress: '0xf7d3fC3b395b4Add020fF46B7ceA9E4c404ab4dB',
     exchangeAddress: '0xcC54Dd0Af5AAeDfAC3bfD55dAd3884Dc4533130C',
-    securityTokenFactoryAddress: '',
+    securityTokenFactoryAddress: '0x40dE51e0Ccf9e67E2064e7f731f5bd771ec19dD5',
     assetBackedExchangeAddress: '0xc722789416B8F22138f93C226Ab8a8497A3deCDa',
     wethAddress: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
     wbtcAddress: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
     ammAddress: '0x4b34D01CdBB82136A593D0a96434e69a1cFbDCF2',
-    orbitalFactoryAddress: '',
-    orbitalRouterAddress: '',
+    orbitalFactoryAddress: readAddressEnvFirst(
+      ['VITE_ORBITAL_FACTORY_1', 'VITE_ORBITAL_FACTORY_MAINNET'],
+      '0xf35a2232056b4a47C42eeBA1bcBf4076DF67946D',
+    ),
+    orbitalRouterAddress: readAddressEnvFirst(
+      ['VITE_ORBITAL_ROUTER_1', 'VITE_ORBITAL_ROUTER_MAINNET'],
+      '0xA7e8a1B8836326Ebb88d911118121304EF2c931d',
+    ),
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   },
 
@@ -87,9 +110,15 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     assetBackedExchangeAddress: '0x6C9217850317e61544a3d5bFD3b3C6CA3ADE6660',
     wethAddress: '0x94373a4919B3240D86eA41593D5eBa789FEF3848',
     wbtcAddress: '',
-    ammAddress: '',
-    orbitalFactoryAddress: '0xd951A80Efd159B35A7c66f830ca77980476D9305',
-    orbitalRouterAddress: '0xE5A362047CAB14a2A64Bda26a83719Ac33A22087',
+    ammAddress: '0xa9b60375A6433a6697F020F67Dd69851F861DFb8',
+    orbitalFactoryAddress: readAddressEnv(
+      'VITE_ORBITAL_FACTORY_17000',
+      '0xd951A80Efd159B35A7c66f830ca77980476D9305',
+    ),
+    orbitalRouterAddress: readAddressEnv(
+      'VITE_ORBITAL_ROUTER_17000',
+      '0xE5A362047CAB14a2A64Bda26a83719Ac33A22087',
+    ),
     nativeCurrency: { name: 'Holesky ETH', symbol: 'ETH', decimals: 18 },
   },
 
@@ -100,15 +129,21 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     rpcUrl: getPrimaryRpcUrl(42161),
     blockExplorer: 'https://arbiscan.io',
     blockExplorerApi: 'https://api.arbiscan.io/api',
-    factoryAddress: '',
-    exchangeAddress: '',
-    securityTokenFactoryAddress: '',
-    assetBackedExchangeAddress: '',
+    factoryAddress: '0x0ad0bc183acb2f2124A6e8C40216af852d3c1C9b',
+    exchangeAddress: '0xd60A930605442226e80f2577e4a4B985e3d56977',
+    securityTokenFactoryAddress: '0x8b167fE578F62D317674EA47a3F0Dd3Ce13d747f',
+    assetBackedExchangeAddress: '0x099df34B1855C9D54eC232916970db13666b50be',
     wethAddress: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
     wbtcAddress: '0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f',
-    ammAddress: '',
-    orbitalFactoryAddress: '',
-    orbitalRouterAddress: '',
+    ammAddress: '0xa9b60375A6433a6697F020F67Dd69851F861DFb8',
+    orbitalFactoryAddress: readAddressEnv(
+      'VITE_ORBITAL_FACTORY_42161',
+      '0x95187b0e6A6639083C58932C8841A30C75eE70e8',
+    ),
+    orbitalRouterAddress: readAddressEnv(
+      'VITE_ORBITAL_ROUTER_42161',
+      '0xD66b939e2701f61559CB7BccdEb7fbBDe49A35E9',
+    ),
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   },
 
@@ -126,8 +161,14 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     wethAddress: '0xE591bf0A0CF924A0674d7792db046B23CEbF5f34',
     wbtcAddress: '0x60206E675Bd801cDE1F584aD7e234F3214076839',
     ammAddress: '0xa9b60375A6433a6697F020F67Dd69851F861DFb8',
-    orbitalFactoryAddress: '0x95187b0e6A6639083C58932C8841A30C75eE70e8',
-    orbitalRouterAddress: '0xD66b939e2701f61559CB7BccdEb7fbBDe49A35E9',
+    orbitalFactoryAddress: readAddressEnv(
+      'VITE_ORBITAL_FACTORY_421614',
+      '0x95187b0e6A6639083C58932C8841A30C75eE70e8',
+    ),
+    orbitalRouterAddress: readAddressEnv(
+      'VITE_ORBITAL_ROUTER_421614',
+      '0xD66b939e2701f61559CB7BccdEb7fbBDe49A35E9',
+    ),
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   },
 
@@ -150,17 +191,17 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     nativeCurrency: { name: 'SepoliaETH', symbol: 'ETH', decimals: 18 },
   },
 
-  // ---- Polygon (metadata only, no deployments) ----------------------------
+  // ---- Polygon ------------------------------------------------------------
   137: {
     chainId: 137,
     name: 'Polygon',
     rpcUrl: getPrimaryRpcUrl(137),
     blockExplorer: 'https://polygonscan.com',
     blockExplorerApi: 'https://api.polygonscan.com/api',
-    factoryAddress: '',
-    exchangeAddress: '',
-    securityTokenFactoryAddress: '',
-    assetBackedExchangeAddress: '',
+    factoryAddress: '0x0ad0bc183acb2f2124A6e8C40216af852d3c1C9b',
+    exchangeAddress: '0xd60A930605442226e80f2577e4a4B985e3d56977',
+    securityTokenFactoryAddress: '0x8b167fE578F62D317674EA47a3F0Dd3Ce13d747f',
+    assetBackedExchangeAddress: '0x099df34B1855C9D54eC232916970db13666b50be',
     wethAddress: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619',
     wbtcAddress: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6',
     ammAddress: '',
@@ -169,22 +210,28 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
   },
 
-  // ---- Base (metadata only, no deployments) -------------------------------
+  // ---- Base ---------------------------------------------------------------
   8453: {
     chainId: 8453,
     name: 'Base',
     rpcUrl: getPrimaryRpcUrl(8453),
     blockExplorer: 'https://basescan.org',
     blockExplorerApi: 'https://api.basescan.org/api',
-    factoryAddress: '',
-    exchangeAddress: '',
-    securityTokenFactoryAddress: '',
-    assetBackedExchangeAddress: '',
+    factoryAddress: '0x0ad0bc183acb2f2124A6e8C40216af852d3c1C9b',
+    exchangeAddress: '0xd60A930605442226e80f2577e4a4B985e3d56977',
+    securityTokenFactoryAddress: '0x8b167fE578F62D317674EA47a3F0Dd3Ce13d747f',
+    assetBackedExchangeAddress: '0x099df34B1855C9D54eC232916970db13666b50be',
     wethAddress: '0x4200000000000000000000000000000000000006',
     wbtcAddress: '',
-    ammAddress: '',
-    orbitalFactoryAddress: '',
-    orbitalRouterAddress: '',
+    ammAddress: '0xa9b60375A6433a6697F020F67Dd69851F861DFb8',
+    orbitalFactoryAddress: readAddressEnv(
+      'VITE_ORBITAL_FACTORY_8453',
+      '0x95187b0e6A6639083C58932C8841A30C75eE70e8',
+    ),
+    orbitalRouterAddress: readAddressEnv(
+      'VITE_ORBITAL_ROUTER_8453',
+      '0xD66b939e2701f61559CB7BccdEb7fbBDe49A35E9',
+    ),
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   },
 

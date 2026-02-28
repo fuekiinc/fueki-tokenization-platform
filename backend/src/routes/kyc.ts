@@ -8,6 +8,14 @@ import { submitKYC, getKYCStatus, saveEncryptedDocument } from '../services/kyc'
 const router = Router();
 
 const VALID_DOC_TYPES = ['drivers_license', 'passport', 'national_id'] as const;
+const VALID_SUBSCRIPTION_PLANS = [
+  'monthly',
+  'annual',
+  'full_service',
+  'contract_deployment_monthly',
+  'contract_deployment_annual',
+  'contract_deployment_white_glove',
+] as const;
 
 const kycSchema = z.object({
   firstName: z.string().min(1),
@@ -21,7 +29,7 @@ const kycSchema = z.object({
   zipCode: z.string().min(1),
   country: z.string().min(1),
   documentType: z.enum(VALID_DOC_TYPES),
-  subscriptionPlan: z.enum(['monthly', 'annual', 'full_service']),
+  subscriptionPlan: z.enum(VALID_SUBSCRIPTION_PLANS),
 });
 
 // POST /api/kyc/submit

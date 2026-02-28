@@ -9,10 +9,10 @@ import { useWalletStore } from '../../store/walletStore.ts';
 import { useAuthStore } from '../../store/authStore';
 import { ComponentErrorBoundary } from '../ErrorBoundary';
 import logger from '../../lib/logger';
+import { isContractDeploymentOnlyPlan } from '../../lib/subscriptionPlans';
 import {
   getThirdwebAppMetadata,
   isThirdwebConfigured,
-  THIRDWEB_DEFAULT_CHAIN,
   THIRDWEB_SUPPORTED_CHAINS,
   THIRDWEB_THEME,
   THIRDWEB_WALLETCONNECT_PROJECT_ID,
@@ -404,8 +404,8 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
         client={thirdwebClient}
         wallets={THIRDWEB_WALLETS}
         appMetadata={getThirdwebAppMetadata()}
-        chain={THIRDWEB_DEFAULT_CHAIN}
         chains={THIRDWEB_SUPPORTED_CHAINS}
+        autoConnect={false}
         theme={THIRDWEB_THEME}
         connectButton={{
           label: isConnecting ? 'Connecting...' : 'Connect Wallet',
@@ -448,9 +448,11 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
 
 function MobileSlideOver({
   isOpen,
+  navItems,
   onClose,
 }: {
   isOpen: boolean;
+  navItems: NavItem[];
   onClose: () => void;
 }) {
   const location = useLocation();
@@ -536,7 +538,7 @@ function MobileSlideOver({
         {/* Nav links */}
         <div className="flex-1 overflow-y-auto px-4 pb-6">
           <nav className="space-y-1" aria-label="Mobile navigation">
-            {NAV_ITEMS.map((item) => (
+            {navItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -661,6 +663,14 @@ function LogoutButton({ compact = false }: { compact?: boolean }) {
 
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const user = useAuthStore((s) => s.user);
+
+  const navItems = useMemo(() => {
+    if (isContractDeploymentOnlyPlan(user?.subscriptionPlan)) {
+      return NAV_ITEMS.filter((item) => item.to === '/contracts');
+    }
+    return NAV_ITEMS;
+  }, [user?.subscriptionPlan]);
 
   // Close mobile menu on Escape
   useEffect(() => {
@@ -702,7 +712,7 @@ export default function Navbar() {
 
               {/* Desktop nav links -- NavLink auto-sets aria-current="page" when active */}
               <div className="hidden items-center gap-1 xl:flex" role="navigation" aria-label="Main navigation">
-                {NAV_ITEMS.map((item) => (
+                {navItems.map((item) => (
                   <NavLink
                     key={item.to}
                     to={item.to}
@@ -789,6 +799,7 @@ export default function Navbar() {
       {/* Mobile slide-over */}
       <MobileSlideOver
         isOpen={mobileMenuOpen}
+        navItems={navItems}
         onClose={() => setMobileMenuOpen(false)}
       />
     </>

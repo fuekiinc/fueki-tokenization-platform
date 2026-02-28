@@ -6,8 +6,9 @@ import {
   getNetworkMetadata,
 } from '../../contracts/addresses';
 import {
-  type NetworkCapabilityKey,
   getNetworkCapabilities,
+  getSupportedChainIdsForCapability,
+  type NetworkCapabilityKey,
 } from '../../contracts/networkCapabilities';
 
 interface NetworkCapabilityGuardProps {
@@ -54,6 +55,20 @@ export default function NetworkCapabilityGuard({
 
   const currentMetadata = chainId ? getNetworkMetadata(chainId) : null;
   const currentName = currentMetadata?.name ?? (chainId ? `Unknown Network (${chainId})` : 'Unknown Network');
+  const supportedFallbackChainIds = getSupportedChainIdsForCapability(requiredCapability);
+
+  const candidateSwitchChainIds = Array.from(new Set(switchChainIds))
+    .filter((id) => id !== chainId)
+    .filter((id) => {
+      const switchCaps = getNetworkCapabilities(id);
+      if (!switchCaps?.known) return false;
+      return Boolean(switchCaps[requiredCapability]);
+    });
+
+  const effectiveSwitchChainIds =
+    candidateSwitchChainIds.length > 0
+      ? candidateSwitchChainIds
+      : supportedFallbackChainIds.filter((id) => id !== chainId);
 
   return (
     <div
@@ -68,7 +83,7 @@ export default function NetworkCapabilityGuard({
       </div>
 
       <h2 className="mb-3 text-xl font-bold text-white">
-        {title ?? 'Network Not Supported'}
+        {title ?? 'Feature Unavailable on This Network'}
       </h2>
 
       <p className="mx-auto max-w-md text-sm leading-relaxed text-gray-400">
@@ -82,7 +97,7 @@ export default function NetworkCapabilityGuard({
       </div>
 
       <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
-        {switchChainIds.map((id) => (
+        {effectiveSwitchChainIds.map((id) => (
           <button
             key={id}
             type="button"

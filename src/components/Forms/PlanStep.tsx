@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { ArrowRight, ArrowLeft, Check } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import clsx from 'clsx';
 import type { SubscriptionPlan } from '../../types/auth';
-import { CONTINUE_BUTTON, BACK_BUTTON } from './signupStyles';
+import { BACK_BUTTON, CONTINUE_BUTTON } from './signupStyles';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -29,22 +29,22 @@ const PLANS: {
 }[] = [
   {
     id: 'monthly',
-    name: 'Monthly',
+    name: 'Platform Monthly',
     price: '$200',
     period: '/month',
-    detail: 'Billed monthly. Cancel anytime.',
+    detail: 'Full tokenization platform access. Billed monthly.',
   },
   {
     id: 'annual',
-    name: 'Annual',
+    name: 'Platform Annual',
     price: '$1,800',
     period: '/year',
-    detail: 'Billed annually. Save $600 per year.',
+    detail: 'Full platform access billed annually.',
     badge: 'Save 25%',
   },
   {
     id: 'full_service',
-    name: 'Full Service',
+    name: 'White Glove Platform',
     price: 'Bespoke pricing',
     period: '',
     detail:
@@ -52,6 +52,39 @@ const PLANS: {
     subDetail:
       'You still get full platform access to view, manage, and interact with your token supply and monetize while we provide white-glove configuration and deployment support.',
     badge: 'White Glove',
+  },
+  {
+    id: 'contract_deployment_monthly',
+    name: 'Contract Deploy Monthly',
+    price: '$50',
+    period: '/month',
+    detail:
+      'Exclusive access to the smart contract deployer only. Includes a per-contract deployment fee.',
+    subDetail:
+      'All non-contract platform sections are gated on this plan.',
+    badge: 'Deployer Only',
+  },
+  {
+    id: 'contract_deployment_annual',
+    name: 'Contract Deploy Annual',
+    price: '$600',
+    period: '/year',
+    detail:
+      'Exclusive deployer-only access billed annually, plus a per-contract deployment fee.',
+    subDetail:
+      'All non-contract platform sections are gated on this plan.',
+    badge: 'Deployer Only',
+  },
+  {
+    id: 'contract_deployment_white_glove',
+    name: 'White Glove Deploy',
+    price: 'Bespoke pricing',
+    period: '',
+    detail:
+      'White-glove smart contract deployment and configuration with bespoke invoicing.',
+    subDetail:
+      'We invoice an estimate based on your specific requirements. Access is limited to the contract deployment workflow.',
+    badge: 'Deployer + White Glove',
   },
 ];
 
@@ -71,7 +104,8 @@ export default function PlanStep({ defaultValue, onNext, onBack }: PlanStepProps
     <form onSubmit={handleSubmit} noValidate className="space-y-5">
       <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
         A platform subscription is required to access the tokenization platform
-        and to interact with, transfer, and distribute your security tokens.
+        and to interact with your on-chain assets. Deployer-only plans are
+        restricted to the contract deployment section of the app.
       </p>
 
       <div className="space-y-3">
@@ -149,8 +183,9 @@ export default function PlanStep({ defaultValue, onNext, onBack }: PlanStepProps
 
       <p className="text-xs text-[var(--text-muted)] leading-relaxed">
         After your application is approved, you will receive an invoice via email
-        for the plan you selected above. Full Service is bespoke priced and
-        invoiced based on your specific requirements.
+        for the plan you selected above. White-glove plans are bespoke priced and
+        invoiced based on your specific requirements. Deployer-only plans include
+        a separate per-contract deployment fee.
       </p>
 
       {/* Navigation */}

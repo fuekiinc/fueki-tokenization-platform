@@ -14,6 +14,7 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useAuthStore } from '../store/authStore';
 import FuekiBrand from '../components/Brand/FuekiBrand';
+import { isContractDeploymentOnlyPlan } from '../lib/subscriptionPlans';
 import type { KYCStatus } from '../types/auth';
 
 // ---------------------------------------------------------------------------
@@ -71,6 +72,10 @@ export default function PendingApprovalPage() {
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
 
   const kycStatus: KYCStatus = user?.kycStatus ?? 'pending';
+  const isContractOnlySubscriber = isContractDeploymentOnlyPlan(user?.subscriptionPlan);
+  const approvedDestination = isContractOnlySubscriber
+    ? '/contracts'
+    : '/dashboard';
 
   // ---- Initial status check + polling ------------------------------------
 
@@ -113,11 +118,11 @@ export default function PendingApprovalPage() {
     if (kycStatus !== 'approved') return;
 
     const timeout = setTimeout(() => {
-      navigate('/dashboard');
+      navigate(approvedDestination);
     }, 3000);
 
     return () => clearTimeout(timeout);
-  }, [kycStatus, navigate]);
+  }, [approvedDestination, kycStatus, navigate]);
 
   // ---- Handlers ----------------------------------------------------------
 
@@ -212,18 +217,20 @@ export default function PendingApprovalPage() {
               You're Approved!
             </h2>
             <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed max-w-sm mx-auto">
-              Your identity has been verified. You now have full access to the
-              Fueki Tokenization Platform.
+              Your identity has been verified.
+              {isContractOnlySubscriber
+                ? ' Your account is configured for smart contract deployment only.'
+                : ' You now have full access to the Fueki Tokenization Platform.'}
             </p>
 
             {/* Redirect countdown */}
             <p className="mt-4 text-xs text-[var(--text-muted)]">
-              Redirecting to dashboard in a few seconds...
+              Redirecting you in a few seconds...
             </p>
 
             {/* CTA */}
             <button
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate(approvedDestination)}
               className={clsx(
                 'mt-6 w-full flex items-center justify-center gap-2',
                 'bg-gradient-to-r from-indigo-600 to-purple-600',
@@ -234,7 +241,9 @@ export default function PendingApprovalPage() {
                 'shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30',
               )}
             >
-              Go to Dashboard
+              {isContractOnlySubscriber
+                ? 'Go to Contract Deployer'
+                : 'Go to Dashboard'}
             </button>
           </div>
         )}
@@ -441,6 +450,12 @@ export default function PendingApprovalPage() {
                     transfer, and distribute your assets. Failure to pay your
                     subscription will result in your access to the platform being
                     revoked until the balance is rectified.
+                  </p>
+                  <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">
+                    If you selected a smart-contract-deployment-only plan, your
+                    account will be restricted to the contract deployment section
+                    after approval, and each deployment will also incur a
+                    per-contract fee.
                   </p>
                 </div>
               </div>

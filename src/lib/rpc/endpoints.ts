@@ -9,43 +9,68 @@ import logger from '../logger';
 
 const FAILURE_THRESHOLD = 2;
 const COOLDOWN_MS = 30_000;
+const HEALTHY_ENDPOINT_CACHE_TTL_MS = 2 * 60_000;
 
 interface EndpointHealth {
   failures: number;
   cooldownUntil: number;
 }
 
+interface HealthyEndpointCacheEntry {
+  url: string;
+  expiresAt: number;
+}
+
 const endpointHealth = new Map<string, EndpointHealth>();
+const healthyEndpointCache = new Map<number, HealthyEndpointCacheEntry>();
 const log = logger.child('rpc-endpoints');
 
 const RPC_ENV_BY_CHAIN: Record<number, string> = {
   1: 'VITE_RPC_1_URLS',
+  137: 'VITE_RPC_137_URLS',
   17000: 'VITE_RPC_17000_URLS',
   42161: 'VITE_RPC_42161_URLS',
   421614: 'VITE_RPC_421614_URLS',
   8453: 'VITE_RPC_8453_URLS',
   84532: 'VITE_RPC_84532_URLS',
+  11155111: 'VITE_RPC_11155111_URLS',
 };
 
 const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
   1: [
+    'https://billowing-rough-moon.quiknode.pro/a3cc003399fc8c72876d87c1f516c0897574e60c/',
     'https://ethereum-rpc.publicnode.com',
     'https://eth.drpc.org',
   ],
-  137: ['https://polygon-rpc.com'],
+  137: [
+    'https://polygon-bor-rpc.publicnode.com',
+    'https://polygon.drpc.org',
+    'https://1rpc.io/matic',
+  ],
   31337: ['http://127.0.0.1:8545'],
-  8453: ['https://mainnet.base.org'],
-  84532: ['https://sepolia.base.org'],
   17000: [
+    'https://flashy-crimson-borough.ethereum-holesky.quiknode.pro/f43097bbd32a1c3476c2f3f1ff1d4780361be827/',
     'https://holesky.drpc.org',
     'https://ethereum-holesky-rpc.publicnode.com',
     'https://1rpc.io/holesky',
-    'https://rpc.holesky.ethpandaops.io',
   ],
-  42161: ['https://arb1.arbitrum.io/rpc'],
+  42161: [
+    'https://snowy-blue-frost.arbitrum-mainnet.quiknode.pro/a691b5e884e8df719f8ce8ec8ad5e22092d17cdb/',
+    'https://arb1.arbitrum.io/rpc',
+  ],
   421614: [
-    'https://sepolia-rollup.arbitrum.io/rpc',
+    'https://ancient-holy-tent.arbitrum-sepolia.quiknode.pro/53623a401aa412366b43ddea31aa6538ef24d7fd/',
     'https://arbitrum-sepolia-rpc.publicnode.com',
+    'https://arbitrum-sepolia.drpc.org',
+    'https://sepolia-rollup.arbitrum.io/rpc',
+  ],
+  8453: [
+    'https://delicate-red-cloud.base-mainnet.quiknode.pro/3ae2b0cd08e640c9c6a3e4c0ca89351dc879e5c8/',
+    'https://mainnet.base.org',
+  ],
+  84532: [
+    'https://billowing-wandering-yard.base-sepolia.quiknode.pro/70e0d692e7ba902f935ff17774c1aed59a21e0d0/',
+    'https://sepolia.base.org',
   ],
   11155111: [
     'https://rpc.sepolia.org',
@@ -71,7 +96,16 @@ function parseCommaSeparatedUrls(raw: string): string[] {
   return raw
     .split(',')
     .map((part) => part.trim())
-    .filter((part) => part.length > 0);
+    .filter((part) => part.length > 0)
+    .filter((part) => {
+      try {
+        const parsed = new URL(part);
+        return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+      } catch {
+        log.warn('Ignoring invalid RPC URL from environment config', { url: part });
+        return false;
+      }
+    });
 }
 
 function dedupeStable(values: string[]): string[] {
@@ -131,6 +165,19 @@ export function getRpcEndpoints(chainId: number): string[] {
 }
 
 /**
+ * RPC URLs suitable for wallet chain-switch / chain-add prompts.
+ *
+ * We intentionally prioritize built-in public endpoints first to avoid
+ * wallet validation failures when user-provided/private endpoints are
+ * unavailable to the wallet runtime.
+ */
+export function getWalletSwitchRpcUrls(chainId: number): string[] {
+  const defaults = DEFAULT_RPC_BY_CHAIN[chainId] ?? [];
+  const configured = getRpcEndpoints(chainId);
+  return dedupeStable([...defaults, ...configured]);
+}
+
+/**
  * Return the preferred endpoint for a chain, excluding endpoints in cooldown.
  */
 export function selectRpcEndpoint(chainId: number): string {
@@ -140,6 +187,19 @@ export function selectRpcEndpoint(chainId: number): string {
   }
 
   const now = Date.now();
+
+  const cachedHealthy = healthyEndpointCache.get(chainId);
+  if (
+    cachedHealthy &&
+    cachedHealthy.expiresAt > now &&
+    endpoints.includes(cachedHealthy.url)
+  ) {
+    const health = endpointHealth.get(endpointKey(chainId, cachedHealthy.url));
+    if (!health || health.cooldownUntil <= now) {
+      return cachedHealthy.url;
+    }
+  }
+
   for (const url of endpoints) {
     const health = endpointHealth.get(endpointKey(chainId, url));
     if (!health || health.cooldownUntil <= now) {
@@ -205,12 +265,27 @@ export async function findHealthyEndpoint(
   const endpoints = getRpcEndpoints(chainId);
   if (endpoints.length === 0) return null;
 
+  const now = Date.now();
+  const cachedHealthy = healthyEndpointCache.get(chainId);
+  if (
+    cachedHealthy &&
+    cachedHealthy.expiresAt > now &&
+    endpoints.includes(cachedHealthy.url)
+  ) {
+    const health = endpointHealth.get(endpointKey(chainId, cachedHealthy.url));
+    if (!health || health.cooldownUntil <= now) {
+      return cachedHealthy.url;
+    }
+  }
+
+  // Shared AbortController lets us cancel remaining probes once the first
+  // one succeeds, preventing wasted network requests and open connections.
+  const sharedController = new AbortController();
+
   /** Probe a single endpoint; resolves with its URL on success, rejects on failure. */
   const probe = (url: string): Promise<string> =>
     new Promise((resolve, reject) => {
-      const controller = new AbortController();
       const timer = setTimeout(() => {
-        controller.abort();
         reject(new Error('timeout'));
       }, timeoutMs);
 
@@ -223,7 +298,7 @@ export async function findHealthyEndpoint(
           method: 'eth_blockNumber',
           params: [],
         }),
-        signal: controller.signal,
+        signal: sharedController.signal,
       })
         .then(async (res) => {
           clearTimeout(timer);
@@ -247,6 +322,11 @@ export async function findHealthyEndpoint(
         })
         .catch((err) => {
           clearTimeout(timer);
+          // Don't report abort as a failure -- it means another probe won.
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            reject(err);
+            return;
+          }
           reportRpcEndpointFailure(chainId, url);
           reject(err);
         });
@@ -254,7 +334,14 @@ export async function findHealthyEndpoint(
 
   try {
     // Promise.any resolves as soon as ANY probe succeeds.
-    return await Promise.any(endpoints.map(probe));
+    const healthy = await Promise.any(endpoints.map(probe));
+    // Abort remaining in-flight probes to free connections.
+    sharedController.abort();
+    healthyEndpointCache.set(chainId, {
+      url: healthy,
+      expiresAt: Date.now() + HEALTHY_ENDPOINT_CACHE_TTL_MS,
+    });
+    return healthy;
   } catch {
     // AggregateError — all probes failed.
     return null;
@@ -270,4 +357,8 @@ export function reportRpcEndpointSuccess(chainId: number, url: string): void {
     });
   }
   endpointHealth.delete(key);
+  healthyEndpointCache.set(chainId, {
+    url,
+    expiresAt: Date.now() + HEALTHY_ENDPOINT_CACHE_TTL_MS,
+  });
 }

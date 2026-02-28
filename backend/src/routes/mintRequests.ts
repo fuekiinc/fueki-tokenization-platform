@@ -1,6 +1,7 @@
-import { Router, type Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import crypto from 'node:crypto';
 import multer from 'multer';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
 import { mintApprovalUpload } from '../middleware/upload';
@@ -48,6 +49,52 @@ const listSchema = z.object({
   chainId: z.coerce.number().int().positive().optional(),
   status: z.enum(['pending', 'approved', 'rejected']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
+});
+
+function mintRateLimitKey(req: Request): string {
+  return req.userId ? `user:${req.userId}` : 'user:unknown';
+}
+
+const mintSubmitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: mintRateLimitKey,
+  message: {
+    error: {
+      message: 'Too many mint approval submissions, please try again later',
+      code: 'RATE_LIMIT',
+    },
+  },
+});
+
+const mintStatusLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: mintRateLimitKey,
+  message: {
+    error: {
+      message: 'Too many mint status checks, please try again shortly',
+      code: 'RATE_LIMIT',
+    },
+  },
+});
+
+const mintListLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: mintRateLimitKey,
+  message: {
+    error: {
+      message: 'Too many mint request history checks, please try again shortly',
+      code: 'RATE_LIMIT',
+    },
+  },
 });
 
 function normalizeAmount(input: string): string {
@@ -119,6 +166,7 @@ function sendActionHtml(
 router.post(
   '/submit',
   authenticate,
+  mintSubmitLimiter,
   mintApprovalUpload.single('document'),
   async (req, res) => {
     try {
@@ -313,7 +361,7 @@ router.post(
 );
 
 // GET /api/mint-requests/status
-router.get('/status', authenticate, async (req, res) => {
+router.get('/status', authenticate, mintStatusLimiter, async (req, res) => {
   try {
     const parsed = statusSchema.parse(req.query);
     const normalizedMintAmount = normalizeAmount(parsed.mintAmount);
@@ -381,7 +429,7 @@ router.get('/status', authenticate, async (req, res) => {
 });
 
 // GET /api/mint-requests/list
-router.get('/list', authenticate, async (req, res) => {
+router.get('/list', authenticate, mintListLimiter, async (req, res) => {
   try {
     const parsed = listSchema.parse(req.query);
 

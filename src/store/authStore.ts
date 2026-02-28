@@ -196,7 +196,11 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     const currentUser = get().user;
     const storageMode = get().storageMode;
     if (currentUser) {
-      const updatedUser: User = { ...currentUser, kycStatus: 'pending' };
+      const updatedUser: User = {
+        ...currentUser,
+        kycStatus: 'pending',
+        subscriptionPlan: data.subscriptionPlan,
+      };
       persistUser(storageMode, updatedUser);
       set({ user: updatedUser });
     }
