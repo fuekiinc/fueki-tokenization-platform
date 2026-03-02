@@ -15,7 +15,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
-import { ethers } from 'ethers';
 import { useWallet } from '../hooks/useWallet';
 import { useAuthStore } from '../store/authStore';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
@@ -24,7 +23,7 @@ import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from
 import { ContractService, getReadOnlyProvider } from '../lib/blockchain/contracts';
 import { retryAsync } from '../lib/utils/retry';
 import logger from '../lib/logger';
-import { findHealthyEndpoint, getOrderedRpcEndpoints } from '../lib/rpc/endpoints';
+// RPC endpoint imports retained for potential future fallback use.
 import { DEFAULT_SWITCH_CHAIN_IDS, getNetworkMetadata } from '../contracts/addresses';
 import { getNetworkCapabilities } from '../contracts/networkCapabilities';
 import { formatAddress } from '../lib/utils/helpers';
@@ -349,10 +348,6 @@ export default function ExchangePage() {
           !/network|timeout|fetch|rpc|connect|429|50[234]/i.test(error.message)
         ) {
           toast.error('Unable to fetch your ETH balance. Try refreshing the page.');
-        }
-      } finally {
-        for (const provider of fallbackProviders) {
-          provider.destroy();
         }
       }
     }

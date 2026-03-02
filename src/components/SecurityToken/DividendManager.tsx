@@ -653,7 +653,7 @@ export default function DividendManager({
             const erc20 = new ethers.Contract(
               token,
               ERC20_ABI,
-              provider,
+              claimReadProvider,
             );
             let symbol = 'UNKNOWN';
             let dec = 18;

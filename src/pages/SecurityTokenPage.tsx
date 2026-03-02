@@ -24,7 +24,7 @@ import {
   Pause,
 } from 'lucide-react';
 import { SecurityTokenABI } from '../contracts/abis/SecurityToken';
-import { useWalletStore, getProvider } from '../store/walletStore';
+import { useWalletStore } from '../store/walletStore';
 import { useAuthStore } from '../store/authStore';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 import { formatWeiAmount, truncateAddress } from '../lib/formatters';
