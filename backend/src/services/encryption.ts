@@ -5,6 +5,15 @@ const ALGORITHM = config.encryption.algorithm;
 const KEY = Buffer.from(config.encryption.key, 'hex');
 const IV_LENGTH = 16;
 
+// Validate encryption key at startup -- AES-256 requires exactly 32 bytes.
+if (KEY.length !== 32) {
+  console.error(
+    `FATAL: ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes). ` +
+    `Got ${KEY.length} bytes. Check for non-hex characters in the key.`,
+  );
+  process.exit(1);
+}
+
 export function encrypt(plaintext: string): string {
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv(ALGORITHM, KEY, iv);

@@ -20,18 +20,20 @@ test('wallet invariant never reports connected status without provider and signe
 
   const store = useWalletStore.getState();
 
+  // Without provider/signer, setting 'connected' normalises to 'disconnected'.
   store.setConnectionStatus('connected');
   let wallet = useWalletStore.getState().wallet;
-  assert.equal(wallet.connectionStatus, 'degraded');
+  assert.equal(wallet.connectionStatus, 'disconnected');
   assert.equal(wallet.isConnected, false);
   assert.equal(wallet.providerReady, false);
   assert.equal(wallet.signerReady, false);
 
   store.setWallet({ isConnected: true, connectionStatus: 'connected', isConnecting: false });
   wallet = useWalletStore.getState().wallet;
-  assert.equal(wallet.connectionStatus, 'degraded');
+  assert.equal(wallet.connectionStatus, 'disconnected');
   assert.equal(wallet.isConnected, false);
 
+  // With both provider and signer set, 'connected' is allowed.
   store.setProvider({} as never);
   store.setSigner({} as never);
   store.setWallet({
@@ -57,7 +59,7 @@ test('network capability matrix includes Base Sepolia and Holesky capability sha
   assert.equal(holesky?.mintAsset, true);
   assert.equal(holesky?.mintSecurity, true);
   assert.equal(holesky?.exchangeOrderbook, true);
-  assert.equal(holesky?.exchangeAMM, false);
+  assert.equal(holesky?.exchangeAMM, true);
   assert.equal(holesky?.orbitalAMM, true);
 
   const baseSepolia = getNetworkCapabilities(84532);

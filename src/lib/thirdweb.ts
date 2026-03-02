@@ -12,7 +12,9 @@ import { createWallet } from 'thirdweb/wallets';
 import { getNetworkMetadata } from '../contracts/addresses';
 import { getPrimaryRpcUrl, getWalletSwitchRpcUrls } from './rpc/endpoints';
 
-const THIRDWEB_CLIENT_ID = import.meta.env.VITE_THIRDWEB_CLIENT_ID?.trim();
+const THIRDWEB_CLIENT_ID =
+  import.meta.env.VITE_THIRDWEB_CLIENT_ID?.trim() ||
+  '2e0666f968e836ef3adfb480987686c6';
 export const THIRDWEB_WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID?.trim();
 
 export const isThirdwebConfigured = Boolean(THIRDWEB_CLIENT_ID);

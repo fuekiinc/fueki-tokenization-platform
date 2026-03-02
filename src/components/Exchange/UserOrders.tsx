@@ -194,13 +194,13 @@ export default function UserOrders({
       let cmp = 0;
       switch (sortField) {
         case 'id':
-          cmp = Number(a.id - b.id);
+          cmp = a.id > b.id ? 1 : a.id < b.id ? -1 : 0;
           break;
         case 'sell':
-          cmp = Number(a.amountSell - b.amountSell);
+          cmp = a.amountSell > b.amountSell ? 1 : a.amountSell < b.amountSell ? -1 : 0;
           break;
         case 'buy':
-          cmp = Number(a.amountBuy - b.amountBuy);
+          cmp = a.amountBuy > b.amountBuy ? 1 : a.amountBuy < b.amountBuy ? -1 : 0;
           break;
         case 'fill':
           cmp = fillPercentage(a) - fillPercentage(b);

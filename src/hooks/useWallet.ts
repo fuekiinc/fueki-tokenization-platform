@@ -31,9 +31,9 @@ import {
   thirdwebClient,
 } from '../lib/thirdweb';
 import { clearWalletBoundStores } from '../wallet/walletBoundStores';
+import { useAuthStore } from '../store/authStore';
 
 const SWITCH_PRECHECK_TIMEOUT_MS = 3_500;
-const SWITCH_REQUEST_TIMEOUT_MS = 45_000;
 
 type RequestProvider = {
   request: (args: { method: string; params?: unknown }) => Promise<unknown>;
@@ -264,7 +264,7 @@ async function waitForWalletChain(
   activeWallet: ReturnType<typeof useActiveWallet>,
   targetChainId: number,
   activeAddress?: string | null,
-  timeoutMs = 12_000,
+  timeoutMs = 3_000,
 ): Promise<boolean> {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
@@ -275,7 +275,7 @@ async function waitForWalletChain(
     if (currentChainId === targetChainId) {
       return true;
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
   return false;
 }
@@ -318,6 +318,10 @@ function parseWalletError(err: unknown): string {
 
   if (/timeout|timed out|ETIMEDOUT/i.test(message)) {
     return 'Network request timed out. Please check your connection and try again.';
+  }
+
+  if (/failed to fetch|fetch failed|network request failed|networkerror/i.test(message)) {
+    return 'Your wallet RPC endpoint is unreachable. Re-select the network and try again.';
   }
 
   if (message.length > 0 && message.length < 220) {
@@ -395,11 +399,25 @@ async function attemptRawProviderChainSwitch(
     rpcUrls: rpcUrlsForChainParams,
     ...(network?.blockExplorer ? { blockExplorerUrls: [network.blockExplorer] } : {}),
   };
+  const shouldRefreshChainConfig = targetChainId === 17000;
 
   let lastError: unknown = null;
 
   for (const provider of orderedProviders) {
     try {
+      if (shouldRefreshChainConfig) {
+        try {
+          await provider.request({
+            method: 'wallet_addEthereumChain',
+            params: [chainParams],
+          });
+        } catch (refreshError) {
+          if (isUserRejectedError(refreshError)) {
+            throw refreshError;
+          }
+        }
+      }
+
       try {
         await provider.request({
           method: 'wallet_switchEthereumChain',
@@ -566,68 +584,52 @@ export function useWallet() {
   const switchNetwork = useCallback(
     async (chainId: number) => {
       if (!activeWallet) {
+        const isDemoActive = useAuthStore.getState().user?.demoActive === true;
+        if (isDemoActive) {
+          const msg =
+            'Demo mode is pinned to Holesky. Exit demo mode to connect your own wallet and switch networks.';
+          setLastError(msg);
+          toast.error(msg);
+          return;
+        }
         const msg = 'Please connect your wallet first.';
         setLastError(msg);
         toast.error(msg);
         return;
       }
 
-      // Prevent concurrent switch attempts from stacking.
       if (useWalletStore.getState().wallet.connectionStatus === 'switching') {
-        logger.debug('switchNetwork: already switching, ignoring duplicate call');
         return;
       }
 
-      // Set the module-level flag BEFORE zustand state changes.  This flag
-      // survives the race window where failChainSwitch clears 'switching'
-      // status before the disconnect-detection effect fires.
       setSwitchInProgress(true);
       beginChainSwitch(chainId);
 
       try {
-        const preferredRpc = await withTimeout(
-          findHealthyEndpoint(chainId),
-          SWITCH_PRECHECK_TIMEOUT_MS,
-          'RPC preflight',
-        ).catch((error) => {
-          logger.debug('switchNetwork preflight probe failed; using default chain RPC', error);
-          return null;
-        });
+        // Quick RPC preflight to find a healthy endpoint for the target chain.
+        const preferredRpc = await findHealthyEndpoint(chainId, SWITCH_PRECHECK_TIMEOUT_MS)
+          .catch(() => null);
 
         const chain = getThirdwebChainForSwitch(chainId, preferredRpc);
 
+        // Tier 1: Thirdweb's primary switch (works for all wallet types).
+        // Single 30s timeout — if the wallet doesn't respond, fail fast.
         try {
           await withTimeout(
             switchActiveWalletChain(chain),
-            SWITCH_REQUEST_TIMEOUT_MS,
-            'Wallet network switch',
+            30_000,
+            'Network switch',
           );
         } catch (primaryError) {
-          logger.warn('Primary network switch failed; attempting raw provider fallback', primaryError);
+          // User rejected — bail immediately, no fallback.
+          if (isUserRejectedError(primaryError)) throw primaryError;
 
-          let switchedViaDirectWalletApi = false;
-          let directSwitchError: unknown = null;
+          logger.warn('Primary switch failed, trying raw EIP-1193 fallback', primaryError);
 
-          try {
-            await withTimeout(
-              activeWallet.switchChain(chain),
-              SWITCH_REQUEST_TIMEOUT_MS,
-              'Wallet direct network switch',
-            );
-            switchedViaDirectWalletApi = true;
-          } catch (error) {
-            directSwitchError = error;
-            logger.warn(
-              'Direct wallet switchChain fallback failed; attempting injected-provider fallback',
-              error,
-            );
-          }
-
-          // Fallback path that issues real EIP-1193 JSON-RPC requests against
-          // the injected wallet provider. This bypasses thirdweb's switchChain
-          // abstraction when wallet/provider combinations fail to route
-          // `wallet_addEthereumChain` correctly.
-          if (!switchedViaDirectWalletApi) {
+          // Tier 2: Raw injected-provider fallback (MetaMask, Rabby, etc.).
+          // Skip entirely for WalletConnect / non-injected wallets.
+          const candidates = getInjectedProviderCandidates(activeWallet?.id);
+          if (candidates.length > 0) {
             try {
               await withTimeout(
                 attemptRawProviderChainSwitch(
@@ -636,56 +638,24 @@ export function useWallet() {
                   activeWallet,
                   activeAccount?.address,
                 ),
-                SWITCH_REQUEST_TIMEOUT_MS,
-                'Wallet fallback network switch',
+                15_000,
+                'Fallback network switch',
               );
+              // Re-sync thirdweb after raw provider switch.
+              await switchActiveWalletChain(chain).catch(() => {});
             } catch (fallbackError) {
-              if (isUserRejectedError(fallbackError)) {
-                throw fallbackError;
-              }
-              const fallbackMessage =
-                fallbackError instanceof Error
-                  ? fallbackError.message
-                  : String(fallbackError);
-              if (/No injected wallet provider is available/i.test(fallbackMessage)) {
-                throw directSwitchError ?? primaryError;
-              }
-              throw fallbackError;
+              if (isUserRejectedError(fallbackError)) throw fallbackError;
+              // Both tiers failed — throw the original error (more informative).
+              throw primaryError;
             }
+          } else {
+            // No injected provider (WalletConnect, etc.) — throw immediately.
+            throw primaryError;
           }
-
-          // Best effort: re-sync thirdweb's active chain after fallback.
-          await withTimeout(
-            switchActiveWalletChain(chain),
-            10_000,
-            'Wallet chain sync',
-          ).catch((syncError) => {
-            logger.debug('Post-fallback thirdweb chain sync failed; continuing', syncError);
-          });
         }
 
-        const switched = await waitForWalletChain(
-          activeWallet,
-          chainId,
-          activeAccount?.address,
-        );
-        if (!switched) {
-          const currentChainId = await getResolvedWalletChainId(
-            activeWallet,
-            activeAccount?.address,
-          );
-          logger.warn(
-            'Network switch request completed but chain confirmation is still pending',
-            {
-              targetChainId: chainId,
-              observedChainId: currentChainId,
-              walletId: activeWallet.id,
-            },
-          );
-          // Do not hard-fail here. Some wallets update chain/session state
-          // asynchronously after returning from switch calls. The root wallet
-          // controller will reconcile once the wallet emits the final chain.
-        }
+        // Brief wait for chain confirmation (3s max, non-blocking).
+        await waitForWalletChain(activeWallet, chainId, activeAccount?.address);
 
         clearWalletBoundStores();
         setLastError(null);

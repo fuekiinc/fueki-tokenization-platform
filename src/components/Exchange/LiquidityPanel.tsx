@@ -196,12 +196,16 @@ export default function LiquidityPanel({
 
   const sharePreview = useMemo(() => {
     if (!pool || pool.totalLiquidity === 0n || parsedAmountA === 0n) return null;
+    // Guard against division by zero when reserves are empty (initial pool seeding)
+    if (pool.reserve0 === 0n || pool.reserve1 === 0n) return null;
     // Estimated new LP tokens (proportional to smaller ratio)
     const lp0 = (parsedAmountA * pool.totalLiquidity) / pool.reserve0;
     const lp1 = (parsedAmountB * pool.totalLiquidity) / pool.reserve1;
     const newLp = lp0 < lp1 ? lp0 : lp1;
     const newTotal = pool.totalLiquidity + newLp;
-    const share = Number(newLp) / Number(newTotal) * 100;
+    if (newTotal === 0n) return null;
+    // Use BigInt-safe percentage: (newLp * 10000) / newTotal gives bps
+    const share = Number((newLp * 10000n) / newTotal) / 100;
     return share;
   }, [pool, parsedAmountA, parsedAmountB]);
 
@@ -332,7 +336,7 @@ export default function LiquidityPanel({
       }
       setTxStatus('idle');
     }
-  }, [contractService, tokenA, tokenB, parsedAmountA, parsedAmountB, tokenAIsETH, tokenBIsETH, userAddress, chainId, txStatus, onLiquidityChanged, tokenLabel]);
+  }, [contractService, tokenA, tokenB, parsedAmountA, parsedAmountB, tokenAIsETH, tokenBIsETH, userAddress, chainId, txStatus, onLiquidityChanged, tokenLabel, pool]);
 
   const handleRemoveLiquidity = useCallback(async () => {
     if (!contractService || !tokenA || !tokenB || parsedRemoveAmount === 0n) return;
@@ -490,7 +494,7 @@ export default function LiquidityPanel({
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-gray-500">Your Pool Share</span>
                   <span className="font-mono text-purple-400">
-                    {formatPercent(Number(lpBalance) / Number(pool.totalLiquidity) * 100)}
+                    {formatPercent(Number((lpBalance * 10000n) / pool.totalLiquidity) / 100)}
                   </span>
                 </div>
               )}

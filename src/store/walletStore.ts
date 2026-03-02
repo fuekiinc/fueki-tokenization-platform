@@ -154,25 +154,24 @@ function normalizeWalletState(wallet: WalletState['wallet']): WalletState['walle
     signerReady,
   };
 
-  // Invariant: do not report connected unless provider+signer are both ready.
-  if (!providerReady || !signerReady) {
+  // Sync the isConnected flag with provider/signer availability, but ONLY
+  // downgrade — never upgrade.  The caller explicitly sets isConnected: true
+  // when setup is complete (e.g. WalletConnectionController or DemoWalletProvider).
+  // We only force it to false when both refs are cleared (full disconnect),
+  // not when one is temporarily missing during sequential setup.
+  if (!providerReady && !signerReady) {
+    // Both cleared → genuine disconnect or mid-switch.
     if (next.isConnected) {
       next.isConnected = false;
     }
     if (next.connectionStatus === 'connected') {
-      next.connectionStatus = next.isConnecting ? 'connecting' : 'degraded';
+      next.connectionStatus = next.isConnecting ? 'connecting' : 'disconnected';
     }
-  }
-
-  // Invariant: a "connected" lifecycle state must reflect an actual connected wallet.
-  if (next.connectionStatus === 'connected' && !next.isConnected) {
-    next.connectionStatus = next.isConnecting ? 'connecting' : 'degraded';
   }
 
   if (next.connectionStatus === 'disconnected') {
     next.isConnecting = false;
     next.isConnected = false;
-    next.lastError = null;
   }
 
   return next;

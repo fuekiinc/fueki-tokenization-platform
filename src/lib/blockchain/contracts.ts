@@ -15,12 +15,13 @@ import { SecurityTokenFactoryABI } from '../../contracts/abis/SecurityTokenFacto
 import { SecurityTokenABI } from '../../contracts/abis/SecurityToken.ts';
 import { AssetBackedExchangeABI } from '../../contracts/abis/AssetBackedExchange.ts';
 import { LiquidityPoolAMMABI } from '../../contracts/abis/LiquidityPoolAMM.ts';
-import { getNetworkConfig } from '../../contracts/addresses';
+import { getNetworkConfig, getNetworkMetadata } from '../../contracts/addresses';
 import { multicall, multicallSameTarget } from './multicall.ts';
 import type { MulticallRequest, MulticallResult } from './multicall.ts';
 import {
   getOrderedRpcEndpoints,
   isRetryableRpcError,
+  getWalletSwitchRpcUrls,
   reportRpcEndpointFailure,
   reportRpcEndpointSuccess,
 } from '../rpc/endpoints';
@@ -31,6 +32,8 @@ import {
   makeChainCacheKey,
   setCache,
 } from './rpcCache.ts';
+import { getSigner as getStoreSigner } from '../../store/walletStore.ts';
+import logger from '../logger';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -97,6 +100,12 @@ export interface SecurityTokenDetails {
   documentType: string;
   originalValue: bigint;
   createdAt: bigint;
+}
+
+export interface SecurityTokenDeploymentGasEstimate {
+  gasUnits: bigint;
+  gasPriceWei: bigint;
+  estimatedCostWei: bigint;
 }
 
 type BigNumberishLike = string | number | bigint;
@@ -189,6 +198,81 @@ function extractErrorDataHex(err: unknown): string | null {
   return null;
 }
 
+function extractErrorMessage(err: unknown): string {
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message;
+  const candidate = err as {
+    shortMessage?: unknown;
+    message?: unknown;
+    details?: unknown;
+    cause?: unknown;
+  };
+  if (typeof candidate?.shortMessage === 'string') return candidate.shortMessage;
+  if (typeof candidate?.message === 'string') return candidate.message;
+  if (typeof candidate?.details === 'string') return candidate.details;
+  if (candidate?.cause) return extractErrorMessage(candidate.cause);
+  return String(err);
+}
+
+/**
+ * True when ethers signals an actual on-chain revert (CALL_EXCEPTION) as
+ * opposed to a transport / funds error.  These carry the real Solidity
+ * reason string or custom error selector and should be surfaced to the user.
+ */
+function isContractRevertError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  if (code === 'CALL_EXCEPTION' || code === 'ACTION_REJECTED') return true;
+  const message = extractErrorMessage(err);
+  return /execution reverted|CALL_EXCEPTION|revert/i.test(message);
+}
+
+/**
+ * True when the RPC/ethers reports INSUFFICIENT_FUNDS during gas estimation.
+ * This can be a genuine balance shortage OR a misleading error wrapping a
+ * contract revert — callers should fall through to wallet-native estimation
+ * rather than aborting.
+ */
+function isInsufficientFundsError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  if (code === 'INSUFFICIENT_FUNDS') return true;
+  const message = extractErrorMessage(err);
+  return /insufficient funds|INSUFFICIENT_FUNDS/i.test(message);
+}
+
+function isUserRejection(err: unknown): boolean {
+  const message = extractErrorMessage(err);
+  const code = (err as { code?: string | number })?.code;
+  return (
+    code === 4001 ||
+    code === 'ACTION_REJECTED' ||
+    /user (rejected|denied)|ACTION_REJECTED/i.test(message)
+  );
+}
+
+
+function isValidRpcUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url.trim());
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+function dedupeRpcUrls(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const raw of urls) {
+    const normalized = raw.trim();
+    if (!normalized || !isValidRpcUrl(normalized)) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(normalized);
+  }
+  return deduped;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -208,13 +292,42 @@ export function parseContractError(err: unknown): string {
     (err as { data?: { message?: string } })?.data?.message;
 
   // 2. Map known Solidity revert strings / custom error names.
-  const reason = revertReason ?? (err instanceof Error ? err.message : String(err));
+  // Build a combined reason string but also keep the specific revert reason
+  // separate so we can prioritise Solidity errors over generic RPC messages.
+  const outerMessage = err instanceof Error ? err.message : String(err);
+  const reason = revertReason ?? outerMessage;
+  // Also concatenate all nested messages for deeper pattern matching
+  const deepReason = [revertReason, outerMessage].filter(Boolean).join(' | ');
   const errorData = extractErrorDataHex(err);
 
   if (errorData && errorData.length >= 10) {
     const selector = errorData.slice(0, 10);
     const mapped = CUSTOM_ERROR_SELECTOR_MESSAGES[selector];
     if (mapped) return mapped;
+  }
+
+  // ---- Solidity custom errors (check BEFORE generic RPC errors) ----
+  // These take priority because ethers.js often wraps a contract revert
+  // inside a generic "insufficient funds" or "cannot estimate gas" error.
+
+  if (/MintExceedsOriginalValue/i.test(deepReason)) {
+    return 'Mint amount exceeds the original document value. The contract rejected the transaction.';
+  }
+
+  if (/EmptyName/i.test(deepReason)) {
+    return 'Token name cannot be empty.';
+  }
+
+  if (/EmptySymbol/i.test(deepReason)) {
+    return 'Token symbol cannot be empty.';
+  }
+
+  if (/ZeroMintAmount/i.test(deepReason)) {
+    return 'Mint amount must be greater than zero.';
+  }
+
+  if (/ZeroAddress/i.test(deepReason) && !/0x0{40}/.test(deepReason)) {
+    return 'Recipient address cannot be the zero address.';
   }
 
   if (/DoesNotHaveWalletsAdminRole/i.test(reason)) {
@@ -238,7 +351,7 @@ export function parseContractError(err: unknown): string {
   }
 
   // User rejected from wallet
-  if (/user (rejected|denied)|ACTION_REJECTED/i.test(reason)) {
+  if (/user (rejected|denied)|ACTION_REJECTED/i.test(deepReason)) {
     return 'Transaction was rejected in your wallet.';
   }
 
@@ -262,6 +375,11 @@ export function parseContractError(err: unknown): string {
     return 'Network is busy (rate limited). Please wait a moment and try again.';
   }
 
+  // RPC endpoint unavailable / overloaded upstream
+  if (/rpc endpoint not found or unavailable|service unavailable|bad gateway|gateway timeout|httpstatus\"?\s*:\s*521/i.test(reason)) {
+    return 'RPC endpoint is temporarily unavailable. Please retry in a few moments.';
+  }
+
   // RPC endpoint circuit-breaker/cooldown messages from upstream providers
   if (/rpc endpoint returned too many errors|retrying in|different rpc endpoint/i.test(reason)) {
     return 'RPC endpoint is temporarily overloaded. Please retry in a few seconds.';
@@ -270,6 +388,11 @@ export function parseContractError(err: unknown): string {
   // RPC timeout
   if (/timeout|ETIMEDOUT|ECONNREFUSED/i.test(reason)) {
     return 'Network request timed out. Please check your internet connection and try again.';
+  }
+
+  // Wallet/provider transport failures
+  if (/failed to fetch|fetch failed|network request failed|networkerror/i.test(reason)) {
+    return 'Network error — unable to reach the RPC node. The node may be temporarily overloaded. Please try again in a moment.';
   }
 
   // Revert with reason string
@@ -375,6 +498,12 @@ export class ContractService {
    * trigger a new user approval prompt.
    */
   async getSigner(): Promise<ethers.Signer> {
+    const storeSigner = getStoreSigner();
+    if (storeSigner) {
+      this.signer = storeSigner as unknown as ethers.Signer;
+      return this.signer;
+    }
+
     this.signer = await this.provider.getSigner();
     return this.signer;
   }
@@ -407,32 +536,32 @@ export class ContractService {
     const endpoints = getOrderedRpcEndpoints(this.chainId);
     if (endpoints.length === 0) return callback(this.provider);
 
-    let lastError: unknown = null;
-    for (const endpoint of endpoints) {
-      const readProvider = this.getReadProvider(endpoint);
+    // Try the preferred (already health-ranked) endpoint first.
+    const primary = endpoints[0];
+    try {
+      const result = await callback(this.getReadProvider(primary));
+      reportRpcEndpointSuccess(this.chainId, primary);
+      return result;
+    } catch (error) {
+      if (!isRetryableRpcError(error)) throw error;
+      reportRpcEndpointFailure(this.chainId, primary);
+    }
+
+    // Primary failed transiently — try remaining endpoints sequentially.
+    for (let i = 1; i < endpoints.length; i++) {
+      const endpoint = endpoints[i];
       try {
-        const result = await callback(readProvider);
+        const result = await callback(this.getReadProvider(endpoint));
         reportRpcEndpointSuccess(this.chainId, endpoint);
         return result;
       } catch (error) {
-        lastError = error;
-        if (isRetryableRpcError(error)) {
-          reportRpcEndpointFailure(this.chainId, endpoint);
-          continue;
-        }
-        throw error;
+        if (!isRetryableRpcError(error)) throw error;
+        reportRpcEndpointFailure(this.chainId, endpoint);
       }
     }
 
-    // Final fallback: the wallet-connected BrowserProvider may still be healthy
-    // even when public RPC endpoints are degraded or blocked.
-    try {
-      return await callback(this.provider);
-    } catch (providerError) {
-      if (!lastError) throw providerError;
-      if (!isRetryableRpcError(providerError)) throw providerError;
-      throw lastError;
-    }
+    // All read-only RPCs failed — fall back to the wallet's own provider.
+    return callback(this.provider);
   }
 
   private async withContractRead<T>(
@@ -1107,6 +1236,67 @@ export class ContractService {
     ]);
     this.invalidateCachePrefix('factory:');
     return tx;
+  }
+
+  /**
+   * Estimate gas/cost for creating a new ERC-1404 security token through the
+   * SecurityTokenFactory using resilient read-RPC fallback.
+   */
+  async estimateCreateSecurityTokenGas(
+    rulesBytecode: string,
+    swapBytecode: string,
+    name: string,
+    symbol: string,
+    decimals: number,
+    totalSupply: bigint,
+    maxTotalSupply: bigint,
+    documentHash: string,
+    documentType: string,
+    originalValue: bigint,
+    minTimelockAmount: bigint,
+    maxReleaseDelay: bigint,
+  ): Promise<SecurityTokenDeploymentGasEstimate> {
+    const signer = await this.getSigner();
+    const signerAddress = await signer.getAddress();
+    const factory = this.getSecurityTokenFactoryContract(signer);
+    const encodedHash = encodeDocumentHash(documentHash);
+
+    const args: unknown[] = [
+      rulesBytecode,
+      swapBytecode,
+      name,
+      symbol,
+      decimals,
+      totalSupply,
+      maxTotalSupply,
+      encodedHash,
+      documentType,
+      originalValue,
+      minTimelockAmount,
+      maxReleaseDelay,
+    ];
+
+    const gasUnits = await this.estimateGasWithFallback(
+      factory,
+      'createSecurityToken',
+      args,
+      signerAddress,
+    );
+
+    if (gasUnits === null) {
+      throw new Error(
+        'Unable to estimate gas right now because RPC endpoints are temporarily unavailable. Please retry in a moment.',
+      );
+    }
+
+    const feeData = await this.withReadProvider((provider) => provider.getFeeData());
+    const gasPriceWei = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;
+
+    return {
+      gasUnits,
+      gasPriceWei,
+      estimatedCostWei: gasUnits * gasPriceWei,
+    };
   }
 
   // -----------------------------------------------------------------------
@@ -1804,53 +1994,60 @@ export class ContractService {
     throw new Error('Unable to resolve contract target address');
   }
 
-  private async signAndBroadcastWithReadRpcFallback(
-    signer: ethers.Signer,
-    signerAddress: string,
-    txRequest: ethers.TransactionRequest,
-  ): Promise<ethers.ContractTransactionResponse> {
-    const [nonce, feeData] = await Promise.all([
-      this.withReadProvider((provider) =>
-        provider.getTransactionCount(signerAddress, 'pending'),
-      ),
-      this.withReadProvider((provider) => provider.getFeeData()),
+  private async isWalletProviderHealthy(): Promise<boolean> {
+    try {
+      await this.provider.getBlockNumber();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Best-effort wallet RPC recovery path.
+   *
+   * Some wallet network profiles can point to stale/broken RPC URLs, which
+   * surface as "Failed to fetch" on writes. Re-issuing
+   * `wallet_addEthereumChain` with current RPC metadata can recover these
+   * profiles for custom/test networks.
+   */
+  private async tryRecoverWalletRpcTransport(): Promise<boolean> {
+    const network = getNetworkMetadata(this.chainId);
+    if (!network) return false;
+
+    const rpcUrls = dedupeRpcUrls([
+      ...getWalletSwitchRpcUrls(this.chainId),
+      ...getOrderedRpcEndpoints(this.chainId),
+      network.rpcUrl,
     ]);
 
-    const signingRequest: ethers.TransactionRequest = {
-      ...txRequest,
-      chainId: this.chainId,
-      nonce,
+    if (rpcUrls.length === 0) return false;
+
+    const chainParams = {
+      chainId: ethers.toQuantity(this.chainId),
+      chainName: network.name,
+      nativeCurrency: network.nativeCurrency,
+      rpcUrls,
+      ...(network.blockExplorer
+        ? { blockExplorerUrls: [network.blockExplorer] }
+        : {}),
     };
 
-    const hasEip1559 =
-      feeData.maxFeePerGas !== null && feeData.maxPriorityFeePerGas !== null;
-    if (hasEip1559) {
-      signingRequest.type = 2;
-      signingRequest.maxFeePerGas =
-        signingRequest.maxFeePerGas ?? feeData.maxFeePerGas ?? undefined;
-      signingRequest.maxPriorityFeePerGas =
-        signingRequest.maxPriorityFeePerGas ??
-        feeData.maxPriorityFeePerGas ??
-        undefined;
-      delete signingRequest.gasPrice;
-    } else if (feeData.gasPrice !== null && signingRequest.gasPrice == null) {
-      signingRequest.gasPrice = feeData.gasPrice;
+    try {
+      await this.provider.send('wallet_addEthereumChain', [chainParams]);
+    } catch {
+      // Ignore: some wallets reject add for pre-installed chains.
     }
 
     try {
-      const tx = await signer.sendTransaction(signingRequest);
-      return tx as unknown as ethers.ContractTransactionResponse;
-    } catch (walletRetryError) {
-      if (!isRetryableRpcError(walletRetryError)) {
-        throw walletRetryError;
-      }
+      await this.provider.send('wallet_switchEthereumChain', [
+        { chainId: chainParams.chainId },
+      ]);
+    } catch {
+      // Ignore: wallet may already be on this chain.
     }
 
-    const signedRawTx = await signer.signTransaction(signingRequest);
-    const broadcastTx = await this.withReadProvider((provider) =>
-      provider.broadcastTransaction(signedRawTx),
-    );
-    return broadcastTx as unknown as ethers.ContractTransactionResponse;
+    return this.isWalletProviderHealthy();
   }
 
   private async estimateGasWithFallback(
@@ -1872,6 +2069,26 @@ export class ContractService {
     try {
       return await methodRef.estimateGas(...args, overrides ?? {});
     } catch (error) {
+      // If the error contains a Solidity revert reason (CALL_EXCEPTION),
+      // throw it immediately so the user gets the real error message
+      // (e.g. MintExceedsOriginalValue) instead of a misleading gas error.
+      if (isContractRevertError(error)) {
+        throw error;
+      }
+
+      // For "insufficient funds" during estimation: the RPC may be
+      // conflating a revert with a balance check, or the estimate may be
+      // legitimately too expensive. Return null to let the wallet handle
+      // its own estimation and give the user a chance to confirm/reject.
+      if (isInsufficientFundsError(error)) {
+        logger.warn(
+          `[estimateGas] ${method}: estimation returned INSUFFICIENT_FUNDS — ` +
+          'falling through to wallet-native estimation.',
+          error,
+        );
+        return null;
+      }
+
       if (!isRetryableRpcError(error)) {
         throw error;
       }
@@ -1889,6 +2106,17 @@ export class ContractService {
           }),
         );
       } catch (fallbackError) {
+        if (isContractRevertError(fallbackError)) {
+          throw fallbackError;
+        }
+        if (isInsufficientFundsError(fallbackError)) {
+          logger.warn(
+            `[estimateGas] ${method}: fallback estimation also returned ` +
+            'INSUFFICIENT_FUNDS — falling through to wallet.',
+            fallbackError,
+          );
+          return null;
+        }
         if (!isRetryableRpcError(fallbackError)) {
           throw fallbackError;
         }
@@ -1904,55 +2132,80 @@ export class ContractService {
     args: unknown[],
     overrides?: ethers.Overrides,
   ): Promise<ethers.ContractTransactionResponse> {
-    const methodRef = (contract as Record<string, unknown>)[method] as {
-      populateTransaction: (...params: unknown[]) => Promise<ethers.TransactionRequest>;
-    } | undefined;
-
-    if (!methodRef || typeof methodRef.populateTransaction !== 'function') {
+    const methodFn = contract.getFunction(method);
+    if (!methodFn) {
       throw new Error(`Contract method unavailable: ${method}`);
     }
 
-    try {
-      const signer = await this.getSigner();
-      const signerAddress = await signer.getAddress();
-      const populated = await methodRef.populateTransaction(...args, overrides ?? {});
-      const toAddress = (typeof populated.to === 'string' && populated.to) || this.resolveContractAddress(contract);
+    // Build the merged overrides. If the caller didn't supply a gasLimit,
+    // estimate gas using our own healthy read RPC endpoints (QuickNode etc.)
+    // BEFORE calling the contract method. This is critical because ethers'
+    // internal gas estimation goes through the wallet's RPC (thirdweb proxy),
+    // which may be rate-limited or unreachable. By pre-estimating and passing
+    // gasLimit as an override, the only wallet RPC call is eth_sendTransaction
+    // itself — which MetaMask handles natively and reliably.
+    const mergedOverrides: ethers.Overrides = { ...(overrides ?? {}) };
 
-      const gasEstimate = await this.estimateGasWithFallback(
-        contract,
-        method,
-        args,
-        signerAddress,
-        overrides,
-      );
-
-      const txRequest: ethers.TransactionRequest = {
-        ...populated,
-        ...(overrides ?? {}),
-        to: toAddress,
-      };
-
-      if (gasEstimate !== null) {
-        // 20% buffer: gasEstimate * 120 / 100
-        txRequest.gasLimit = (gasEstimate * 120n) / 100n;
-      }
-
+    if (mergedOverrides.gasLimit == null) {
       try {
-        const tx = await signer.sendTransaction(txRequest);
-        return tx as unknown as ethers.ContractTransactionResponse;
-      } catch (sendError) {
-        if (!isRetryableRpcError(sendError)) {
-          throw sendError;
-        }
-
-        return await this.signAndBroadcastWithReadRpcFallback(
-          signer,
+        const signerAddress = await (await this.getSigner()).getAddress();
+        const gasEstimate = await this.estimateGasWithFallback(
+          contract,
+          method,
+          args,
           signerAddress,
-          txRequest,
+          overrides,
         );
+        if (gasEstimate !== null) {
+          // 25% buffer for safety on complex deployments (e.g. factory mint)
+          mergedOverrides.gasLimit = (gasEstimate * 125n) / 100n;
+        }
+      } catch (estErr) {
+        // If estimation fails with a revert, surface the real error.
+        if (isContractRevertError(estErr)) {
+          const userMessage = parseContractError(estErr);
+          throw new Error(userMessage);
+        }
+        // For network/transport failures during estimation, continue without
+        // a gasLimit — the wallet will do its own estimation.
+        logger.warn(`[executeWrite] ${method}: gas estimation failed, proceeding without gasLimit`, estErr);
       }
+    }
+
+    try {
+      const tx: ethers.ContractTransactionResponse = await methodFn(
+        ...args,
+        mergedOverrides,
+      );
+      return tx;
     } catch (err: unknown) {
-      // Re-throw with a user-friendly message via parseContractError.
+      if (isUserRejection(err)) {
+        throw new Error('Transaction was rejected in your wallet.');
+      }
+
+      // Network failure — wait briefly then retry with a fresh signer.
+      // The delay helps if the failure was caused by rate limiting.
+      if (isRetryableRpcError(err)) {
+        logger.warn(`[executeWrite] ${method}: RPC failure on send, waiting 2s then retrying`, err);
+        try {
+          await new Promise((r) => setTimeout(r, 2000));
+          await this.tryRecoverWalletRpcTransport().catch(() => {});
+          const freshSigner = await this.getSigner();
+          const freshContract = contract.connect(freshSigner) as ethers.Contract;
+          const retryTx: ethers.ContractTransactionResponse = await freshContract.getFunction(method)(
+            ...args,
+            mergedOverrides,
+          );
+          return retryTx;
+        } catch (retryErr: unknown) {
+          if (isUserRejection(retryErr)) {
+            throw new Error('Transaction was rejected in your wallet.');
+          }
+          const userMessage = parseContractError(retryErr);
+          throw new Error(userMessage);
+        }
+      }
+
       const userMessage = parseContractError(err);
       throw new Error(userMessage);
     }

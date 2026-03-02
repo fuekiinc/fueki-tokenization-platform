@@ -34,6 +34,7 @@ import {
 } from '../../contracts/abis/SecurityToken';
 import { useWalletStore, getProvider } from '../../store/walletStore';
 import { parseContractError } from '../../lib/blockchain/contracts';
+import { getExplorerTxUrl } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import Card from '../Common/Card';
 import Badge from '../Common/Badge';
@@ -440,6 +441,10 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
         return;
       }
 
+      if (!sellAmount || isNaN(Number(sellAmount)) || Number(sellAmount) <= 0) {
+        toast.error('Enter a valid sell amount');
+        return;
+      }
       const restrictedAmount = ethers.parseUnits(
         sellAmount,
         tokenDecimals,
@@ -1627,7 +1632,9 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
                       </td>
                       <td className="py-3">
                         <a
-                          href={`#tx-${event.txHash}`}
+                          href={getExplorerTxUrl(useWalletStore.getState().wallet.chainId ?? 1, event.txHash) || `#tx-${event.txHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           title={event.txHash}
                           className="text-indigo-400 hover:text-indigo-300 transition-colors"
                         >

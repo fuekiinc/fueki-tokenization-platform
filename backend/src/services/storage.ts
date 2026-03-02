@@ -35,7 +35,12 @@ export async function saveEncryptedDocument(
   headerLength.writeUInt32BE(header.length);
   const payload = Buffer.concat([headerLength, header, encrypted]);
 
-  const fileName = `${Date.now()}-${file.originalname}.enc`;
+  // Sanitize filename: strip path traversal chars, limit length, use safe characters only.
+  const safeName = file.originalname
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/\.{2,}/g, '.')
+    .slice(0, 100);
+  const fileName = `${Date.now()}-${safeName}.enc`;
   const objectPath = `kyc-documents/${userId}/${fileName}`;
 
   if (useGCS && gcsStorage) {

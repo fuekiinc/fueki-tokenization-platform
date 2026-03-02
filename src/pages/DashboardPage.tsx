@@ -22,6 +22,7 @@ import { isRetryableRpcError } from '../lib/rpc/endpoints';
 import { retryAsync } from '../lib/utils/retry';
 import { copyToClipboard, formatAddress } from '../lib/utils/helpers';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
+import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 
 // Dashboard sub-components
 import StatsGrid from '../components/Dashboard/StatsGrid';
@@ -96,6 +97,10 @@ function getNetworkName(chainId: number | null): string {
 export default function DashboardPage() {
   const { isConnected, address, isSwitchingNetwork } = useWallet();
   const user = useAuthStore((s) => s.user);
+  const isDemoActive = user?.demoActive === true;
+  const demoWalletSettingUp = useDemoWalletStore((s) => s.isSettingUp);
+  const demoWalletError = useDemoWalletStore((s) => s.setupError);
+  const demoWalletReady = useDemoWalletStore((s) => s.isReady);
   const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
   const tradeHistory = useTradeStore((s) => s.tradeHistory);
   const userOrders = useExchangeStore((s) => s.userOrders);
@@ -154,7 +159,11 @@ export default function DashboardPage() {
       return;
     }
 
-    // Fetch assets
+    // Fetch assets — gather addresses from three sources:
+    //   1. Assets the user created (factory.getUserAssets)
+    //   2. ALL platform assets (factory.getAssetAtIndex) so we catch assets
+    //      the user holds but didn't create (received via transfer/exchange)
+    //   3. Previously known addresses still in the store (continuity)
     const gen = nextAssetFetchGeneration();
     setLoadingAssets(true);
     try {
@@ -171,6 +180,7 @@ export default function DashboardPage() {
       if (totalAssetCount === 0n) {
         setAssets([]);
       } else {
+        // Source 1: assets the connected wallet created
         let userAssetAddresses: string[] = [];
         try {
           userAssetAddresses = await retryAsync(
@@ -183,15 +193,42 @@ export default function DashboardPage() {
             },
           );
         } catch (error) {
-          showError(error, 'Unable to fetch your token list');
+          logger.warn('Unable to fetch user-created asset list:', error);
         }
-        if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
+        if (gen !== getAssetFetchGeneration()) return;
 
+        // Source 2: all platform assets (iterate factory index)
+        // Fetch in small sequential batches to avoid RPC rate limiting.
+        let allPlatformAddresses: string[] = [];
+        try {
+          const count = Number(totalAssetCount);
+          const maxScan = Math.min(count, 100);
+          const BATCH_SIZE = 5;
+          for (let start = 0; start < maxScan; start += BATCH_SIZE) {
+            if (gen !== getAssetFetchGeneration()) return;
+            const end = Math.min(start + BATCH_SIZE, maxScan);
+            const batch = [];
+            for (let i = start; i < end; i++) {
+              batch.push(service.getAssetAtIndex(i).catch(() => null));
+            }
+            const results = await Promise.all(batch);
+            for (const r of results) {
+              if (r) allPlatformAddresses.push(r);
+            }
+          }
+        } catch (error) {
+          logger.warn('Unable to enumerate platform assets:', error);
+        }
+        if (gen !== getAssetFetchGeneration()) return;
+
+        // Merge all address sources and deduplicate
         const knownAddresses = new Set<string>([
           ...userAssetAddresses,
+          ...allPlatformAddresses,
           ...wrappedAssetsRef.current.map((a) => a.address),
         ]);
 
+        // Fetch details + user balance for each asset in parallel
         const assetList: import('../types').WrappedAsset[] = [];
         await Promise.all(
           Array.from(knownAddresses).map(async (addr) => {
@@ -223,7 +260,6 @@ export default function DashboardPage() {
       if (classified.category === 'network') {
         logger.warn('Dashboard asset load degraded by network/RPC issue', error);
         if (wrappedAssetsRef.current.length === 0) {
-          // Degrade gracefully: do not hard-fail dashboard for transient RPC outages.
           setAssets([]);
         }
       } else {
@@ -282,64 +318,115 @@ export default function DashboardPage() {
       logger.warn('Unable to load exchange orders:', error);
     }
 
-    // Fetch trade history from on-chain events (user-scoped filters)
+    // Fetch trade history from on-chain events
+    // We query three event sources:
+    //   1. AssetCreated events from the factory (mint history)
+    //   2. OrderFilled events where user is the taker
+    //   3. OrderFilled events for orders the user created (maker fills)
     try {
-      const exchange = service.getAssetBackedExchangeContract();
-      const addr = address.toLowerCase();
-
-      // Get OrderFilled events where user is the taker
-      const takerFilter = exchange.filters.OrderFilled(null, address);
-      const takerFillEvents = await exchange.queryFilter(takerFilter);
-
-      // Get OrderCreated events where user is the maker (to detect their filled orders)
-      const makerFilter = exchange.filters.OrderCreated(null, address);
-      const makerEvents = await exchange.queryFilter(makerFilter);
-      const makerOrderIds = new Set(
-        makerEvents.map((e) => ((e as ethers.EventLog).args[0] as bigint).toString()),
-      );
-
-      // Get OrderFilled events for the user's maker orders
-      const allFillEvents = makerOrderIds.size > 0
-        ? await exchange.queryFilter(exchange.filters.OrderFilled())
-        : [];
-      const makerFillEvents = allFillEvents.filter((e) =>
-        makerOrderIds.has(((e as ethers.EventLog).args[0] as bigint).toString()),
-      );
-
-      // Deduplicate and build trades
       const trades: import('../types').TradeHistory[] = [];
       const seenTx = new Set<string>();
+      const addr = address.toLowerCase();
 
-      for (const evt of [...takerFillEvents, ...makerFillEvents]) {
-        const log = evt as ethers.EventLog;
-        const txKey = `${log.transactionHash}-${log.index}`;
-        if (seenTx.has(txKey)) continue;
-        seenTx.add(txKey);
+      // 1. Mint history — query AssetCreated events from the factory
+      try {
+        const factory = service.getFactoryContract();
+        const mintFilter = factory.filters.AssetCreated(address);
+        const mintEvents = await factory.queryFilter(mintFilter);
 
-        const orderId = log.args[0] as bigint;
-        const taker = (log.args[1] as string).toLowerCase();
-        const fillSell = log.args[2] as bigint;
-        const fillBuy = log.args[3] as bigint;
-        const isTaker = taker === addr;
+        for (const evt of mintEvents) {
+          const log = evt as ethers.EventLog;
+          const txKey = `mint-${log.transactionHash}-${log.index}`;
+          if (seenTx.has(txKey)) continue;
+          seenTx.add(txKey);
 
-        const block = await log.getBlock();
-        // Use milliseconds to match Date.now() convention in the rest of the app
-        const timestampMs = block ? block.timestamp * 1000 : Date.now();
-        trades.push({
-          id: `fill-${txKey}`,
-          type: 'exchange',
-          asset: `Order #${orderId.toString()}`,
-          assetSymbol: isTaker ? 'FILL' : 'SOLD',
-          amount: ethers.formatUnits(isTaker ? fillBuy : fillSell, 18),
-          txHash: log.transactionHash,
-          timestamp: timestampMs,
-          from: isTaker ? taker : addr,
-          to: isTaker ? addr : taker,
-          status: 'confirmed',
-        });
+          const assetAddr = log.args[1] as string;
+          // Try to resolve asset name from already-loaded assets
+          const knownAsset = wrappedAssetsRef.current.find(
+            (a) => a.address.toLowerCase() === assetAddr.toLowerCase(),
+          );
+
+          let timestampMs = Date.now();
+          try {
+            const block = await log.getBlock();
+            if (block) timestampMs = block.timestamp * 1000;
+          } catch { /* use current time as fallback */ }
+
+          trades.push({
+            id: txKey,
+            type: 'mint',
+            asset: knownAsset?.name ?? assetAddr.slice(0, 10),
+            assetSymbol: knownAsset?.symbol ?? 'TOKEN',
+            amount: knownAsset?.totalSupply
+              ? ethers.formatUnits(knownAsset.totalSupply, 18)
+              : '0',
+            txHash: log.transactionHash,
+            timestamp: timestampMs,
+            from: ethers.ZeroAddress,
+            to: address,
+            status: 'confirmed',
+          });
+        }
+      } catch (error) {
+        logger.warn('Unable to load mint history:', error);
       }
 
-      // Merge with existing trade history (mints, burns, etc.) via ref to avoid dep cycle
+      // 2 & 3. Exchange trade history (fills as taker and maker)
+      try {
+        const exchange = service.getAssetBackedExchangeContract();
+
+        const takerFilter = exchange.filters.OrderFilled(null, address);
+        const takerFillEvents = await exchange.queryFilter(takerFilter);
+
+        const makerFilter = exchange.filters.OrderCreated(null, address);
+        const makerEvents = await exchange.queryFilter(makerFilter);
+        const makerOrderIds = new Set(
+          makerEvents.map((e) => ((e as ethers.EventLog).args[0] as bigint).toString()),
+        );
+
+        const allFillEvents = makerOrderIds.size > 0
+          ? await exchange.queryFilter(exchange.filters.OrderFilled())
+          : [];
+        const makerFillEvents = allFillEvents.filter((e) =>
+          makerOrderIds.has(((e as ethers.EventLog).args[0] as bigint).toString()),
+        );
+
+        for (const evt of [...takerFillEvents, ...makerFillEvents]) {
+          const log = evt as ethers.EventLog;
+          const txKey = `${log.transactionHash}-${log.index}`;
+          if (seenTx.has(txKey)) continue;
+          seenTx.add(txKey);
+
+          const orderId = log.args[0] as bigint;
+          const taker = (log.args[1] as string).toLowerCase();
+          const fillSell = log.args[2] as bigint;
+          const fillBuy = log.args[3] as bigint;
+          const isTaker = taker === addr;
+
+          let timestampMs = Date.now();
+          try {
+            const block = await log.getBlock();
+            if (block) timestampMs = block.timestamp * 1000;
+          } catch { /* use current time as fallback */ }
+
+          trades.push({
+            id: `fill-${txKey}`,
+            type: 'exchange',
+            asset: `Order #${orderId.toString()}`,
+            assetSymbol: isTaker ? 'FILL' : 'SOLD',
+            amount: ethers.formatUnits(isTaker ? fillBuy : fillSell, 18),
+            txHash: log.transactionHash,
+            timestamp: timestampMs,
+            from: isTaker ? taker : addr,
+            to: isTaker ? addr : taker,
+            status: 'confirmed',
+          });
+        }
+      } catch (error) {
+        logger.warn('Unable to load exchange trade history:', error);
+      }
+
+      // Merge with existing in-memory trade history
       const existing = tradeHistoryRef.current;
       const existingIds = new Set(existing.map((t) => t.id));
       const merged = [...existing];
@@ -349,7 +436,6 @@ export default function DashboardPage() {
       merged.sort((a, b) => b.timestamp - a.timestamp);
       setTrades(merged);
     } catch (error) {
-      // Non-critical: trade history is supplementary on the dashboard
       logger.warn('Unable to load trade history:', error);
     }
 
@@ -369,6 +455,37 @@ export default function DashboardPage() {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  // In demo mode, re-trigger data fetch once the demo wallet is ready.
+  // The initial fetchData call may have short-circuited because the demo
+  // wallet hadn't finished async setup yet.
+  useEffect(() => {
+    if (isDemoActive && demoWalletReady && isConnected && providerReady) {
+      void fetchData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemoActive, demoWalletReady]);
+
+  // ---- Demo mode: wallet still initialising --------------------------------
+
+  if (isDemoActive && !isConnected) {
+    // Demo wallet is setting up asynchronously; show skeleton instead of the
+    // "not connected" hero page so users don't get confused.
+    if (demoWalletSettingUp || (!demoWalletReady && !demoWalletError)) {
+      return <DashboardSkeleton />;
+    }
+    // Demo wallet setup failed -- show an actionable error.
+    if (demoWalletError) {
+      return (
+        <div className="w-full pt-12">
+          <ErrorState
+            message={`Demo wallet could not be activated: ${demoWalletError}`}
+            onRetry={() => window.location.reload()}
+          />
+        </div>
+      );
+    }
+  }
 
   // ---- Not connected state -------------------------------------------------
 

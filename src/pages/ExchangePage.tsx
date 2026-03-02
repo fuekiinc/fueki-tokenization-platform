@@ -12,11 +12,13 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { ethers } from 'ethers';
 import { useWallet } from '../hooks/useWallet';
+import { useAuthStore } from '../store/authStore';
+import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 import { useWalletStore, getProvider } from '../store/walletStore.ts';
 import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
 import { ContractService } from '../lib/blockchain/contracts';
@@ -127,6 +129,9 @@ export default function ExchangePage() {
     switchNetwork,
   } = useWallet();
   const wallet = useWalletStore((s) => s.wallet);
+  const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
+  const demoWalletSettingUp = useDemoWalletStore((s) => s.isSettingUp);
+  const demoWalletReady = useDemoWalletStore((s) => s.isReady);
   const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
   const setAssets = useAssetStore((s) => s.setAssets);
   const setLoadingAssets = useAssetStore((s) => s.setLoadingAssets);
@@ -226,14 +231,36 @@ export default function ExchangePage() {
         );
       } catch (err) {
         logger.error('Failed to fetch user assets:', err);
-        toast.error('Unable to load your token list. Some tokens may be missing.');
       }
       if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
 
-      // Build a unique set of known asset addresses.
-      // Read from the ref to avoid the dependency cycle.
+      // Also enumerate ALL platform assets via the factory index so we
+      // include assets the user holds but didn't create themselves.
+      let allPlatformAddresses: string[] = [];
+      try {
+        const count = Math.min(Number(totalAssets), 100);
+        const BATCH = 5;
+        for (let s = 0; s < count; s += BATCH) {
+          if (gen !== getAssetFetchGeneration()) return;
+          const end = Math.min(s + BATCH, count);
+          const batch = [];
+          for (let i = s; i < end; i++) {
+            batch.push(contractService.getAssetAtIndex(i).catch(() => null));
+          }
+          const results = await Promise.all(batch);
+          for (const r of results) {
+            if (r) allPlatformAddresses.push(r);
+          }
+        }
+      } catch (err) {
+        logger.warn('Exchange: unable to enumerate all platform assets:', err);
+      }
+      if (gen !== getAssetFetchGeneration()) return;
+
+      // Merge all address sources and deduplicate
       const knownAddresses = new Set<string>([
         ...userAssetAddresses,
+        ...allPlatformAddresses,
         ...wrappedAssetsRef.current.map((a) => a.address),
       ]);
 
@@ -370,6 +397,21 @@ export default function ExchangePage() {
       setTimeout(() => setIsRefreshing(false), 600);
     });
   }, [fetchAssets]);
+
+  // =========================================================================
+  // Render: demo wallet loading
+  // =========================================================================
+
+  if (isDemoActive && !isConnected && (demoWalletSettingUp || !demoWalletReady)) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+          <p className="text-sm text-gray-400">Setting up demo wallet…</p>
+        </div>
+      </div>
+    );
+  }
 
   // =========================================================================
   // Render: not connected
@@ -512,6 +554,13 @@ export default function ExchangePage() {
             <p className="text-sm text-gray-500 pl-0.5">
               Trade wrapped assets with on-chain limit orders
             </p>
+            <Link
+              to="/exchange/guide"
+              className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-indigo-400/80 transition-colors hover:text-indigo-300 pl-0.5"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              Not sure how this works? Read the guide
+            </Link>
           </div>
 
           {/* Right: pair selectors + refresh + network badge */}

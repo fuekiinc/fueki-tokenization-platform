@@ -630,11 +630,12 @@ function LogoutButton({ compact = false }: { compact?: boolean }) {
   const handleLogout = async () => {
     try {
       await logout();
-      navigate('/login');
     } catch (err) {
       logger.error('[LogoutButton] logout failed:', err);
-      // Force navigate to login even if the API call fails so the
-      // user is not stuck in an authenticated-but-broken state.
+    } finally {
+      // Clear all client-side stores regardless of API success to prevent
+      // stale data from leaking to a subsequent login on the same tab.
+      useWalletStore.getState().resetWallet();
       navigate('/login');
     }
   };
@@ -666,11 +667,13 @@ export default function Navbar() {
   const user = useAuthStore((s) => s.user);
 
   const navItems = useMemo(() => {
+    // Demo users get full navigation
+    if (user?.demoActive) return NAV_ITEMS;
     if (isContractDeploymentOnlyPlan(user?.subscriptionPlan)) {
       return NAV_ITEMS.filter((item) => item.to === '/contracts');
     }
     return NAV_ITEMS;
-  }, [user?.subscriptionPlan]);
+  }, [user?.subscriptionPlan, user?.demoActive]);
 
   // Close mobile menu on Escape
   useEffect(() => {
@@ -746,6 +749,14 @@ export default function Navbar() {
 
             {/* ---- Right: Network Badge + Theme + Wallet + Hamburger ---- */}
             <div className="flex items-center gap-3">
+              {/* Demo mode badge */}
+              {user?.demoActive && (
+                <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-amber-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  Demo Mode
+                </div>
+              )}
+
               <NetworkBadge />
 
               {/* Theme toggle */}

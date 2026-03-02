@@ -28,7 +28,11 @@ const resetPasswordSchema = z
     newPassword: z
       .string()
       .min(1, 'Password is required')
-      .min(8, 'Password must be at least 8 characters'),
+      .min(8, 'Password must be at least 8 characters')
+      .regex(/[A-Z]/, 'Must contain at least one uppercase letter')
+      .regex(/[a-z]/, 'Must contain at least one lowercase letter')
+      .regex(/[0-9]/, 'Must contain at least one digit')
+      .regex(/[^A-Za-z0-9]/, 'Must contain at least one special character'),
     confirmPassword: z.string().min(1, 'Please confirm your password'),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
@@ -64,11 +68,18 @@ export default function ResetPasswordPage() {
     try {
       await resetPassword(token, values.newPassword);
       setSucceeded(true);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'Failed to reset password. The link may be invalid or expired.';
+    } catch (err: unknown) {
+      let message = 'Failed to reset password. The link may be invalid or expired.';
+      if (
+        err !== null &&
+        typeof err === 'object' &&
+        'response' in err
+      ) {
+        const axiosErr = err as { response?: { data?: { error?: { message?: string } } } };
+        message = axiosErr.response?.data?.error?.message ?? message;
+      } else if (err instanceof Error) {
+        message = err.message;
+      }
       toast.error(message);
     }
   };

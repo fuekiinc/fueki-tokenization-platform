@@ -10,9 +10,17 @@ import SupportWidget from './components/Support/SupportWidget'
 // Auto-reload on stale chunk after deploy (avoids "Failed to fetch dynamically imported module")
 function lazyWithRetry(factory: () => Promise<{ default: React.ComponentType }>) {
   return lazy(() =>
-    factory().catch(() => {
-      window.location.reload();
-      return new Promise(() => {}); // never resolves; page is reloading
+    factory().catch((err) => {
+      // Prevent infinite reload loop: track retry count in sessionStorage.
+      const retryKey = 'fueki:lazy-retry';
+      const retries = Number(sessionStorage.getItem(retryKey) || '0');
+      if (retries < 2) {
+        sessionStorage.setItem(retryKey, String(retries + 1));
+        window.location.reload();
+        return new Promise(() => {}); // never resolves; page is reloading
+      }
+      sessionStorage.removeItem(retryKey);
+      throw err; // let ErrorBoundary handle it after max retries
     })
   );
 }
@@ -34,6 +42,8 @@ const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'))
 const ExplorePage = lazyWithRetry(() => import('./pages/ExplorePage'))
 const SecurityTokenPage = lazyWithRetry(() => import('./pages/SecurityTokenPage'))
 const DeployTokenPage = lazyWithRetry(() => import('./pages/DeployTokenPage'))
+const ExchangeGuidePage = lazyWithRetry(() => import('./pages/ExchangeGuidePage'))
+const OrbitalAMMGuidePage = lazyWithRetry(() => import('./pages/OrbitalAMMGuidePage'))
 const TermsPage = lazyWithRetry(() => import('./pages/TermsPage'))
 const PrivacyPage = lazyWithRetry(() => import('./pages/PrivacyPage'))
 const ContractBrowserPage = lazyWithRetry(() => import('./pages/ContractBrowserPage'))
@@ -50,7 +60,9 @@ const PAGE_TITLES: Record<string, string> = {
   '/mint': 'Mint Assets',
   '/portfolio': 'Portfolio',
   '/exchange': 'Exchange',
+  '/exchange/guide': 'Exchange Guide',
   '/advanced': 'Advanced AMM',
+  '/advanced/guide': 'Orbital AMM Guide',
   '/settings': 'Settings',
   '/admin': 'Admin',
   '/login': 'Sign In',
@@ -166,7 +178,9 @@ export default function App() {
             <Route path="mint" element={<Suspense fallback={<PageLoader />}><MintPage /></Suspense>} />
             <Route path="portfolio" element={<Suspense fallback={<PageLoader />}><PortfolioPage /></Suspense>} />
             <Route path="exchange" element={<Suspense fallback={<PageLoader />}><ExchangePage /></Suspense>} />
+            <Route path="exchange/guide" element={<Suspense fallback={<PageLoader />}><ExchangeGuidePage /></Suspense>} />
             <Route path="advanced" element={<Suspense fallback={<PageLoader />}><OrbitalAMMPage /></Suspense>} />
+            <Route path="advanced/guide" element={<Suspense fallback={<PageLoader />}><OrbitalAMMGuidePage /></Suspense>} />
             <Route path="security-tokens" element={<Suspense fallback={<PageLoader />}><SecurityTokenPage /></Suspense>} />
             <Route path="security-tokens/deploy" element={<Suspense fallback={<PageLoader />}><DeployTokenPage /></Suspense>} />
             <Route path="contracts" element={<Suspense fallback={<PageLoader />}><ContractBrowserPage /></Suspense>} />

@@ -15,6 +15,8 @@ model User {
   role          String   @default("user") // "user" | "admin" | "super_admin"
   kycStatus     String   @default("not_submitted") // not_submitted, pending, approved, rejected
   helpLevel     String   @default("novice") // novice | intermediate | expert
+  demoUsed      Boolean  @default(false)
+  demoActive    Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -22,6 +24,7 @@ model User {
   sessions             Session[]
   passwordResetTokens  PasswordResetToken[]
   mintApprovalRequests MintApprovalRequest[]
+  securityTokenApprovalRequests SecurityTokenApprovalRequest[]
   deployedContracts   DeployedContract[]
 
   @@index([email])
@@ -130,6 +133,54 @@ model MintApprovalActionToken {
   id         String   @id @default(uuid())
   requestId  String
   request    MintApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  action     String   // approve, reject
+  token      String   @unique
+  used       Boolean  @default(false)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([token])
+  @@index([requestId])
+}
+
+model SecurityTokenApprovalRequest {
+  id                 String   @id @default(uuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requesterEmail     String
+  chainId            Int
+  tokenName          String
+  tokenSymbol        String
+  decimals           Int
+  totalSupply        String
+  maxTotalSupply     String
+  minTimelockAmount  String
+  maxReleaseDelayDays Int
+  originalValue      String
+  documentHash       String
+  documentType       String
+  hashSource         String   // file, manual
+  fileName           String?
+  fileMimeType       String?
+  requestFingerprint String
+  status             String   @default("pending") // pending, approved, rejected
+  reviewNotes        String?
+  reviewedAt         DateTime?
+  approvedBy         String?
+  submittedAt        DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  actionTokens       SecurityTokenApprovalActionToken[]
+
+  @@index([userId, requestFingerprint])
+  @@index([status])
+  @@index([documentHash])
+}
+
+model SecurityTokenApprovalActionToken {
+  id         String   @id @default(uuid())
+  requestId  String
+  request    SecurityTokenApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   action     String   // approve, reject
   token      String   @unique
   used       Boolean  @default(false)

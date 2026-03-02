@@ -54,6 +54,7 @@ export default function PoolInfo({
   const [pool, setPool] = useState<Pool | null>(null);
   const [lpBalance, setLpBalance] = useState<bigint>(0n);
   const [loading, setLoading] = useState(false);
+  const [autoRefreshCounter, setAutoRefreshCounter] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ---- Token name resolver ------------------------------------------------
@@ -110,7 +111,7 @@ export default function PoolInfo({
 
     void load();
     return () => { cancelled = true; };
-  }, [contractService, tokenA, tokenB, userAddress, refreshKey]);
+  }, [contractService, tokenA, tokenB, userAddress, refreshKey, autoRefreshCounter]);
 
   // ---- Auto-refresh every 15s ---------------------------------------------
 
@@ -118,12 +119,9 @@ export default function PoolInfo({
     if (!contractService || !tokenA || !tokenB) return;
 
     intervalRef.current = setInterval(() => {
-      // Re-trigger by updating state (the effect above reacts to refreshKey
-      // but for the auto-refresh we just re-run the fetch)
-      setLoading((prev) => {
-        // Force a re-render to trigger the fetch effect
-        return prev;
-      });
+      // Increment a counter that is included in the fetch effect's dependency
+      // array (via refreshKey). This forces a genuine re-fetch every 15 seconds.
+      setAutoRefreshCounter((c) => c + 1);
     }, 15000);
 
     return () => {

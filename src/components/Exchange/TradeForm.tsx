@@ -628,8 +628,12 @@ export default function TradeForm({
     setTxStatus('creating');
     setTxHash(null);
 
-    // Calculate min output with slippage
-    const minOut = ammQuote - (ammQuote * BigInt(Math.round(slippage * 10)) / 1000n);
+    // Calculate min output with slippage (basis points for exact precision)
+    const slippageBps = BigInt(Math.round(slippage * 100));
+    const minOut = ammQuote - (ammQuote * slippageBps) / 10000n;
+
+    // Deadline: 20 minutes from now (matches ContractService._defaultDeadline)
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
 
     const swapChainId = chainId;
     let submittedSwapHash: string | null = null;
@@ -638,11 +642,11 @@ export default function TradeForm({
       let tx: ethers.ContractTransactionResponse;
 
       if (sellIsETH) {
-        tx = await contractService.swapETHForToken(buyToken, minOut, parsedSellAmount);
+        tx = await contractService.swapETHForToken(buyToken, minOut, parsedSellAmount, deadline);
       } else if (buyIsETH) {
-        tx = await contractService.swapTokenForETH(sellToken, parsedSellAmount, minOut);
+        tx = await contractService.swapTokenForETH(sellToken, parsedSellAmount, minOut, deadline);
       } else {
-        tx = await contractService.swapAMM(sellToken, buyToken, parsedSellAmount, minOut);
+        tx = await contractService.swapAMM(sellToken, buyToken, parsedSellAmount, minOut, deadline);
       }
 
       submittedSwapHash = tx.hash;

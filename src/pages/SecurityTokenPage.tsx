@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { SecurityTokenABI } from '../contracts/abis/SecurityToken';
 import { useWalletStore, getProvider } from '../store/walletStore';
+import { useAuthStore } from '../store/authStore';
+import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 import { formatWeiAmount, truncateAddress } from '../lib/formatters';
 import { retryAsync } from '../lib/utils/retry';
 import Spinner from '../components/Common/Spinner';
@@ -90,6 +92,9 @@ export default function SecurityTokenPage() {
   const [statsLoading, setStatsLoading] = useState(false);
 
   const isConnected = useWalletStore((s) => s.wallet.isConnected);
+  const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
+  const demoWalletSettingUp = useDemoWalletStore((s) => s.isSettingUp);
+  const demoWalletReady = useDemoWalletStore((s) => s.isReady);
 
   // -----------------------------------------------------------------------
   // Fetch quick stats for header
@@ -136,6 +141,21 @@ export default function SecurityTokenPage() {
   useEffect(() => {
     void fetchQuickStats();
   }, [fetchQuickStats]);
+
+  // -----------------------------------------------------------------------
+  // Demo wallet loading
+  // -----------------------------------------------------------------------
+
+  if (isDemoActive && !isConnected && (demoWalletSettingUp || !demoWalletReady)) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+          <p className="text-sm text-gray-400">Setting up demo wallet…</p>
+        </div>
+      </div>
+    );
+  }
 
   // -----------------------------------------------------------------------
   // Not connected

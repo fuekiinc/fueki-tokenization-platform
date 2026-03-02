@@ -64,7 +64,13 @@ const helpLevelSchema = z.enum(['novice', 'intermediate', 'expert']);
 
 const registerSchema = z.object({
   email: z.string().email('Invalid email'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one digit')
+    .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character'),
   helpLevel: helpLevelSchema.optional().default('novice'),
 });
 
@@ -86,22 +92,47 @@ function mapUserResponse(
     walletAddress: string | null;
     kycStatus: string;
     helpLevel: string;
+    demoUsed: boolean;
+    demoActive: boolean;
     createdAt: Date;
     updatedAt: Date;
     kycData?: { subscriptionPlan: string | null } | null;
   },
 ) {
+  const normalizedKycStatus = normalizeKycStatus(user.kycStatus);
   return {
     id: user.id,
     email: user.email,
     role: user.role,
     walletAddress: user.walletAddress,
-    kycStatus: user.kycStatus,
+    kycStatus: normalizedKycStatus,
     helpLevel: user.helpLevel,
     subscriptionPlan: user.kycData?.subscriptionPlan ?? null,
+    demoUsed: user.demoUsed,
+    demoActive: user.demoActive,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
   };
+}
+
+function normalizeKycStatus(raw: string): 'not_submitted' | 'pending' | 'approved' | 'rejected' {
+  const value = raw.trim().toLowerCase();
+  if (
+    value === 'not_submitted' ||
+    value === 'pending' ||
+    value === 'approved' ||
+    value === 'rejected'
+  ) {
+    return value;
+  }
+  if (value.includes('approve')) return 'approved';
+  if (value.includes('verif')) return 'approved';
+  if (value.includes('complete')) return 'approved';
+  if (value.includes('active')) return 'approved';
+  if (value.includes('reject')) return 'rejected';
+  if (value.includes('pend')) return 'pending';
+  if (value.includes('submit')) return 'not_submitted';
+  return 'not_submitted';
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +141,9 @@ function mapUserResponse(
 
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, helpLevel } = registerSchema.parse(req.body);
+    const parsed = registerSchema.parse(req.body);
+    const email = parsed.email.toLowerCase().trim();
+    const { password, helpLevel } = parsed;
 
     // Check if user exists
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -154,7 +187,9 @@ router.post('/register', async (req, res) => {
 
 router.post('/login', async (req, res) => {
   try {
-    const { email, password, rememberMe } = loginSchema.parse(req.body);
+    const parsed = loginSchema.parse(req.body);
+    const email = parsed.email.toLowerCase().trim();
+    const { password, rememberMe } = parsed;
 
     const user = await prisma.user.findUnique({
       where: { email },
@@ -205,6 +240,15 @@ router.post('/login', async (req, res) => {
 
 router.post('/logout', authenticate, async (req, res) => {
   try {
+    // If user is in demo mode, end it: mark demoUsed=true, demoActive=false
+    const currentUser = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (currentUser?.demoActive) {
+      await prisma.user.update({
+        where: { id: req.userId },
+        data: { demoActive: false, demoUsed: true },
+      });
+    }
+
     // Read refresh token from httpOnly cookie (preferred) or body (legacy)
     const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME] || req.body.refreshToken;
     if (refreshToken) {
@@ -376,7 +420,13 @@ router.post('/forgot-password', async (req, res) => {
 
 const resetPasswordSchema = z.object({
   token: z.string().min(1, 'Token is required'),
-  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  newPassword: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one digit')
+    .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character'),
 });
 
 router.post('/reset-password', async (req, res) => {
@@ -420,6 +470,147 @@ router.post('/reset-password', async (req, res) => {
       return;
     }
     console.error('Reset password error:', err);
+    res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/auth/change-password
+// ---------------------------------------------------------------------------
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one digit')
+    .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character'),
+});
+
+router.put('/change-password', authenticate, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
+
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) {
+      res.status(404).json({ error: { message: 'User not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    const valid = await verifyPassword(currentPassword, user.passwordHash);
+    if (!valid) {
+      res.status(401).json({ error: { message: 'Current password is incorrect', code: 'INVALID_CREDENTIALS' } });
+      return;
+    }
+
+    const passwordHash = await hashPassword(newPassword);
+    await prisma.user.update({
+      where: { id: req.userId },
+      data: { passwordHash },
+    });
+
+    // Invalidate all other sessions (keep the current one would require
+    // knowing which refresh token belongs to this session, so invalidate
+    // all and let the client re-authenticate with the new password).
+    await invalidateAllSessions(req.userId!);
+    clearRefreshCookie(res);
+
+    res.json({ success: true, message: 'Password changed successfully. Please sign in again.' });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: { message: err.errors[0].message, code: 'VALIDATION_ERROR' } });
+      return;
+    }
+    console.error('Change password error:', err);
+    res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/logout-all
+// ---------------------------------------------------------------------------
+
+router.post('/logout-all', authenticate, async (req, res) => {
+  try {
+    await invalidateAllSessions(req.userId!);
+    clearRefreshCookie(res);
+    res.json({ success: true, message: 'All sessions have been invalidated.' });
+  } catch (err) {
+    console.error('Logout all error:', err);
+    res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/demo/start
+// ---------------------------------------------------------------------------
+
+router.post('/demo/start', authenticate, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) {
+      res.status(404).json({ error: { message: 'User not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    const kycStatus = normalizeKycStatus(user.kycStatus);
+
+    if (kycStatus !== 'pending') {
+      res.status(400).json({ error: { message: 'Demo mode is only available for users with pending KYC', code: 'DEMO_NOT_ELIGIBLE' } });
+      return;
+    }
+
+    if (user.demoUsed) {
+      res.status(400).json({ error: { message: 'Demo mode has already been used. It is a one-time preview.', code: 'DEMO_ALREADY_USED' } });
+      return;
+    }
+
+    if (user.demoActive) {
+      res.status(400).json({ error: { message: 'Demo mode is already active', code: 'DEMO_ALREADY_ACTIVE' } });
+      return;
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.userId },
+      data: { demoActive: true },
+      include: { kycData: { select: { subscriptionPlan: true } } },
+    });
+
+    res.json({ user: mapUserResponse(updatedUser) });
+  } catch (err) {
+    console.error('Demo start error:', err);
+    res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/demo/end
+// ---------------------------------------------------------------------------
+
+router.post('/demo/end', authenticate, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) {
+      res.status(404).json({ error: { message: 'User not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    if (!user.demoActive) {
+      res.json({ success: true, message: 'Demo was not active' });
+      return;
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.userId },
+      data: { demoActive: false, demoUsed: true },
+      include: { kycData: { select: { subscriptionPlan: true } } },
+    });
+
+    res.json({ success: true, user: mapUserResponse(updatedUser) });
+  } catch (err) {
+    console.error('Demo end error:', err);
     res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
   }
 });

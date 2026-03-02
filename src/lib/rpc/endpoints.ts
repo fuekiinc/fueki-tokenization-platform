@@ -36,6 +36,10 @@ const RPC_ENV_BY_CHAIN: Record<number, string> = {
   11155111: 'VITE_RPC_11155111_URLS',
 };
 
+// Paid QuickNode endpoints are listed FIRST for each chain. Public free-tier
+// endpoints serve as fallbacks only. This ensures the platform uses reliable,
+// high-rate-limit RPC connections by default and only falls back to public
+// nodes when QuickNode is unreachable.
 const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
   1: [
     'https://billowing-rough-moon.quiknode.pro/a3cc003399fc8c72876d87c1f516c0897574e60c/',
@@ -49,10 +53,10 @@ const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
   ],
   31337: ['http://127.0.0.1:8545'],
   17000: [
+    // QuickNode paid endpoint — primary for Holesky
     'https://flashy-crimson-borough.ethereum-holesky.quiknode.pro/f43097bbd32a1c3476c2f3f1ff1d4780361be827/',
     'https://holesky.drpc.org',
     'https://ethereum-holesky-rpc.publicnode.com',
-    'https://1rpc.io/holesky',
   ],
   42161: [
     'https://snowy-blue-frost.arbitrum-mainnet.quiknode.pro/a691b5e884e8df719f8ce8ec8ad5e22092d17cdb/',
@@ -87,8 +91,15 @@ function getEnvValue(name: string): string {
     env?: Record<string, unknown>;
   }).env;
   const raw = env?.[name];
-  if (typeof raw !== 'string') return '';
-  return raw.trim();
+  if (typeof raw === 'string') return raw.trim();
+
+  // Test/runtime fallback when import.meta.env is not populated.
+  if (typeof process !== 'undefined') {
+    const processRaw = process.env?.[name];
+    if (typeof processRaw === 'string') return processRaw.trim();
+  }
+
+  return '';
 }
 
 function parseCommaSeparatedUrls(raw: string): string[] {
@@ -108,11 +119,27 @@ function parseCommaSeparatedUrls(raw: string): string[] {
     });
 }
 
+function toEndpointIdentity(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    const pathname =
+      parsed.pathname.length > 1
+        ? parsed.pathname.replace(/\/+$/, '')
+        : parsed.pathname;
+    return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}`.toLowerCase();
+  } catch {
+    return trimmed.toLowerCase();
+  }
+}
+
 function dedupeStable(values: string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const value of values) {
-    const key = value.toLowerCase();
+    const key = toEndpointIdentity(value);
+    if (!key) continue;
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(value);
@@ -161,20 +188,20 @@ export function getRpcEndpoints(chainId: number): string[] {
   const envName = getRpcEnvVarName(chainId);
   const fromEnv = envName ? parseCommaSeparatedUrls(getEnvValue(envName)) : [];
   const defaults = DEFAULT_RPC_BY_CHAIN[chainId] ?? [];
+  // Operator-provided (env) endpoints take priority — they are typically paid
+  // QuickNode / Alchemy / Infura endpoints with higher rate limits and better
+  // reliability. Hardcoded defaults serve as public fallbacks.
   return dedupeStable([...fromEnv, ...defaults]);
 }
 
 /**
  * RPC URLs suitable for wallet chain-switch / chain-add prompts.
  *
- * We intentionally prioritize built-in public endpoints first to avoid
- * wallet validation failures when user-provided/private endpoints are
- * unavailable to the wallet runtime.
+ * Uses the same priority as `getRpcEndpoints`: env-configured (paid) first,
+ * then hardcoded defaults as fallbacks.
  */
 export function getWalletSwitchRpcUrls(chainId: number): string[] {
-  const defaults = DEFAULT_RPC_BY_CHAIN[chainId] ?? [];
-  const configured = getRpcEndpoints(chainId);
-  return dedupeStable([...defaults, ...configured]);
+  return getRpcEndpoints(chainId);
 }
 
 /**

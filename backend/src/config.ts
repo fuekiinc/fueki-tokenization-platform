@@ -45,7 +45,7 @@ export const config = {
   encryption: {
     key: isProduction
       ? requireEnv('ENCRYPTION_KEY')
-      : (process.env.ENCRYPTION_KEY ?? 'a]1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b'),
+      : (process.env.ENCRYPTION_KEY ?? 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2'),
     algorithm: 'aes-256-gcm' as const,
   },
 
@@ -93,6 +93,19 @@ export const config = {
   mintApproval: {
     requestRecipient: process.env.MINT_APPROVAL_EMAIL_TO || 'mark@fueki-tech.com',
     actionTokenTtlHours: parseInt(process.env.MINT_APPROVAL_TOKEN_TTL_HOURS || '168', 10), // 7 days
+  },
+
+  securityTokenApproval: {
+    requestRecipient:
+      process.env.SECURITY_TOKEN_APPROVAL_EMAIL_TO ||
+      process.env.MINT_APPROVAL_EMAIL_TO ||
+      'mark@fueki-tech.com',
+    actionTokenTtlHours: parseInt(
+      process.env.SECURITY_TOKEN_APPROVAL_TOKEN_TTL_HOURS ||
+        process.env.MINT_APPROVAL_TOKEN_TTL_HOURS ||
+        '168',
+      10,
+    ),
   },
 
   // Local upload fallback (dev only, not used on Cloud Run)

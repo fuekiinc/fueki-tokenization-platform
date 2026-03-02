@@ -505,6 +505,178 @@ Reject: ${data.rejectUrl}
 }
 
 // ---------------------------------------------------------------------------
+// Security Token Deployment Approval Request Email
+// ---------------------------------------------------------------------------
+
+interface SecurityTokenApprovalRequestEmailData {
+  requestId: string;
+  requesterUserId: string;
+  requesterEmail: string;
+  chainId: number;
+  tokenName: string;
+  tokenSymbol: string;
+  decimals: number;
+  totalSupply: string;
+  maxTotalSupply: string;
+  minTimelockAmount: string;
+  maxReleaseDelayDays: number;
+  originalValue: string;
+  documentHash: string;
+  documentType: string;
+  hashSource: string;
+  submittedAtIso: string;
+  approveUrl: string;
+  rejectUrl: string;
+  attachmentFileName?: string | null;
+  attachmentMimeType?: string | null;
+  attachmentContent?: Buffer | null;
+}
+
+export async function sendSecurityTokenApprovalRequestEmail(
+  data: SecurityTokenApprovalRequestEmailData,
+): Promise<void> {
+  const recipient = config.securityTokenApproval.requestRecipient;
+  const escapedTokenName = escapeHtmlForEmail(data.tokenName);
+  const escapedTokenSymbol = escapeHtmlForEmail(data.tokenSymbol);
+  const escapedDocHash = escapeHtmlForEmail(data.documentHash);
+  const escapedDocType = escapeHtmlForEmail(data.documentType);
+  const escapedHashSource = escapeHtmlForEmail(data.hashSource);
+  const escapedRequesterEmail = escapeHtmlForEmail(data.requesterEmail);
+  const escapedRequesterUserId = escapeHtmlForEmail(data.requesterUserId);
+  const escapedAttachmentFileName = escapeHtmlForEmail(
+    data.attachmentFileName || 'No attachment provided',
+  );
+
+  const subjectLine =
+    `[Security Token Approval] ${data.tokenName} (${data.tokenSymbol}) ` +
+    `on chain ${data.chainId} by ${data.requesterEmail}`;
+
+  const htmlBody = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Security Token Deployment Approval Request</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f7;padding:36px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="720" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.08);">
+          <tr>
+            <td style="background-color:#0f172a;padding:28px 36px;">
+              <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Fueki Security Token Deployment Approval</h1>
+              <p style="margin:10px 0 0;color:#93c5fd;font-size:13px;">Request ID: ${data.requestId}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px 36px;">
+              <p style="margin:0 0 18px;color:#374151;font-size:14px;line-height:1.6;">
+                A user submitted a security token deployment request. Review the configuration below and choose an action.
+              </p>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:14px;">
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;width:190px;">Requester Email</td><td style="padding:7px 0;color:#111827;font-size:14px;font-weight:600;">${escapedRequesterEmail}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Requester User ID</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapedRequesterUserId}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Submitted At</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtmlForEmail(data.submittedAtIso)}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Network (chainId)</td><td style="padding:7px 0;color:#111827;font-size:14px;">${data.chainId}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Token Name</td><td style="padding:7px 0;color:#111827;font-size:14px;font-weight:600;">${escapedTokenName}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Token Symbol</td><td style="padding:7px 0;color:#111827;font-size:14px;font-weight:600;">${escapedTokenSymbol}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Decimals</td><td style="padding:7px 0;color:#111827;font-size:14px;">${data.decimals}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Initial Supply</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtmlForEmail(data.totalSupply)}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Max Supply</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtmlForEmail(data.maxTotalSupply)}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Min Timelock Amount</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtmlForEmail(data.minTimelockAmount)}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Max Release Delay</td><td style="padding:7px 0;color:#111827;font-size:14px;">${data.maxReleaseDelayDays} days</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Original Value</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapeHtmlForEmail(data.originalValue)}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Document Type</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapedDocType}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Hash Source</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapedHashSource}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Document Hash</td><td style="padding:7px 0;color:#111827;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Courier New',monospace;word-break:break-all;">${escapedDocHash}</td></tr>
+                <tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Attachment</td><td style="padding:7px 0;color:#111827;font-size:14px;">${escapedAttachmentFileName}</td></tr>
+              </table>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
+                <tr>
+                  <td align="center" style="padding-right:8px;">
+                    <a href="${data.approveUrl}" target="_blank" style="display:inline-block;padding:12px 32px;background:#059669;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">
+                      Approve Deployment
+                    </a>
+                  </td>
+                  <td align="center" style="padding-left:8px;">
+                    <a href="${data.rejectUrl}" target="_blank" style="display:inline-block;padding:12px 32px;background:#dc2626;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">
+                      Reject Deployment
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:20px 0 0;color:#6b7280;font-size:12px;">
+                Action links are one-time use and expire automatically.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const textBody = `Security Token Deployment Approval Request
+
+Request ID: ${data.requestId}
+Requester: ${data.requesterEmail} (${data.requesterUserId})
+Submitted At: ${data.submittedAtIso}
+Chain ID: ${data.chainId}
+
+Token Name: ${data.tokenName}
+Token Symbol: ${data.tokenSymbol}
+Decimals: ${data.decimals}
+Initial Supply: ${data.totalSupply}
+Max Supply: ${data.maxTotalSupply}
+Min Timelock Amount: ${data.minTimelockAmount}
+Max Release Delay: ${data.maxReleaseDelayDays} days
+Original Value: ${data.originalValue}
+Document Type: ${data.documentType}
+Hash Source: ${data.hashSource}
+Document Hash: ${data.documentHash}
+Attachment: ${data.attachmentFileName || 'No attachment provided'}
+
+Approve: ${data.approveUrl}
+Reject: ${data.rejectUrl}
+`;
+
+  const attachments =
+    data.attachmentFileName && data.attachmentMimeType && data.attachmentContent
+      ? [
+          {
+            filename: data.attachmentFileName,
+            content: data.attachmentContent,
+            contentType: data.attachmentMimeType,
+          },
+        ]
+      : [];
+
+  const info = await transporter.sendMail({
+    from: config.smtp.from,
+    to: recipient,
+    replyTo: data.requesterEmail,
+    subject: subjectLine,
+    text: textBody,
+    html: htmlBody,
+    attachments,
+  });
+
+  if (!config.smtp.user) {
+    console.log('[DEV EMAIL] Security token approval request sent');
+    console.log('[DEV EMAIL] Recipient:', recipient);
+    console.log('[DEV EMAIL] Approve URL:', data.approveUrl);
+    console.log('[DEV EMAIL] Reject URL:', data.rejectUrl);
+    console.log('[DEV EMAIL] Message ID:', info.messageId);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Support Request Email
 // ---------------------------------------------------------------------------
 

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import logger from '../lib/logger';
 import { showError } from '../lib/errorUtils';
 import clsx from 'clsx';
+import { useAuthStore } from '../store/authStore';
+import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 import {
   Search,
   Filter,
@@ -498,6 +500,9 @@ function AssetGridCard({
 export default function PortfolioPage() {
   const navigate = useNavigate();
   const { isConnected, address, chainId, connectWallet, error: walletError } = useWallet();
+  const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
+  const demoWalletSettingUp = useDemoWalletStore((s) => s.isSettingUp);
+  const demoWalletReady = useDemoWalletStore((s) => s.isReady);
   const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
   const isLoadingAssets = useAssetStore((s) => s.isLoadingAssets);
   const setAssets = useAssetStore((s) => s.setAssets);
@@ -552,25 +557,68 @@ export default function PortfolioPage() {
     setLoadingAssets(true);
     try {
       const service = new ContractService(provider, chainId);
-      const assetAddresses = await service.getUserAssets(address);
+
+      // Gather asset addresses from multiple sources:
+      //   1. Assets the user created (factory.getUserAssets)
+      //   2. ALL platform assets (factory.getAssetAtIndex) — catches assets
+      //      the user holds but didn't create
+      let userAddresses: string[] = [];
+      try {
+        userAddresses = await service.getUserAssets(address);
+      } catch {
+        logger.warn('Portfolio: unable to fetch user-created assets');
+      }
+
+      let allAddresses: string[] = [];
+      try {
+        const total = await service.getTotalAssets();
+        const count = Math.min(Number(total), 100);
+        const BATCH = 5;
+        for (let s = 0; s < count; s += BATCH) {
+          if (gen !== getAssetFetchGeneration()) return;
+          const end = Math.min(s + BATCH, count);
+          const batch = [];
+          for (let i = s; i < end; i++) {
+            batch.push(service.getAssetAtIndex(i).catch(() => null));
+          }
+          const results = await Promise.all(batch);
+          for (const r of results) {
+            if (r) allAddresses.push(r);
+          }
+        }
+      } catch {
+        logger.warn('Portfolio: unable to enumerate all platform assets');
+      }
+
+      const uniqueAddresses = Array.from(
+        new Set([...userAddresses, ...allAddresses]),
+      );
       if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
 
-      const assets: WrappedAsset[] = await Promise.all(
-        assetAddresses.map(async (addr) => {
-          const details = await service.getAssetDetails(addr);
-          const balanceWei = await service.getAssetBalance(addr, address);
-          return {
-            address: addr,
-            name: details.name,
-            symbol: details.symbol,
-            totalSupply: ethers.formatEther(details.totalSupply),
-            balance: ethers.formatEther(balanceWei),
-            documentHash: details.documentHash,
-            documentType: details.documentType,
-            originalValue: ethers.formatEther(details.originalValue),
-          };
-        }),
-      );
+      const assets: WrappedAsset[] = (
+        await Promise.all(
+          uniqueAddresses.map(async (addr) => {
+            try {
+              const details = await service.getAssetDetails(addr);
+              const balanceWei = await service.getAssetBalance(addr, address);
+              return {
+                address: addr,
+                name: details.name,
+                symbol: details.symbol,
+                totalSupply: ethers.formatEther(details.totalSupply),
+                balance: ethers.formatEther(balanceWei),
+                documentHash: details.documentHash,
+                documentType: details.documentType,
+                originalValue: ethers.formatEther(details.originalValue),
+              };
+            } catch (err) {
+              logger.warn(`Portfolio: skipping asset ${addr}:`, err);
+              return null;
+            }
+          }),
+        )
+      ).filter((a): a is WrappedAsset => a !== null);
+
       if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
 
       setAssets(assets);
@@ -890,6 +938,19 @@ export default function PortfolioPage() {
       setBurnLoading(false);
     }
   }, [burnAsset, burnForm, address, chainId, addTrade, updateAsset, fetchAssets]);
+
+  // ---- Demo mode: wallet still initialising --------------------------------
+
+  if (isDemoActive && !isConnected && (demoWalletSettingUp || !demoWalletReady)) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+          <p className="text-sm text-gray-400">Setting up demo wallet…</p>
+        </div>
+      </div>
+    );
+  }
 
   // ---- Not connected -------------------------------------------------------
 

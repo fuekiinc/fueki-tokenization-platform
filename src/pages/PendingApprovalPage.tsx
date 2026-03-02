@@ -6,6 +6,7 @@ import {
   CreditCard,
   LogOut,
   Mail,
+  Play,
   RefreshCw,
   Shield,
   XCircle,
@@ -67,8 +68,10 @@ export default function PendingApprovalPage() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const checkKYCStatus = useAuthStore((s) => s.checkKYCStatus);
+  const startDemo = useAuthStore((s) => s.startDemo);
 
   const [isChecking, setIsChecking] = useState(false);
+  const [isStartingDemo, setIsStartingDemo] = useState(false);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
 
   const kycStatus: KYCStatus = user?.kycStatus ?? 'pending';
@@ -143,6 +146,23 @@ export default function PendingApprovalPage() {
       toast.error('Unable to check status. Please try again.');
     } finally {
       setIsChecking(false);
+    }
+  };
+
+  const handleStartDemo = async () => {
+    setIsStartingDemo(true);
+    try {
+      await startDemo();
+      toast.success('Demo mode activated! Explore the platform on Holesky testnet.');
+      navigate('/dashboard');
+    } catch (err: unknown) {
+      const message =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { error?: { message?: string } } } }).response?.data?.error?.message
+          : 'Unable to start demo mode. Please try again.';
+      toast.error(message || 'Unable to start demo mode.');
+    } finally {
+      setIsStartingDemo(false);
     }
   };
 
@@ -529,6 +549,56 @@ export default function PendingApprovalPage() {
                 </div>
               ))}
             </div>
+
+            {/* Try Demo button -- one-time preview for pending users */}
+            {kycStatus === 'pending' && !user?.demoUsed && !user?.demoActive && (
+              <div className="mt-7">
+                <div
+                  className={clsx(
+                    'mx-auto max-w-sm',
+                    'bg-cyan-500/[0.06] border border-cyan-500/20',
+                    'rounded-xl px-4 py-4 mb-4',
+                  )}
+                >
+                  <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+                    Want to explore the platform while you wait? Try a one-time demo
+                    session on the Holesky testnet with a pre-funded wallet.
+                  </p>
+                </div>
+                <button
+                  onClick={handleStartDemo}
+                  disabled={isStartingDemo}
+                  className={clsx(
+                    'w-full flex items-center justify-center gap-2',
+                    'bg-gradient-to-r from-cyan-600 to-teal-600',
+                    'hover:from-cyan-500 hover:to-teal-500',
+                    'text-white font-semibold',
+                    'rounded-xl px-4 py-3',
+                    'transition-all duration-200',
+                    'disabled:opacity-50 disabled:cursor-not-allowed',
+                    'shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30',
+                  )}
+                >
+                  <Play className={clsx('h-[18px] w-[18px]', isStartingDemo && 'animate-pulse')} />
+                  <span>{isStartingDemo ? 'Starting Demo...' : 'Try Demo'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Demo already used notice */}
+            {kycStatus === 'pending' && user?.demoUsed && (
+              <div
+                className={clsx(
+                  'mt-7 mx-auto max-w-sm',
+                  'bg-[var(--bg-tertiary)] border border-[var(--border-primary)]',
+                  'rounded-xl px-4 py-3 text-center',
+                )}
+              >
+                <p className="text-xs text-[var(--text-muted)]">
+                  Your one-time demo session has been used. You'll get full access once your KYC is approved.
+                </p>
+              </div>
+            )}
 
             {/* Check status button */}
             <button

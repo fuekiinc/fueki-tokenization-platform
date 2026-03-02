@@ -18,6 +18,7 @@ import clsx from 'clsx';
 import { useAuthStore } from '../store/authStore';
 import FuekiBrand from '../components/Brand/FuekiBrand';
 import { isContractDeploymentOnlyPlan } from '../lib/subscriptionPlans';
+import { normalizeKycStatus } from '../lib/auth/kycStatus';
 import type { LoginFormValues } from '../types/auth';
 
 // ---------------------------------------------------------------------------
@@ -60,22 +61,41 @@ export default function LoginPage() {
       await login(values);
 
       const user = useAuthStore.getState().user;
+      if (!user) {
+        throw new Error('Login completed but profile could not be loaded. Please try again.');
+      }
 
-      if (user?.kycStatus === 'approved') {
+      const kycStatus = normalizeKycStatus(user?.kycStatus);
+
+      if (kycStatus === 'approved') {
         navigate(
           isContractDeploymentOnlyPlan(user.subscriptionPlan)
             ? '/contracts'
             : '/dashboard',
         );
-      } else if (user?.kycStatus === 'pending') {
+      } else if (
+        kycStatus === 'pending' ||
+        kycStatus === 'rejected' ||
+        (kycStatus === 'not_submitted' && Boolean(user.subscriptionPlan))
+      ) {
         navigate('/pending-approval');
       } else {
         navigate('/signup', { state: { step: 'kyc' } });
       }
 
       toast.success('Welcome back!');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Login failed';
+    } catch (err: unknown) {
+      let message = 'Login failed';
+      if (
+        err !== null &&
+        typeof err === 'object' &&
+        'response' in err
+      ) {
+        const axiosErr = err as { response?: { data?: { error?: { message?: string } } } };
+        message = axiosErr.response?.data?.error?.message ?? message;
+      } else if (err instanceof Error) {
+        message = err.message;
+      }
       toast.error(message);
     }
   };

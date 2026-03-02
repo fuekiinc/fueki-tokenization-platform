@@ -123,104 +123,62 @@ async function executeWrite(
   args: unknown[],
   overrides?: ethers.Overrides,
 ): Promise<ethers.ContractTransactionResponse> {
-  const sendWithGasEstimate = async () => {
-    const gasEstimate: bigint = await contract[method].estimateGas(
-      ...args,
-      overrides ?? {},
-    );
-    const gasLimit = (gasEstimate * 120n) / 100n;
-    return contract[method](...args, {
-      ...(overrides ?? {}),
-      gasLimit,
-    }) as Promise<ethers.ContractTransactionResponse>;
-  };
+  const methodFn = contract.getFunction(method);
+  if (!methodFn) {
+    throw new Error(`Contract method unavailable: ${method}`);
+  }
+
+  // Pre-estimate gas via a healthy read RPC to avoid depending on the
+  // wallet's potentially broken/rate-limited thirdweb RPC.
+  const mergedOverrides: ethers.Overrides = { ...(overrides ?? {}) };
+  if (mergedOverrides.gasLimit == null) {
+    const chainId = useWalletStore.getState().wallet.chainId;
+    if (chainId) {
+      try {
+        const healthyRpc = await findHealthyEndpoint(chainId, 3000);
+        if (healthyRpc) {
+          const signer = contract.runner as ethers.Signer | null;
+          const signerAddress = signer ? await signer.getAddress() : undefined;
+          const populated = await methodFn.populateTransaction(...args, overrides ?? {});
+          const readProvider = new ethers.JsonRpcProvider(healthyRpc, chainId);
+          try {
+            const gasEst = await readProvider.estimateGas({
+              from: signerAddress,
+              to: typeof populated.to === 'string' ? populated.to : undefined,
+              data: populated.data,
+              value: populated.value,
+            });
+            mergedOverrides.gasLimit = (gasEst * 125n) / 100n;
+          } finally {
+            readProvider.destroy();
+          }
+        }
+      } catch {
+        // Non-fatal — wallet will estimate gas itself.
+      }
+    }
+  }
 
   try {
-    return await sendWithGasEstimate();
+    return await methodFn(...args, mergedOverrides) as ethers.ContractTransactionResponse;
   } catch (error) {
-    if (!isRetryableRpcError(error)) {
-      throw error;
+    if (/user (rejected|denied)|ACTION_REJECTED/i.test(
+      error instanceof Error ? error.message : String(error),
+    )) {
+      throw new Error('Transaction was rejected in your wallet.');
     }
 
-    const chainId = useWalletStore.getState().wallet.chainId;
-    if (!chainId) {
-      throw error;
-    }
-
-    const healthyRpcUrl = await findHealthyEndpoint(chainId);
-    if (!healthyRpcUrl) {
-      throw error;
-    }
-
-    const signer = contract.runner as ethers.Signer | null;
-    if (!signer || typeof signer.sendTransaction !== 'function') {
-      throw error;
-    }
-
-    const signerAddress = await signer.getAddress();
-    const directProvider = new ethers.JsonRpcProvider(healthyRpcUrl, chainId);
-
-    const methodRef = (contract as Record<string, unknown>)[method] as {
-      populateTransaction: (...params: unknown[]) => Promise<ethers.TransactionRequest>;
-    } | undefined;
-
-    if (!methodRef || typeof methodRef.populateTransaction !== 'function') {
-      throw error;
-    }
-
-    const populated = await methodRef.populateTransaction(...args, overrides ?? {});
-    const toAddress =
-      (typeof populated.to === 'string' && populated.to) ||
-      (typeof contract.target === 'string' ? contract.target : '');
-    if (!toAddress || !ethers.isAddress(toAddress)) {
-      throw error;
-    }
-
-    const [nonce, feeData, gasEstimate] = await Promise.all([
-      directProvider.getTransactionCount(signerAddress, 'pending'),
-      directProvider.getFeeData(),
-      directProvider.estimateGas({
-        from: signerAddress,
-        to: toAddress,
-        data: populated.data,
-        value: populated.value,
-      }),
-    ]);
-
-    const txRequest: ethers.TransactionRequest = {
-      ...populated,
-      ...(overrides ?? {}),
-      chainId,
-      nonce,
-      gasLimit: (gasEstimate * 120n) / 100n,
-      to: toAddress,
-    };
-
-    try {
-      if (
-        feeData.maxFeePerGas !== null &&
-        feeData.maxPriorityFeePerGas !== null
-      ) {
-        txRequest.type = 2;
-        txRequest.maxFeePerGas =
-          txRequest.maxFeePerGas ?? feeData.maxFeePerGas ?? undefined;
-        txRequest.maxPriorityFeePerGas =
-          txRequest.maxPriorityFeePerGas ??
-          feeData.maxPriorityFeePerGas ??
-          undefined;
-        delete txRequest.gasPrice;
-      } else if (feeData.gasPrice !== null && txRequest.gasPrice == null) {
-        txRequest.gasPrice = feeData.gasPrice;
+    if (isRetryableRpcError(error)) {
+      log.warn(`[useSecurityToken] ${method}: RPC failure, retrying after 2s`);
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        return await methodFn(...args, mergedOverrides) as ethers.ContractTransactionResponse;
+      } catch (retryErr) {
+        throw retryErr;
       }
-
-      const tx = await signer.sendTransaction(txRequest);
-      log.warn(
-        `[useSecurityToken] ${method} recovered via read-RPC fallback ${healthyRpcUrl}`,
-      );
-      return tx as ethers.ContractTransactionResponse;
-    } finally {
-      directProvider.destroy();
     }
+
+    throw error;
   }
 }
 

@@ -88,6 +88,20 @@ export async function getKYCStatus(): Promise<KYCStatusResponse> {
 }
 
 // ---------------------------------------------------------------------------
+// Demo Mode
+// ---------------------------------------------------------------------------
+
+export async function startDemo(): Promise<{ user: User }> {
+  const response = await apiClient.post<{ user: User }>('/api/auth/demo/start', {});
+  return response.data;
+}
+
+export async function endDemo(): Promise<{ success: boolean }> {
+  const response = await apiClient.post<{ success: boolean }>('/api/auth/demo/end', {});
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
 // Password Reset
 // ---------------------------------------------------------------------------
 

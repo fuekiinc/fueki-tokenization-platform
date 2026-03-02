@@ -14,6 +14,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useWallet } from '../hooks/useWallet';
+import { useAuthStore } from '../store/authStore';
+import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 import { getProvider, useWalletStore } from '../store/walletStore.ts';
 import { useAssetStore } from '../store/assetStore.ts';
 import { OrbitalContractService } from '../lib/blockchain/orbitalContracts';
@@ -42,9 +44,11 @@ import {
   PlusCircle,
   RefreshCw,
   Shield,
+  BookOpen,
   Wallet,
   Zap,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 // ---------------------------------------------------------------------------
 // Tab definitions
@@ -114,6 +118,9 @@ export default function OrbitalAMMPage() {
     switchNetwork,
   } = useWallet();
   const wallet = useWalletStore((s) => s.wallet);
+  const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
+  const demoWalletSettingUp = useDemoWalletStore((s) => s.isSettingUp);
+  const demoWalletReady = useDemoWalletStore((s) => s.isReady);
   const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
 
   // ---- Local state ----------------------------------------------------------
@@ -243,6 +250,21 @@ export default function OrbitalAMMPage() {
     clearTimeout(tabTimerRef.current);
     tabTimerRef.current = setTimeout(() => setActiveTab('pools'), 1000);
   }, [handleRefresh]);
+
+  // =========================================================================
+  // Render: demo wallet loading
+  // =========================================================================
+
+  if (isDemoActive && !isConnected && (demoWalletSettingUp || !demoWalletReady)) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+          <p className="text-sm text-gray-400">Setting up demo wallet…</p>
+        </div>
+      </div>
+    );
+  }
 
   // =========================================================================
   // Render: not connected
@@ -403,6 +425,13 @@ export default function OrbitalAMMPage() {
                 component="OrbitalAMMPage.Header"
               />
             </p>
+            <Link
+              to="/advanced/guide"
+              className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-indigo-400/80 transition-colors hover:text-indigo-300 pl-0.5"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              Not sure how this works? Read the guide
+            </Link>
           </div>
 
           {/* Right: Refresh + network badge */}

@@ -11,7 +11,7 @@
  * re-renders.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import {
@@ -258,11 +258,17 @@ export function DeployWizard({ template }: DeployWizardProps) {
   // Deploy
   // -----------------------------------------------------------------------
 
+  const deployingRef = useRef(false);
+
   const handleDeploy = useCallback(async () => {
     if (!wallet.isConnected) {
       toast.error('Please connect your wallet first');
       return;
     }
+    // Guard against double-click race: synchronous ref check prevents
+    // concurrent deploys before React state update takes effect.
+    if (deployingRef.current) return;
+    deployingRef.current = true;
 
     setDeploying(true);
     setDeployError(null);
@@ -321,6 +327,7 @@ export function DeployWizard({ template }: DeployWizardProps) {
         err instanceof Error ? err.message : 'Deployment failed. Please try again.';
       setDeployError(message);
       setDeploying(false);
+      deployingRef.current = false;
 
       toast.error(message, {
         id: 'contract-deploy-tx',

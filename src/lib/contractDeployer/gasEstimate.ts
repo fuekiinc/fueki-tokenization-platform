@@ -68,7 +68,11 @@ export async function estimateDeployGas(
     const feeData = await provider.getFeeData();
     const gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas ?? 0n;
     const totalCostWei = gasUnits * gasPrice;
-    const gasCostNative = ethers.formatEther(totalCostWei);
+    // When gas price is unavailable (some L2 chains), show "~0" rather
+    // than a misleadingly precise "0.0" — callers can check gasCostUsd.
+    const gasCostNative = gasPrice > 0n
+      ? ethers.formatEther(totalCostWei)
+      : 'N/A';
 
     return {
       gasUnits: gasUnits.toString(),

@@ -98,7 +98,7 @@ export async function getKYCStatus(userId: string) {
 export async function approveKYC(userId: string, notes?: string) {
   await prisma.user.update({
     where: { id: userId },
-    data: { kycStatus: 'approved' },
+    data: { kycStatus: 'approved', demoUsed: false, demoActive: false },
   });
 
   await prisma.kYCData.update({

@@ -5,6 +5,8 @@ import { ComponentErrorBoundary } from '../ErrorBoundary';
 import { useTheme } from '../../hooks/useTheme';
 import { getToasterProps } from '../../lib/toastConfig';
 import AmbientBackdrop from './AmbientBackdrop';
+import DemoBanner from '../DemoMode/DemoBanner';
+import DemoWalletProvider from '../DemoMode/DemoWalletProvider';
 
 // ---------------------------------------------------------------------------
 // Page transition -- fades in content on route changes
@@ -30,6 +32,10 @@ export default function Layout() {
   return (
     <div className="gradient-bg-subtle relative min-h-screen flex flex-col text-white overflow-x-hidden">
       <AmbientBackdrop />
+
+      {/* Demo mode components -- banner + wallet provider */}
+      <DemoBanner />
+      <DemoWalletProvider />
 
       {/* Navbar is wrapped in its own boundary so navigation remains
           functional even if a widget inside it (wallet, pending TXs) fails. */}

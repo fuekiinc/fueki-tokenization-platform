@@ -29,18 +29,24 @@ function isLikelyExtensionNoise(message: string, filename?: string) {
   return false
 }
 
-datadogRum.init({
-    applicationId: '1ba97554-02c8-446b-acc7-89d85d2b7295',
-    clientToken: 'pub0ae646ad664e439de9f2ec075d7f69ae',
-    site: 'us5.datadoghq.com',
+// Datadog RUM -- credentials loaded from environment variables to avoid
+// baking them into source control and to separate dev/prod telemetry.
+const ddAppId = import.meta.env.VITE_DD_APPLICATION_ID as string | undefined;
+const ddClientToken = import.meta.env.VITE_DD_CLIENT_TOKEN as string | undefined;
+if (ddAppId && ddClientToken) {
+  datadogRum.init({
+    applicationId: ddAppId,
+    clientToken: ddClientToken,
+    site: (import.meta.env.VITE_DD_SITE as string) || 'us5.datadoghq.com',
     service: 'fueki-frontend',
-    env: 'prod',
+    env: (import.meta.env.VITE_DD_ENV as string) || (import.meta.env.DEV ? 'dev' : 'prod'),
     version: '0.1.0',
     sessionSampleRate: 100,
     sessionReplaySampleRate: 20,
     trackBfcacheViews: true,
     defaultPrivacyLevel: 'mask-user-input',
-})
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Global error handlers
@@ -247,6 +253,9 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, EBState> {
             </button>
           </div>
 
+          {/* Only show detailed error info in dev builds to avoid leaking
+              internal file paths and component structure to production users. */}
+          {import.meta.env.DEV && (
           <details style={{ textAlign: 'left' }}>
             <summary
               style={{
@@ -278,6 +287,7 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, EBState> {
               {this.state.error.stack}
             </pre>
           </details>
+          )}
         </div>
       )
     }

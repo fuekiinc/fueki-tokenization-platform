@@ -41,20 +41,15 @@ router.get('/stats', adminOnly, async (_req: Request, res: Response) => {
       prisma.session.count(),
     ]);
 
+    // Return flat shape to match the frontend AdminStats interface.
     res.json({
-      users: {
-        total: totalUsers,
-        newLast30Days: newUsersLast30Days,
-      },
-      kyc: {
-        not_submitted: kycNotSubmitted,
-        pending: kycPending,
-        approved: kycApproved,
-        rejected: kycRejected,
-      },
-      sessions: {
-        total: totalSessions,
-      },
+      totalUsers,
+      newUsersLast30Days,
+      kycNotSubmitted,
+      kycPending,
+      kycApproved,
+      kycRejected,
+      totalSessions,
     });
   } catch (err) {
     console.error('Admin stats error:', err);
@@ -211,7 +206,11 @@ const updateRoleSchema = z.object({
   role: z.enum(VALID_ROLES),
 });
 
-router.patch('/users/:id/role', superAdminOnly, async (req: Request, res: Response) => {
+// Accept both PUT and PATCH for compatibility with the frontend client.
+router.put('/users/:id/role', superAdminOnly, updateUserRole);
+router.patch('/users/:id/role', superAdminOnly, updateUserRole);
+
+async function updateUserRole(req: Request, res: Response) {
   try {
     const { role } = updateRoleSchema.parse(req.body);
     const targetUserId = req.params.id as string;
@@ -253,7 +252,7 @@ router.patch('/users/:id/role', superAdminOnly, async (req: Request, res: Respon
     console.error('Admin update role error:', err);
     res.status(500).json({ error: { message: 'Failed to update user role', code: 'INTERNAL_ERROR' } });
   }
-});
+}
 
 // ---------------------------------------------------------------------------
 // GET /api/admin/kyc — Paginated KYC submissions
@@ -265,7 +264,11 @@ const kycListSchema = z.object({
   status: z.string().optional(),
 });
 
-router.get('/kyc', adminOnly, async (req: Request, res: Response) => {
+// Accept both /kyc and /kyc/submissions for frontend compatibility.
+router.get('/kyc', adminOnly, handleKycList);
+router.get('/kyc/submissions', adminOnly, handleKycList);
+
+async function handleKycList(req: Request, res: Response) {
   try {
     const params = kycListSchema.parse(req.query);
 
@@ -330,7 +333,7 @@ router.get('/kyc', adminOnly, async (req: Request, res: Response) => {
     console.error('Admin list KYC error:', err);
     res.status(500).json({ error: { message: 'Failed to fetch KYC submissions', code: 'INTERNAL_ERROR' } });
   }
-});
+}
 
 // ---------------------------------------------------------------------------
 // PUT /api/admin/kyc/:userId/approve

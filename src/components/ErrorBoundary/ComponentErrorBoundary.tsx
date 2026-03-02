@@ -242,17 +242,20 @@ export class ComponentErrorBoundary extends Component<
             </button>
           </div>
 
-          {/* Error details (collapsible) */}
-          <details className="text-left">
-            <summary className="cursor-pointer text-xs text-gray-600 hover:text-gray-400 transition-colors select-none">
-              Error details
-            </summary>
-            <pre className="mt-3 rounded-xl bg-black/30 border border-white/[0.04] p-4 text-xs text-amber-300/80 overflow-x-auto whitespace-pre-wrap break-all max-h-40 scrollbar-thin">
-              {this.state.error?.message}
-              {'\n\n'}
-              {this.state.error?.stack}
-            </pre>
-          </details>
+          {/* Error details (collapsible) -- only show stack traces in dev builds
+              to avoid leaking internal file paths and component structure in production. */}
+          {import.meta.env.DEV && (
+            <details className="text-left">
+              <summary className="cursor-pointer text-xs text-gray-600 hover:text-gray-400 transition-colors select-none">
+                Error details
+              </summary>
+              <pre className="mt-3 rounded-xl bg-black/30 border border-white/[0.04] p-4 text-xs text-amber-300/80 overflow-x-auto whitespace-pre-wrap break-all max-h-40 scrollbar-thin">
+                {this.state.error?.message}
+                {'\n\n'}
+                {this.state.error?.stack}
+              </pre>
+            </details>
+          )}
         </div>
       </div>
     );
@@ -328,15 +331,17 @@ export class ComponentErrorBoundary extends Component<
             </button>
           </div>
 
-          {/* Error details (collapsible) */}
-          <details className="mt-4 text-left">
-            <summary className="cursor-pointer text-xs text-gray-600 hover:text-gray-400 transition-colors select-none">
-              Error details
-            </summary>
-            <pre className="mt-2 rounded-lg bg-black/30 border border-white/[0.04] p-3 text-xs text-amber-300/80 overflow-x-auto whitespace-pre-wrap break-all max-h-32 scrollbar-thin">
-              {this.state.error?.message}
-            </pre>
-          </details>
+          {/* Error details -- only in dev builds to avoid leaking internals */}
+          {import.meta.env.DEV && (
+            <details className="mt-4 text-left">
+              <summary className="cursor-pointer text-xs text-gray-600 hover:text-gray-400 transition-colors select-none">
+                Error details
+              </summary>
+              <pre className="mt-2 rounded-lg bg-black/30 border border-white/[0.04] p-3 text-xs text-amber-300/80 overflow-x-auto whitespace-pre-wrap break-all max-h-32 scrollbar-thin">
+                {this.state.error?.message}
+              </pre>
+            </details>
+          )}
         </div>
       </div>
     );

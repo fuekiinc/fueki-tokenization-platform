@@ -51,15 +51,31 @@ function encodeSolidityValue(raw: string, type: string, decimals?: number): unkn
 
   // ---- uint256 ----
   if (type === 'uint256') {
-    if (decimals !== undefined && decimals > 0) {
-      return ethers.parseUnits(raw.replace(/[,\s]/g, ''), decimals);
+    const cleaned = raw.replace(/[,\s]/g, '');
+    if (!cleaned) {
+      throw new Error('Value is required for uint256 parameter');
     }
-    return BigInt(raw.replace(/[,\s]/g, ''));
+    try {
+      if (decimals !== undefined && decimals > 0) {
+        return ethers.parseUnits(cleaned, decimals);
+      }
+      return BigInt(cleaned);
+    } catch {
+      throw new Error(`Invalid uint256 value: "${raw}". Must be a non-negative integer.`);
+    }
   }
 
   // ---- uint64 ----
   if (type === 'uint64') {
-    return BigInt(raw.replace(/[,\s]/g, ''));
+    const cleaned = raw.replace(/[,\s]/g, '');
+    if (!cleaned) {
+      throw new Error('Value is required for uint64 parameter');
+    }
+    try {
+      return BigInt(cleaned);
+    } catch {
+      throw new Error(`Invalid uint64 value: "${raw}". Must be a non-negative integer.`);
+    }
   }
 
   // ---- string ----
@@ -74,7 +90,12 @@ function encodeSolidityValue(raw: string, type: string, decimals?: number): unkn
 
   // ---- bytes32 ----
   if (type === 'bytes32') {
-    return raw;
+    // If already a 0x-prefixed hex string of the right length, use it as-is.
+    if (/^0x[0-9a-fA-F]{64}$/.test(raw)) {
+      return raw;
+    }
+    // Otherwise encode the short string into a zero-padded bytes32.
+    return ethers.encodeBytes32String(raw);
   }
 
   // ---- address[] ----

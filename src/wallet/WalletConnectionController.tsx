@@ -18,6 +18,7 @@ import {
 } from '../lib/thirdweb';
 import { clearWalletBoundStores } from './walletBoundStores';
 import { findHealthyEndpoint } from '../lib/rpc/endpoints';
+import { useAuthStore } from '../store/authStore';
 
 function parseConnectionError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
@@ -92,6 +93,7 @@ async function fetchBalanceWithRetry(
  * Mount once near the app root so wallet sync side effects run exactly once.
  */
 export function WalletConnectionController() {
+  const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
   const wallet = useWalletStore((s) => s.wallet);
   const setWallet = useWalletStore((s) => s.setWallet);
   const setProvider = useWalletStore((s) => s.setProvider);
@@ -133,6 +135,10 @@ export function WalletConnectionController() {
   );
 
   const syncWalletStore = useCallback(async () => {
+    if (isDemoActive) {
+      return;
+    }
+
     const version = ++syncVersionRef.current;
     const isStale = () => syncVersionRef.current !== version;
 
@@ -297,6 +303,7 @@ export function WalletConnectionController() {
     setProvider,
     setSigner,
     setWallet,
+    isDemoActive,
     wallet.connectionStatus,
     wallet.switchTargetChainId,
   ]);
@@ -306,6 +313,11 @@ export function WalletConnectionController() {
   }, [syncWalletStore]);
 
   useEffect(() => {
+    if (isDemoActive) {
+      clearTimeout(disconnectTimerRef.current);
+      return () => clearTimeout(disconnectTimerRef.current);
+    }
+
     const connected = connectionStatus === 'connected';
 
     if (connected) {
@@ -316,23 +328,16 @@ export function WalletConnectionController() {
     }
 
     if (connectionStatus === 'disconnected' && wasConnectedRef.current) {
-      // During chain switches thirdweb may briefly report "disconnected"
-      // for several hundred milliseconds before re-establishing the
-      // connection on the new chain.  We debounce disconnect handling so
-      // that transient blips don't nuke the wallet state.
       clearTimeout(disconnectTimerRef.current);
       disconnectTimerRef.current = setTimeout(() => {
-        // Check BOTH the zustand 'switching' flag AND the module-level
-        // _switchInProgress flag.  The module-level flag survives the
-        // race window where failChainSwitch() clears 'switching' from
-        // zustand before this timer fires.
+        // Read ALL state fresh from stores at timer-fire time — NOT from
+        // the stale closure captured when the effect ran 2.5s ago.
         const latest = useWalletStore.getState().wallet;
         const isSwitching = latest.connectionStatus === 'switching' || isSwitchInProgress();
-        const hasActiveSession = Boolean(activeWallet) || Boolean(activeAccount?.address);
 
-        // Never hard-reset while a wallet/account session is still present.
-        // Some connectors emit temporary disconnect states during chain hops.
-        if (!isSwitching && !hasActiveSession) {
+        // If the user reconnected during the debounce window, the store
+        // will show isConnected: true. Do not wipe their session.
+        if (!isSwitching && !latest.isConnected) {
           wasConnectedRef.current = false;
           clearWalletBoundStores();
           setLastError(null);
@@ -341,10 +346,15 @@ export function WalletConnectionController() {
     }
 
     return () => clearTimeout(disconnectTimerRef.current);
-  }, [activeAccount?.address, activeWallet, connectionStatus, setLastError]);
+  }, [activeAccount?.address, activeWallet, connectionStatus, isDemoActive, setLastError]);
 
   useEffect(() => {
     clearTimeout(balanceIntervalRef.current);
+
+    if (isDemoActive) {
+      balanceFailCountRef.current = 0;
+      return () => clearTimeout(balanceIntervalRef.current);
+    }
 
     if (!wallet.isConnected || !wallet.address) {
       balanceFailCountRef.current = 0;
@@ -396,7 +406,7 @@ export function WalletConnectionController() {
     scheduleBalancePoll();
 
     return () => clearTimeout(balanceIntervalRef.current);
-  }, [wallet.isConnected, wallet.address, wallet.chainId, setWallet]);
+  }, [wallet.isConnected, wallet.address, wallet.chainId, isDemoActive, setWallet]);
 
   return null;
 }

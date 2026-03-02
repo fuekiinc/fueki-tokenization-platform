@@ -26,6 +26,7 @@ import { useWallet } from '../../hooks/useWallet';
 import { useTradeStore } from '../../store/tradeStore.ts';
 import { useAssetStore } from '../../store/assetStore.ts';
 import { useDocumentStore } from '../../store/documentStore.ts';
+import { useAuthStore } from '../../store/authStore.ts';
 import { getProvider } from '../../store/walletStore.ts';
 import { formatAddress, generateId, copyToClipboard } from '../../lib/utils/helpers';
 import { txSubmittedToast, txConfirmedToast, txFailedToast } from '../../lib/utils/txToast';
@@ -124,10 +125,12 @@ export default function MintForm({
   selectedRequest = null,
   onClearSelectedRequest,
 }: MintFormProps) {
+  const isDemoMode = useAuthStore((s) => s.user?.demoActive === true);
   const { address, chainId, isConnected, connectWallet, switchNetwork } = useWallet();
   const addTrade = useTradeStore((s) => s.addTrade);
   const addAsset = useAssetStore((s) => s.addAsset);
   const currentDocumentFile = useDocumentStore((s) => s.currentDocumentFile);
+  const approvalsRequired = !isDemoMode;
 
   // ---- Form state ---------------------------------------------------------
 
@@ -373,6 +376,11 @@ export default function MintForm({
   }, [applyApprovalStatus, selectedRequest, setTouched]);
 
   useEffect(() => {
+    if (!approvalsRequired) {
+      setApprovalError(null);
+      return;
+    }
+
     if (!isConnected || !approvalQuery) {
       if (approvalStatus !== 'none') {
         applyApprovalStatus('none');
@@ -414,7 +422,13 @@ export default function MintForm({
       cancelled = true;
       if (pollTimer) clearInterval(pollTimer);
     };
-  }, [approvalQuery, approvalStatus, applyApprovalStatus, isConnected]);
+  }, [
+    approvalQuery,
+    approvalStatus,
+    applyApprovalStatus,
+    approvalsRequired,
+    isConnected,
+  ]);
 
   // ---- Validation ---------------------------------------------------------
 
@@ -553,14 +567,14 @@ export default function MintForm({
   const handleMint = async () => {
     if (isSubmitting) return;
 
-    if (approvalStatus !== 'approved') {
+    if (approvalsRequired && approvalStatus !== 'approved') {
       toast.error(
         'Minting is locked until banker approval. Submit a mint request first.',
       );
       return;
     }
 
-    if (approvalQuery) {
+    if (approvalsRequired && approvalQuery) {
       try {
         const status = await getMintApprovalStatus(approvalQuery);
         applyApprovalStatus(status.status, {
@@ -709,13 +723,19 @@ export default function MintForm({
       }
 
       // If we could not extract the token address from the event log,
-      // use the tx hash as a fallback identifier so the asset record is
-      // still traceable back to the transaction.
+      // warn the user clearly. Do NOT use the tx hash as a substitute --
+      // a tx hash is not a valid contract address and would cause all
+      // subsequent on-chain calls (balance, transfer, burn) to fail.
       if (!assetAddress) {
         logger.warn(
-          'Could not extract token address from AssetCreated event. Using tx hash as fallback identifier.',
+          'Could not extract token address from AssetCreated event.',
+          { txHash: receipt.hash },
         );
-        assetAddress = receipt.hash;
+        toast.error(
+          'Token was minted but the contract address could not be detected automatically. ' +
+          'Check the block explorer for your transaction to find the new token address.',
+          { duration: 8000 },
+        );
       }
 
       txConfirmedToast(tx.hash, 'Wrapped asset minted successfully!');
@@ -750,25 +770,30 @@ export default function MintForm({
       });
     } catch (err: unknown) {
       let message = 'Minting transaction failed';
-      if (err instanceof Error) {
-        // Provide user-friendly messages for common contract errors
-        if (err.message.includes('user rejected') || err.message.includes('ACTION_REJECTED')) {
-          message = 'You rejected the transaction in your wallet. No tokens were minted.';
-        } else if (err.message.includes('insufficient funds')) {
-          message = 'Insufficient ETH to cover gas fees. Please add funds to your wallet.';
-        } else if (err.message.includes('EmptyName')) {
-          message = 'Token name cannot be empty';
-        } else if (err.message.includes('EmptySymbol')) {
-          message = 'Token symbol cannot be empty';
-        } else if (err.message.includes('ZeroMintAmount')) {
-          message = 'Mint amount must be greater than zero';
-        } else if (err.message.includes('ZeroAddress')) {
-          message = 'Recipient address cannot be the zero address';
-        } else if (err.message.includes('MintExceedsOriginalValue')) {
-          message = 'Mint amount exceeds the original document value. The contract rejected the transaction.';
-        } else {
-          message = err.message;
-        }
+      const errMsg = err instanceof Error ? err.message : String(err);
+
+      // Check Solidity-specific reverts FIRST (before generic patterns)
+      if (/MintExceedsOriginalValue/i.test(errMsg)) {
+        message = 'Mint amount exceeds the original document value. The contract rejected the transaction.';
+      } else if (/EmptyName/i.test(errMsg)) {
+        message = 'Token name cannot be empty.';
+      } else if (/EmptySymbol/i.test(errMsg)) {
+        message = 'Token symbol cannot be empty.';
+      } else if (/ZeroMintAmount/i.test(errMsg)) {
+        message = 'Mint amount must be greater than zero.';
+      } else if (/ZeroAddress/i.test(errMsg)) {
+        message = 'Recipient address cannot be the zero address.';
+      } else if (/user rejected|user denied|ACTION_REJECTED/i.test(errMsg)) {
+        message = 'You rejected the transaction in your wallet. No tokens were minted.';
+      } else if (/insufficient funds|INSUFFICIENT_FUNDS/i.test(errMsg)) {
+        message =
+          'Insufficient ETH to cover gas fees for this transaction. ' +
+          'Minting a new token deploys a contract which requires more gas than a simple transfer. ' +
+          'Please ensure you have at least 0.01 ETH available and try again.';
+      } else if (/execution reverted|CALL_EXCEPTION/i.test(errMsg)) {
+        message = 'The contract rejected this transaction. Please verify your inputs and try again.';
+      } else if (err instanceof Error) {
+        message = err.message;
       }
       setTxError(message);
       setTxState('failed');
@@ -783,6 +808,11 @@ export default function MintForm({
   };
 
   const handlePrimaryAction = useCallback(async () => {
+    if (!approvalsRequired) {
+      await handleMint();
+      return;
+    }
+
     if (approvalStatus === 'approved') {
       await handleMint();
       return;
@@ -794,7 +824,7 @@ export default function MintForm({
     }
 
     await handleSubmitMintRequest();
-  }, [approvalStatus, handleSubmitMintRequest, handleMint]);
+  }, [approvalStatus, approvalsRequired, handleSubmitMintRequest, handleMint]);
 
   // ---- Reset after success ------------------------------------------------
 
@@ -1342,20 +1372,27 @@ export default function MintForm({
       {/* ---- Section: Approval Workflow ---- */}
       <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 sm:p-5">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-          Mint Approval Workflow
+          {approvalsRequired ? 'Mint Approval Workflow' : 'Demo Minting Mode'}
         </p>
         <p className="mt-2 text-sm leading-relaxed text-gray-400">
-          Submit your mint request to banker review first. Once approved, the
-          mint action unlocks and you can sign the on-chain transaction.
+          {approvalsRequired
+            ? 'Submit your mint request to banker review first. Once approved, the mint action unlocks and you can sign the on-chain transaction.'
+            : 'Demo mode bypasses banker approval so you can mint directly and validate end-to-end wallet/RPC flows.'}
         </p>
-        <ol className="mt-3 space-y-1.5 text-xs text-gray-500">
-          <li>1. Submit mint request to banker (with attached document)</li>
-          <li>2. Banker approves or rejects request</li>
-          <li>3. Approved request unlocks mint button</li>
-        </ol>
+        {approvalsRequired ? (
+          <ol className="mt-3 space-y-1.5 text-xs text-gray-500">
+            <li>1. Submit mint request to banker (with attached document)</li>
+            <li>2. Banker approves or rejects request</li>
+            <li>3. Approved request unlocks mint button</li>
+          </ol>
+        ) : (
+          <p className="mt-3 text-xs text-emerald-400/85">
+            Demo sessions are pre-authorized. Click Mint Token to submit the on-chain transaction immediately.
+          </p>
+        )}
       </div>
 
-      {approvalStatus === 'pending' && (
+      {approvalsRequired && approvalStatus === 'pending' && (
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.08] p-4">
           <p className="text-sm font-semibold text-amber-300">
             Mint request submitted. Awaiting banker approval.
@@ -1373,7 +1410,7 @@ export default function MintForm({
         </div>
       )}
 
-      {approvalStatus === 'approved' && (
+      {approvalsRequired && approvalStatus === 'approved' && (
         <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.08] p-4">
           <p className="text-sm font-semibold text-emerald-300">
             Banker approved this mint request. You can mint now.
@@ -1386,7 +1423,7 @@ export default function MintForm({
         </div>
       )}
 
-      {approvalStatus === 'rejected' && (
+      {approvalsRequired && approvalStatus === 'rejected' && (
         <div className="rounded-2xl border border-red-500/20 bg-red-500/[0.08] p-4">
           <p className="text-sm font-semibold text-red-300">
             This mint request was rejected by banker review.
@@ -1400,7 +1437,7 @@ export default function MintForm({
         </div>
       )}
 
-      {approvalError && (
+      {approvalsRequired && approvalError && (
         <p className="text-xs text-red-400" role="alert">
           {approvalError}
         </p>
@@ -1408,19 +1445,28 @@ export default function MintForm({
 
       {/* ---- Submit Button ---- */}
       {(() => {
-        const mintUnlocked = approvalStatus === 'approved';
-        const approvalPending = approvalStatus === 'pending';
-        const approvalRejected = approvalStatus === 'rejected';
+        const mintUnlocked = approvalsRequired
+          ? approvalStatus === 'approved'
+          : true;
+        const approvalPending =
+          approvalsRequired && approvalStatus === 'pending';
+        const approvalRejected =
+          approvalsRequired && approvalStatus === 'rejected';
 
-        let buttonLabel = mintUnlocked
-          ? 'Mint Token'
-          : approvalRejected
-            ? 'Resubmit Mint Request to Banker'
-            : 'Submit Mint Request to Banker';
+        let buttonLabel = approvalsRequired
+          ? (mintUnlocked
+              ? 'Mint Token'
+              : approvalRejected
+                ? 'Resubmit Mint Request to Banker'
+                : 'Submit Mint Request to Banker')
+          : 'Mint Token';
         let buttonDisabledReason = '';
 
         if (isSubmitting) {
-          buttonLabel = mintUnlocked ? 'Submitting mint...' : 'Submitting request...';
+          buttonLabel =
+            approvalsRequired && !mintUnlocked
+              ? 'Submitting request...'
+              : 'Submitting mint...';
         } else if (approvalPending) {
           buttonLabel = 'Awaiting Banker Approval';
           buttonDisabledReason = 'Mint request pending banker approval';
@@ -1436,7 +1482,7 @@ export default function MintForm({
           buttonDisabledReason = 'Enter a recipient address';
         } else if (!ethers.isAddress(recipient)) {
           buttonDisabledReason = 'Invalid recipient address';
-        } else if (!mintUnlocked && !currentDocumentFile) {
+        } else if (approvalsRequired && !mintUnlocked && !currentDocumentFile) {
           buttonDisabledReason = 'Upload the source document file before submitting request';
         }
 
@@ -1444,7 +1490,7 @@ export default function MintForm({
           !canSubmit ||
           isSubmitting ||
           approvalPending ||
-          (!mintUnlocked && !currentDocumentFile);
+          (approvalsRequired && !mintUnlocked && !currentDocumentFile);
 
         return (
           <>
@@ -1457,7 +1503,7 @@ export default function MintForm({
                   ? buttonDisabledReason
                   : mintUnlocked
                     ? 'Mint token'
-                    : 'Submit mint request to banker'
+                    : (approvalsRequired ? 'Submit mint request to banker' : 'Mint token')
               }
               className="group relative flex w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 px-6 py-4 min-h-[44px] text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-all duration-200 hover:shadow-indigo-500/30 hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:shadow-none disabled:hover:brightness-100 disabled:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#06070A]"
             >

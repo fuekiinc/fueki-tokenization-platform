@@ -23,6 +23,8 @@ export interface User {
   helpLevel: HelpLevel;
   subscriptionPlan?: SubscriptionPlan | null;
   role?: string;
+  demoUsed?: boolean;
+  demoActive?: boolean;
   createdAt: string;
   updatedAt: string;
 }

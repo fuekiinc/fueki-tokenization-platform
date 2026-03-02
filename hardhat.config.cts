@@ -2,26 +2,23 @@ import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import "dotenv/config";
 
+// RPC endpoints -- use only public fallbacks. Authenticated endpoints (e.g.
+// QuikNode) must be provided via environment variables to avoid leaking API
+// tokens into source control.
 const MAINNET_RPC_URL =
-  process.env.MAINNET_RPC_URL ||
-  "https://billowing-rough-moon.quiknode.pro/a3cc003399fc8c72876d87c1f516c0897574e60c/";
+  process.env.MAINNET_RPC_URL || "https://ethereum-rpc.publicnode.com";
 const HOLESKY_RPC_URL =
-  process.env.HOLESKY_RPC_URL ||
-  "https://flashy-crimson-borough.ethereum-holesky.quiknode.pro/f43097bbd32a1c3476c2f3f1ff1d4780361be827/";
+  process.env.HOLESKY_RPC_URL || "https://ethereum-holesky-rpc.publicnode.com";
 const ARBITRUM_RPC_URL =
-  process.env.ARBITRUM_RPC_URL ||
-  "https://snowy-blue-frost.arbitrum-mainnet.quiknode.pro/a691b5e884e8df719f8ce8ec8ad5e22092d17cdb/";
+  process.env.ARBITRUM_RPC_URL || "https://arb1.arbitrum.io/rpc";
 const ARBITRUM_SEPOLIA_RPC_URL =
-  process.env.ARBITRUM_SEPOLIA_RPC_URL ||
-  "https://ancient-holy-tent.arbitrum-sepolia.quiknode.pro/53623a401aa412366b43ddea31aa6538ef24d7fd/";
+  process.env.ARBITRUM_SEPOLIA_RPC_URL || "https://sepolia-rollup.arbitrum.io/rpc";
 const POLYGON_RPC_URL =
   process.env.POLYGON_RPC_URL || "https://polygon-bor-rpc.publicnode.com";
 const BASE_RPC_URL =
-  process.env.BASE_RPC_URL ||
-  "https://delicate-red-cloud.base-mainnet.quiknode.pro/3ae2b0cd08e640c9c6a3e4c0ca89351dc879e5c8/";
+  process.env.BASE_RPC_URL || "https://mainnet.base.org";
 const BASE_SEPOLIA_RPC_URL =
-  process.env.BASE_SEPOLIA_RPC_URL ||
-  "https://billowing-wandering-yard.base-sepolia.quiknode.pro/70e0d692e7ba902f935ff17774c1aed59a21e0d0/";
+  process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org";
 const PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || "";
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "";
 const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY || "";

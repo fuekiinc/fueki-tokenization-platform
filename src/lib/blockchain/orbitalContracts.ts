@@ -826,52 +826,6 @@ export class OrbitalContractService {
     }
   }
 
-  private async signAndBroadcastWithReadRpcFallback(
-    signer: ethers.Signer,
-    signerAddress: string,
-    txRequest: ethers.TransactionRequest,
-  ): Promise<ethers.TransactionResponse> {
-    const [nonce, feeData] = await Promise.all([
-      this.withReadProvider('getTransactionCount', async (provider) =>
-        provider.getTransactionCount(signerAddress, 'pending'),
-      ),
-      this.withReadProvider('getFeeData', async (provider) => provider.getFeeData()),
-    ]);
-
-    const signingRequest: ethers.TransactionRequest = {
-      ...txRequest,
-      chainId: this.chainId,
-      nonce,
-    };
-
-    const hasEip1559 =
-      feeData.maxFeePerGas !== null && feeData.maxPriorityFeePerGas !== null;
-    if (hasEip1559) {
-      signingRequest.type = 2;
-      signingRequest.maxFeePerGas =
-        signingRequest.maxFeePerGas ?? feeData.maxFeePerGas ?? undefined;
-      signingRequest.maxPriorityFeePerGas =
-        signingRequest.maxPriorityFeePerGas ??
-        feeData.maxPriorityFeePerGas ??
-        undefined;
-      delete signingRequest.gasPrice;
-    } else if (feeData.gasPrice !== null && signingRequest.gasPrice == null) {
-      signingRequest.gasPrice = feeData.gasPrice;
-    }
-
-    try {
-      return await signer.sendTransaction(signingRequest);
-    } catch (walletRetryError) {
-      if (!isRetryableRpcError(walletRetryError)) {
-        throw walletRetryError;
-      }
-    }
-
-    const signedRawTx = await signer.signTransaction(signingRequest);
-    return this.withReadProvider('broadcastTransaction', async (provider) =>
-      provider.broadcastTransaction(signedRawTx),
-    );
-  }
 
   private async executeWrite(
     contract: ethers.Contract,
@@ -879,52 +833,50 @@ export class OrbitalContractService {
     args: unknown[],
     overrides?: ethers.Overrides,
   ): Promise<ethers.TransactionResponse> {
-    const methodRef = (contract as Record<string, unknown>)[method] as {
-      populateTransaction: (...params: unknown[]) => Promise<ethers.TransactionRequest>;
-    } | undefined;
-
-    if (!methodRef || typeof methodRef.populateTransaction !== 'function') {
+    const methodFn = contract.getFunction(method);
+    if (!methodFn) {
       throw new Error(`Contract method unavailable: ${method}`);
     }
 
-    try {
-      const signer = await this.getSigner();
-      const signerAddress = await signer.getAddress();
-      const populated = await methodRef.populateTransaction(...args, overrides ?? {});
-      const toAddress = (typeof populated.to === 'string' && populated.to) || this.resolveContractAddress(contract);
-
-      const gasEstimate = await this.estimateGasWithFallback(
-        contract,
-        method,
-        args,
-        signerAddress,
-        overrides,
-      );
-
-      const txRequest: ethers.TransactionRequest = {
-        ...populated,
-        ...(overrides ?? {}),
-        to: toAddress,
-      };
-
-      if (gasEstimate !== null) {
-        txRequest.gasLimit = (gasEstimate * 120n) / 100n;
-      }
-
+    // Pre-estimate gas via our healthy read RPCs so the wallet's potentially
+    // broken/rate-limited RPC is not needed for estimation.
+    const mergedOverrides: ethers.Overrides = { ...(overrides ?? {}) };
+    if (mergedOverrides.gasLimit == null) {
       try {
-        return await signer.sendTransaction(txRequest);
-      } catch (sendError) {
-        if (!isRetryableRpcError(sendError)) {
-          throw sendError;
-        }
-
-        return await this.signAndBroadcastWithReadRpcFallback(
-          signer,
-          signerAddress,
-          txRequest,
+        const signerAddress = await (await this.getSigner()).getAddress();
+        const gasEstimate = await this.estimateGasWithFallback(
+          contract, method, args, signerAddress, overrides,
         );
+        if (gasEstimate !== null) {
+          mergedOverrides.gasLimit = (gasEstimate * 125n) / 100n;
+        }
+      } catch (estErr) {
+        logger.warn(`[OrbitalContractService] ${method}: gas estimation failed, proceeding without gasLimit`, estErr);
       }
+    }
+
+    try {
+      return await methodFn(...args, mergedOverrides);
     } catch (err: unknown) {
+      if (/user (rejected|denied)|ACTION_REJECTED/i.test(
+        err instanceof Error ? err.message : String(err),
+      )) {
+        throw new Error('Transaction was rejected in your wallet.');
+      }
+
+      if (isRetryableRpcError(err)) {
+        logger.warn(`[OrbitalContractService] ${method}: RPC failure, retrying after 2s`, err);
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const freshSigner = await this.getSigner();
+          const freshContract = contract.connect(freshSigner) as ethers.Contract;
+          return await freshContract.getFunction(method)(...args, mergedOverrides);
+        } catch (retryErr: unknown) {
+          const userMessage = parseContractError(retryErr);
+          throw new Error(userMessage);
+        }
+      }
+
       const userMessage = parseContractError(err);
       logger.error(`[OrbitalContractService] ${method} failed:`, err);
       throw new Error(userMessage);

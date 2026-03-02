@@ -13,20 +13,47 @@ import type { AuthStorageMode } from '../authStorage';
 // Configuration
 // ---------------------------------------------------------------------------
 
-const baseURL = import.meta.env.VITE_API_URL as string | undefined;
+const DEFAULT_CLOUD_RUN_BACKEND_URL = 'https://fueki-backend-pojr5zp2oq-uc.a.run.app';
 
-// Fail-fast warning in development if the API URL env var is missing
-// (security audit C-4: prevents silently falling back to production).
-if (!baseURL && import.meta.env.DEV) {
-  console.error(
-    '[api/client] VITE_API_URL is not set. API requests will fall back to ' +
-      'the production URL, which is unsafe in development. Set VITE_API_URL ' +
-      'in your .env file.',
+function isLocalhost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}
+
+function deriveApiUrlFromRuntimeHost(): string | null {
+  if (typeof window === 'undefined') return null;
+  const { origin, hostname } = window.location;
+
+  // Local development defaults to the backend's documented dev port.
+  if (isLocalhost(hostname)) {
+    return 'http://localhost:8080';
+  }
+
+  // Cloud Run service URL mapping: fueki-frontend* -> fueki-backend*
+  if (hostname.includes('run.app') && hostname.includes('fueki-frontend')) {
+    const backendHost = hostname.replace('fueki-frontend', 'fueki-backend');
+    return origin.replace(hostname, backendHost);
+  }
+
+  // Custom production domain fallback.
+  if (hostname === 'fueki-tech.com' || hostname.endsWith('.fueki-tech.com')) {
+    return DEFAULT_CLOUD_RUN_BACKEND_URL;
+  }
+
+  return null;
+}
+
+const envBaseURL = import.meta.env.VITE_API_URL as string | undefined;
+const runtimeBaseURL = deriveApiUrlFromRuntimeHost();
+const baseURL = envBaseURL || runtimeBaseURL || DEFAULT_CLOUD_RUN_BACKEND_URL;
+
+if (!envBaseURL) {
+  console.warn(
+    `[api/client] VITE_API_URL is not set. Using fallback API base URL: ${baseURL}`,
   );
 }
 
 const apiClient = axios.create({
-  baseURL: baseURL ?? 'https://fueki-backend-114394197024.us-central1.run.app',
+  baseURL: baseURL || '/api',
   timeout: 15_000,
   withCredentials: true, // Send httpOnly refresh token cookie automatically
 });
@@ -144,10 +171,15 @@ apiClient.interceptors.response.use(
       // (withCredentials: true). We use a fresh axios instance to avoid
       // the interceptor loop — the refresh request must not trigger
       // another 401 retry.
+      //
+      // Use a bare axios instance (no interceptors) with the same baseURL
+      // as the main client so the refresh path is identical to all other
+      // API calls. This avoids fragile URL manipulation.
       const { data } = await axios.post<{ accessToken: string }>(
-        `${apiClient.defaults.baseURL}/api/auth/refresh`,
+        '/api/auth/refresh',
         {},
         {
+          baseURL: apiClient.defaults.baseURL,
           headers: { 'Content-Type': 'application/json' },
           timeout: 15_000,
           withCredentials: true,

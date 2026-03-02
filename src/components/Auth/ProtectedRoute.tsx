@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { isContractDeploymentOnlyPlan } from '../../lib/subscriptionPlans';
+import { normalizeKycStatus } from '../../lib/auth/kycStatus';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,8 +64,17 @@ function ProtectedRoute() {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // 3. Authenticated but KYC not yet approved -- redirect based on KYC status.
-  const kycStatus = user?.kycStatus;
+  // 3. Demo mode active -- allow through regardless of KYC status.
+  if (user?.demoActive) {
+    return <Outlet />;
+  }
+
+  // 4. Authenticated but KYC not yet approved -- redirect based on KYC status.
+  const kycStatus = normalizeKycStatus(user?.kycStatus);
+
+  if (kycStatus === 'not_submitted' && user?.subscriptionPlan) {
+    return <Navigate to="/pending-approval" replace />;
+  }
 
   if (kycStatus === 'not_submitted') {
     return <Navigate to="/signup" state={{ step: 'kyc' }} replace />;
@@ -100,8 +110,14 @@ export function AuthRedirect({ children }: { children: React.ReactNode }) {
   }
 
   if (isAuthenticated) {
+    if (!user) {
+      return <Navigate to="/login" replace />;
+    }
+
     // KYC approved -- send them to wherever they came from, or the dashboard.
-    if (user?.kycStatus === 'approved') {
+    const kycStatus = normalizeKycStatus(user?.kycStatus);
+
+    if (kycStatus === 'approved') {
       const defaultRoute = isContractDeploymentOnlyPlan(user.subscriptionPlan)
         ? '/contracts'
         : '/dashboard';
@@ -114,20 +130,31 @@ export function AuthRedirect({ children }: { children: React.ReactNode }) {
       return <Navigate to={destination ?? defaultRoute} replace />;
     }
 
+    // Demo active -- send them to dashboard.
+    if (user?.demoActive) {
+      const from = hasFromPath(location.state) ? location.state.from?.pathname : undefined;
+      return <Navigate to={from ?? '/dashboard'} replace />;
+    }
+
     // KYC pending -- send them to the approval-pending page.
-    if (user?.kycStatus === 'pending') {
+    if (kycStatus === 'pending') {
       return <Navigate to="/pending-approval" replace />;
     }
 
     // KYC rejected -- allow access to /signup so they can re-submit KYC.
     // Redirecting rejected users to /pending-approval while /pending-approval's
     // "Try Again" button points to /signup would create an infinite redirect loop.
-    if (user?.kycStatus === 'rejected' && location.pathname !== '/signup') {
+    if (kycStatus === 'rejected' && location.pathname !== '/signup') {
+      return <Navigate to="/pending-approval" replace />;
+    }
+
+    // KYC data exists but status is stale/misaligned -- keep them out of signup.
+    if (kycStatus === 'not_submitted' && user.subscriptionPlan) {
       return <Navigate to="/pending-approval" replace />;
     }
 
     // KYC not submitted -- if they're on the login page, push them to signup KYC step.
-    if (location.pathname === '/login') {
+    if (kycStatus === 'not_submitted' && location.pathname === '/login') {
       return <Navigate to="/signup" state={{ step: 'kyc' }} replace />;
     }
   }

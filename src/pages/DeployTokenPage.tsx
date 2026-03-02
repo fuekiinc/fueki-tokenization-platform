@@ -10,7 +10,7 @@
  *   Step 4 -- Review & Deploy (summary, chain selection, gas estimate, deploy)
  */
 
-import { type ChangeEvent, useCallback, useMemo, useRef, useState } from 'react';
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import {
   AlertCircle,
@@ -43,6 +43,16 @@ import {
 } from '../contracts/addresses.ts';
 import { ContractService, encodeDocumentHash, parseContractError } from '../lib/blockchain/contracts.ts';
 import HelpTooltip, { type TooltipId } from '../components/Common/HelpTooltip';
+import PendingDeploymentsPanel from '../components/SecurityToken/PendingDeploymentsPanel.tsx';
+import {
+  getSecurityTokenApprovalStatus,
+  submitSecurityTokenApprovalRequest,
+} from '../lib/api/securityTokenRequests.ts';
+import type {
+  SecurityTokenApprovalRequestItem,
+  SecurityTokenApprovalStatus,
+  SecurityTokenApprovalStatusQuery,
+} from '../types/securityTokenApproval';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -344,6 +354,43 @@ async function computeFileHash(file: File): Promise<string> {
   );
 }
 
+function normalizeDecimalInput(value: string): string {
+  const sanitized = value.replace(/[,\s]/g, '');
+  if (!/^\d+(\.\d+)?$/.test(sanitized)) {
+    throw new Error('Amount must be a valid positive decimal number');
+  }
+  if (Number(sanitized) < 0) {
+    throw new Error('Amount must be non-negative');
+  }
+  const [whole, fractional = ''] = sanitized.split('.');
+  const normalizedWhole = whole.replace(/^0+(?=\d)/, '') || '0';
+  const normalizedFractional = fractional.replace(/0+$/, '');
+  return normalizedFractional
+    ? `${normalizedWhole}.${normalizedFractional}`
+    : normalizedWhole;
+}
+
+function extractApiErrorMessage(
+  err: unknown,
+  fallback = 'Request failed. Please try again.',
+): string {
+  const candidate = err as {
+    response?: { data?: { error?: { message?: string } } };
+    message?: string;
+  };
+  const apiMessage = candidate?.response?.data?.error?.message;
+  if (typeof apiMessage === 'string' && apiMessage.trim()) {
+    return apiMessage.trim();
+  }
+  if (typeof candidate?.message === 'string' && candidate.message.trim()) {
+    if (/failed to fetch|network request failed|fetch failed|networkerror/i.test(candidate.message)) {
+      return 'Network error — unable to reach the server or RPC node. Please wait a moment and try again.';
+    }
+    return candidate.message.trim();
+  }
+  return fallback;
+}
+
 // ---------------------------------------------------------------------------
 // Validation helpers
 // ---------------------------------------------------------------------------
@@ -484,6 +531,20 @@ export default function DeployTokenPage() {
   const [gasEstimate, setGasEstimate] = useState<string | null>(null);
   const [isEstimatingGas, setIsEstimatingGas] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedDocumentFile, setSelectedDocumentFile] = useState<File | null>(null);
+  const [selectedApprovalRequest, setSelectedApprovalRequest] =
+    useState<SecurityTokenApprovalRequestItem | null>(null);
+
+  // ---- Deployment approval lifecycle ------------------------------------
+
+  const [approvalStatus, setApprovalStatus] =
+    useState<SecurityTokenApprovalStatus>('none');
+  const [approvalRequestId, setApprovalRequestId] = useState<string | null>(null);
+  const [approvalReviewNotes, setApprovalReviewNotes] = useState<string | null>(null);
+  const [approvalSubmittedAt, setApprovalSubmittedAt] = useState<string | null>(null);
+  const [approvalReviewedAt, setApprovalReviewedAt] = useState<string | null>(null);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
 
   const wallet = useWalletStore((s) => s.wallet);
   const {
@@ -510,6 +571,58 @@ export default function DeployTokenPage() {
 
   const isOnCorrectChain = wallet.chainId === targetChainId;
 
+  const approvalQuery = useMemo<SecurityTokenApprovalStatusQuery | null>(() => {
+    if (!targetChainId) return null;
+    if (
+      !form.name.trim() ||
+      !form.symbol.trim() ||
+      !form.documentHash.trim() ||
+      !form.documentType.trim()
+    ) {
+      return null;
+    }
+
+    try {
+      return {
+        tokenName: form.name.trim(),
+        tokenSymbol: form.symbol.trim().toUpperCase(),
+        decimals: form.decimals,
+        totalSupply: normalizeDecimalInput(form.totalSupply || '0'),
+        maxTotalSupply: normalizeDecimalInput(form.maxTotalSupply || '0'),
+        minTimelockAmount: normalizeDecimalInput(form.minTimelockAmount || '0'),
+        maxReleaseDelayDays: Math.max(
+          0,
+          Math.floor(Number(form.maxReleaseDelayDays || '0')),
+        ),
+        originalValue: form.originalValue.trim(),
+        documentHash: form.documentHash.trim(),
+        documentType: form.documentType.trim(),
+        chainId: targetChainId,
+      };
+    } catch {
+      return null;
+    }
+  }, [form, targetChainId]);
+
+  const applyApprovalStatus = useCallback(
+    (
+      status: SecurityTokenApprovalStatus,
+      details: {
+        requestId?: string | null;
+        reviewNotes?: string | null;
+        submittedAt?: string | null;
+        reviewedAt?: string | null;
+      } = {},
+    ) => {
+      setApprovalStatus(status);
+      setApprovalRequestId(details.requestId ?? null);
+      setApprovalReviewNotes(details.reviewNotes ?? null);
+      setApprovalSubmittedAt(details.submittedAt ?? null);
+      setApprovalReviewedAt(details.reviewedAt ?? null);
+    },
+    [],
+  );
+
   // -----------------------------------------------------------------------
   // Form updater
   // -----------------------------------------------------------------------
@@ -517,6 +630,9 @@ export default function DeployTokenPage() {
   const updateField = useCallback(
     <K extends keyof TokenFormState>(field: K, value: TokenFormState[K]) => {
       setForm((prev) => ({ ...prev, [field]: value }));
+      setSelectedApprovalRequest(null);
+      setApprovalError(null);
+      applyApprovalStatus('none');
       // Clear the specific field error on change
       setErrors((prev) => {
         if (prev[field]) {
@@ -527,7 +643,7 @@ export default function DeployTokenPage() {
         return prev;
       });
     },
-    [],
+    [applyApprovalStatus],
   );
 
   // -----------------------------------------------------------------------
@@ -564,6 +680,173 @@ export default function DeployTokenPage() {
   );
 
   // -----------------------------------------------------------------------
+  // Approval request hydration/polling
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!wallet.isConnected || !approvalQuery) {
+      if (approvalStatus !== 'none') {
+        applyApprovalStatus('none');
+      }
+      return;
+    }
+
+    let cancelled = false;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const fetchStatus = async () => {
+      try {
+        const status = await getSecurityTokenApprovalStatus(approvalQuery);
+        if (cancelled) return;
+        setApprovalError(null);
+        applyApprovalStatus(status.status, {
+          requestId: status.requestId,
+          reviewNotes: status.reviewNotes,
+          submittedAt: status.submittedAt,
+          reviewedAt: status.reviewedAt,
+        });
+      } catch (err) {
+        if (cancelled) return;
+        setApprovalError(
+          extractApiErrorMessage(
+            err,
+            'Unable to check security token deployment approval status.',
+          ),
+        );
+      }
+    };
+
+    void fetchStatus();
+
+    if (approvalStatus === 'pending') {
+      pollTimer = setInterval(() => {
+        void fetchStatus();
+      }, 15_000);
+    }
+
+    return () => {
+      cancelled = true;
+      if (pollTimer) clearInterval(pollTimer);
+    };
+  }, [wallet.isConnected, approvalQuery, approvalStatus, applyApprovalStatus]);
+
+  const handleSelectApprovalRequest = useCallback(
+    (request: SecurityTokenApprovalRequestItem) => {
+      setSelectedApprovalRequest(request);
+      setSelectedDocumentFile(null);
+      setErrors({});
+      setGasEstimate(null);
+      setTargetChainId(request.chainId);
+      setDeployResult(null);
+      setApprovalError(null);
+      setForm({
+        name: request.tokenName,
+        symbol: request.tokenSymbol,
+        decimals: request.decimals,
+        documentType: request.documentType,
+        totalSupply: request.totalSupply,
+        maxTotalSupply: request.maxTotalSupply,
+        minTimelockAmount: request.minTimelockAmount,
+        maxReleaseDelayDays: String(request.maxReleaseDelayDays),
+        originalValue: request.originalValue,
+        documentHash: request.documentHash,
+        hashSource: request.hashSource,
+        fileName: request.fileName ?? '',
+      });
+      applyApprovalStatus(request.status, {
+        requestId: request.id,
+        reviewNotes: request.reviewNotes,
+        submittedAt: request.submittedAt,
+        reviewedAt: request.reviewedAt,
+      });
+      setStep(4);
+    },
+    [applyApprovalStatus],
+  );
+
+  const handleSubmitDeploymentRequest = useCallback(async () => {
+    if (isSubmittingApproval) return;
+
+    const step1Errors = validateStep1(form);
+    const step2Errors = validateStep2(form);
+    const step3Errors = validateStep3(form);
+    const validationErrors = { ...step1Errors, ...step2Errors, ...step3Errors };
+
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      const firstKey = Object.keys(validationErrors)[0];
+      toast.error(validationErrors[firstKey]);
+      return;
+    }
+
+    if (!wallet.isConnected || !targetChainId) {
+      toast.error('Please connect your wallet before submitting a deployment request.');
+      return;
+    }
+
+    if (!approvalQuery) {
+      toast.error('Deployment configuration is invalid. Review your parameters and try again.');
+      return;
+    }
+
+    if (form.hashSource === 'file' && !selectedDocumentFile) {
+      toast.error('Upload the source document again before submitting to banker review.');
+      return;
+    }
+
+    setIsSubmittingApproval(true);
+    setApprovalError(null);
+    applyApprovalStatus('pending');
+
+    try {
+      const response = await submitSecurityTokenApprovalRequest({
+        ...approvalQuery,
+        hashSource: form.hashSource,
+        file: form.hashSource === 'file' ? selectedDocumentFile : null,
+      });
+
+      applyApprovalStatus(response.status, {
+        requestId: response.requestId,
+        reviewNotes: response.reviewNotes,
+        submittedAt: response.submittedAt,
+        reviewedAt: response.reviewedAt,
+      });
+
+      if (response.status === 'approved') {
+        toast.success(
+          response.reused
+            ? 'Deployment request is already approved. You can deploy now.'
+            : 'Deployment request approved. You can deploy now.',
+        );
+      } else if (response.reused) {
+        toast.success('An existing deployment request is already pending banker review.');
+      } else {
+        toast.success(
+          'Deployment request submitted to banker. Deployment unlocks after approval.',
+        );
+      }
+    } catch (err) {
+      const message = extractApiErrorMessage(
+        err,
+        'Failed to submit deployment request. Please try again.',
+      );
+      setApprovalError(message);
+      applyApprovalStatus('none');
+      toast.error(message);
+    } finally {
+      setIsSubmittingApproval(false);
+    }
+  }, [
+    approvalQuery,
+    applyApprovalStatus,
+    form,
+    isSubmittingApproval,
+    selectedDocumentFile,
+    targetChainId,
+    wallet.isConnected,
+  ]);
+
+  // -----------------------------------------------------------------------
   // File upload handler (SHA-256 hash)
   // -----------------------------------------------------------------------
 
@@ -575,6 +858,7 @@ export default function DeployTokenPage() {
       setIsHashing(true);
       try {
         const hash = await computeFileHash(file);
+        setSelectedDocumentFile(file);
         updateField('documentHash', hash);
         updateField('fileName', file.name);
         updateField('hashSource', 'file');
@@ -605,7 +889,6 @@ export default function DeployTokenPage() {
     try {
       const {
         decimals,
-        encodedHash,
         maxReleaseDelay,
         maxTotalSupplyWei,
         minTimelockAmountWei,
@@ -614,10 +897,7 @@ export default function DeployTokenPage() {
       } = prepareDeployValues(form);
 
       const service = new ContractService(provider, targetChainId);
-      const signer = await service.getSigner();
-      const factory = service.getSecurityTokenFactoryContract(signer);
-
-      const gas = await factory.createSecurityToken.estimateGas(
+      const gasQuote = await service.estimateCreateSecurityTokenGas(
         TRANSFER_RULES_BYTECODE,
         RESTRICTED_SWAP_BYTECODE,
         form.name,
@@ -625,20 +905,18 @@ export default function DeployTokenPage() {
         decimals,
         totalSupplyWei,
         maxTotalSupplyWei,
-        encodedHash,
+        form.documentHash,
         form.documentType,
         originalValue,
         minTimelockAmountWei,
         maxReleaseDelay,
       );
+      const gasFormatted = gasQuote.gasUnits.toLocaleString();
+      const costLabel = gasQuote.gasPriceWei > 0n
+        ? `${Number(ethers.formatEther(gasQuote.estimatedCostWei)).toFixed(6)} ETH`
+        : 'fee unavailable';
 
-      const feeData = await provider.getFeeData();
-      const gasPrice = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;
-      const estimatedCost = gas * gasPrice;
-      const costEth = ethers.formatEther(estimatedCost);
-      const gasFormatted = gas.toLocaleString();
-
-      setGasEstimate(`~${gasFormatted} gas (~${Number(costEth).toFixed(6)} ETH)`);
+      setGasEstimate(`~${gasFormatted} gas (~${costLabel})`);
     } catch (err) {
       const msg = parseContractError(err);
       setGasEstimate(`Estimation failed: ${msg}`);
@@ -661,6 +939,20 @@ export default function DeployTokenPage() {
   // -----------------------------------------------------------------------
 
   const handleDeploy = useCallback(async () => {
+    if (approvalStatus !== 'approved') {
+      toast.error(
+        'Deployment is locked until banker approval. Submit the deployment request first.',
+      );
+      return;
+    }
+
+    if (!approvalQuery) {
+      toast.error(
+        'Deployment configuration is invalid. Review your parameters and try again.',
+      );
+      return;
+    }
+
     if (!wallet.isConnected) {
       toast.error('Please connect your wallet first');
       return;
@@ -687,6 +979,21 @@ export default function DeployTokenPage() {
     setIsDeploying(true);
 
     try {
+      const approval = await getSecurityTokenApprovalStatus(approvalQuery);
+      applyApprovalStatus(approval.status, {
+        requestId: approval.requestId,
+        reviewNotes: approval.reviewNotes,
+        submittedAt: approval.submittedAt,
+        reviewedAt: approval.reviewedAt,
+      });
+
+      if (approval.status !== 'approved') {
+        toast.error(
+          'Banker approval is no longer active. Submit a fresh deployment request.',
+        );
+        return;
+      }
+
       const activeNetwork = await provider.getNetwork();
       const activeChainId = Number(activeNetwork.chainId);
       if (activeChainId !== targetChainId) {
@@ -790,7 +1097,17 @@ export default function DeployTokenPage() {
     } finally {
       setIsDeploying(false);
     }
-  }, [form, isOnCorrectChain, isSwitchingNetwork, targetChainId, targetNetwork, wallet]);
+  }, [
+    approvalQuery,
+    approvalStatus,
+    applyApprovalStatus,
+    form,
+    isOnCorrectChain,
+    isSwitchingNetwork,
+    targetChainId,
+    targetNetwork,
+    wallet,
+  ]);
 
   // -----------------------------------------------------------------------
   // Summary data for step 4
@@ -1138,7 +1455,9 @@ export default function DeployTokenPage() {
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => updateField('hashSource', 'file')}
+                  onClick={() => {
+                    updateField('hashSource', 'file');
+                  }}
                   className={clsx(
                     'px-4 py-2 rounded-xl text-sm font-medium transition-colors',
                     form.hashSource === 'file'
@@ -1150,7 +1469,11 @@ export default function DeployTokenPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => updateField('hashSource', 'manual')}
+                  onClick={() => {
+                    setSelectedDocumentFile(null);
+                    updateField('hashSource', 'manual');
+                    updateField('fileName', '');
+                  }}
                   className={clsx(
                     'px-4 py-2 rounded-xl text-sm font-medium transition-colors',
                     form.hashSource === 'manual'
@@ -1272,9 +1595,31 @@ export default function DeployTokenPage() {
                   Review &amp; Deploy
                 </h2>
                 <p className="text-sm text-gray-500">
-                  Verify your configuration before deploying to the blockchain.
+                  Submit to banker review first. Deployment unlocks only after approval.
                 </p>
               </div>
+
+              <PendingDeploymentsPanel
+                selectedRequestId={selectedApprovalRequest?.id ?? null}
+                onSelectRequest={handleSelectApprovalRequest}
+              />
+
+              {selectedApprovalRequest && (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.08] px-4 py-3 text-sm text-indigo-200">
+                  <span>
+                    Using request <span className="font-mono">{selectedApprovalRequest.id}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedApprovalRequest(null);
+                    }}
+                    className="rounded-lg border border-indigo-400/25 bg-indigo-400/10 px-2.5 py-1 text-xs font-medium text-indigo-100 transition-colors hover:bg-indigo-400/20"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
 
               {/* Summary table */}
               <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl divide-y divide-white/[0.04]">
@@ -1369,6 +1714,9 @@ export default function DeployTokenPage() {
                   onChange={(e) => {
                     setTargetChainId(Number(e.target.value));
                     setGasEstimate(null);
+                    setSelectedApprovalRequest(null);
+                    setApprovalError(null);
+                    applyApprovalStatus('none');
                   }}
                 >
                   {deployNetworks.map((net) => (
@@ -1382,6 +1730,68 @@ export default function DeployTokenPage() {
                   ))}
                 </select>
               </div>
+
+              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  Deployment approval
+                </p>
+                <p className="mt-2 text-sm text-gray-400">
+                  Submit this deployment configuration to banker review. On approval, deployment is unlocked.
+                </p>
+                <ul className="mt-3 space-y-1 text-xs text-gray-500">
+                  <li>1. Submit security token deployment request to banker</li>
+                  <li>2. Banker reviews request details via email action links</li>
+                  <li>3. Once approved, deploy is enabled for this exact configuration</li>
+                </ul>
+              </div>
+
+              {approvalStatus === 'pending' && (
+                <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.08] p-4 text-sm text-amber-200">
+                  <p className="font-medium">
+                    Deployment request submitted. Awaiting banker approval.
+                  </p>
+                  {approvalRequestId && (
+                    <p className="mt-1 text-xs text-amber-300/80">
+                      Request ID: <span className="font-mono">{approvalRequestId}</span>
+                    </p>
+                  )}
+                  {approvalSubmittedAt && (
+                    <p className="mt-1 text-xs text-amber-300/80">
+                      Submitted: {new Date(approvalSubmittedAt).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {approvalStatus === 'approved' && (
+                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.08] p-4 text-sm text-emerald-200">
+                  <p className="font-medium">
+                    Banker approved this deployment request. You can deploy now.
+                  </p>
+                  {approvalReviewedAt && (
+                    <p className="mt-1 text-xs text-emerald-300/80">
+                      Approved: {new Date(approvalReviewedAt).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {approvalStatus === 'rejected' && (
+                <div className="rounded-xl border border-red-500/25 bg-red-500/[0.08] p-4 text-sm text-red-200">
+                  <p className="font-medium">
+                    This deployment request was rejected by banker review.
+                  </p>
+                  {approvalReviewNotes && (
+                    <p className="mt-1 text-xs text-red-300/80">{approvalReviewNotes}</p>
+                  )}
+                </div>
+              )}
+
+              {approvalError && (
+                <div className="rounded-xl border border-red-500/20 bg-red-500/[0.08] p-3 text-xs text-red-300">
+                  {approvalError}
+                </div>
+              )}
 
               {/* Wallet status */}
               {!wallet.isConnected && (
@@ -1443,37 +1853,66 @@ export default function DeployTokenPage() {
                 </div>
               )}
 
-              {/* Deploy button */}
-              <button
-                type="button"
-                onClick={handleDeploy}
-                disabled={
-                  !wallet.isConnected ||
-                  !isOnCorrectChain ||
-                  isDeploying ||
-                  isSwitchingNetwork
-                }
-                className={clsx(
-                  'w-full flex items-center justify-center gap-2',
-                  'bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed',
-                  'text-white rounded-xl px-6 py-3.5 font-medium transition-colors',
-                )}
-              >
-                {isDeploying ? (
-                  <>
-                    <Loader2
-                      className="h-4 w-4 animate-spin"
-                      aria-hidden="true"
-                    />
-                    Deploying...
-                  </>
-                ) : (
-                  <>
-                    <Rocket className="h-4 w-4" aria-hidden="true" />
-                    Deploy Security Token
-                  </>
-                )}
-              </button>
+              {approvalStatus === 'approved' ? (
+                <button
+                  type="button"
+                  onClick={handleDeploy}
+                  disabled={
+                    !wallet.isConnected ||
+                    !isOnCorrectChain ||
+                    isDeploying ||
+                    isSwitchingNetwork
+                  }
+                  className={clsx(
+                    'w-full flex items-center justify-center gap-2',
+                    'bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed',
+                    'text-white rounded-xl px-6 py-3.5 font-medium transition-colors',
+                  )}
+                >
+                  {isDeploying ? (
+                    <>
+                      <Loader2
+                        className="h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                      Deploying...
+                    </>
+                  ) : (
+                    <>
+                      <Rocket className="h-4 w-4" aria-hidden="true" />
+                      Deploy Security Token
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSubmitDeploymentRequest}
+                  disabled={
+                    !wallet.isConnected ||
+                    isSubmittingApproval ||
+                    isSwitchingNetwork ||
+                    approvalStatus === 'pending'
+                  }
+                  className={clsx(
+                    'w-full flex items-center justify-center gap-2',
+                    'bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed',
+                    'text-white rounded-xl px-6 py-3.5 font-medium transition-colors',
+                  )}
+                >
+                  {isSubmittingApproval ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <Rocket className="h-4 w-4" aria-hidden="true" />
+                      Submit to banker
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           )}
 
@@ -1600,6 +2039,10 @@ export default function DeployTokenPage() {
                 type="button"
                 onClick={() => {
                   setForm({ ...initialFormState });
+                  setSelectedDocumentFile(null);
+                  setSelectedApprovalRequest(null);
+                  setApprovalError(null);
+                  applyApprovalStatus('none');
                   setDeployResult(null);
                   setGasEstimate(null);
                   setStep(1);

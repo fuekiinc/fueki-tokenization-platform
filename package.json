@@ -1,7 +1,7 @@
 {
   "name": "tokenization-platform",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.4.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,8 +15,9 @@
     "test:e2e:a11y": "playwright test tests/accessibility.spec.ts --project=chromium",
     "test:all": "npm run test:unit && npm run test:e2e:smoke",
     "preview": "vite preview",
-    "frontend:update": "tsc -b && vite build && gcloud run deploy fueki-frontend --source . --region us-central1",
-    "backend:update": "cd backend && npm run build && cd .. && gcloud run deploy fueki-backend --source backend --region us-central1",
+    "frontend:update": "tsc -b && vite build && gcloud run deploy fueki-frontend --source . --region us-central1 --set-build-env-vars VITE_API_URL=${VITE_API_URL:-https://fueki-backend-pojr5zp2oq-uc.a.run.app}",
+    "backend:migrate": "cd backend && npx prisma migrate deploy",
+    "backend:update": "cd backend && npm run build && cd .. && gcloud run deploy fueki-backend --source backend --region us-central1 --port 8080 --env-vars-file backend/cloudrun.env.yaml --add-cloudsql-instances extreme-lodge-463919-d9:us-central1:fueki-db",
     "contracts:build": "npx hardhat compile && npx tsx scripts/extract-template-artifacts.ts"
   },
   "dependencies": {

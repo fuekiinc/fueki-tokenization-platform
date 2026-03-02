@@ -322,8 +322,12 @@ export default function LiquidityPanel({
   const handleAddLiquidity = useCallback(async () => {
     if (!contractService || !selectedPool || !anyAddAmount) return;
     if (txStatus !== 'idle' && txStatus !== 'confirmed') return;
+    if (!chainId) {
+      toast.error('Unable to detect your network. Please reconnect your wallet.');
+      return;
+    }
 
-    const orbChainId = chainId!;
+    const orbChainId = chainId;
 
     // 1. Approve all tokens for the ROUTER (which does transferFrom)
     setTxStatus('approving');
@@ -430,6 +434,10 @@ export default function LiquidityPanel({
   const handleRemoveLiquidity = useCallback(async () => {
     if (!contractService || !selectedPool || parsedRemoveAmount === 0n) return;
     if (txStatus !== 'idle' && txStatus !== 'confirmed') return;
+    if (!chainId) {
+      toast.error('Unable to detect your network. Please reconnect your wallet.');
+      return;
+    }
 
     // Approve router to spend LP tokens (pool IS the LP token contract)
     setTxStatus('approving');
@@ -445,7 +453,7 @@ export default function LiquidityPanel({
           selectedPool.address,
           parsedRemoveAmount,
         );
-        txSubmittedToast(approveTx.hash, chainId!, 'Approving LP tokens...');
+        txSubmittedToast(approveTx.hash, chainId, 'Approving LP tokens...');
         await contractService.waitForTransaction(approveTx);
         txConfirmedToast(approveTx.hash, 'LP tokens approved');
       }
@@ -475,7 +483,7 @@ export default function LiquidityPanel({
         deadline,
       );
       submittedRemoveHash = tx.hash;
-      txSubmittedToast(tx.hash, chainId!, 'Removing liquidity...');
+      txSubmittedToast(tx.hash, chainId, 'Removing liquidity...');
       await contractService.waitForTransaction(tx);
       txConfirmedToast(tx.hash, 'Liquidity removed!');
       setTxStatus('confirmed');

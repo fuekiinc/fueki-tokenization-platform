@@ -411,7 +411,9 @@ export default function TokenSelector({
 
   useEffect(() => {
     if (isOpen && searchInputRef.current) {
-      searchInputRef.current.focus();
+      // preventScroll stops the browser from scrolling to the portal-rendered
+      // dropdown element when the search input receives focus.
+      searchInputRef.current.focus({ preventScroll: true });
     }
   }, [isOpen]);
 

@@ -3,6 +3,7 @@ import type {
   AuthTokens,
   DocumentUploadResponse,
   HelpLevel,
+  KYCStatus,
   KYCFormData,
   KYCStatusResponse,
   KYCSubmitResponse,
@@ -11,6 +12,7 @@ import type {
   User,
 } from '../types/auth';
 import * as authApi from '../lib/api/auth';
+import { normalizeKycStatus } from '../lib/auth/kycStatus';
 import {
   type AuthStorageMode,
   clearPersistedAuth,
@@ -43,6 +45,8 @@ interface AuthStore {
   uploadDocument: (file: File, documentType: string) => Promise<DocumentUploadResponse>;
   checkKYCStatus: () => Promise<KYCStatusResponse>;
   updateHelpLevel: (helpLevel: HelpLevel) => Promise<User>;
+  startDemo: () => Promise<void>;
+  endDemo: () => Promise<void>;
   setUser: (user: User) => void;
   clearAuth: () => void;
 }
@@ -59,6 +63,18 @@ const initialState = {
   isInitialized: false,
   storageMode: 'local' as AuthStorageMode,
 };
+
+function normalizeUser(user: User | null | undefined): User {
+  if (!user || typeof user !== 'object') {
+    throw new Error(
+      'Authentication response is invalid (missing user profile). Please try again.',
+    );
+  }
+  return {
+    ...user,
+    kycStatus: normalizeKycStatus((user as { kycStatus?: unknown }).kycStatus),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Double-init guard: ensures concurrent calls to initialize() share a single
@@ -92,7 +108,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
       // Tokens found in storage -- try to validate them by fetching the profile.
       try {
-        const user = await authApi.getProfile();
+        const user = normalizeUser(await authApi.getProfile());
         persistUser(storageMode, user);
         set({
           user,
@@ -110,9 +126,9 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
           persistTokens(storageMode, newTokens);
 
           // Fetch the user profile with the new access token.
-          let user: User | null = savedUser;
+          let user: User | null = savedUser ? normalizeUser(savedUser) : null;
           try {
-            user = await authApi.getProfile();
+            user = normalizeUser(await authApi.getProfile());
             if (user) {
               persistUser(storageMode, user);
             }
@@ -149,9 +165,10 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     try {
       const response = await authApi.login(data);
       const storageMode: AuthStorageMode = data.rememberMe ? 'local' : 'session';
-      persistAuthSnapshot(storageMode, response.tokens, response.user);
+      const normalizedUser = normalizeUser(response.user);
+      persistAuthSnapshot(storageMode, response.tokens, normalizedUser);
       set({
-        user: response.user,
+        user: normalizedUser,
         tokens: response.tokens,
         isAuthenticated: true,
         isLoading: false,
@@ -168,9 +185,10 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     set({ isLoading: true });
     try {
       const response = await authApi.register(data);
-      persistAuthSnapshot('local', response.tokens, response.user);
+      const normalizedUser = normalizeUser(response.user);
+      persistAuthSnapshot('local', response.tokens, normalizedUser);
       set({
-        user: response.user,
+        user: normalizedUser,
         tokens: response.tokens,
         isAuthenticated: true,
         isLoading: false,
@@ -184,6 +202,11 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
   // ---- logout --------------------------------------------------------------
   logout: async () => {
+    // If in demo mode, end it first so the backend marks demoUsed=true.
+    const user = get().user;
+    if (user?.demoActive) {
+      try { await authApi.endDemo(); } catch { /* best-effort */ }
+    }
     // Fire-and-forget -- don't block the UI on the server call.
     // The refresh token is sent via httpOnly cookie automatically.
     authApi.logout().catch(() => {});
@@ -219,7 +242,10 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     const currentUser = get().user;
     const storageMode = get().storageMode;
     if (currentUser) {
-      const updatedUser: User = { ...currentUser, kycStatus: response.status };
+      const updatedUser: User = {
+        ...currentUser,
+        kycStatus: normalizeKycStatus(response.status as KYCStatus),
+      };
       persistUser(storageMode, updatedUser);
       set({ user: updatedUser });
     }
@@ -228,16 +254,48 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
   // ---- updateHelpLevel -----------------------------------------------------
   updateHelpLevel: async (helpLevel) => {
-    const updatedUser = await authApi.updatePreferences({ helpLevel });
+    const updatedUser = normalizeUser(await authApi.updatePreferences({ helpLevel }));
     persistUser(get().storageMode, updatedUser);
     set({ user: updatedUser });
     return updatedUser;
   },
 
+  // ---- startDemo -----------------------------------------------------------
+  startDemo: async () => {
+    set({ isLoading: true });
+    try {
+      const response = await authApi.startDemo();
+      const normalizedUser = normalizeUser(response.user);
+      persistUser(get().storageMode, normalizedUser);
+      set({ user: normalizedUser, isLoading: false });
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  // ---- endDemo -------------------------------------------------------------
+  endDemo: async () => {
+    try {
+      await authApi.endDemo();
+      const currentUser = get().user;
+      if (currentUser) {
+        const updatedUser: User = {
+          ...currentUser,
+          demoActive: false,
+          demoUsed: true,
+        };
+        persistUser(get().storageMode, updatedUser);
+        set({ user: updatedUser });
+      }
+    } catch { /* best-effort */ }
+  },
+
   // ---- setUser -------------------------------------------------------------
   setUser: (user) => {
-    persistUser(get().storageMode, user);
-    set({ user });
+    const normalizedUser = normalizeUser(user);
+    persistUser(get().storageMode, normalizedUser);
+    set({ user: normalizedUser });
   },
 
   // ---- clearAuth -----------------------------------------------------------

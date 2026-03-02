@@ -677,7 +677,7 @@ function ActiveSwaps({ tokenAddress }: { tokenAddress: string }) {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [txMsg, setTxMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [txMsg, setTxMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   const loadSwaps = useCallback(async () => {
     if (!wallet.address) {
@@ -760,7 +760,27 @@ function ActiveSwaps({ tokenAddress }: { tokenAddress: string }) {
       try {
         let tx;
         if (swap.status === SWAP_STATUS.SellConfigured) {
-          // Buyer completes with quote token
+          // Buyer completes with quote token -- must first approve the security
+          // token contract to spend the buyer's quote tokens.
+          if (swap.quoteToken && swap.quoteToken !== ethers.ZeroAddress) {
+            const provider = getProvider();
+            if (provider) {
+              const quoteTokenContract = new ethers.Contract(
+                swap.quoteToken,
+                ['function allowance(address,address) view returns (uint256)', 'function approve(address,uint256) returns (bool)'],
+                await provider.getSigner(),
+              );
+              const currentAllowance = await quoteTokenContract.allowance(
+                await (await provider.getSigner()).getAddress(),
+                tokenAddress,
+              );
+              if (BigInt(currentAllowance) < swap.quoteTokenAmount) {
+                setTxMsg({ type: 'info', text: 'Approving quote token for swap...' });
+                const approveTx = await quoteTokenContract.approve(tokenAddress, swap.quoteTokenAmount);
+                await approveTx.wait();
+              }
+            }
+          }
           tx = await contract.completeSwapWithPaymentToken(swap.swapNumber);
         } else {
           // Seller completes with restricted token
@@ -833,7 +853,9 @@ function ActiveSwaps({ tokenAddress }: { tokenAddress: string }) {
             className={`rounded-xl px-4 py-3 text-sm border ${
               txMsg.type === 'success'
                 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                : 'bg-red-500/10 border-red-500/20 text-red-400'
+                : txMsg.type === 'info'
+                  ? 'bg-sky-500/10 border-sky-500/20 text-sky-300'
+                  : 'bg-red-500/10 border-red-500/20 text-red-400'
             }`}
           >
             {txMsg.text}

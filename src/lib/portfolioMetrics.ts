@@ -82,8 +82,14 @@ function deriveTokenPrice(asset: WrappedAsset): number {
  */
 function isBuyTrade(trade: TradeHistory, assetAddress: string): boolean {
   if (trade.status !== 'confirmed') return false;
+  // Match on contract address (stored in `from` or `to`), asset name, or symbol.
+  // TradeHistory.asset may be a human-readable name (from MintForm) or an address,
+  // so check all fields that could contain the contract address.
+  const addr = assetAddress.toLowerCase();
   const matchesAsset =
-    trade.asset.toLowerCase() === assetAddress.toLowerCase();
+    trade.asset.toLowerCase() === addr ||
+    (trade.from && trade.from.toLowerCase() === addr) ||
+    (trade.to && trade.to.toLowerCase() === addr);
   if (!matchesAsset) return false;
   return trade.type === 'mint' || trade.type === 'security-mint';
 }
@@ -93,8 +99,11 @@ function isBuyTrade(trade: TradeHistory, assetAddress: string): boolean {
  */
 function isSellTrade(trade: TradeHistory, assetAddress: string): boolean {
   if (trade.status !== 'confirmed') return false;
+  const addr = assetAddress.toLowerCase();
   const matchesAsset =
-    trade.asset.toLowerCase() === assetAddress.toLowerCase();
+    trade.asset.toLowerCase() === addr ||
+    (trade.from && trade.from.toLowerCase() === addr) ||
+    (trade.to && trade.to.toLowerCase() === addr);
   if (!matchesAsset) return false;
   return trade.type === 'burn' || trade.type === 'transfer';
 }
