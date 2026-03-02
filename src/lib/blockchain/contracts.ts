@@ -24,6 +24,7 @@ import {
   getWalletSwitchRpcUrls,
   reportRpcEndpointFailure,
   reportRpcEndpointSuccess,
+  selectRpcEndpoint,
 } from '../rpc/endpoints';
 import {
   getCached,
@@ -455,6 +456,49 @@ export function encodeDocumentHash(input: string): string {
   }
   // Arbitrary string -- hash it to get a deterministic bytes32
   return ethers.keccak256(ethers.toUtf8Bytes(input));
+}
+
+// ---------------------------------------------------------------------------
+// Read-only provider for components that need direct RPC access
+// ---------------------------------------------------------------------------
+
+/**
+ * Module-level cache of read-only providers keyed by chain ID.
+ * Avoids creating a new JsonRpcProvider on every component render.
+ */
+const _readOnlyProviders = new Map<number, ethers.JsonRpcProvider>();
+
+/**
+ * Return a read-only `JsonRpcProvider` for the given chain that connects
+ * directly to our configured RPC endpoints (QuickNode, dRPC, etc.) instead
+ * of routing through the thirdweb proxy.
+ *
+ * Use this in components that need to read contract state (balances, token
+ * metadata, pool data, etc.) without consuming the wallet's rate-limited
+ * thirdweb proxy RPC. Write operations should still use the BrowserProvider
+ * from `walletStore.getProvider()` to go through the user's wallet.
+ *
+ * The provider is cached per chain ID for the lifetime of the page.
+ */
+export function getReadOnlyProvider(chainId: number): ethers.JsonRpcProvider {
+  const cached = _readOnlyProviders.get(chainId);
+  if (cached) return cached;
+
+  const rpcUrl = selectRpcEndpoint(chainId);
+  const provider = new ethers.JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+
+  // Keep the cache bounded.
+  if (_readOnlyProviders.size >= 10) {
+    const oldest = _readOnlyProviders.keys().next().value;
+    if (oldest !== undefined) {
+      const evicted = _readOnlyProviders.get(oldest);
+      _readOnlyProviders.delete(oldest);
+      evicted?.destroy();
+    }
+  }
+
+  _readOnlyProviders.set(chainId, provider);
+  return provider;
 }
 
 // ---------------------------------------------------------------------------
@@ -1974,6 +2018,9 @@ export class ContractService {
   private validateAddress(address: string, label: string): void {
     if (!ethers.isAddress(address)) {
       throw new Error(`Invalid ${label} address: ${address}`);
+    }
+    if (address === ethers.ZeroAddress) {
+      throw new Error(`${label} address cannot be the zero address`);
     }
   }
 

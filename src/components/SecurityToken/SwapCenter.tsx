@@ -33,7 +33,7 @@ import {
   SWAP_STATUS_LABELS,
 } from '../../contracts/abis/SecurityToken';
 import { useWalletStore, getProvider } from '../../store/walletStore';
-import { parseContractError } from '../../lib/blockchain/contracts';
+import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
 import { getExplorerTxUrl } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import Card from '../Common/Card';
@@ -131,10 +131,11 @@ function formatTimestamp(ts: number): string {
 async function getTokenMeta(
   tokenAddress: string,
 ): Promise<{ symbol: string; decimals: number }> {
-  const provider = getProvider();
-  if (!provider) return { symbol: '???', decimals: 18 };
+  const { chainId } = useWalletStore.getState().wallet;
+  if (!chainId) return { symbol: '???', decimals: 18 };
   try {
-    const erc20 = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+    const readProvider = getReadOnlyProvider(chainId);
+    const erc20 = new ethers.Contract(tokenAddress, ERC20_ABI, readProvider);
     const [symbol, decimals] = await Promise.all([
       erc20.symbol() as Promise<string>,
       erc20.decimals() as Promise<bigint>,
@@ -208,9 +209,9 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
 
   const getContract = useCallback(
     async (withSigner: boolean = false) => {
-      const provider = getProvider();
-      if (!provider) throw new Error('Wallet not connected');
       if (withSigner) {
+        const provider = getProvider();
+        if (!provider) throw new Error('Wallet not connected');
         const signer = await provider.getSigner();
         return new ethers.Contract(
           tokenAddress,
@@ -218,10 +219,13 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
           signer,
         );
       }
+      const { chainId } = useWalletStore.getState().wallet;
+      if (!chainId) throw new Error('Wallet not connected');
+      const readProvider = getReadOnlyProvider(chainId);
       return new ethers.Contract(
         tokenAddress,
         SecurityTokenABI,
-        provider,
+        readProvider,
       );
     },
     [tokenAddress],
@@ -319,12 +323,13 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
       }
 
       try {
-        const provider = getProvider();
-        if (!provider) return;
+        const { chainId } = useWalletStore.getState().wallet;
+        if (!chainId) return;
+        const readProvider = getReadOnlyProvider(chainId);
         const erc20 = new ethers.Contract(
           buyQuoteToken,
           ERC20_ABI,
-          provider,
+          readProvider,
         );
         const allowance: bigint = await erc20.allowance(
           connectedAddress,
@@ -795,10 +800,11 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
     setHistoryLoading(true);
     try {
       const contract = await getContract();
-      const provider = getProvider();
-      if (!provider) return;
+      const { chainId } = useWalletStore.getState().wallet;
+      if (!chainId) return;
+      const readProvider = getReadOnlyProvider(chainId);
 
-      const latestBlock = await provider.getBlockNumber();
+      const latestBlock = await readProvider.getBlockNumber();
       const fromBlock = Math.max(0, latestBlock - 50000);
 
       const [configuredEvents, completeEvents, canceledEvents] =

@@ -38,7 +38,7 @@ import {
   ROLE_CONTRACT_ADMIN,
 } from '../../contracts/abis/SecurityToken';
 import { useWalletStore, getProvider } from '../../store/walletStore';
-import { parseContractError } from '../../lib/blockchain/contracts';
+import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
 import { truncateAddress, formatWeiAmount, formatDateTime } from '../../lib/formatters';
 import { copyToClipboard } from '../../lib/utils/helpers';
 import Card from '../Common/Card';
@@ -144,8 +144,8 @@ export default function TokenOverview({ tokenAddress }: TokenOverviewProps) {
   // -----------------------------------------------------------------------
 
   const fetchData = useCallback(async () => {
-    const provider = getProvider();
-    if (!provider || !tokenAddress) {
+    const { chainId } = useWalletStore.getState().wallet;
+    if (!chainId || !tokenAddress) {
       setLoading(false);
       return;
     }
@@ -154,7 +154,8 @@ export default function TokenOverview({ tokenAddress }: TokenOverviewProps) {
     setError(null);
 
     try {
-      const contract = new ethers.Contract(tokenAddress, SecurityTokenABI, provider);
+      const readProvider = getReadOnlyProvider(chainId);
+      const contract = new ethers.Contract(tokenAddress, SecurityTokenABI, readProvider);
 
       // Batch all read calls
       const [
@@ -196,7 +197,7 @@ export default function TokenOverview({ tokenAddress }: TokenOverviewProps) {
             const factory = new ethers.Contract(
               config.securityTokenFactoryAddress,
               FactoryABI,
-              provider,
+              readProvider,
             );
             const details = await factory.getTokenDetails(tokenAddress);
             documentHash = details.documentHash ?? '';

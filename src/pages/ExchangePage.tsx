@@ -21,7 +21,7 @@ import { useAuthStore } from '../store/authStore';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 import { useWalletStore, getProvider } from '../store/walletStore.ts';
 import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
-import { ContractService } from '../lib/blockchain/contracts';
+import { ContractService, getReadOnlyProvider } from '../lib/blockchain/contracts';
 import { retryAsync } from '../lib/utils/retry';
 import logger from '../lib/logger';
 import { findHealthyEndpoint, getOrderedRpcEndpoints } from '../lib/rpc/endpoints';
@@ -333,44 +333,15 @@ export default function ExchangePage() {
   useEffect(() => {
     async function loadEthBalance() {
       if (!contractService || !address || !wallet.chainId || isSwitchingNetwork) return;
-      const fallbackProviders: ethers.JsonRpcProvider[] = [];
       try {
-        const signer = await contractService.getSigner();
-        const provider = signer.provider;
-        if (provider) {
-          const bal = await retryAsync(
-            () => provider.getBalance(address),
-            { maxAttempts: 2, baseDelayMs: 500, label: 'exchange:getEthBalance:wallet' },
-          );
-          setEthBalance(bal.toString());
-          return;
-        }
-
-        const healthyEndpoint = await findHealthyEndpoint(wallet.chainId, 3_000).catch(() => null);
-        const endpointCandidates = [
-          ...(healthyEndpoint ? [healthyEndpoint] : []),
-          ...getOrderedRpcEndpoints(wallet.chainId),
-        ];
-        const uniqueEndpoints = Array.from(new Set(endpointCandidates));
-
-        let lastError: unknown = null;
-        for (const endpoint of uniqueEndpoints) {
-          const rpcProvider = new ethers.JsonRpcProvider(endpoint, wallet.chainId);
-          fallbackProviders.push(rpcProvider);
-
-          try {
-            const bal = await retryAsync(
-              () => rpcProvider.getBalance(address),
-              { maxAttempts: 2, baseDelayMs: 500, label: 'exchange:getEthBalance:fallback' },
-            );
-            setEthBalance(bal.toString());
-            return;
-          } catch (error) {
-            lastError = error;
-          }
-        }
-
-        throw lastError ?? new Error('No RPC endpoint available for native balance lookup');
+        // Use direct RPC provider first to avoid thirdweb proxy rate limits.
+        const readProvider = getReadOnlyProvider(wallet.chainId);
+        const bal = await retryAsync(
+          () => readProvider.getBalance(address),
+          { maxAttempts: 2, baseDelayMs: 500, label: 'exchange:getEthBalance:direct' },
+        );
+        setEthBalance(bal.toString());
+        return;
       } catch (error) {
         logger.warn('Failed to fetch ETH balance:', error);
         if (

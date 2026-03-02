@@ -172,22 +172,46 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   },
 
-  // ---- Sepolia Testnet (metadata only, no deployments) ---------------------
+  // ---- Sepolia Testnet ----------------------------------------------------
   11155111: {
     chainId: 11155111,
     name: 'Sepolia Testnet',
     rpcUrl: getPrimaryRpcUrl(11155111),
     blockExplorer: 'https://sepolia.etherscan.io',
     blockExplorerApi: 'https://api-sepolia.etherscan.io/api',
-    factoryAddress: '',
-    exchangeAddress: '',
-    securityTokenFactoryAddress: '',
-    assetBackedExchangeAddress: '',
-    wethAddress: '',
+    factoryAddress: readAddressEnv(
+      'VITE_FACTORY_11155111',
+      '0xf7d3fC3b395b4Add020fF46B7ceA9E4c404ab4dB',
+    ),
+    exchangeAddress: readAddressEnv(
+      'VITE_EXCHANGE_11155111',
+      '0xcC54Dd0Af5AAeDfAC3bfD55dAd3884Dc4533130C',
+    ),
+    securityTokenFactoryAddress: readAddressEnv(
+      'VITE_SECURITY_TOKEN_FACTORY_11155111',
+      '0x4b34D01CdBB82136A593D0a96434e69a1cFbDCF2',
+    ),
+    assetBackedExchangeAddress: readAddressEnv(
+      'VITE_ASSET_BACKED_EXCHANGE_11155111',
+      '0xd639DBfeCE1e764E86eb38159C110C9E45718e9e',
+    ),
+    wethAddress: readAddressEnv(
+      'VITE_WETH_11155111',
+      '0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9',
+    ),
     wbtcAddress: '',
-    ammAddress: '',
-    orbitalFactoryAddress: '',
-    orbitalRouterAddress: '',
+    ammAddress: readAddressEnv(
+      'VITE_AMM_11155111',
+      '0xe8a8CC751a57597637b459060082C4a968185989',
+    ),
+    orbitalFactoryAddress: readAddressEnv(
+      'VITE_ORBITAL_FACTORY_11155111',
+      '0xaab9dfeE935B1A7a4F5b99fA9b21a9d339601934',
+    ),
+    orbitalRouterAddress: readAddressEnv(
+      'VITE_ORBITAL_ROUTER_11155111',
+      '0x584c3892cE3CFc8ffd86A16b744AC342dAf15b1f',
+    ),
     nativeCurrency: { name: 'SepoliaETH', symbol: 'ETH', decimals: 18 },
   },
 
@@ -282,7 +306,7 @@ export const DEFAULT_CHAIN_ID = 1;
  * Ethereum Mainnet is surfaced first, then Arbitrum Sepolia, Holesky, Localhost.
  */
 export const DEFAULT_SWITCH_CHAIN_IDS: number[] = Array.from(
-  new Set([DEFAULT_CHAIN_ID, 421614, 17000, 31337]),
+  new Set([DEFAULT_CHAIN_ID, 11155111, 421614, 17000, 31337]),
 );
 
 // ---------------------------------------------------------------------------

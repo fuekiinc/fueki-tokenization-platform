@@ -32,7 +32,7 @@ import {
   ROLE_CONTRACT_ADMIN,
 } from '../../contracts/abis/SecurityToken';
 import { useWalletStore, getProvider } from '../../store/walletStore';
-import { parseContractError } from '../../lib/blockchain/contracts';
+import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import Card from '../Common/Card';
 import Spinner from '../Common/Spinner';
@@ -172,9 +172,9 @@ export default function DividendManager({
 
   const getContract = useCallback(
     async (withSigner: boolean = false) => {
-      const provider = getProvider();
-      if (!provider) throw new Error('Wallet not connected');
       if (withSigner) {
+        const provider = getProvider();
+        if (!provider) throw new Error('Wallet not connected');
         const signer = await provider.getSigner();
         return new ethers.Contract(
           tokenAddress,
@@ -182,11 +182,15 @@ export default function DividendManager({
           signer,
         );
       }
-      return new ethers.Contract(
-        tokenAddress,
-        SecurityTokenABI,
-        provider,
-      );
+      // Use a direct RPC provider for reads to avoid thirdweb proxy rate limits.
+      const { chainId } = useWalletStore.getState().wallet;
+      if (chainId) {
+        const readProvider = getReadOnlyProvider(chainId);
+        return new ethers.Contract(tokenAddress, SecurityTokenABI, readProvider);
+      }
+      const provider = getProvider();
+      if (!provider) throw new Error('Wallet not connected');
+      return new ethers.Contract(tokenAddress, SecurityTokenABI, provider);
     },
     [tokenAddress],
   );
@@ -246,14 +250,15 @@ export default function DividendManager({
       const currentId: bigint = await contract.getCurrentSnapshotId();
       setCurrentSnapshotId(currentId);
 
-      // Query Snapshot events to build history
-      const provider = getProvider();
-      if (!provider) return;
+      // Query Snapshot events to build history using direct RPC
+      const { chainId: evtChainId } = useWalletStore.getState().wallet;
+      if (!evtChainId) return;
+      const evtProvider = getReadOnlyProvider(evtChainId);
 
       const loaded: SnapshotInfo[] = [];
       try {
         const filter = contract.filters.Snapshot();
-        const latestBlock = await provider.getBlockNumber();
+        const latestBlock = await evtProvider.getBlockNumber();
         const fromBlock = Math.max(0, latestBlock - 50000);
         const events = await contract.queryFilter(
           filter,
@@ -330,13 +335,14 @@ export default function DividendManager({
 
       setLoadingTokenInfo(true);
       try {
-        const provider = getProvider();
-        if (!provider) return;
+        const { chainId: tokenInfoChainId } = useWalletStore.getState().wallet;
+        if (!tokenInfoChainId) return;
+        const tokenInfoProvider = getReadOnlyProvider(tokenInfoChainId);
 
         const erc20 = new ethers.Contract(
           fundPaymentToken,
           ERC20_ABI,
-          provider,
+          tokenInfoProvider,
         );
 
         const [symbol, dec, balance, allowance] = await Promise.all([
@@ -512,12 +518,13 @@ export default function DividendManager({
       const contract = await getContract();
 
       // Get payment token decimals
-      const provider = getProvider();
-      if (!provider) return;
+      const { chainId: analyticsChainId } = useWalletStore.getState().wallet;
+      if (!analyticsChainId) return;
+      const analyticsReadProvider = getReadOnlyProvider(analyticsChainId);
       const erc20 = new ethers.Contract(
         analyticsPaymentToken,
         ERC20_ABI,
-        provider,
+        analyticsReadProvider,
       );
       const dec: bigint = await erc20.decimals();
       setAnalyticsTokenDecimals(Number(dec));
@@ -607,12 +614,13 @@ export default function DividendManager({
     setClaimableLoading(true);
     try {
       const contract = await getContract();
-      const provider = getProvider();
-      if (!provider) return;
+      const { chainId: claimChainId } = useWalletStore.getState().wallet;
+      if (!claimChainId) return;
+      const claimReadProvider = getReadOnlyProvider(claimChainId);
 
       // Scan Funded events to find payment tokens per snapshot
       const filter = contract.filters.Funded();
-      const latestBlock = await provider.getBlockNumber();
+      const latestBlock = await claimReadProvider.getBlockNumber();
       const fromBlock = Math.max(0, latestBlock - 50000);
       const events = await contract.queryFilter(filter, fromBlock);
 

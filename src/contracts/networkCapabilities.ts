@@ -1,7 +1,7 @@
 import { getNetworkMetadata } from './addresses';
 import { SUPPORTED_NETWORKS } from './addresses';
 
-const ORBITAL_SUPPORTED_CHAIN_IDS = new Set<number>([1, 17000, 42161, 421614, 8453]);
+const ORBITAL_SUPPORTED_CHAIN_IDS = new Set<number>([1, 17000, 42161, 421614, 8453, 11155111]);
 
 export interface NetworkCapabilities {
   chainId: number;

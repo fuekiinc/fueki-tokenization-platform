@@ -29,6 +29,7 @@ import { useAuthStore } from '../store/authStore';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 import { formatWeiAmount, truncateAddress } from '../lib/formatters';
 import { retryAsync } from '../lib/utils/retry';
+import { getReadOnlyProvider } from '../lib/blockchain/contracts';
 import Spinner from '../components/Common/Spinner';
 import Badge from '../components/Common/Badge';
 
@@ -106,12 +107,15 @@ export default function SecurityTokenPage() {
       return;
     }
 
-    const provider = getProvider();
-    if (!provider) return;
+    const { chainId } = useWalletStore.getState().wallet;
+    if (!chainId) return;
 
     setStatsLoading(true);
     try {
-      const contract = new ethers.Contract(selectedToken, SecurityTokenABI, provider);
+      // Use a direct RPC provider for reads instead of the wallet's
+      // thirdweb proxy to avoid rate-limit errors.
+      const readProvider = getReadOnlyProvider(chainId);
+      const contract = new ethers.Contract(selectedToken, SecurityTokenABI, readProvider);
       const [name, symbol, totalSupply, decimals, isPaused] = await retryAsync(
         () =>
           Promise.all([

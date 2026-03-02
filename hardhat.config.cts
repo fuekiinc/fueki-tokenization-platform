@@ -19,6 +19,8 @@ const BASE_RPC_URL =
   process.env.BASE_RPC_URL || "https://mainnet.base.org";
 const BASE_SEPOLIA_RPC_URL =
   process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org";
+const SEPOLIA_RPC_URL =
+  process.env.SEPOLIA_RPC_URL || "https://1rpc.io/sepolia";
 const PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || "";
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "";
 const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY || "";
@@ -116,6 +118,11 @@ const config: HardhatUserConfig = {
       chainId: 84532,
       accounts,
     },
+    sepolia: {
+      url: SEPOLIA_RPC_URL,
+      chainId: 11155111,
+      accounts,
+    },
   },
   etherscan: {
     apiKey: {
@@ -126,6 +133,7 @@ const config: HardhatUserConfig = {
       polygon: POLYGONSCAN_API_KEY,
       base: BASESCAN_API_KEY,
       baseSepolia: BASESCAN_API_KEY,
+      sepolia: ETHERSCAN_API_KEY,
     },
   },
   gasReporter: {

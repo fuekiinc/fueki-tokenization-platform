@@ -15,8 +15,8 @@ import {
   SecurityTokenABI,
   TRANSFER_RESTRICTION_CODES,
 } from '../../contracts/abis/SecurityToken';
-import { useWalletStore, getProvider } from '../../store/walletStore';
-import { parseContractError } from '../../lib/blockchain/contracts';
+import { useWalletStore } from '../../store/walletStore';
+import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
 import { formatWeiAmount, truncateAddress, formatDateTime } from '../../lib/formatters';
 import Card from '../Common/Card';
 import Spinner from '../Common/Spinner';
@@ -73,13 +73,14 @@ const SECTION_LABEL = 'text-xs font-semibold uppercase tracking-wider text-gray-
 // ---------------------------------------------------------------------------
 
 function getContract(tokenAddress: string): ethers.Contract | null {
-  const provider = getProvider();
-  if (!provider) return null;
-  return new ethers.Contract(tokenAddress, SecurityTokenABI, provider);
+  const { chainId } = useWalletStore.getState().wallet;
+  if (!chainId) return null;
+  const readProvider = getReadOnlyProvider(chainId);
+  return new ethers.Contract(tokenAddress, SecurityTokenABI, readProvider);
 }
 
 async function resolveBlockTimestamp(
-  provider: ethers.BrowserProvider,
+  provider: ethers.JsonRpcProvider | ethers.BrowserProvider,
   blockNumber: number,
 ): Promise<number | null> {
   try {
@@ -397,14 +398,15 @@ function FrozenAddressChecker({
   useEffect(() => {
     const loadEvents = async () => {
       const contract = getContract(tokenAddress);
-      const provider = getProvider();
-      if (!contract || !provider) {
+      const { chainId } = useWalletStore.getState().wallet;
+      if (!contract || !chainId) {
         setEventsLoading(false);
         return;
       }
 
       try {
-        const currentBlock = await provider.getBlockNumber();
+        const readProvider = getReadOnlyProvider(chainId);
+        const currentBlock = await readProvider.getBlockNumber();
         const fromBlock = Math.max(0, currentBlock - 50_000);
         const filter = contract.filters.AddressFrozen();
         const logs = await contract.queryFilter(filter, fromBlock);
@@ -412,7 +414,7 @@ function FrozenAddressChecker({
         const parsed: FreezeEvent[] = [];
         for (const log of logs.slice(-20)) {
           const eventLog = log as ethers.EventLog;
-          const ts = await resolveBlockTimestamp(provider, eventLog.blockNumber);
+          const ts = await resolveBlockTimestamp(readProvider, eventLog.blockNumber);
           parsed.push({
             admin: eventLog.args[0] as string,
             addr: eventLog.args[1] as string,
@@ -551,18 +553,19 @@ function PauseStatus({ tokenAddress }: { tokenAddress: string }) {
   useEffect(() => {
     const load = async () => {
       const contract = getContract(tokenAddress);
-      const provider = getProvider();
-      if (!contract || !provider) {
+      const { chainId } = useWalletStore.getState().wallet;
+      if (!contract || !chainId) {
         setLoading(false);
         return;
       }
 
       try {
+        const readProvider = getReadOnlyProvider(chainId);
         const isPaused: boolean = await contract.isPaused();
         setPaused(isPaused);
 
         // Load pause events
-        const currentBlock = await provider.getBlockNumber();
+        const currentBlock = await readProvider.getBlockNumber();
         const fromBlock = Math.max(0, currentBlock - 50_000);
         const filter = contract.filters.Pause();
         const logs = await contract.queryFilter(filter, fromBlock);
@@ -570,7 +573,7 @@ function PauseStatus({ tokenAddress }: { tokenAddress: string }) {
         const parsed: PauseEvent[] = [];
         for (const log of logs.slice(-10)) {
           const eventLog = log as ethers.EventLog;
-          const ts = await resolveBlockTimestamp(provider, eventLog.blockNumber);
+          const ts = await resolveBlockTimestamp(readProvider, eventLog.blockNumber);
           parsed.push({
             admin: eventLog.args[0] as string,
             status: eventLog.args[1] as boolean,

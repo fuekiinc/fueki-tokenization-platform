@@ -18,6 +18,7 @@ import {
 } from '../lib/thirdweb';
 import { clearWalletBoundStores } from './walletBoundStores';
 import { findHealthyEndpoint } from '../lib/rpc/endpoints';
+import { getReadOnlyProvider } from '../lib/blockchain/contracts';
 import { useAuthStore } from '../store/authStore';
 
 function parseConnectionError(err: unknown): string {
@@ -51,27 +52,22 @@ function parseConnectionError(err: unknown): string {
 }
 
 async function fetchBalanceWithRetry(
-  provider: ethers.BrowserProvider,
+  _provider: ethers.BrowserProvider,
   address: string,
   chainId?: number | null,
   retries = 2,
 ): Promise<string> {
-  // Try the wallet's own provider first.
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  // Prefer direct RPC provider to avoid thirdweb proxy rate limits.
+  if (chainId) {
     try {
-      const raw = await provider.getBalance(address);
+      const readProvider = getReadOnlyProvider(chainId);
+      const raw = await readProvider.getBalance(address);
       return ethers.formatEther(raw);
     } catch (err) {
-      if (attempt === retries) {
-        logger.debug('Balance fetch via wallet provider failed after retries:', err);
-      } else {
-        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
-      }
+      logger.debug('Balance fetch via direct RPC failed, trying fallbacks:', err);
     }
-  }
 
-  // Fallback: use a healthy public RPC endpoint for balance lookup.
-  if (chainId) {
+    // Fallback: probe for a healthy endpoint.
     try {
       const rpcUrl = await findHealthyEndpoint(chainId);
       if (rpcUrl) {
@@ -82,6 +78,20 @@ async function fetchBalanceWithRetry(
       }
     } catch (err) {
       logger.debug('Balance fallback via healthy RPC also failed:', err);
+    }
+  }
+
+  // Last resort: try the wallet's own provider (thirdweb proxy).
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const raw = await _provider.getBalance(address);
+      return ethers.formatEther(raw);
+    } catch (err) {
+      if (attempt === retries) {
+        logger.debug('Balance fetch via wallet provider failed after retries:', err);
+      } else {
+        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+      }
     }
   }
 
@@ -371,14 +381,25 @@ export function WalletConnectionController() {
       );
 
       balanceIntervalRef.current = setTimeout(async () => {
-        const provider = getProvider();
-        if (!provider || !wallet.address) return;
+        if (!wallet.address) return;
         try {
+          // Use direct RPC provider first to avoid thirdweb proxy rate limits.
+          if (wallet.chainId) {
+            const readProvider = getReadOnlyProvider(wallet.chainId);
+            const raw = await readProvider.getBalance(wallet.address);
+            setWallet({ balance: ethers.formatEther(raw), lastSyncAt: Date.now() });
+            balanceFailCountRef.current = 0;
+            scheduleBalancePoll();
+            return;
+          }
+          // Fall back to wallet provider if chainId not available.
+          const provider = getProvider();
+          if (!provider) { scheduleBalancePoll(); return; }
           const raw = await provider.getBalance(wallet.address);
           setWallet({ balance: ethers.formatEther(raw), lastSyncAt: Date.now() });
-          balanceFailCountRef.current = 0; // reset on success
+          balanceFailCountRef.current = 0;
         } catch {
-          // Wallet provider RPC failed — try a healthy public endpoint.
+          // Direct RPC failed — try finding a healthy endpoint.
           if (wallet.chainId) {
             let fallback: ethers.JsonRpcProvider | undefined;
             try {

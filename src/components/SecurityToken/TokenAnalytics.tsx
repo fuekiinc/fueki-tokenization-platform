@@ -16,8 +16,8 @@ import { ethers } from 'ethers';
 import {
   SecurityTokenABI,
 } from '../../contracts/abis/SecurityToken';
-import { useWalletStore, getProvider } from '../../store/walletStore';
-import { parseContractError } from '../../lib/blockchain/contracts';
+import { useWalletStore } from '../../store/walletStore';
+import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
 import {
   formatWeiAmount,
   truncateAddress,
@@ -89,13 +89,14 @@ const LOG_RANGE_LIMIT_RE = /ranges over .*blocks|block range|over\s+\d+\s+blocks
 // ---------------------------------------------------------------------------
 
 function getContract(tokenAddress: string): ethers.Contract | null {
-  const provider = getProvider();
-  if (!provider) return null;
-  return new ethers.Contract(tokenAddress, SecurityTokenABI, provider);
+  const { chainId } = useWalletStore.getState().wallet;
+  if (!chainId) return null;
+  const readProvider = getReadOnlyProvider(chainId);
+  return new ethers.Contract(tokenAddress, SecurityTokenABI, readProvider);
 }
 
 async function resolveBlockTimestamp(
-  provider: ethers.BrowserProvider,
+  provider: ethers.JsonRpcProvider | ethers.BrowserProvider,
   blockNumber: number,
 ): Promise<number | null> {
   try {
@@ -146,7 +147,7 @@ async function queryLogsChunked(
 async function queryRecentLogsChunked(
   contract: ethers.Contract,
   filter: ethers.DeferredTopicFilter,
-  provider: ethers.BrowserProvider,
+  provider: ethers.JsonRpcProvider | ethers.BrowserProvider,
   lookbackBlocks = ANALYTICS_LOOKBACK_BLOCKS,
 ): Promise<ethers.EventLog[]> {
   const currentBlock = await provider.getBlockNumber();
@@ -166,13 +167,14 @@ function SupplyGauges({ tokenAddress }: { tokenAddress: string }) {
   useEffect(() => {
     const load = async () => {
       const contract = getContract(tokenAddress);
-      const provider = getProvider();
-      if (!contract || !provider) {
+      const { chainId } = useWalletStore.getState().wallet;
+      if (!contract || !chainId) {
         setLoading(false);
         return;
       }
 
       try {
+        const readProvider = getReadOnlyProvider(chainId);
         // Fetch supply data
         const [totalSupply, maxTotalSupply, decimals] = await Promise.all([
           contract.totalSupply() as Promise<bigint>,
@@ -189,8 +191,8 @@ function SupplyGauges({ tokenAddress }: { tokenAddress: string }) {
         ];
 
         const [mintLogs, burnLogs] = await Promise.all([
-          queryRecentLogsChunked(contract, mintFilter, provider),
-          queryRecentLogsChunked(contract, burnFilter, provider),
+          queryRecentLogsChunked(contract, mintFilter, readProvider),
+          queryRecentLogsChunked(contract, burnFilter, readProvider),
         ]);
 
         let minted = 0n;
@@ -336,15 +338,16 @@ function HolderDistribution({ tokenAddress }: { tokenAddress: string }) {
   useEffect(() => {
     const load = async () => {
       const contract = getContract(tokenAddress);
-      const provider = getProvider();
-      if (!contract || !provider) {
+      const { chainId } = useWalletStore.getState().wallet;
+      if (!contract || !chainId) {
         setLoading(false);
         return;
       }
 
       try {
+        const readProvider = getReadOnlyProvider(chainId);
         const filter = contract.filters.AddressTransferGroup();
-        const logs = await queryRecentLogsChunked(contract, filter, provider);
+        const logs = await queryRecentLogsChunked(contract, filter, readProvider);
 
         // Build a map of address -> most recent group assignment
         const addrGroup = new Map<string, number>();
@@ -574,16 +577,17 @@ function TimelocksSummary({ tokenAddress }: { tokenAddress: string }) {
   useEffect(() => {
     const load = async () => {
       const contract = getContract(tokenAddress);
-      const provider = getProvider();
-      if (!contract || !provider) {
+      const { chainId } = useWalletStore.getState().wallet;
+      if (!contract || !chainId) {
         setLoading(false);
         return;
       }
 
       try {
+        const readProvider = getReadOnlyProvider(chainId);
         // Find addresses with timelocks via ScheduleFunded events
         const filter = contract.filters.ScheduleFunded();
-        const logs = await queryRecentLogsChunked(contract, filter, provider);
+        const logs = await queryRecentLogsChunked(contract, filter, readProvider);
 
         const recipients = new Set<string>();
         for (const log of logs) {
@@ -716,15 +720,16 @@ function PendingDividends({ tokenAddress }: { tokenAddress: string }) {
       }
 
       const contract = getContract(tokenAddress);
-      const provider = getProvider();
-      if (!contract || !provider) {
+      const { chainId } = useWalletStore.getState().wallet;
+      if (!contract || !chainId) {
         setLoading(false);
         return;
       }
 
       try {
+        const readProvider = getReadOnlyProvider(chainId);
         const filter = contract.filters.Funded();
-        const logs = await queryRecentLogsChunked(contract, filter, provider);
+        const logs = await queryRecentLogsChunked(contract, filter, readProvider);
 
         // Collect unique (token, snapshotId) pairs from Funded events
         const seen = new Set<string>();
@@ -840,15 +845,16 @@ function SwapVolume({ tokenAddress }: { tokenAddress: string }) {
   useEffect(() => {
     const load = async () => {
       const contract = getContract(tokenAddress);
-      const provider = getProvider();
-      if (!contract || !provider) {
+      const { chainId } = useWalletStore.getState().wallet;
+      if (!contract || !chainId) {
         setLoading(false);
         return;
       }
 
       try {
+        const readProvider = getReadOnlyProvider(chainId);
         const filter = contract.filters.SwapComplete();
-        const logs = await queryRecentLogsChunked(contract, filter, provider);
+        const logs = await queryRecentLogsChunked(contract, filter, readProvider);
 
         let totalVolume = 0n;
         for (const log of logs) {
@@ -910,20 +916,21 @@ function SnapshotTimeline({ tokenAddress }: { tokenAddress: string }) {
   useEffect(() => {
     const load = async () => {
       const contract = getContract(tokenAddress);
-      const provider = getProvider();
-      if (!contract || !provider) {
+      const { chainId } = useWalletStore.getState().wallet;
+      if (!contract || !chainId) {
         setLoading(false);
         return;
       }
 
       try {
+        const readProvider = getReadOnlyProvider(chainId);
         const filter = contract.filters.Snapshot();
-        const logs = await queryRecentLogsChunked(contract, filter, provider);
+        const logs = await queryRecentLogsChunked(contract, filter, readProvider);
 
         const entries: SnapshotEntry[] = [];
         for (const log of logs) {
           const id = log.args[0] as bigint;
-          const ts = await resolveBlockTimestamp(provider, log.blockNumber);
+          const ts = await resolveBlockTimestamp(readProvider, log.blockNumber);
 
           let totalSupplyAtSnapshot: bigint | null = null;
           try {

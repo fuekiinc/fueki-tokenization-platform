@@ -13,8 +13,8 @@
 import { useState, useCallback } from 'react';
 import { ethers } from 'ethers';
 import { SecurityTokenABI } from '../../contracts/abis/SecurityToken';
-import { useWalletStore, getProvider, getSigner } from '../../store/walletStore';
-import { parseContractError } from '../../lib/blockchain/contracts';
+import { useWalletStore, getSigner } from '../../store/walletStore';
+import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
 import {
   formatWeiAmount,
   truncateAddress,
@@ -72,9 +72,10 @@ const SECTION_LABEL = 'text-xs font-semibold uppercase tracking-wider text-gray-
 // ---------------------------------------------------------------------------
 
 function getContract(tokenAddress: string): ethers.Contract | null {
-  const provider = getProvider();
-  if (!provider) return null;
-  return new ethers.Contract(tokenAddress, SecurityTokenABI, provider);
+  const { chainId } = useWalletStore.getState().wallet;
+  if (!chainId) return null;
+  const readProvider = getReadOnlyProvider(chainId);
+  return new ethers.Contract(tokenAddress, SecurityTokenABI, readProvider);
 }
 
 function getSignedContract(tokenAddress: string): ethers.Contract | null {

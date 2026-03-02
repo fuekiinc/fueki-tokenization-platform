@@ -77,8 +77,10 @@ const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
     'https://sepolia.base.org',
   ],
   11155111: [
-    'https://rpc.sepolia.org',
+    'https://1rpc.io/sepolia',
+    'https://sepolia.drpc.org',
     'https://ethereum-sepolia-rpc.publicnode.com',
+    'https://rpc2.sepolia.org',
   ],
 };
 

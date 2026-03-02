@@ -47,7 +47,7 @@ import {
   ROLE_TRANSFER_ADMIN,
 } from '../../contracts/abis/SecurityToken';
 import { useWalletStore, getProvider } from '../../store/walletStore';
-import { parseContractError } from '../../lib/blockchain/contracts';
+import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
 import { useTransactionFlow } from '../Common/TransactionFlow';
 import Card from '../Common/Card';
 import Badge from '../Common/Badge';
@@ -201,15 +201,16 @@ export default function AdminDashboard({ tokenAddress }: AdminDashboardProps) {
   // -----------------------------------------------------------------------
 
   const fetchRolesAndState = useCallback(async () => {
-    const provider = getProvider();
-    if (!provider || !walletAddress || !tokenAddress) {
+    const { chainId } = useWalletStore.getState().wallet;
+    if (!chainId || !walletAddress || !tokenAddress) {
       setLoading(false);
       return;
     }
 
     setLoading(true);
     try {
-      const contract = new ethers.Contract(tokenAddress, SecurityTokenABI, provider);
+      const readProvider = getReadOnlyProvider(chainId);
+      const contract = new ethers.Contract(tokenAddress, SecurityTokenABI, readProvider);
 
       const [roleChecks, paused, currentSnapshotId] = await Promise.all([
         Promise.all(
@@ -1359,12 +1360,13 @@ function TransferAdminPanel({
       return;
     }
 
-    const provider = getProvider();
-    if (!provider) return;
+    const { chainId } = useWalletStore.getState().wallet;
+    if (!chainId) return;
 
     setMatrixLoading(true);
     try {
-      const contract = new ethers.Contract(tokenAddress, SecurityTokenABI, provider);
+      const readProvider = getReadOnlyProvider(chainId);
+      const contract = new ethers.Contract(tokenAddress, SecurityTokenABI, readProvider);
       const timestamp: bigint = await contract.getAllowGroupTransferTime(from, to);
       if (timestamp === 0n) {
         setMatrixResult('Not allowed');

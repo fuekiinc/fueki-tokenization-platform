@@ -16,7 +16,7 @@ import {
   SWAP_STATUS_LABELS,
 } from '../../contracts/abis/SecurityToken';
 import { useWalletStore, getProvider, getSigner } from '../../store/walletStore';
-import { parseContractError } from '../../lib/blockchain/contracts';
+import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
 import {
   formatWeiAmount,
   truncateAddress,
@@ -90,9 +90,10 @@ const BUTTON_DANGER_SM =
 // ---------------------------------------------------------------------------
 
 function getContract(tokenAddress: string): ethers.Contract | null {
-  const provider = getProvider();
-  if (!provider) return null;
-  return new ethers.Contract(tokenAddress, SecurityTokenABI, provider);
+  const { chainId } = useWalletStore.getState().wallet;
+  if (!chainId) return null;
+  const readProvider = getReadOnlyProvider(chainId);
+  return new ethers.Contract(tokenAddress, SecurityTokenABI, readProvider);
 }
 
 function getSignedContract(tokenAddress: string): ethers.Contract | null {
@@ -498,14 +499,15 @@ function ClaimableDividends({ tokenAddress }: { tokenAddress: string }) {
     }
 
     const contract = getContract(tokenAddress);
-    const provider = getProvider();
-    if (!contract || !provider) {
+    const { chainId } = useWalletStore.getState().wallet;
+    if (!contract || !chainId) {
       setLoading(false);
       return;
     }
 
     try {
-      const currentBlock = await provider.getBlockNumber();
+      const readProvider = getReadOnlyProvider(chainId);
+      const currentBlock = await readProvider.getBlockNumber();
       const fromBlock = Math.max(0, currentBlock - 50_000);
       const filter = contract.filters.Funded();
       const logs = await contract.queryFilter(filter, fromBlock);
@@ -686,14 +688,15 @@ function ActiveSwaps({ tokenAddress }: { tokenAddress: string }) {
     }
 
     const contract = getContract(tokenAddress);
-    const provider = getProvider();
-    if (!contract || !provider) {
+    const { chainId } = useWalletStore.getState().wallet;
+    if (!contract || !chainId) {
       setLoading(false);
       return;
     }
 
     try {
-      const currentBlock = await provider.getBlockNumber();
+      const readProvider = getReadOnlyProvider(chainId);
+      const currentBlock = await readProvider.getBlockNumber();
       const fromBlock = Math.max(0, currentBlock - 50_000);
       const filter = contract.filters.SwapConfigured();
       const logs = await contract.queryFilter(filter, fromBlock);
