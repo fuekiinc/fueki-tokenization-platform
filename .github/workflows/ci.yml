@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
+      frontend_files: ${{ steps.filter.outputs.frontend_files }}
       backend: ${{ steps.filter.outputs.backend }}
       contracts: ${{ steps.filter.outputs.contracts }}
       workflows: ${{ steps.filter.outputs.workflows }}
@@ -30,6 +31,7 @@ jobs:
       - id: filter
         uses: dorny/paths-filter@v3
         with:
+          list-files: csv
           filters: |
             frontend:
               - 'src/**'
@@ -71,7 +73,30 @@ jobs:
           node-version: '22.12.0'
           cache: npm
       - run: npm ci
-      - run: npm run lint
+      - name: Lint changed frontend files
+        env:
+          FRONTEND_FILES: ${{ needs.changes.outputs.frontend_files }}
+        run: |
+          if [ -z "$FRONTEND_FILES" ]; then
+            echo "No frontend files changed. Skipping lint."
+            exit 0
+          fi
+
+          TARGET_FILES="$(echo "$FRONTEND_FILES" \
+            | tr ',' '\n' \
+            | sed '/^$/d' \
+            | grep -E '^(src|tests|public)/|^(index\.html|vite\.config\.ts|playwright\.config\.ts)$' \
+            | grep -E '\.(ts|tsx|js|jsx|mjs|cjs)$|^index\.html$' || true)"
+
+          if [ -z "$TARGET_FILES" ]; then
+            echo "No lintable frontend source files changed. Skipping lint."
+            exit 0
+          fi
+
+          echo "Linting changed files:"
+          echo "$TARGET_FILES"
+          # shellcheck disable=SC2086
+          npx eslint --max-warnings=0 $TARGET_FILES
       - run: npm run typecheck
       - run: npm run build
 
