@@ -91,7 +91,7 @@ function statusSortValue(order: Order): number {
 // Constants
 // ---------------------------------------------------------------------------
 
-const REFRESH_INTERVAL_MS = 15_000;
+const REFRESH_INTERVAL_MS = 30_000;
 
 const TABS: { label: string; value: TabFilter }[] = [
   { label: 'All', value: 'all' },

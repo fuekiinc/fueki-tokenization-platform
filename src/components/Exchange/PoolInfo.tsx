@@ -113,16 +113,16 @@ export default function PoolInfo({
     return () => { cancelled = true; };
   }, [contractService, tokenA, tokenB, userAddress, refreshKey, autoRefreshCounter]);
 
-  // ---- Auto-refresh every 15s ---------------------------------------------
+  // ---- Auto-refresh every 30s ---------------------------------------------
 
   useEffect(() => {
     if (!contractService || !tokenA || !tokenB) return;
 
     intervalRef.current = setInterval(() => {
       // Increment a counter that is included in the fetch effect's dependency
-      // array (via refreshKey). This forces a genuine re-fetch every 15 seconds.
+      // array (via refreshKey). This forces a genuine re-fetch every 30 seconds.
       setAutoRefreshCounter((c) => c + 1);
-    }, 15000);
+    }, 30_000);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);

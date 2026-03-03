@@ -6,7 +6,7 @@
  */
 export const LiquidityPoolAMMABI = [
   // Constructor
-  'constructor()',
+  'constructor(address _owner)',
 
   // Errors
   'error DeadlineExpired()',
@@ -49,7 +49,7 @@ export const LiquidityPoolAMMABI = [
 
   // Write functions
   'function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, uint256 amountBDesired, uint256 amountAMin, uint256 amountBMin, uint256 minLiquidity, uint256 deadline) returns (uint256 liquidity)',
-  'function addLiquidityETH(address token, uint256 amountToken, uint256 minLiquidity, uint256 deadline) payable returns (uint256 liquidity)',
+  'function addLiquidityETH(address token, uint256 amountTokenDesired, uint256 amountTokenMin, uint256 amountETHMin, uint256 minLiquidity, uint256 deadline) payable returns (uint256 liquidity)',
   'function createPool(address tokenA, address tokenB) returns (bytes32 poolId)',
   'function removeLiquidity(address tokenA, address tokenB, uint256 liquidity, uint256 minA, uint256 minB, uint256 deadline) returns (uint256 amountA, uint256 amountB)',
   'function removeLiquidityETH(address token, uint256 liquidity, uint256 minToken, uint256 minETH, uint256 deadline) returns (uint256 amountToken, uint256 amountETH)',

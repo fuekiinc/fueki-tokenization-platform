@@ -146,7 +146,6 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Mint', to: '/mint' },
   { label: 'Security Tokens', to: '/security-tokens' },
   { label: 'Contracts', to: '/contracts' },
-  { label: 'Portfolio', to: '/portfolio' },
   { label: 'Exchange', to: '/exchange' },
   { label: 'Orbital AMM', to: '/advanced' },
 ];

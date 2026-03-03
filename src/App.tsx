@@ -28,7 +28,6 @@ function lazyWithRetry(factory: () => Promise<{ default: React.ComponentType }>)
 // Lazy-load all page components for better initial bundle size
 const DashboardPage = lazyWithRetry(() => import('./pages/DashboardPage'))
 const MintPage = lazyWithRetry(() => import('./pages/MintPage'))
-const PortfolioPage = lazyWithRetry(() => import('./pages/PortfolioPage'))
 const ExchangePage = lazyWithRetry(() => import('./pages/ExchangePage'))
 const OrbitalAMMPage = lazyWithRetry(() => import('./pages/OrbitalAMMPage'))
 const LoginPage = lazyWithRetry(() => import('./pages/LoginPage'))
@@ -58,7 +57,6 @@ const ContractHistoryPage = lazyWithRetry(() => import('./pages/ContractHistoryP
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/mint': 'Mint Assets',
-  '/portfolio': 'Portfolio',
   '/exchange': 'Exchange',
   '/exchange/guide': 'Exchange Guide',
   '/advanced': 'Advanced AMM',
@@ -176,7 +174,8 @@ export default function App() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
             <Route path="mint" element={<Suspense fallback={<PageLoader />}><MintPage /></Suspense>} />
-            <Route path="portfolio" element={<Suspense fallback={<PageLoader />}><PortfolioPage /></Suspense>} />
+            {/* Portfolio removed — dashboard covers the same data */}
+            <Route path="portfolio" element={<Navigate to="/dashboard" replace />} />
             <Route path="exchange" element={<Suspense fallback={<PageLoader />}><ExchangePage /></Suspense>} />
             <Route path="exchange/guide" element={<Suspense fallback={<PageLoader />}><ExchangeGuidePage /></Suspense>} />
             <Route path="advanced" element={<Suspense fallback={<PageLoader />}><OrbitalAMMPage /></Suspense>} />

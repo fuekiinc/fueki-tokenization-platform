@@ -159,27 +159,59 @@ async function executeWrite(
     }
   }
 
-  try {
-    return await methodFn(...args, mergedOverrides) as ethers.ContractTransactionResponse;
-  } catch (error) {
-    if (/user (rejected|denied)|ACTION_REJECTED/i.test(
-      error instanceof Error ? error.message : String(error),
-    )) {
-      throw new Error('Transaction was rejected in your wallet.');
-    }
+  let activeContract = contract;
+  let lastRetryableError: unknown = null;
+  const maxAttempts = 3;
 
-    if (isRetryableRpcError(error)) {
-      log.warn(`[useSecurityToken] ${method}: RPC failure, retrying after 2s`);
-      await new Promise((r) => setTimeout(r, 2000));
-      try {
-        return await methodFn(...args, mergedOverrides) as ethers.ContractTransactionResponse;
-      } catch (retryErr) {
-        throw retryErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await activeContract.getFunction(method)(
+        ...args,
+        mergedOverrides,
+      ) as ethers.ContractTransactionResponse;
+    } catch (error) {
+      if (
+        /user (rejected|denied)|ACTION_REJECTED/i.test(
+          error instanceof Error ? error.message : String(error),
+        )
+      ) {
+        throw new Error('Transaction was rejected in your wallet.');
+      }
+
+      if (!isRetryableRpcError(error)) {
+        throw error;
+      }
+
+      lastRetryableError = error;
+      if (attempt >= maxAttempts) {
+        break;
+      }
+
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const isRateLimit = /429|too many requests|rate.?limit/i.test(errMsg);
+      const delayMs = isRateLimit ? 3000 * attempt : 1500 * attempt;
+
+      log.warn(
+        `[useSecurityToken] ${method}: wallet/RPC transport failure ` +
+          `(attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms`,
+        error,
+      );
+
+      await new Promise((r) => setTimeout(r, delayMs));
+
+      const provider = getProvider();
+      if (provider) {
+        try {
+          const freshSigner = await provider.getSigner();
+          activeContract = contract.connect(freshSigner) as ethers.Contract;
+        } catch {
+          // Keep last connected signer and continue to next retry.
+        }
       }
     }
-
-    throw error;
   }
+
+  throw lastRetryableError;
 }
 
 function chainScopedKey(chainId: number | null, key: string): string {

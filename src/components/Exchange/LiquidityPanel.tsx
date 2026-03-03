@@ -311,12 +311,28 @@ export default function LiquidityPanel({
         expectedLp = lp0 < lp1 ? lp0 : lp1;
       }
       const minLiquidity = expectedLp - (expectedLp * SLIPPAGE_BPS) / 10000n;
+      const minAmountA = parsedAmountA - (parsedAmountA * SLIPPAGE_BPS) / 10000n;
+      const minAmountB = parsedAmountB - (parsedAmountB * SLIPPAGE_BPS) / 10000n;
 
       let tx;
       if (tokenAIsETH) {
-        tx = await contractService.addLiquidityETH(tokenB, parsedAmountB, minLiquidity, parsedAmountA);
+        tx = await contractService.addLiquidityETH(
+          tokenB,
+          parsedAmountB,
+          minLiquidity,
+          parsedAmountA,
+          minAmountB,
+          minAmountA,
+        );
       } else if (tokenBIsETH) {
-        tx = await contractService.addLiquidityETH(tokenA, parsedAmountA, minLiquidity, parsedAmountB);
+        tx = await contractService.addLiquidityETH(
+          tokenA,
+          parsedAmountA,
+          minLiquidity,
+          parsedAmountB,
+          minAmountA,
+          minAmountB,
+        );
       } else {
         tx = await contractService.addLiquidity(tokenA, tokenB, parsedAmountA, parsedAmountB, minLiquidity);
       }

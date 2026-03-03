@@ -172,6 +172,28 @@ const CUSTOM_ERROR_SELECTOR_MESSAGES: Record<string, string> = {
   '0xc7be2851': 'Mint amount exceeds the max total supply configured for this token.',
   '0xf1b7e15e': 'Insufficient token balance for this action.',
   '0x15c840d8': 'Requested amount exceeds unlocked balance for this address.',
+
+  // LiquidityPoolAMM custom errors
+  '0x1ab7da6b': 'Transaction deadline has expired. Please try again.',
+  '0x8dc525d1': 'Insufficient Token A amount for this pool operation. Try adjusting your amounts or increasing slippage.',
+  '0xef71d091': 'Insufficient Token B amount for this pool operation. Try adjusting your amounts or increasing slippage.',
+  '0xa01a9df6': 'Insufficient ETH sent for this operation.',
+  '0xbb55fd27': 'Insufficient liquidity in the pool for this operation.',
+  '0xbb2875c3': 'Output amount is below your minimum. Try increasing slippage tolerance.',
+  '0x302e29cb': 'Pool invariant violated — the reserves are in an unexpected state.',
+  '0xbd8bc364': 'Invalid constant product (K) — pool state inconsistency detected.',
+  '0xd0d04f60': 'No ETH balance available to withdraw from the AMM.',
+  '0xf48e3c26': 'A pool already exists for this token pair.',
+  '0x76ecffc0': 'No liquidity pool exists for this token pair. Please create the pool first.',
+  '0x37ed32e8': 'Reentrancy detected — please wait and try again.',
+  '0x201b580a': 'Cannot create a pool with the same token on both sides.',
+  '0x90b8ec18': 'Token transfer failed. Check that you have approved sufficient allowance and have enough balance.',
+  '0x1f2a2005': 'Amount must be greater than zero.',
+
+  // AssetBackedExchange custom errors
+  '0x3e0526e5': 'Insufficient fill amount for this order.',
+  '0xb331e421': 'Only the order maker can perform this action.',
+  '0x1d4ecc5b': 'This order is no longer active (already filled or cancelled).',
 };
 
 function extractErrorDataHex(err: unknown): string | null {
@@ -351,6 +373,61 @@ export function parseContractError(err: unknown): string {
     return 'Your connected wallet needs either Wallets Admin or Reserve Admin role for this action.';
   }
 
+  // ---- AMM / Exchange custom errors (by name in reason string) ----
+  if (/DeadlineExpired/i.test(deepReason)) {
+    return 'Transaction deadline has expired. Please try again.';
+  }
+  if (/InsufficientAAmount/i.test(deepReason)) {
+    return 'Insufficient Token A amount for this pool operation. Try adjusting your amounts or increasing slippage.';
+  }
+  if (/InsufficientBAmount/i.test(deepReason)) {
+    return 'Insufficient Token B amount for this pool operation. Try adjusting your amounts or increasing slippage.';
+  }
+  if (/InsufficientEth/i.test(deepReason)) {
+    return 'Insufficient ETH sent for this operation.';
+  }
+  if (/InsufficientLiquidity/i.test(deepReason)) {
+    return 'Insufficient liquidity in the pool for this operation.';
+  }
+  if (/InsufficientOutput/i.test(deepReason)) {
+    return 'Output amount is below your minimum. Try increasing slippage tolerance.';
+  }
+  if (/InvariantViolation/i.test(deepReason)) {
+    return 'Pool invariant violated — the reserves are in an unexpected state.';
+  }
+  if (/InvalidK\b/i.test(deepReason)) {
+    return 'Invalid constant product (K) — pool state inconsistency detected.';
+  }
+  if (/PoolExists/i.test(deepReason)) {
+    return 'A pool already exists for this token pair.';
+  }
+  if (/PoolNotFound/i.test(deepReason)) {
+    return 'No liquidity pool exists for this token pair. Please create the pool first.';
+  }
+  if (/SameToken/i.test(deepReason)) {
+    return 'Cannot use the same token on both sides.';
+  }
+  if (/TransferFailed/i.test(deepReason)) {
+    return 'Token transfer failed. Check that you have approved sufficient allowance and have enough balance.';
+  }
+  if (/InsufficientFill/i.test(deepReason)) {
+    return 'Insufficient fill amount for this order.';
+  }
+  if (/NotMaker/i.test(deepReason)) {
+    return 'Only the order maker can perform this action.';
+  }
+  if (/OrderNotActive/i.test(deepReason)) {
+    return 'This order is no longer active (already filled or cancelled).';
+  }
+
+  if (
+    /function selector was not recognized|unknown selector|no matching fragment|missing revert data.*CALL_EXCEPTION/i.test(
+      deepReason,
+    )
+  ) {
+    return 'The transaction payload is incompatible with the deployed contract on this network. Refresh and try again.';
+  }
+
   // User rejected from wallet
   if (/user (rejected|denied)|ACTION_REJECTED/i.test(deepReason)) {
     return 'Transaction was rejected in your wallet.';
@@ -422,9 +499,15 @@ export function parseContractError(err: unknown): string {
     return 'Token allowance is insufficient. Please approve a higher amount.';
   }
 
-  // Fallback: return the reason if it is short enough, otherwise generic
-  if (reason && reason.length < 200 && !reason.includes('0x')) {
-    return reason;
+  // Fallback: return the reason if it is short enough, otherwise generic.
+  // Strip raw hex data (0x...) from the message but still show the
+  // human-readable portion so users get a meaningful error.
+  if (reason && reason.length < 300) {
+    // Remove long hex strings (addresses, calldata) but keep the message
+    const cleaned = reason.replace(/0x[0-9a-fA-F]{8,}/g, '').trim();
+    if (cleaned.length > 10 && cleaned.length < 250) {
+      return cleaned;
+    }
   }
 
   return 'Transaction failed. Please try again or check your wallet for details.';
@@ -480,11 +563,26 @@ const _readOnlyProviders = new Map<number, ethers.JsonRpcProvider>();
  *
  * The provider is cached per chain ID for the lifetime of the page.
  */
-export function getReadOnlyProvider(chainId: number): ethers.JsonRpcProvider {
-  const cached = _readOnlyProviders.get(chainId);
-  if (cached) return cached;
+/** Track which RPC URL each cached provider was created with. */
+const _readOnlyProviderUrls = new Map<number, string>();
 
+export function getReadOnlyProvider(chainId: number): ethers.JsonRpcProvider {
   const rpcUrl = selectRpcEndpoint(chainId);
+  const cached = _readOnlyProviders.get(chainId);
+  const cachedUrl = _readOnlyProviderUrls.get(chainId);
+
+  // Return cached provider only if the endpoint hasn't changed (e.g. due
+  // to a cooldown switching us to a fallback). This ensures we don't keep
+  // using a dead provider after the endpoint health system rotates away.
+  if (cached && cachedUrl === rpcUrl) return cached;
+
+  // Destroy the old provider if the endpoint changed.
+  if (cached) {
+    cached.destroy();
+    _readOnlyProviders.delete(chainId);
+    _readOnlyProviderUrls.delete(chainId);
+  }
+
   const provider = new ethers.JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
 
   // Keep the cache bounded.
@@ -493,11 +591,13 @@ export function getReadOnlyProvider(chainId: number): ethers.JsonRpcProvider {
     if (oldest !== undefined) {
       const evicted = _readOnlyProviders.get(oldest);
       _readOnlyProviders.delete(oldest);
+      _readOnlyProviderUrls.delete(oldest);
       evicted?.destroy();
     }
   }
 
   _readOnlyProviders.set(chainId, provider);
+  _readOnlyProviderUrls.set(chainId, rpcUrl);
   return provider;
 }
 
@@ -536,20 +636,28 @@ export class ContractService {
   /**
    * Obtain the connected signer.
    *
-   * The signer is always fetched fresh from the provider so that account
-   * changes in the wallet (e.g. MetaMask account switch) are picked up
-   * immediately. BrowserProvider.getSigner() is cheap -- it does not
-   * trigger a new user approval prompt.
+   * Always fetches fresh from the BrowserProvider so that account/chain
+   * changes in the wallet are picked up immediately. Falls back to the
+   * store signer only when the BrowserProvider fails (e.g. during a
+   * transient disconnect).
    */
   async getSigner(): Promise<ethers.Signer> {
-    const storeSigner = getStoreSigner();
-    if (storeSigner) {
-      this.signer = storeSigner as unknown as ethers.Signer;
+    try {
+      this.signer = await this.provider.getSigner();
       return this.signer;
+    } catch {
+      // BrowserProvider.getSigner() can fail during transient disconnects
+      // or if the provider's internal state is stale. Fall back to the
+      // store signer which was captured at wallet connection time.
+      const storeSigner = getStoreSigner();
+      if (storeSigner) {
+        this.signer = storeSigner as unknown as ethers.Signer;
+        return this.signer;
+      }
+      throw new Error(
+        'Unable to obtain a wallet signer. Please reconnect your wallet.',
+      );
     }
-
-    this.signer = await this.provider.getSigner();
-    return this.signer;
   }
 
   /** Maximum cached read providers to prevent unbounded memory growth. */
@@ -591,8 +699,12 @@ export class ContractService {
       reportRpcEndpointFailure(this.chainId, primary);
     }
 
-    // Primary failed transiently — try remaining endpoints sequentially.
+    // Primary failed transiently — try remaining endpoints with a small
+    // staggered delay to avoid hammering all fallbacks simultaneously.
     for (let i = 1; i < endpoints.length; i++) {
+      // Brief pause between fallback attempts (300ms) so we don't blast
+      // every endpoint at once after a rate-limit.
+      await new Promise((r) => setTimeout(r, 300));
       const endpoint = endpoints[i];
       try {
         const result = await callback(this.getReadProvider(endpoint));
@@ -604,7 +716,9 @@ export class ContractService {
       }
     }
 
-    // All read-only RPCs failed — fall back to the wallet's own provider.
+    // All read-only RPCs failed — brief pause then fall back to the
+    // wallet's own provider as a last resort.
+    await new Promise((r) => setTimeout(r, 500));
     return callback(this.provider);
   }
 
@@ -1744,9 +1858,11 @@ export class ContractService {
   /** Add liquidity to an ETH / ERC-20 pool. */
   async addLiquidityETH(
     token: string,
-    amountToken: bigint,
+    amountTokenDesired: bigint,
     minLiquidity: bigint,
     ethAmount: bigint,
+    amountTokenMin: bigint = 0n,
+    amountETHMin: bigint = 0n,
     deadline?: bigint,
   ): Promise<ethers.ContractTransactionResponse> {
     this.validateAddress(token, 'token');
@@ -1754,7 +1870,12 @@ export class ContractService {
     const signer = await this.getSigner();
     const amm = this.getAMMContract(signer);
     const tx = await this.executeWrite(amm, 'addLiquidityETH', [
-      token, amountToken, minLiquidity, dl,
+      token,
+      amountTokenDesired,
+      amountTokenMin,
+      amountETHMin,
+      minLiquidity,
+      dl,
     ], { value: ethAmount });
     this.invalidateAssetCache(token);
     this.invalidateCachePrefix('amm:');
@@ -2002,10 +2123,13 @@ export class ContractService {
   ): Promise<ethers.TransactionReceipt> {
     const receipt = await tx.wait(confirmations);
     if (!receipt) {
-      throw new Error('Transaction receipt is null');
+      throw new Error('Transaction receipt is null — the transaction may still be pending.');
     }
     if (receipt.status === 0) {
-      throw new Error(`Transaction reverted: ${tx.hash}`);
+      throw new Error(
+        'Transaction was mined but reverted on-chain. ' +
+        'This usually means the contract conditions were not met (e.g. insufficient balance, expired deadline, or slippage exceeded).',
+      );
     }
     return receipt;
   }
@@ -2219,43 +2343,49 @@ export class ContractService {
       }
     }
 
-    try {
-      const tx: ethers.ContractTransactionResponse = await methodFn(
-        ...args,
-        mergedOverrides,
-      );
-      return tx;
-    } catch (err: unknown) {
-      if (isUserRejection(err)) {
-        throw new Error('Transaction was rejected in your wallet.');
-      }
+    let activeContract = contract;
+    let lastRetryableError: unknown = null;
+    const maxAttempts = 3;
 
-      // Network failure — wait briefly then retry with a fresh signer.
-      // The delay helps if the failure was caused by rate limiting.
-      if (isRetryableRpcError(err)) {
-        logger.warn(`[executeWrite] ${method}: RPC failure on send, waiting 2s then retrying`, err);
-        try {
-          await new Promise((r) => setTimeout(r, 2000));
-          await this.tryRecoverWalletRpcTransport().catch(() => {});
-          const freshSigner = await this.getSigner();
-          const freshContract = contract.connect(freshSigner) as ethers.Contract;
-          const retryTx: ethers.ContractTransactionResponse = await freshContract.getFunction(method)(
-            ...args,
-            mergedOverrides,
-          );
-          return retryTx;
-        } catch (retryErr: unknown) {
-          if (isUserRejection(retryErr)) {
-            throw new Error('Transaction was rejected in your wallet.');
-          }
-          const userMessage = parseContractError(retryErr);
-          throw new Error(userMessage);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const tx: ethers.ContractTransactionResponse = await activeContract
+          .getFunction(method)(...args, mergedOverrides);
+        return tx;
+      } catch (err: unknown) {
+        if (isUserRejection(err)) {
+          throw new Error('Transaction was rejected in your wallet.');
         }
-      }
 
-      const userMessage = parseContractError(err);
-      throw new Error(userMessage);
+        if (!isRetryableRpcError(err)) {
+          throw new Error(parseContractError(err));
+        }
+
+        lastRetryableError = err;
+        const isFinalAttempt = attempt >= maxAttempts;
+        if (isFinalAttempt) {
+          break;
+        }
+
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isRateLimit = /429|too many requests|rate.?limit/i.test(errMsg);
+        const delayMs = isRateLimit ? 3000 * attempt : 1500 * attempt;
+
+        logger.warn(
+          `[executeWrite] ${method}: wallet/RPC transport failure ` +
+          `(attempt ${attempt}/${maxAttempts}, ${isRateLimit ? 'rate-limited' : 'transient'}). ` +
+          `Retrying in ${delayMs}ms`,
+          err,
+        );
+
+        await new Promise((r) => setTimeout(r, delayMs));
+        await this.tryRecoverWalletRpcTransport().catch(() => {});
+        const freshSigner = await this.getSigner();
+        activeContract = contract.connect(freshSigner) as ethers.Contract;
+      }
     }
+
+    throw new Error(parseContractError(lastRetryableError));
   }
 
   /**

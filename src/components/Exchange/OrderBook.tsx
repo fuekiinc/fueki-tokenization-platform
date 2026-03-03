@@ -38,7 +38,7 @@ import logger from '../../lib/logger';
 // Constants
 // ---------------------------------------------------------------------------
 
-const REFRESH_INTERVAL_MS = 15_000;
+const REFRESH_INTERVAL_MS = 30_000;
 const SKELETON_ROWS = 8;
 
 // ---------------------------------------------------------------------------

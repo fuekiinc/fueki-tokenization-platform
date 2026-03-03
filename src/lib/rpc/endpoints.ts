@@ -7,9 +7,9 @@
 
 import logger from '../logger';
 
-const FAILURE_THRESHOLD = 2;
-const COOLDOWN_MS = 30_000;
-const HEALTHY_ENDPOINT_CACHE_TTL_MS = 2 * 60_000;
+const FAILURE_THRESHOLD = 3;
+const COOLDOWN_MS = 20_000;
+const HEALTHY_ENDPOINT_CACHE_TTL_MS = 3 * 60_000;
 
 interface EndpointHealth {
   failures: number;

@@ -855,31 +855,48 @@ export class OrbitalContractService {
       }
     }
 
-    try {
-      return await methodFn(...args, mergedOverrides);
-    } catch (err: unknown) {
-      if (/user (rejected|denied)|ACTION_REJECTED/i.test(
-        err instanceof Error ? err.message : String(err),
-      )) {
-        throw new Error('Transaction was rejected in your wallet.');
-      }
+    let activeContract = contract;
+    let lastRetryableError: unknown = null;
+    const maxAttempts = 3;
 
-      if (isRetryableRpcError(err)) {
-        logger.warn(`[OrbitalContractService] ${method}: RPC failure, retrying after 2s`, err);
-        await new Promise((r) => setTimeout(r, 2000));
-        try {
-          const freshSigner = await this.getSigner();
-          const freshContract = contract.connect(freshSigner) as ethers.Contract;
-          return await freshContract.getFunction(method)(...args, mergedOverrides);
-        } catch (retryErr: unknown) {
-          const userMessage = parseContractError(retryErr);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await activeContract.getFunction(method)(...args, mergedOverrides);
+      } catch (err: unknown) {
+        if (
+          /user (rejected|denied)|ACTION_REJECTED/i.test(
+            err instanceof Error ? err.message : String(err),
+          )
+        ) {
+          throw new Error('Transaction was rejected in your wallet.');
+        }
+
+        if (!isRetryableRpcError(err)) {
+          const userMessage = parseContractError(err);
+          logger.error(`[OrbitalContractService] ${method} failed:`, err);
           throw new Error(userMessage);
         }
-      }
 
-      const userMessage = parseContractError(err);
-      logger.error(`[OrbitalContractService] ${method} failed:`, err);
-      throw new Error(userMessage);
+        lastRetryableError = err;
+        if (attempt >= maxAttempts) {
+          break;
+        }
+
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isRateLimit = /429|too many requests|rate.?limit/i.test(errMsg);
+        const delayMs = isRateLimit ? 3000 * attempt : 1500 * attempt;
+
+        logger.warn(
+          `[OrbitalContractService] ${method}: wallet/RPC transport failure ` +
+          `(attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms`,
+          err,
+        );
+        await new Promise((r) => setTimeout(r, delayMs));
+        const freshSigner = await this.getSigner();
+        activeContract = contract.connect(freshSigner) as ethers.Contract;
+      }
     }
+
+    throw new Error(parseContractError(lastRetryableError));
   }
 }

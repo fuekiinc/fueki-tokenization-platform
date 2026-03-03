@@ -22,13 +22,15 @@ export const isThirdwebConfigured = Boolean(THIRDWEB_CLIENT_ID);
 export const thirdwebClient = THIRDWEB_CLIENT_ID
   ? createThirdwebClient({
       clientId: THIRDWEB_CLIENT_ID,
-      // Allow moderate batching to reduce total RPC requests while staying
-      // within typical free-tier limits.  maxBatchSize=1 (the previous value)
-      // sent every call individually, which quickly exhausted rate limits.
+      // Conservative batching to reduce total RPC requests while staying
+      // safely within free-tier and QuickNode rate limits.  A batch size of
+      // 4 keeps us under most provider batch limits while still reducing
+      // round-trips. The 100ms timeout gives the batch more time to fill
+      // before flushing, reducing partial-batch overhead.
       config: {
         rpc: {
-          maxBatchSize: 10,
-          batchTimeoutMs: 50,
+          maxBatchSize: 4,
+          batchTimeoutMs: 100,
         },
       },
     })

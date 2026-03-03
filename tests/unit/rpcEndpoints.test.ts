@@ -61,6 +61,7 @@ test('selectRpcEndpoint falls back when the primary endpoint enters cooldown', (
 
   reportRpcEndpointFailure(chainId, endpoints[0]);
   reportRpcEndpointFailure(chainId, endpoints[0]);
+  reportRpcEndpointFailure(chainId, endpoints[0]);
 
   const selected = selectRpcEndpoint(chainId);
   assert.notEqual(selected, endpoints[0]);

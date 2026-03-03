@@ -100,7 +100,7 @@ export default function TradeForm({
   const [slippage, setSlippage] = useState(0.5); // percentage
   const [customSlippage, setCustomSlippage] = useState('');
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
-  const [quoteRefreshTimer, setQuoteRefreshTimer] = useState(15);
+  const [quoteRefreshTimer, setQuoteRefreshTimer] = useState(30);
 
   useEffect(() => {
     if (!enableAMM && tradeMode === 'amm') {
@@ -547,18 +547,18 @@ export default function TradeForm({
     };
   }, [tradeMode, contractService, sellToken, buyToken, parsedSellAmount]);
 
-  // Auto-refresh AMM quote every 15 seconds with countdown
+  // Auto-refresh AMM quote every 30 seconds with countdown
   useEffect(() => {
     if (tradeMode !== 'amm' || !contractService || !sellToken || !buyToken || parsedSellAmount === 0n) {
-      setQuoteRefreshTimer(15);
+      setQuoteRefreshTimer(30);
       return;
     }
 
-    setQuoteRefreshTimer(15);
+    setQuoteRefreshTimer(30);
     const interval = setInterval(() => {
       setQuoteRefreshTimer((prev) => {
         if (prev <= 1) {
-          // Trigger a re-fetch by resetting to 15 -- the quote effect
+          // Trigger a re-fetch by resetting to 30 -- the quote effect
           // depends on parsedSellAmount which has not changed, but we can
           // nudge it by setting the amount string to itself (no-op for
           // React since it is the same value). Instead, we rely on the
@@ -573,7 +573,7 @@ export default function TradeForm({
               // keep existing quote
             }
           })();
-          return 15;
+          return 30;
         }
         return prev - 1;
       });
