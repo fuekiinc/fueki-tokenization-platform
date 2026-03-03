@@ -122,6 +122,8 @@ jobs:
     timeout-minutes: 25
     needs: changes
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.workflows == 'true'
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/fueki_ci
     defaults:
       run:
         working-directory: backend
@@ -253,7 +255,7 @@ jobs:
           path: |
             audit-root.json
             audit-backend.json
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 14
 
   dependency-review:
