@@ -1,0 +1,4 @@
+[allowlist]
+description = "Allow on-chain contract addresses in the static address registry."
+paths = ['''src/contracts/addresses\.ts''']
+regexes = ['''0x[a-fA-F0-9]{40}''']
