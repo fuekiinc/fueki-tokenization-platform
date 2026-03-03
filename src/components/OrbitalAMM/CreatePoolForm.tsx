@@ -154,6 +154,8 @@ export default function CreatePoolForm({
 
   const [showTokenPicker, setShowTokenPicker] = useState(false);
   const [tokenSearch, setTokenSearch] = useState('');
+  const [manualTokenAddress, setManualTokenAddress] = useState('');
+  const [isAddingManualToken, setIsAddingManualToken] = useState(false);
 
   // ---- TX state -------------------------------------------------------------
 
@@ -283,6 +285,54 @@ export default function CreatePoolForm({
       ),
     );
   }, []);
+
+  const handleAddTokenByAddress = useCallback(async () => {
+    if (!contractService) return;
+    const candidate = manualTokenAddress.trim();
+    if (!candidate) {
+      toast.error('Enter a token contract address.');
+      return;
+    }
+    if (!ethers.isAddress(candidate)) {
+      toast.error('Invalid token contract address.');
+      return;
+    }
+    if (selectedTokens.length >= MAX_TOKENS) {
+      toast.error(`You can add up to ${MAX_TOKENS} tokens.`);
+      return;
+    }
+    if (selectedTokens.some((t) => t.address.toLowerCase() === candidate.toLowerCase())) {
+      toast.error('Token is already in this pool.');
+      return;
+    }
+
+    setIsAddingManualToken(true);
+    try {
+      const [tokenInfo, balance] = await Promise.all([
+        contractService.getTokenInfo(candidate),
+        contractService.getTokenBalance(candidate, userAddress),
+      ]);
+
+      setSelectedTokens((prev) => [
+        ...prev,
+        {
+          address: candidate,
+          symbol: tokenInfo.symbol || formatAddress(candidate),
+          name: tokenInfo.name || 'Token',
+          balance,
+          initialAmount: '',
+        },
+      ]);
+      setManualTokenAddress('');
+      setShowTokenPicker(false);
+      setTokenSearch('');
+      toast.success(`Added ${tokenInfo.symbol || formatAddress(candidate)}`);
+    } catch (err: unknown) {
+      toast.error(`Unable to load token: ${parseContractError(err)}`);
+    } finally {
+      setIsAddingManualToken(false);
+    }
+  }, [contractService, manualTokenAddress, selectedTokens, userAddress]);
 
   // ---- Parsed amounts -------------------------------------------------------
 
@@ -634,7 +684,7 @@ export default function CreatePoolForm({
                 <div className="max-h-48 overflow-y-auto py-1">
                   {filteredAvailable.length === 0 ? (
                     <div className="px-4 py-6 text-center text-xs text-gray-500">
-                      No tokens available
+                      No indexed tokens found. Paste a token address below.
                     </div>
                   ) : (
                     filteredAvailable.map((token) => (
@@ -660,6 +710,46 @@ export default function CreatePoolForm({
                       </button>
                     ))
                   )}
+                </div>
+
+                {/* Manual token address fallback */}
+                <div className="border-t border-white/[0.04] p-3 space-y-2.5">
+                  <div className="text-[10px] uppercase tracking-wider text-gray-600">
+                    Add by address
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="0x..."
+                      value={manualTokenAddress}
+                      onChange={(e) => setManualTokenAddress(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void handleAddTokenByAddress();
+                        }
+                      }}
+                      className={clsx(
+                        'w-full rounded-lg px-3 py-2 text-xs font-mono text-white',
+                        'bg-white/[0.04] border border-white/[0.06]',
+                        'placeholder:text-gray-600',
+                        'focus:outline-none focus:border-white/[0.12]',
+                      )}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleAddTokenByAddress()}
+                      disabled={isAddingManualToken || selectedTokens.length >= MAX_TOKENS}
+                      className={clsx(
+                        'rounded-lg px-3 py-2 text-[10px] font-semibold uppercase tracking-wider',
+                        'bg-indigo-500/15 text-indigo-400 ring-1 ring-indigo-500/25',
+                        'hover:bg-indigo-500/25 transition-colors',
+                        'disabled:cursor-not-allowed disabled:opacity-40',
+                      )}
+                    >
+                      {isAddingManualToken ? 'Adding...' : 'Add'}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Close */}
@@ -934,6 +1024,61 @@ export default function CreatePoolForm({
           </div>
         </div>
       </div>
+
+      {/* ---- Initial Liquidity (editable on review) ------------------------- */}
+      {selectedTokens.length >= MIN_TOKENS && (
+        <div>
+          <div className="mb-3 inline-flex items-center gap-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            Initial Liquidity
+            <HelpTooltip
+              tooltipId="pool.initialPrice"
+              flow="pool"
+              component="CreatePoolForm.StepReview"
+            />
+          </div>
+          <div className="space-y-2.5">
+            {selectedTokens.map((token) => (
+              <div
+                key={`review-liq-${token.address}`}
+                className="rounded-xl bg-[#0D0F14] border border-white/[0.06] p-3"
+              >
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-gray-300">
+                    {token.symbol}
+                  </span>
+                  <span className="text-[10px] text-gray-500">
+                    Balance: {formatBalance(token.balance, 18, 6)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="Initial amount"
+                    value={token.initialAmount}
+                    onChange={(e) => handleAmountChange(token.address, e.target.value)}
+                    className={clsx(
+                      'flex-1 rounded-lg px-3 py-2 text-xs font-mono text-white',
+                      'bg-white/[0.03] border border-white/[0.04]',
+                      'placeholder:text-gray-600',
+                      'focus:border-white/[0.1] focus:outline-none',
+                    )}
+                  />
+                  {token.balance > 0n && (
+                    <button
+                      type="button"
+                      onClick={() => handleMaxAmount(token.address)}
+                      className="rounded bg-indigo-500/10 px-2 py-1 text-[10px] font-bold uppercase text-indigo-400 hover:bg-indigo-500/20 transition-colors"
+                    >
+                      Max
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ---- Summary --------------------------------------------------------- */}
       {selectedTokens.length >= MIN_TOKENS && (

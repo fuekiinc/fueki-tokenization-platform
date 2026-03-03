@@ -35,7 +35,12 @@ import { getProvider } from '../store/walletStore.ts';
 import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
 import { Modal, Button, EmptyState } from '../components/Common/index.ts';
-import { formatBalance, formatAddress, copyToClipboard } from '../lib/utils/helpers.ts';
+import {
+  formatBalance,
+  formatAddress,
+  copyToClipboard,
+  parseTokenAmount,
+} from '../lib/utils/helpers.ts';
 import { formatCurrency, formatTokenAmount } from '../lib/formatters.ts';
 import { SUPPORTED_NETWORKS, getNetworkConfig } from '../contracts/addresses.ts';
 import {
@@ -116,7 +121,7 @@ function getDocBadgeClasses(docType: string): string {
 
 function computePortfolioValue(assets: WrappedAsset[]): string {
   const total = assets.reduce(
-    (sum, a) => sum + parseFloat(a.originalValue || '0'),
+    (sum, a) => sum + parseTokenAmount(a.originalValue || '0'),
     0,
   );
   return formatCurrency(total);
@@ -124,7 +129,7 @@ function computePortfolioValue(assets: WrappedAsset[]): string {
 
 function computeTotalLocked(assets: WrappedAsset[]): string {
   const total = assets.reduce(
-    (sum, a) => sum + parseFloat(a.balance || '0'),
+    (sum, a) => sum + parseTokenAmount(a.balance || '0'),
     0,
   );
   return formatTokenAmount(total);
@@ -144,7 +149,7 @@ function pnlColorClass(value: number): string {
 }
 
 function hasPositiveBalance(asset: WrappedAsset): boolean {
-  const balance = Number.parseFloat(asset.balance ?? '0');
+  const balance = parseTokenAmount(asset.balance ?? '0');
   return Number.isFinite(balance) && balance > 0;
 }
 
@@ -605,11 +610,11 @@ export default function PortfolioPage() {
                 address: addr,
                 name: details.name,
                 symbol: details.symbol,
-                totalSupply: ethers.formatEther(details.totalSupply),
-                balance: ethers.formatEther(balanceWei),
+                totalSupply: details.totalSupply.toString(),
+                balance: balanceWei.toString(),
                 documentHash: details.documentHash,
                 documentType: details.documentType,
-                originalValue: ethers.formatEther(details.originalValue),
+                originalValue: details.originalValue.toString(),
               };
             } catch (err) {
               logger.warn(`Portfolio: skipping asset ${addr}:`, err);
@@ -672,12 +677,14 @@ export default function PortfolioPage() {
           cmp = a.name.localeCompare(b.name);
           break;
         case 'balance':
-          cmp = parseFloat(a.balance || '0') - parseFloat(b.balance || '0');
+          cmp =
+            parseTokenAmount(a.balance || '0') -
+            parseTokenAmount(b.balance || '0');
           break;
         case 'value':
           cmp =
-            parseFloat(a.originalValue || '0') -
-            parseFloat(b.originalValue || '0');
+            parseTokenAmount(a.originalValue || '0') -
+            parseTokenAmount(b.originalValue || '0');
           break;
       }
       return sortDir === 'asc' ? cmp : -cmp;

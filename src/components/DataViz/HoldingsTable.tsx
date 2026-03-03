@@ -16,7 +16,11 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { InfoTooltip } from '../Common/Tooltip';
 import { TOOLTIPS } from '../../lib/tooltipContent';
 import type { WrappedAsset, TradeHistory } from '../../types/index.ts';
-import { formatBalance, copyToClipboard } from '../../lib/utils/helpers.ts';
+import {
+  formatBalance,
+  copyToClipboard,
+  parseTokenAmount,
+} from '../../lib/utils/helpers.ts';
 import { formatTokenAmount, formatCurrency } from '../../lib/formatters.ts';
 import {
   calculateAssetPerformance,
@@ -140,12 +144,14 @@ export default function HoldingsTable({
           cmp = a.name.localeCompare(b.name);
           break;
         case 'balance':
-          cmp = parseFloat(a.balance || '0') - parseFloat(b.balance || '0');
+          cmp =
+            parseTokenAmount(a.balance || '0') -
+            parseTokenAmount(b.balance || '0');
           break;
         case 'value':
           cmp =
-            parseFloat(a.originalValue || '0') -
-            parseFloat(b.originalValue || '0');
+            parseTokenAmount(a.originalValue || '0') -
+            parseTokenAmount(b.originalValue || '0');
           break;
         case 'pnl': {
           const aPnl = performanceMap.get(a.address)?.percentageChange ?? 0;

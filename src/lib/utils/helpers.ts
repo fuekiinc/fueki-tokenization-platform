@@ -82,6 +82,7 @@ export function formatBalance(
     .substring(0, displayDecimals);
   return `${sign}${whole}.${remainderStr}`;
 }
+export { parseTokenAmount } from '../tokenAmounts.ts';
 
 export function formatCurrency(amount: number, currency: string = 'USD'): string {
   const safeCurrency = (currency || 'USD').toUpperCase().trim();

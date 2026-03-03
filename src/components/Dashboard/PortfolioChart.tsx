@@ -10,7 +10,11 @@ import toast from 'react-hot-toast';
 import { Package, PieChart as PieChartIcon, Copy, Check } from 'lucide-react';
 import clsx from 'clsx';
 import type { WrappedAsset } from '../../types/index';
-import { formatAddress, copyToClipboard } from '../../lib/utils/helpers';
+import {
+  formatAddress,
+  copyToClipboard,
+  parseTokenAmount,
+} from '../../lib/utils/helpers';
 import { formatCurrency, formatPercent } from '../../lib/formatters';
 import {
   CARD_CLASSES,
@@ -196,17 +200,16 @@ export default function PortfolioChart({ assets }: PortfolioChartProps) {
   const chartData = useMemo<ChartDatum[]>(() => {
     if (assets.length === 0) return [];
 
-    const total = assets.reduce((sum, a) => {
-      const v = parseFloat(a.originalValue || '0');
-      return sum + (Number.isNaN(v) ? 0 : v);
-    }, 0);
+    const total = assets.reduce(
+      (sum, a) => sum + parseTokenAmount(a.originalValue || '0'),
+      0,
+    );
 
     if (total === 0) return [];
 
     return assets
       .map((asset) => {
-        const value = parseFloat(asset.originalValue || '0');
-        const safeValue = Number.isNaN(value) ? 0 : value;
+        const safeValue = parseTokenAmount(asset.originalValue || '0');
         return {
           name: asset.name ?? 'Unknown',
           symbol: asset.symbol ?? '???',

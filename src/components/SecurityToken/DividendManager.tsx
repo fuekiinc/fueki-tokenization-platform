@@ -33,6 +33,10 @@ import {
 } from '../../contracts/abis/SecurityToken';
 import { useWalletStore, getProvider } from '../../store/walletStore';
 import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
+import {
+  sendTransactionWithRetry,
+  waitForTransactionReceipt,
+} from '../../lib/blockchain/txExecution';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import Card from '../Common/Card';
 import Spinner from '../Common/Spinner';
@@ -304,8 +308,11 @@ export default function DividendManager({
       const contract = await getContract(true);
       const gasEstimate = await contract.snapshot.estimateGas();
       const gasLimit = (gasEstimate * 120n) / 100n;
-      const tx = await contract.snapshot({ gasLimit });
-      await tx.wait();
+      const tx = await sendTransactionWithRetry(
+        () => contract.snapshot({ gasLimit }),
+        { label: 'DividendManager.createSnapshot' },
+      );
+      await waitForTransactionReceipt(tx, { label: 'DividendManager.createSnapshot' });
 
       toast.success('Snapshot created successfully', {
         id: 'create-snapshot',
@@ -410,10 +417,11 @@ export default function DividendManager({
         amount,
       );
       const gasLimit = (gasEstimate * 120n) / 100n;
-      const tx = await erc20.approve(tokenAddress, amount, {
-        gasLimit,
-      });
-      await tx.wait();
+      const tx = await sendTransactionWithRetry(
+        () => erc20.approve(tokenAddress, amount, { gasLimit }),
+        { label: 'DividendManager.approvePaymentToken' },
+      );
+      await waitForTransactionReceipt(tx, { label: 'DividendManager.approvePaymentToken' });
 
       // Refresh allowance
       const newAllowance = (await erc20.allowance(
@@ -463,13 +471,14 @@ export default function DividendManager({
         snapshotId,
       );
       const gasLimit = (gasEstimate * 120n) / 100n;
-      const tx = await contract.fundDividend(
-        fundPaymentToken,
-        amount,
-        snapshotId,
-        { gasLimit },
+      const tx = await sendTransactionWithRetry(
+        () =>
+          contract.fundDividend(fundPaymentToken, amount, snapshotId, {
+            gasLimit,
+          }),
+        { label: 'DividendManager.fundDividend' },
       );
-      await tx.wait();
+      await waitForTransactionReceipt(tx, { label: 'DividendManager.fundDividend' });
 
       toast.success('Dividend funded successfully', {
         id: 'fund-dividend',
@@ -713,12 +722,11 @@ export default function DividendManager({
             snapshotId,
           );
         const gasLimit = (gasEstimate * 120n) / 100n;
-        const tx = await contract.claimDividend(
-          paymentToken,
-          snapshotId,
-          { gasLimit },
+        const tx = await sendTransactionWithRetry(
+          () => contract.claimDividend(paymentToken, snapshotId, { gasLimit }),
+          { label: 'DividendManager.claimDividend' },
         );
-        await tx.wait();
+        await waitForTransactionReceipt(tx, { label: 'DividendManager.claimDividend' });
 
         toast.success('Dividend claimed!', { id: 'claim-dividend' });
         await loadClaimable();
@@ -757,12 +765,11 @@ export default function DividendManager({
           snapshotId,
         );
       const gasLimit = (gasEstimate * 120n) / 100n;
-      const tx = await contract.withdrawalRemains(
-        withdrawToken,
-        snapshotId,
-        { gasLimit },
+      const tx = await sendTransactionWithRetry(
+        () => contract.withdrawalRemains(withdrawToken, snapshotId, { gasLimit }),
+        { label: 'DividendManager.withdrawRemains' },
       );
-      await tx.wait();
+      await waitForTransactionReceipt(tx, { label: 'DividendManager.withdrawRemains' });
 
       toast.success('Withdrawal complete', { id: 'withdraw-remains' });
     } catch (err) {

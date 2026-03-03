@@ -110,7 +110,13 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     assetBackedExchangeAddress: '0x6C9217850317e61544a3d5bFD3b3C6CA3ADE6660',
     wethAddress: '0x94373a4919B3240D86eA41593D5eBa789FEF3848',
     wbtcAddress: '',
-    ammAddress: '0xa9b60375A6433a6697F020F67Dd69851F861DFb8',
+    // Leave empty by default: previously configured value pointed to a
+    // non-AMM contract on Holesky. Operators can set the verified deployment
+    // address at build time via VITE_AMM_17000.
+    ammAddress: readAddressEnv(
+      'VITE_AMM_17000',
+      '',
+    ),
     orbitalFactoryAddress: readAddressEnv(
       'VITE_ORBITAL_FACTORY_17000',
       '0xd951A80Efd159B35A7c66f830ca77980476D9305',

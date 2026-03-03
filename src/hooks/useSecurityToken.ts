@@ -27,7 +27,6 @@ import { ContractService } from '../lib/blockchain/contracts';
 import { multicallSameTarget } from '../lib/blockchain/multicall';
 import {
   findHealthyEndpoint,
-  isRetryableRpcError,
 } from '../lib/rpc/endpoints';
 import {
   getCached,
@@ -37,6 +36,10 @@ import {
   TTL_BALANCE,
   TTL_METADATA,
 } from '../lib/blockchain/rpcCache';
+import {
+  sendTransactionWithRetry,
+  waitForTransactionReceipt,
+} from '../lib/blockchain/txExecution';
 import { txToast } from '../lib/utils/txToast';
 
 // ---------------------------------------------------------------------------
@@ -160,58 +163,26 @@ async function executeWrite(
   }
 
   let activeContract = contract;
-  let lastRetryableError: unknown = null;
-  const maxAttempts = 3;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await activeContract.getFunction(method)(
+  return sendTransactionWithRetry(
+    () =>
+      activeContract.getFunction(method)(
         ...args,
         mergedOverrides,
-      ) as ethers.ContractTransactionResponse;
-    } catch (error) {
-      if (
-        /user (rejected|denied)|ACTION_REJECTED/i.test(
-          error instanceof Error ? error.message : String(error),
-        )
-      ) {
-        throw new Error('Transaction was rejected in your wallet.');
-      }
-
-      if (!isRetryableRpcError(error)) {
-        throw error;
-      }
-
-      lastRetryableError = error;
-      if (attempt >= maxAttempts) {
-        break;
-      }
-
-      const errMsg = error instanceof Error ? error.message : String(error);
-      const isRateLimit = /429|too many requests|rate.?limit/i.test(errMsg);
-      const delayMs = isRateLimit ? 3000 * attempt : 1500 * attempt;
-
-      log.warn(
-        `[useSecurityToken] ${method}: wallet/RPC transport failure ` +
-          `(attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms`,
-        error,
-      );
-
-      await new Promise((r) => setTimeout(r, delayMs));
-
-      const provider = getProvider();
-      if (provider) {
+      ) as Promise<ethers.ContractTransactionResponse>,
+    {
+      label: `useSecurityToken.${method}`,
+      onRetry: async () => {
+        const provider = getProvider();
+        if (!provider) return;
         try {
           const freshSigner = await provider.getSigner();
           activeContract = contract.connect(freshSigner) as ethers.Contract;
         } catch {
           // Keep last connected signer and continue to next retry.
         }
-      }
-    }
-  }
-
-  throw lastRetryableError;
+      },
+    },
+  );
 }
 
 function chainScopedKey(chainId: number | null, key: string): string {
@@ -830,7 +801,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'mint', [to, value]);
 
       txToast.pending(tx.hash, chainId!, 'Minting tokens...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Mint transaction reverted');
       }
@@ -866,7 +837,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'burn', [from, value]);
 
       txToast.pending(tx.hash, chainId!, 'Burning tokens...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Burn transaction reverted');
       }
@@ -899,7 +870,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'pause', []);
 
       txToast.pending(tx.hash, chainId!, 'Pausing token...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Pause transaction reverted');
       }
@@ -932,7 +903,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'unpause', []);
 
       txToast.pending(tx.hash, chainId!, 'Unpausing token...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Unpause transaction reverted');
       }
@@ -969,7 +940,7 @@ export function useSecurityToken() {
 
       const label = status ? 'Freezing' : 'Unfreezing';
       txToast.pending(tx.hash, chainId!, `${label} address...`);
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error(`${label} transaction reverted`);
       }
@@ -1002,7 +973,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'snapshot', []);
 
       txToast.pending(tx.hash, chainId!, 'Creating snapshot...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Snapshot transaction reverted');
       }
@@ -1039,7 +1010,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'setTransferGroup', [addr, groupID]);
 
       txToast.pending(tx.hash, chainId!, 'Setting transfer group...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Set transfer group reverted');
       }
@@ -1075,7 +1046,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'setMaxBalance', [addr, updatedValue]);
 
       txToast.pending(tx.hash, chainId!, 'Setting max balance...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Set max balance reverted');
       }
@@ -1113,7 +1084,7 @@ export function useSecurityToken() {
       ]);
 
       txToast.pending(tx.hash, chainId!, 'Setting group transfer rule...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Set group transfer reverted');
       }
@@ -1154,7 +1125,7 @@ export function useSecurityToken() {
       ]);
 
       txToast.pending(tx.hash, chainId!, 'Setting address permissions...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Set address permissions reverted');
       }
@@ -1198,7 +1169,7 @@ export function useSecurityToken() {
       ]);
 
       txToast.pending(tx.hash, chainId!, 'Creating release schedule...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Create release schedule reverted');
       }
@@ -1238,7 +1209,7 @@ export function useSecurityToken() {
       ]);
 
       txToast.pending(tx.hash, chainId!, 'Funding release schedule...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Fund release schedule reverted');
       }
@@ -1278,7 +1249,7 @@ export function useSecurityToken() {
       ]);
 
       txToast.pending(tx.hash, chainId!, 'Batch funding release schedules...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Batch fund release schedule reverted');
       }
@@ -1321,7 +1292,7 @@ export function useSecurityToken() {
       ]);
 
       txToast.pending(tx.hash, chainId!, 'Cancelling timelock...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Cancel timelock reverted');
       }
@@ -1359,7 +1330,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'grantRole', [addr, role]);
 
       txToast.pending(tx.hash, chainId!, 'Granting role...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Grant role reverted');
       }
@@ -1394,7 +1365,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'revokeRole', [addr, role]);
 
       txToast.pending(tx.hash, chainId!, 'Revoking role...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Revoke role reverted');
       }
@@ -1428,7 +1399,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'upgradeTransferRules', [newTransferRules]);
 
       txToast.pending(tx.hash, chainId!, 'Upgrading transfer rules...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Upgrade transfer rules reverted');
       }
@@ -1470,7 +1441,7 @@ export function useSecurityToken() {
       ]);
 
       txToast.pending(tx.hash, chainId!, 'Funding dividend...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Fund dividend reverted');
       }
@@ -1505,7 +1476,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'claimDividend', [paymentToken, snapshotId]);
 
       txToast.pending(tx.hash, chainId!, 'Claiming dividend...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Claim dividend reverted');
       }
@@ -1540,7 +1511,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'withdrawalRemains', [paymentToken, snapshotId]);
 
       txToast.pending(tx.hash, chainId!, 'Withdrawing remaining funds...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Withdrawal remains reverted');
       }
@@ -1582,7 +1553,7 @@ export function useSecurityToken() {
       ]);
 
       txToast.pending(tx.hash, chainId!, 'Configuring sell swap...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Configure sell reverted');
       }
@@ -1622,7 +1593,7 @@ export function useSecurityToken() {
       ]);
 
       txToast.pending(tx.hash, chainId!, 'Configuring buy swap...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Configure buy reverted');
       }
@@ -1655,7 +1626,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'completeSwapWithPaymentToken', [swapNum]);
 
       txToast.pending(tx.hash, chainId!, 'Completing swap with payment token...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Complete swap with payment token reverted');
       }
@@ -1689,7 +1660,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'completeSwapWithRestrictedToken', [swapNum]);
 
       txToast.pending(tx.hash, chainId!, 'Completing swap with restricted token...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Complete swap with restricted token reverted');
       }
@@ -1723,7 +1694,7 @@ export function useSecurityToken() {
       const tx = await executeWrite(contract, 'cancelSell', [swapNum]);
 
       txToast.pending(tx.hash, chainId!, 'Cancelling swap...');
-      const receipt = await tx.wait();
+      const receipt = await waitForTransactionReceipt(tx, { chainId, label: 'useSecurityToken.write' });
       if (!receipt || receipt.status === 0) {
         throw new Error('Cancel sell reverted');
       }

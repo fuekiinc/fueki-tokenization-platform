@@ -15,6 +15,7 @@ import { SecurityTokenFactoryABI } from '../../contracts/abis/SecurityTokenFacto
 import { SecurityTokenABI } from '../../contracts/abis/SecurityToken.ts';
 import { AssetBackedExchangeABI } from '../../contracts/abis/AssetBackedExchange.ts';
 import { LiquidityPoolAMMABI } from '../../contracts/abis/LiquidityPoolAMM.ts';
+import { LiquidityPoolAMMLegacyABI } from '../../contracts/abis/LiquidityPoolAMMLegacy.ts';
 import { getNetworkConfig, getNetworkMetadata } from '../../contracts/addresses';
 import { multicall, multicallSameTarget } from './multicall.ts';
 import type { MulticallRequest, MulticallResult } from './multicall.ts';
@@ -34,6 +35,10 @@ import {
   setCache,
 } from './rpcCache.ts';
 import { getSigner as getStoreSigner } from '../../store/walletStore.ts';
+import {
+  sendTransactionWithRetry,
+  waitForTransactionReceipt,
+} from './txExecution.ts';
 import logger from '../logger';
 
 // ---------------------------------------------------------------------------
@@ -104,6 +109,12 @@ export interface SecurityTokenDetails {
 }
 
 export interface SecurityTokenDeploymentGasEstimate {
+  gasUnits: bigint;
+  gasPriceWei: bigint;
+  estimatedCostWei: bigint;
+}
+
+export interface WrappedAssetDeploymentGasEstimate {
   gasUnits: bigint;
   gasPriceWei: bigint;
   estimatedCostWei: bigint;
@@ -513,6 +524,13 @@ export function parseContractError(err: unknown): string {
   return 'Transaction failed. Please try again or check your wallet for details.';
 }
 
+function isAmmPayloadMismatchError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /transaction payload is incompatible with the deployed contract|function selector was not recognized|unknown selector|no matching fragment|missing revert data.*call_exception/i.test(
+    msg,
+  );
+}
+
 /**
  * Encode a document hash string into a bytes32 value suitable for the
  * factory's `createWrappedAsset` parameter.
@@ -876,6 +894,59 @@ export class ContractService {
     ]);
     this.invalidateCachePrefix('factory:');
     return tx;
+  }
+
+  /**
+   * Estimate gas/cost for creating a new WrappedAsset through the
+   * WrappedAssetFactory using resilient read-RPC fallback.
+   */
+  async estimateCreateWrappedAssetGas(
+    name: string,
+    symbol: string,
+    documentHash: string,
+    documentType: string,
+    originalValue: bigint,
+    mintAmount: bigint,
+    recipient: string,
+  ): Promise<WrappedAssetDeploymentGasEstimate> {
+    const signer = await this.getSigner();
+    const signerAddress = await signer.getAddress();
+    const factory = this.getFactoryContract(signer);
+
+    this.validateAddress(recipient, 'recipient');
+    const encodedHash = encodeDocumentHash(documentHash);
+
+    const args: unknown[] = [
+      name,
+      symbol,
+      encodedHash,
+      documentType,
+      originalValue,
+      mintAmount,
+      recipient,
+    ];
+
+    const gasUnits = await this.estimateGasWithFallback(
+      factory,
+      'createWrappedAsset',
+      args,
+      signerAddress,
+    );
+
+    if (gasUnits === null) {
+      throw new Error(
+        'Unable to estimate gas right now because RPC endpoints are temporarily unavailable. Please retry in a moment.',
+      );
+    }
+
+    const feeData = await this.withReadProvider((provider) => provider.getFeeData());
+    const gasPriceWei = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;
+
+    return {
+      gasUnits,
+      gasPriceWei,
+      estimatedCostWei: gasUnits * gasPriceWei,
+    };
   }
 
   // -----------------------------------------------------------------------
@@ -1809,6 +1880,64 @@ export class ContractService {
     );
   }
 
+  /**
+   * Legacy AMM ABI accessor for older deployments that use pre-deadline
+   * liquidity/swap signatures.
+   */
+  getLegacyAMMContract(
+    signerOrProvider?: ethers.Signer | ethers.Provider,
+  ): ethers.Contract {
+    const config = getNetworkConfig(this.chainId);
+    if (!config || !config.ammAddress) {
+      throw new Error(`LiquidityPoolAMM not deployed on chain ${this.chainId}`);
+    }
+    return new ethers.Contract(
+      config.ammAddress,
+      LiquidityPoolAMMLegacyABI,
+      signerOrProvider || this.provider,
+    );
+  }
+
+  /**
+   * Execute a modern AMM write call and transparently retry against the legacy
+   * AMM ABI when the deployed contract rejects the modern function selector.
+   */
+  private async executeAMMWriteWithLegacyFallback(
+    modernMethod: string,
+    modernArgs: unknown[],
+    legacyMethod: string,
+    legacyArgs: unknown[],
+    overrides?: ethers.Overrides,
+  ): Promise<ethers.ContractTransactionResponse> {
+    const signer = await this.getSigner();
+    const modernAmm = this.getAMMContract(signer);
+
+    try {
+      return await this.executeWrite(modernAmm, modernMethod, modernArgs, overrides);
+    } catch (modernErr: unknown) {
+      if (!isAmmPayloadMismatchError(modernErr)) {
+        throw modernErr;
+      }
+
+      logger.warn(
+        `[AMM compatibility] ${modernMethod}: modern selector rejected, retrying legacy ABI`,
+        modernErr,
+      );
+
+      const legacyAmm = this.getLegacyAMMContract(signer);
+      try {
+        return await this.executeWrite(legacyAmm, legacyMethod, legacyArgs, overrides);
+      } catch (legacyErr: unknown) {
+        if (isAmmPayloadMismatchError(legacyErr)) {
+          throw new Error(
+            'Legacy AMM contracts are not deployed or are misconfigured on this network. Switch to Orbital AMM or another network.',
+          );
+        }
+        throw legacyErr;
+      }
+    }
+  }
+
   // -----------------------------------------------------------------------
   // AMM write operations
   // -----------------------------------------------------------------------
@@ -1844,11 +1973,16 @@ export class ContractService {
     this.validateAddress(tokenA, 'tokenA');
     this.validateAddress(tokenB, 'tokenB');
     const dl = deadline ?? this._defaultDeadline();
-    const signer = await this.getSigner();
-    const amm = this.getAMMContract(signer);
-    const tx = await this.executeWrite(amm, 'addLiquidity', [
-      tokenA, tokenB, amountADesired, amountBDesired, amountAMin, amountBMin, minLiquidity, dl,
-    ]);
+    const tx = await this.executeAMMWriteWithLegacyFallback(
+      'addLiquidity',
+      [
+        tokenA, tokenB, amountADesired, amountBDesired, amountAMin, amountBMin, minLiquidity, dl,
+      ],
+      'addLiquidity',
+      [
+        tokenA, tokenB, amountADesired, amountBDesired, minLiquidity,
+      ],
+    );
     this.invalidateAssetCache(tokenA);
     this.invalidateAssetCache(tokenB);
     this.invalidateCachePrefix('amm:');
@@ -1867,16 +2001,20 @@ export class ContractService {
   ): Promise<ethers.ContractTransactionResponse> {
     this.validateAddress(token, 'token');
     const dl = deadline ?? this._defaultDeadline();
-    const signer = await this.getSigner();
-    const amm = this.getAMMContract(signer);
-    const tx = await this.executeWrite(amm, 'addLiquidityETH', [
-      token,
-      amountTokenDesired,
-      amountTokenMin,
-      amountETHMin,
-      minLiquidity,
-      dl,
-    ], { value: ethAmount });
+    const tx = await this.executeAMMWriteWithLegacyFallback(
+      'addLiquidityETH',
+      [
+        token,
+        amountTokenDesired,
+        amountTokenMin,
+        amountETHMin,
+        minLiquidity,
+        dl,
+      ],
+      'addLiquidityETH',
+      [token, amountTokenDesired, minLiquidity],
+      { value: ethAmount },
+    );
     this.invalidateAssetCache(token);
     this.invalidateCachePrefix('amm:');
     return tx;
@@ -1894,11 +2032,12 @@ export class ContractService {
     this.validateAddress(tokenA, 'tokenA');
     this.validateAddress(tokenB, 'tokenB');
     const dl = deadline ?? this._defaultDeadline();
-    const signer = await this.getSigner();
-    const amm = this.getAMMContract(signer);
-    const tx = await this.executeWrite(amm, 'removeLiquidity', [
-      tokenA, tokenB, liquidity, minA, minB, dl,
-    ]);
+    const tx = await this.executeAMMWriteWithLegacyFallback(
+      'removeLiquidity',
+      [tokenA, tokenB, liquidity, minA, minB, dl],
+      'removeLiquidity',
+      [tokenA, tokenB, liquidity, minA, minB],
+    );
     this.invalidateAssetCache(tokenA);
     this.invalidateAssetCache(tokenB);
     this.invalidateCachePrefix('amm:');
@@ -1915,11 +2054,12 @@ export class ContractService {
   ): Promise<ethers.ContractTransactionResponse> {
     this.validateAddress(token, 'token');
     const dl = deadline ?? this._defaultDeadline();
-    const signer = await this.getSigner();
-    const amm = this.getAMMContract(signer);
-    const tx = await this.executeWrite(amm, 'removeLiquidityETH', [
-      token, liquidity, minToken, minETH, dl,
-    ]);
+    const tx = await this.executeAMMWriteWithLegacyFallback(
+      'removeLiquidityETH',
+      [token, liquidity, minToken, minETH, dl],
+      'removeLiquidityETH',
+      [token, liquidity, minToken, minETH],
+    );
     this.invalidateAssetCache(token);
     this.invalidateCachePrefix('amm:');
     return tx;
@@ -1936,11 +2076,12 @@ export class ContractService {
     this.validateAddress(tokenIn, 'tokenIn');
     this.validateAddress(tokenOut, 'tokenOut');
     const dl = deadline ?? this._defaultDeadline();
-    const signer = await this.getSigner();
-    const amm = this.getAMMContract(signer);
-    const tx = await this.executeWrite(amm, 'swap', [
-      tokenIn, tokenOut, amountIn, minAmountOut, dl,
-    ]);
+    const tx = await this.executeAMMWriteWithLegacyFallback(
+      'swap',
+      [tokenIn, tokenOut, amountIn, minAmountOut, dl],
+      'swap',
+      [tokenIn, tokenOut, amountIn, minAmountOut],
+    );
     this.invalidateAssetCache(tokenIn);
     this.invalidateAssetCache(tokenOut);
     this.invalidateCachePrefix('amm:');
@@ -1956,11 +2097,13 @@ export class ContractService {
   ): Promise<ethers.ContractTransactionResponse> {
     this.validateAddress(token, 'token');
     const dl = deadline ?? this._defaultDeadline();
-    const signer = await this.getSigner();
-    const amm = this.getAMMContract(signer);
-    const tx = await this.executeWrite(amm, 'swapETHForToken', [
-      token, minAmountOut, dl,
-    ], { value: ethAmount });
+    const tx = await this.executeAMMWriteWithLegacyFallback(
+      'swapETHForToken',
+      [token, minAmountOut, dl],
+      'swapETHForToken',
+      [token, minAmountOut],
+      { value: ethAmount },
+    );
     this.invalidateAssetCache(token);
     this.invalidateCachePrefix('amm:');
     return tx;
@@ -1975,11 +2118,12 @@ export class ContractService {
   ): Promise<ethers.ContractTransactionResponse> {
     this.validateAddress(token, 'token');
     const dl = deadline ?? this._defaultDeadline();
-    const signer = await this.getSigner();
-    const amm = this.getAMMContract(signer);
-    const tx = await this.executeWrite(amm, 'swapTokenForETH', [
-      token, amountIn, minETH, dl,
-    ]);
+    const tx = await this.executeAMMWriteWithLegacyFallback(
+      'swapTokenForETH',
+      [token, amountIn, minETH, dl],
+      'swapTokenForETH',
+      [token, amountIn, minETH],
+    );
     this.invalidateAssetCache(token);
     this.invalidateCachePrefix('amm:');
     return tx;
@@ -2121,7 +2265,11 @@ export class ContractService {
     tx: ethers.ContractTransactionResponse,
     confirmations = 1,
   ): Promise<ethers.TransactionReceipt> {
-    const receipt = await tx.wait(confirmations);
+    const receipt = await waitForTransactionReceipt(tx, {
+      chainId: this.chainId,
+      confirmations,
+      label: 'ContractService.waitForTransaction',
+    });
     if (!receipt) {
       throw new Error('Transaction receipt is null — the transaction may still be pending.');
     }
@@ -2344,48 +2492,37 @@ export class ContractService {
     }
 
     let activeContract = contract;
-    let lastRetryableError: unknown = null;
-    const maxAttempts = 3;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const tx: ethers.ContractTransactionResponse = await activeContract
-          .getFunction(method)(...args, mergedOverrides);
-        return tx;
-      } catch (err: unknown) {
-        if (isUserRejection(err)) {
-          throw new Error('Transaction was rejected in your wallet.');
-        }
+    try {
+      return await sendTransactionWithRetry(
+        () =>
+          activeContract.getFunction(method)(
+            ...args,
+            mergedOverrides,
+          ) as Promise<ethers.ContractTransactionResponse>,
+        {
+          label: `ContractService.${method}`,
+          onRetry: async (_attempt, error) => {
+            const errMsg = error instanceof Error ? error.message : String(error);
+            const isRateLimit = /429|too many requests|rate.?limit/i.test(errMsg);
 
-        if (!isRetryableRpcError(err)) {
-          throw new Error(parseContractError(err));
-        }
+            // For transport corruption/stale wallet RPC configs, try repairing
+            // chain RPC metadata. Skip this on pure rate-limit errors.
+            if (!isRateLimit) {
+              await this.tryRecoverWalletRpcTransport().catch(() => {});
+            }
 
-        lastRetryableError = err;
-        const isFinalAttempt = attempt >= maxAttempts;
-        if (isFinalAttempt) {
-          break;
-        }
-
-        const errMsg = err instanceof Error ? err.message : String(err);
-        const isRateLimit = /429|too many requests|rate.?limit/i.test(errMsg);
-        const delayMs = isRateLimit ? 3000 * attempt : 1500 * attempt;
-
-        logger.warn(
-          `[executeWrite] ${method}: wallet/RPC transport failure ` +
-          `(attempt ${attempt}/${maxAttempts}, ${isRateLimit ? 'rate-limited' : 'transient'}). ` +
-          `Retrying in ${delayMs}ms`,
-          err,
-        );
-
-        await new Promise((r) => setTimeout(r, delayMs));
-        await this.tryRecoverWalletRpcTransport().catch(() => {});
-        const freshSigner = await this.getSigner();
-        activeContract = contract.connect(freshSigner) as ethers.Contract;
+            const freshSigner = await this.getSigner();
+            activeContract = contract.connect(freshSigner) as ethers.Contract;
+          },
+        },
+      );
+    } catch (err: unknown) {
+      if (isUserRejection(err)) {
+        throw new Error('Transaction was rejected in your wallet.');
       }
+      throw new Error(parseContractError(err));
     }
-
-    throw new Error(parseContractError(lastRetryableError));
   }
 
   /**

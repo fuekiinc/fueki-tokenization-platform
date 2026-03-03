@@ -9,7 +9,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import type { WrappedAsset, ExchangeOrder, TradeHistory } from '../../types';
-import { formatCurrency } from '../../lib/utils/helpers';
+import { formatCurrency, parseTokenAmount } from '../../lib/utils/helpers';
 import { formatPercent } from '../../lib/formatters';
 import { CARD_CLASSES, GRID_CLASSES } from '../../lib/designTokens';
 
@@ -159,8 +159,7 @@ export default function StatsGrid({
   const totalAssets = wrappedAssets.length;
 
   const totalValueLocked = wrappedAssets.reduce((sum, asset) => {
-    const v = parseFloat(asset.originalValue || '0');
-    return sum + (Number.isNaN(v) ? 0 : v);
+    return sum + parseTokenAmount(asset.originalValue || '0');
   }, 0);
 
   const totalTrades = tradeHistory.length;

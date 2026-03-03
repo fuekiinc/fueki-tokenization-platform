@@ -35,6 +35,10 @@ import {
 } from '../../contracts/abis/SecurityToken';
 import { useWalletStore, getProvider } from '../../store/walletStore';
 import { parseContractError } from '../../lib/blockchain/contracts';
+import {
+  sendTransactionWithRetry,
+  waitForTransactionReceipt,
+} from '../../lib/blockchain/txExecution';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import Card from '../Common/Card';
 import Spinner from '../Common/Spinner';
@@ -488,14 +492,18 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
           period,
         );
       const gasLimit = (gasEstimate * 120n) / 100n;
-      const tx = await contract.createReleaseSchedule(
-        releaseCount,
-        delay,
-        initialBips,
-        period,
-        { gasLimit },
+      const tx = await sendTransactionWithRetry(
+        () =>
+          contract.createReleaseSchedule(
+            releaseCount,
+            delay,
+            initialBips,
+            period,
+            { gasLimit },
+          ),
+        { label: 'VestingManager.createReleaseSchedule' },
       );
-      await tx.wait();
+      await waitForTransactionReceipt(tx, { label: 'VestingManager.createReleaseSchedule' });
 
       toast.success('Release schedule created successfully', {
         id: 'create-schedule',
@@ -569,15 +577,19 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
           cancelableAddresses,
         );
       const gasLimit = (gasEstimate * 120n) / 100n;
-      const tx = await contract.fundReleaseSchedule(
-        fundRecipient,
-        amount,
-        commencement,
-        scheduleId,
-        cancelableAddresses,
-        { gasLimit },
+      const tx = await sendTransactionWithRetry(
+        () =>
+          contract.fundReleaseSchedule(
+            fundRecipient,
+            amount,
+            commencement,
+            scheduleId,
+            cancelableAddresses,
+            { gasLimit },
+          ),
+        { label: 'VestingManager.fundReleaseSchedule' },
       );
-      await tx.wait();
+      await waitForTransactionReceipt(tx, { label: 'VestingManager.fundReleaseSchedule' });
 
       toast.success('Release schedule funded successfully', {
         id: 'fund-schedule',
@@ -667,15 +679,19 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
           cancelableAddresses,
         );
       const gasLimit = (gasEstimate * 120n) / 100n;
-      const tx = await contract.batchFundReleaseSchedule(
-        recipients,
-        amounts,
-        commencementTimestamps,
-        scheduleIds,
-        cancelableAddresses,
-        { gasLimit },
+      const tx = await sendTransactionWithRetry(
+        () =>
+          contract.batchFundReleaseSchedule(
+            recipients,
+            amounts,
+            commencementTimestamps,
+            scheduleIds,
+            cancelableAddresses,
+            { gasLimit },
+          ),
+        { label: 'VestingManager.batchFundReleaseSchedule' },
       );
-      await tx.wait();
+      await waitForTransactionReceipt(tx, { label: 'VestingManager.batchFundReleaseSchedule' });
 
       toast.success(
         `Successfully funded ${validRows.length} timelock(s)`,
@@ -779,16 +795,20 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
         reclaimAddress,
       );
       const gasLimit = (gasEstimate * 120n) / 100n;
-      const tx = await contract.cancelTimelock(
-        lookupAddress,
-        idx,
-        tl.scheduleId,
-        tl.commencementTimestamp,
-        tl.totalAmount,
-        reclaimAddress,
-        { gasLimit },
+      const tx = await sendTransactionWithRetry(
+        () =>
+          contract.cancelTimelock(
+            lookupAddress,
+            idx,
+            tl.scheduleId,
+            tl.commencementTimestamp,
+            tl.totalAmount,
+            reclaimAddress,
+            { gasLimit },
+          ),
+        { label: 'VestingManager.cancelTimelock' },
       );
-      await tx.wait();
+      await waitForTransactionReceipt(tx, { label: 'VestingManager.cancelTimelock' });
 
       toast.success('Timelock canceled', { id: 'cancel-timelock' });
       setCancelModal({ open: false, timelockIndex: -1, timelock: null });
@@ -836,13 +856,14 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
             timelockId,
           );
         const gasLimit = (gasEstimate * 120n) / 100n;
-        const tx = await contract.transferTimelock(
-          transferTo,
-          value,
-          timelockId,
-          { gasLimit },
+        const tx = await sendTransactionWithRetry(
+          () =>
+            contract.transferTimelock(transferTo, value, timelockId, {
+              gasLimit,
+            }),
+          { label: 'VestingManager.transferTimelock' },
         );
-        await tx.wait();
+        await waitForTransactionReceipt(tx, { label: 'VestingManager.transferTimelock' });
 
         toast.success('Timelock transfer complete', {
           id: 'transfer-timelock',

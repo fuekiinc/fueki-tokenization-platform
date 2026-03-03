@@ -12,6 +12,7 @@ import clsx from 'clsx';
 import { TrendingUp } from 'lucide-react';
 import type { WrappedAsset } from '../../types/index';
 import { formatCurrency, formatCompact } from '../../lib/formatters';
+import { parseTokenAmount } from '../../lib/utils/helpers.ts';
 import {
   CARD_CLASSES,
   CHART_HEADER_CLASSES,
@@ -75,10 +76,10 @@ export default function PortfolioValueChart({
 
     let cumulative = 0;
     return assets
-      .filter((a) => parseFloat(a.originalValue || '0') > 0)
+      .filter((a) => parseTokenAmount(a.originalValue || '0') > 0)
       .map((asset) => {
-        const value = parseFloat(asset.originalValue || '0');
-        cumulative += Number.isNaN(value) ? 0 : value;
+        const value = parseTokenAmount(asset.originalValue || '0');
+        cumulative += value;
         return {
           label: asset.symbol || asset.name.substring(0, 6),
           value: cumulative,

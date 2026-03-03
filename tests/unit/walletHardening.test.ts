@@ -59,7 +59,7 @@ test('network capability matrix includes Base Sepolia and Holesky capability sha
   assert.equal(holesky?.mintAsset, true);
   assert.equal(holesky?.mintSecurity, true);
   assert.equal(holesky?.exchangeOrderbook, true);
-  assert.equal(holesky?.exchangeAMM, true);
+  assert.equal(holesky?.exchangeAMM, false);
   assert.equal(holesky?.orbitalAMM, true);
 
   const baseSepolia = getNetworkCapabilities(84532);

@@ -676,6 +676,49 @@ export default function MintForm({
         return;
       }
 
+      // Preflight native-balance check so users see a clear message before
+      // opening the wallet, rather than a generic wallet-side failure.
+      if (address) {
+        try {
+          const { estimatedCostWei } = await service.estimateCreateWrappedAssetGas(
+            tokenName.trim(),
+            tokenSymbol.trim(),
+            contextDocumentHash,
+            contextDocumentType,
+            originalValueWei,
+            mintAmountWei,
+            recipient,
+          );
+
+          const walletBalanceWei = await provider.getBalance(address);
+          // Keep a small headroom above current fee data to reduce false passes
+          // when base fee moves between estimate and wallet confirmation.
+          const requiredWeiWithBuffer = (estimatedCostWei * 120n) / 100n;
+
+          if (walletBalanceWei < requiredWeiWithBuffer) {
+            const nativeSymbol = networkConfig.nativeCurrency.symbol || 'ETH';
+            const requiredDisplay = formatTokenAmount(
+              ethers.formatEther(requiredWeiWithBuffer),
+              6,
+            );
+            const availableDisplay = formatTokenAmount(
+              ethers.formatEther(walletBalanceWei),
+              6,
+            );
+            toast.error(
+              `Insufficient ${nativeSymbol} on ${networkName || `chain ${chainId}`}. ` +
+              `Estimated required ~${requiredDisplay} ${nativeSymbol}, available ${availableDisplay} ${nativeSymbol}.`,
+              { duration: 7000 },
+            );
+            setTxState('idle');
+            return;
+          }
+        } catch (gasPreflightError) {
+          // Don't block the transaction path on transient RPC estimation issues.
+          logger.warn('Mint gas preflight unavailable; continuing with wallet estimation.', gasPreflightError);
+        }
+      }
+
       const tx = await service.createWrappedAsset(
         tokenName.trim(),
         tokenSymbol.trim(),
@@ -786,10 +829,11 @@ export default function MintForm({
       } else if (/user rejected|user denied|ACTION_REJECTED/i.test(errMsg)) {
         message = 'You rejected the transaction in your wallet. No tokens were minted.';
       } else if (/insufficient funds|INSUFFICIENT_FUNDS/i.test(errMsg)) {
+        const nativeSymbol = networkConfig?.nativeCurrency?.symbol || 'ETH';
         message =
-          'Insufficient ETH to cover gas fees for this transaction. ' +
-          'Minting a new token deploys a contract which requires more gas than a simple transfer. ' +
-          'Please ensure you have at least 0.01 ETH available and try again.';
+          `Insufficient ${nativeSymbol} to cover mint deployment gas on ${networkName || `chain ${chainId}`}. ` +
+          'Minting deploys a new token contract and costs more than a normal transfer. ' +
+          'Also check for stuck pending transactions in your wallet that can reserve balance.';
       } else if (/execution reverted|CALL_EXCEPTION/i.test(errMsg)) {
         message = 'The contract rejected this transaction. Please verify your inputs and try again.';
       } else if (err instanceof Error) {

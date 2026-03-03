@@ -18,6 +18,10 @@ import {
 import { useWalletStore, getProvider, getSigner } from '../../store/walletStore';
 import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
 import {
+  sendTransactionWithRetry,
+  waitForTransactionReceipt,
+} from '../../lib/blockchain/txExecution';
+import {
   formatWeiAmount,
   truncateAddress,
   formatDateTime,
@@ -572,8 +576,11 @@ function ClaimableDividends({ tokenAddress }: { tokenAddress: string }) {
       }
 
       try {
-        const tx = await contract.claimDividend(token, snapshotId);
-        await tx.wait();
+        const tx = await sendTransactionWithRetry(
+          () => contract.claimDividend(token, snapshotId),
+          { label: 'HolderPortfolio.claimDividend' },
+        );
+        await waitForTransactionReceipt(tx, { label: 'HolderPortfolio.claimDividend' });
         setTxSuccess(`Dividend claimed successfully for snapshot #${snapshotId.toString()}.`);
         // Refresh
         await loadDividends();
@@ -779,17 +786,26 @@ function ActiveSwaps({ tokenAddress }: { tokenAddress: string }) {
               );
               if (BigInt(currentAllowance) < swap.quoteTokenAmount) {
                 setTxMsg({ type: 'info', text: 'Approving quote token for swap...' });
-                const approveTx = await quoteTokenContract.approve(tokenAddress, swap.quoteTokenAmount);
-                await approveTx.wait();
+                const approveTx = await sendTransactionWithRetry(
+                  () => quoteTokenContract.approve(tokenAddress, swap.quoteTokenAmount),
+                  { label: 'HolderPortfolio.approveQuoteToken' },
+                );
+                await waitForTransactionReceipt(approveTx, { label: 'HolderPortfolio.approveQuoteToken' });
               }
             }
           }
-          tx = await contract.completeSwapWithPaymentToken(swap.swapNumber);
+          tx = await sendTransactionWithRetry(
+            () => contract.completeSwapWithPaymentToken(swap.swapNumber),
+            { label: 'HolderPortfolio.completeSwapWithPayment' },
+          );
         } else {
           // Seller completes with restricted token
-          tx = await contract.completeSwapWithRestrictedToken(swap.swapNumber);
+          tx = await sendTransactionWithRetry(
+            () => contract.completeSwapWithRestrictedToken(swap.swapNumber),
+            { label: 'HolderPortfolio.completeSwapWithRestricted' },
+          );
         }
-        await tx.wait();
+        await waitForTransactionReceipt(tx, { label: 'HolderPortfolio.completeSwap' });
         setTxMsg({ type: 'success', text: `Swap #${key} completed successfully.` });
         await loadSwaps();
       } catch (err) {
@@ -815,8 +831,11 @@ function ActiveSwaps({ tokenAddress }: { tokenAddress: string }) {
       }
 
       try {
-        const tx = await contract.cancelSell(swapNumber);
-        await tx.wait();
+        const tx = await sendTransactionWithRetry(
+          () => contract.cancelSell(swapNumber),
+          { label: 'HolderPortfolio.cancelSwap' },
+        );
+        await waitForTransactionReceipt(tx, { label: 'HolderPortfolio.cancelSwap' });
         setTxMsg({ type: 'success', text: `Swap #${key} canceled.` });
         await loadSwaps();
       } catch (err) {

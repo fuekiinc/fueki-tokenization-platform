@@ -5,7 +5,7 @@ import {
   Activity,
 } from 'lucide-react';
 import type { WrappedAsset, ExchangeOrder, TradeHistory } from '../../types';
-import { formatCurrency } from '../../lib/utils/helpers';
+import { formatCurrency, parseTokenAmount } from '../../lib/utils/helpers';
 import { TOOLTIPS } from '../../lib/tooltipContent';
 import { GRID_CLASSES } from '../../lib/designTokens';
 import PortfolioSummaryCard from './PortfolioSummaryCard';
@@ -32,8 +32,7 @@ export default function AssetGrid({
   const totalAssets = wrappedAssets.length;
 
   const totalValueLocked = wrappedAssets.reduce((sum, asset) => {
-    const v = parseFloat(asset.originalValue || '0');
-    return sum + (Number.isNaN(v) ? 0 : v);
+    return sum + parseTokenAmount(asset.originalValue || '0');
   }, 0);
 
   const activeOrders = userOrders.filter((o) => !o.cancelled).length;

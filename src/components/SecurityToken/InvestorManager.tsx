@@ -16,6 +16,10 @@ import { SecurityTokenABI } from '../../contracts/abis/SecurityToken';
 import { useWalletStore, getSigner } from '../../store/walletStore';
 import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
 import {
+  sendTransactionWithRetry,
+  waitForTransactionReceipt,
+} from '../../lib/blockchain/txExecution';
+import {
   formatWeiAmount,
   truncateAddress,
   formatDateTime,
@@ -299,8 +303,11 @@ function TransferGroupAssignment({ tokenAddress }: { tokenAddress: string }) {
       // Preflight estimation provides clearer revert diagnostics before wallet prompt.
       await contract.setTransferGroup.estimateGas(normalizedAddr, gid);
 
-      const tx = await contract.setTransferGroup(normalizedAddr, gid);
-      await tx.wait();
+      const tx = await sendTransactionWithRetry(
+        () => contract.setTransferGroup(normalizedAddr, gid),
+        { label: 'InvestorManager.setTransferGroup' },
+      );
+      await waitForTransactionReceipt(tx, { label: 'InvestorManager.setTransferGroup' });
       setSuccess(`Group assignment updated to Group ${gid} for ${truncateAddress(normalizedAddr)}.`);
       setAddr('');
     } catch (err) {
@@ -412,8 +419,11 @@ function MaxBalanceConfig({ tokenAddress }: { tokenAddress: string }) {
     setLoading(true);
     try {
       const weiAmount = ethers.parseUnits(maxBal, 18);
-      const tx = await contract.setMaxBalance(addr, weiAmount);
-      await tx.wait();
+      const tx = await sendTransactionWithRetry(
+        () => contract.setMaxBalance(addr, weiAmount),
+        { label: 'InvestorManager.setMaxBalance' },
+      );
+      await waitForTransactionReceipt(tx, { label: 'InvestorManager.setMaxBalance' });
       setSuccess(`Max balance set to ${maxBal} for ${truncateAddress(addr)}.`);
       setAddr('');
       setMaxBal('');
@@ -525,8 +535,11 @@ function FreezeToggle({ tokenAddress }: { tokenAddress: string }) {
 
     setLoading(true);
     try {
-      const tx = await contract.freeze(addr, freezeAction);
-      await tx.wait();
+      const tx = await sendTransactionWithRetry(
+        () => contract.freeze(addr, freezeAction),
+        { label: 'InvestorManager.freeze' },
+      );
+      await waitForTransactionReceipt(tx, { label: 'InvestorManager.freeze' });
       setSuccess(
         `Address ${truncateAddress(addr)} has been ${freezeAction ? 'frozen' : 'unfrozen'}.`,
       );
@@ -719,14 +732,18 @@ function BatchOnboarding({ tokenAddress }: { tokenAddress: string }) {
           : 0n;
         const lockedUntil = BigInt(row.lockedBalanceUntil || '0');
 
-        const tx = await contract.setAddressPermissions(
-          row.address,
-          parseInt(row.groupID),
-          lockedUntil,
-          maxBal,
-          row.frozenStatus,
+        const tx = await sendTransactionWithRetry(
+          () =>
+            contract.setAddressPermissions(
+              row.address,
+              parseInt(row.groupID),
+              lockedUntil,
+              maxBal,
+              row.frozenStatus,
+            ),
+          { label: 'InvestorManager.setAddressPermissions' },
         );
-        await tx.wait();
+        await waitForTransactionReceipt(tx, { label: 'InvestorManager.setAddressPermissions' });
         txResults.push({ address: row.address, success: true });
       } catch (err) {
         txResults.push({

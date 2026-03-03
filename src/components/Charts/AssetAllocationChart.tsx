@@ -10,6 +10,7 @@ import clsx from 'clsx';
 import { PieChart as PieChartIcon } from 'lucide-react';
 import type { WrappedAsset } from '../../types/index';
 import { formatCurrency, formatPercent } from '../../lib/formatters';
+import { parseTokenAmount } from '../../lib/utils/helpers.ts';
 import {
   CARD_CLASSES,
   CHART_HEADER_CLASSES,
@@ -105,17 +106,16 @@ export default function AssetAllocationChart({
   const chartData = useMemo<ChartDatum[]>(() => {
     if (assets.length === 0) return [];
 
-    const total = assets.reduce((sum, a) => {
-      const v = parseFloat(a.originalValue || '0');
-      return sum + (Number.isNaN(v) ? 0 : v);
-    }, 0);
+    const total = assets.reduce(
+      (sum, a) => sum + parseTokenAmount(a.originalValue || '0'),
+      0,
+    );
 
     if (total === 0) return [];
 
     return assets
       .map((asset) => {
-        const value = parseFloat(asset.originalValue || '0');
-        const safeValue = Number.isNaN(value) ? 0 : value;
+        const safeValue = parseTokenAmount(asset.originalValue || '0');
         return {
           name: asset.name ?? 'Unknown',
           symbol: asset.symbol ?? '???',

@@ -39,6 +39,10 @@ import {
   TTL_METADATA,
   TTL_POOL,
 } from './rpcCache.ts';
+import {
+  sendTransactionWithRetry,
+  waitForTransactionReceipt,
+} from './txExecution.ts';
 import logger from '../logger';
 
 // ---------------------------------------------------------------------------
@@ -736,7 +740,11 @@ export class OrbitalContractService {
     tx: ethers.TransactionResponse,
     confirmations = 1,
   ): Promise<ethers.TransactionReceipt> {
-    const receipt = await tx.wait(confirmations);
+    const receipt = await waitForTransactionReceipt(tx, {
+      chainId: this.chainId,
+      confirmations,
+      label: 'OrbitalContractService.waitForTransaction',
+    });
     if (!receipt) {
       throw new Error('Transaction receipt is null');
     }
@@ -856,47 +864,22 @@ export class OrbitalContractService {
     }
 
     let activeContract = contract;
-    let lastRetryableError: unknown = null;
-    const maxAttempts = 3;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        return await activeContract.getFunction(method)(...args, mergedOverrides);
-      } catch (err: unknown) {
-        if (
-          /user (rejected|denied)|ACTION_REJECTED/i.test(
-            err instanceof Error ? err.message : String(err),
-          )
-        ) {
-          throw new Error('Transaction was rejected in your wallet.');
-        }
-
-        if (!isRetryableRpcError(err)) {
-          const userMessage = parseContractError(err);
-          logger.error(`[OrbitalContractService] ${method} failed:`, err);
-          throw new Error(userMessage);
-        }
-
-        lastRetryableError = err;
-        if (attempt >= maxAttempts) {
-          break;
-        }
-
-        const errMsg = err instanceof Error ? err.message : String(err);
-        const isRateLimit = /429|too many requests|rate.?limit/i.test(errMsg);
-        const delayMs = isRateLimit ? 3000 * attempt : 1500 * attempt;
-
-        logger.warn(
-          `[OrbitalContractService] ${method}: wallet/RPC transport failure ` +
-          `(attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms`,
-          err,
-        );
-        await new Promise((r) => setTimeout(r, delayMs));
-        const freshSigner = await this.getSigner();
-        activeContract = contract.connect(freshSigner) as ethers.Contract;
-      }
+    try {
+      return await sendTransactionWithRetry(
+        () => activeContract.getFunction(method)(...args, mergedOverrides),
+        {
+          label: `OrbitalContractService.${method}`,
+          onRetry: async () => {
+            const freshSigner = await this.getSigner();
+            activeContract = contract.connect(freshSigner) as ethers.Contract;
+          },
+        },
+      );
+    } catch (err: unknown) {
+      const userMessage = parseContractError(err);
+      logger.error(`[OrbitalContractService] ${method} failed:`, err);
+      throw new Error(userMessage);
     }
-
-    throw new Error(parseContractError(lastRetryableError));
   }
 }

@@ -17,26 +17,29 @@ function assertClose(actual: number, expected: number, tolerance = 1e-9): void {
   );
 }
 
+const WAD = 10n ** 18n;
+const toWei = (value: number): string => (BigInt(value) * WAD).toString();
+
 const ASSET_A: WrappedAsset = {
   address: '0x1111111111111111111111111111111111111111',
   name: 'Asset A',
   symbol: 'ASA',
-  totalSupply: '200',
-  balance: '96',
+  totalSupply: toWei(200),
+  balance: toWei(96),
   documentHash: '0xhash-a',
   documentType: 'invoice',
-  originalValue: '1000',
+  originalValue: toWei(1000),
 };
 
 const ASSET_B: WrappedAsset = {
   address: '0x2222222222222222222222222222222222222222',
   name: 'Asset B',
   symbol: 'ASB',
-  totalSupply: '10',
-  balance: '2',
+  totalSupply: toWei(10),
+  balance: toWei(2),
   documentHash: '0xhash-b',
   documentType: 'statement',
-  originalValue: '100',
+  originalValue: toWei(100),
 };
 
 const TRADES_A: TradeHistory[] = [

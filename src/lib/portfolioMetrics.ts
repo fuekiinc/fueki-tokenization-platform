@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import type { WrappedAsset, TradeHistory } from '../types/index.ts';
+import { parseTokenAmount } from './tokenAmounts.ts';
 
 // ---------------------------------------------------------------------------
 // Exported interfaces
@@ -69,8 +70,8 @@ export interface PortfolioSummary {
  * This gives us the value per token at the time the asset was tokenised.
  */
 function deriveTokenPrice(asset: WrappedAsset): number {
-  const totalSupply = parseFloat(asset.totalSupply || '0');
-  const originalValue = parseFloat(asset.originalValue || '0');
+  const totalSupply = parseTokenAmount(asset.totalSupply || '0');
+  const originalValue = parseTokenAmount(asset.originalValue || '0');
   if (totalSupply <= 0) return 0;
   return originalValue / totalSupply;
 }
@@ -195,7 +196,7 @@ export function calculateAssetPerformance(
 ): AssetPerformance {
   const address = asset.address;
   const symbol = asset.symbol;
-  const currentBalance = parseFloat(asset.balance || '0');
+  const currentBalance = parseTokenAmount(asset.balance || '0');
   const tokenPrice = deriveTokenPrice(asset);
   const currentValue = currentBalance * tokenPrice;
 
@@ -283,7 +284,7 @@ export function calculateAssetAllocations(
   assets: WrappedAsset[],
 ): AssetAllocation[] {
   const withValues = assets.map((asset) => {
-    const balance = parseFloat(asset.balance || '0');
+    const balance = parseTokenAmount(asset.balance || '0');
     const price = deriveTokenPrice(asset);
     return {
       address: asset.address,

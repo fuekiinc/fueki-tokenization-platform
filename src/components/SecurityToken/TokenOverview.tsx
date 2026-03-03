@@ -39,6 +39,10 @@ import {
 } from '../../contracts/abis/SecurityToken';
 import { useWalletStore, getProvider } from '../../store/walletStore';
 import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
+import {
+  sendTransactionWithRetry,
+  waitForTransactionReceipt,
+} from '../../lib/blockchain/txExecution';
 import { truncateAddress, formatWeiAmount, formatDateTime } from '../../lib/formatters';
 import { copyToClipboard } from '../../lib/utils/helpers';
 import Card from '../Common/Card';
@@ -268,10 +272,11 @@ export default function TokenOverview({ tokenAddress }: TokenOverviewProps) {
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(tokenAddress, SecurityTokenABI, signer);
 
-      const tx = tokenData.isPaused
-        ? await contract.unpause()
-        : await contract.pause();
-      await tx.wait();
+      const tx = await sendTransactionWithRetry(
+        () => (tokenData.isPaused ? contract.unpause() : contract.pause()),
+        { label: 'TokenOverview.togglePause' },
+      );
+      await waitForTransactionReceipt(tx, { label: 'TokenOverview.togglePause' });
 
       toast.success(
         tokenData.isPaused ? 'Token unpaused successfully' : 'Token paused successfully',

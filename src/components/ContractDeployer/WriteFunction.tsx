@@ -15,6 +15,11 @@ import { getSigner } from '../../store/walletStore';
 import { useWalletStore } from '../../store/walletStore';
 import { SUPPORTED_NETWORKS } from '../../contracts/addresses';
 import { INPUT_CLASSES } from '../../lib/designTokens';
+import { parseContractError } from '../../lib/blockchain/contracts';
+import {
+  sendTransactionWithRetry,
+  waitForTransactionReceipt,
+} from '../../lib/blockchain/txExecution';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -90,13 +95,20 @@ export default function WriteFunction({ func, contractAddress, abi }: Props) {
         overrides.value = ethers.parseEther(ethValue.trim());
       }
 
-      const tx = await contract[func.name](...encodedArgs, overrides);
+      const tx = await sendTransactionWithRetry(
+        () => contract[func.name](...encodedArgs, overrides),
+        { label: `WriteFunction.${func.name}` },
+      );
       setTxHash(tx.hash);
 
       // Wait for one confirmation so the user sees the tx is mined
-      await tx.wait(1);
+      await waitForTransactionReceipt(tx, {
+        chainId,
+        confirmations: 1,
+        label: `WriteFunction.${func.name}`,
+      });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error occurred';
+      const message = parseContractError(err);
       // Shorten common MetaMask rejection messages
       if (message.includes('user rejected') || message.includes('ACTION_REJECTED')) {
         setError('Transaction rejected by user.');

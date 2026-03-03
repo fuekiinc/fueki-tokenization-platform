@@ -34,6 +34,10 @@ import {
 } from '../../contracts/abis/SecurityToken';
 import { useWalletStore, getProvider } from '../../store/walletStore';
 import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
+import {
+  sendTransactionWithRetry,
+  waitForTransactionReceipt,
+} from '../../lib/blockchain/txExecution';
 import { getExplorerTxUrl } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import Card from '../Common/Card';
@@ -481,14 +485,18 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
         quoteAmount,
       );
       const gasLimit = (gasEstimate * 120n) / 100n;
-      const tx = await contract.configureSell(
-        restrictedAmount,
-        sellQuoteToken,
-        sellQuoteTokenSender,
-        quoteAmount,
-        { gasLimit },
+      const tx = await sendTransactionWithRetry(
+        () =>
+          contract.configureSell(
+            restrictedAmount,
+            sellQuoteToken,
+            sellQuoteTokenSender,
+            quoteAmount,
+            { gasLimit },
+          ),
+        { label: 'SwapCenter.configureSell' },
       );
-      await tx.wait();
+      await waitForTransactionReceipt(tx, { label: 'SwapCenter.configureSell' });
 
       toast.success('Sell configured successfully', {
         id: 'configure-sell',
@@ -547,10 +555,11 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
         amount,
       );
       const gasLimit = (gasEstimate * 120n) / 100n;
-      const tx = await erc20.approve(tokenAddress, amount, {
-        gasLimit,
-      });
-      await tx.wait();
+      const tx = await sendTransactionWithRetry(
+        () => erc20.approve(tokenAddress, amount, { gasLimit }),
+        { label: 'SwapCenter.approveBuyQuoteToken' },
+      );
+      await waitForTransactionReceipt(tx, { label: 'SwapCenter.approveBuyQuoteToken' });
 
       toast.success('Quote token approved', {
         id: 'approve-buy-quote',
@@ -610,14 +619,18 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
         quoteAmount,
       );
       const gasLimit = (gasEstimate * 120n) / 100n;
-      const tx = await contract.configureBuy(
-        restrictedAmount,
-        buyRestrictedTokenSender,
-        buyQuoteToken,
-        quoteAmount,
-        { gasLimit },
+      const tx = await sendTransactionWithRetry(
+        () =>
+          contract.configureBuy(
+            restrictedAmount,
+            buyRestrictedTokenSender,
+            buyQuoteToken,
+            quoteAmount,
+            { gasLimit },
+          ),
+        { label: 'SwapCenter.configureBuy' },
       );
-      await tx.wait();
+      await waitForTransactionReceipt(tx, { label: 'SwapCenter.configureBuy' });
 
       toast.success('Buy configured successfully', {
         id: 'configure-buy',
@@ -678,12 +691,14 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
             swap.quoteTokenAmount,
           );
           const approveLimit = (approveGas * 120n) / 100n;
-          const approveTx = await erc20.approve(
-            tokenAddress,
-            swap.quoteTokenAmount,
-            { gasLimit: approveLimit },
+          const approveTx = await sendTransactionWithRetry(
+            () =>
+              erc20.approve(tokenAddress, swap.quoteTokenAmount, {
+                gasLimit: approveLimit,
+              }),
+            { label: 'SwapCenter.approveSwapPayment' },
           );
-          await approveTx.wait();
+          await waitForTransactionReceipt(approveTx, { label: 'SwapCenter.approveSwapPayment' });
           toast.success('Quote token approved', {
             id: 'approve-swap-payment',
           });
@@ -700,11 +715,11 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
             swap.id,
           );
         const gasLimit = (gasEstimate * 120n) / 100n;
-        const tx = await contract.completeSwapWithPaymentToken(
-          swap.id,
-          { gasLimit },
+        const tx = await sendTransactionWithRetry(
+          () => contract.completeSwapWithPaymentToken(swap.id, { gasLimit }),
+          { label: 'SwapCenter.completeSwapWithPayment' },
         );
-        await tx.wait();
+        await waitForTransactionReceipt(tx, { label: 'SwapCenter.completeSwapWithPayment' });
 
         toast.success('Swap completed!', { id: 'complete-swap' });
         await loadSwaps();
@@ -744,11 +759,11 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
             swap.id,
           );
         const gasLimit = (gasEstimate * 120n) / 100n;
-        const tx = await contract.completeSwapWithRestrictedToken(
-          swap.id,
-          { gasLimit },
+        const tx = await sendTransactionWithRetry(
+          () => contract.completeSwapWithRestrictedToken(swap.id, { gasLimit }),
+          { label: 'SwapCenter.completeSwapWithRestricted' },
         );
-        await tx.wait();
+        await waitForTransactionReceipt(tx, { label: 'SwapCenter.completeSwapWithRestricted' });
 
         toast.success('Swap completed!', {
           id: 'complete-swap-restricted',
@@ -780,8 +795,11 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
           swapId,
         );
         const gasLimit = (gasEstimate * 120n) / 100n;
-        const tx = await contract.cancelSell(swapId, { gasLimit });
-        await tx.wait();
+        const tx = await sendTransactionWithRetry(
+          () => contract.cancelSell(swapId, { gasLimit }),
+          { label: 'SwapCenter.cancelSwap' },
+        );
+        await waitForTransactionReceipt(tx, { label: 'SwapCenter.cancelSwap' });
 
         toast.success('Swap canceled', { id: 'cancel-swap' });
         await loadSwaps();
