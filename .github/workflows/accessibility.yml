@@ -1,13 +1,11 @@
-name: E2E and Accessibility
+name: Full E2E Regression
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
-  workflow_dispatch:
   schedule:
     - cron: '0 6 * * *'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,11 +14,14 @@ concurrency:
 env:
   CI: true
 
+permissions:
+  contents: read
+
 jobs:
   e2e:
     name: E2E (${{ matrix.project }})
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -36,11 +37,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.12.0'
-          cache: 'npm'
+          cache: npm
       - run: npm ci
       - name: Install Playwright browser
-        run: |
-          npx playwright install ${{ matrix.browser }} || npx playwright install ${{ matrix.browser }}
+        run: npx playwright install --with-deps ${{ matrix.browser }}
       - run: npx playwright test tests/e2e tests/help-guidance.spec.ts --project=${{ matrix.project }}
       - uses: actions/upload-artifact@v4
         if: always()
@@ -50,22 +50,21 @@ jobs:
             playwright-report
             test-results
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 14
 
   a11y:
     name: Accessibility (Chromium)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22.12.0'
-          cache: 'npm'
+          cache: npm
       - run: npm ci
       - name: Install Playwright browser
-        run: |
-          npx playwright install chromium || npx playwright install chromium
+        run: npx playwright install --with-deps chromium
       - run: npm run test:e2e:a11y
       - uses: actions/upload-artifact@v4
         if: always()
@@ -75,4 +74,4 @@ jobs:
             playwright-report
             test-results
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 14

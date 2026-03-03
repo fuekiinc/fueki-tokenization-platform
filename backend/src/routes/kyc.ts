@@ -20,6 +20,10 @@ const VALID_SUBSCRIPTION_PLANS = [
 const IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png']);
 const VIDEO_MIME_TYPES = new Set(['video/webm', 'video/mp4', 'video/quicktime']);
 
+function normalizeMimeType(rawMimeType: string): string {
+  return rawMimeType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+}
+
 const kycSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
@@ -96,13 +100,42 @@ router.post('/submit', authenticate, async (req, res) => {
 router.post(
   '/upload-document',
   authenticate,
-  documentUpload.fields([
-    { name: 'documentFront', maxCount: 1 },
-    { name: 'documentBack', maxCount: 1 },
-    { name: 'liveVideo', maxCount: 1 },
-    { name: 'document', maxCount: 1 },
-    { name: 'file', maxCount: 1 },
-  ]),
+  (req, res, next) => {
+    documentUpload.fields([
+      { name: 'documentFront', maxCount: 1 },
+      { name: 'documentBack', maxCount: 1 },
+      { name: 'liveVideo', maxCount: 1 },
+      { name: 'document', maxCount: 1 },
+      { name: 'file', maxCount: 1 },
+    ])(req, res, (err) => {
+      if (!err) {
+        next();
+        return;
+      }
+
+      if (err instanceof multer.MulterError) {
+        res.status(400).json({
+          error: {
+            message: `Upload failed: ${err.message}`,
+            code: 'UPLOAD_ERROR',
+          },
+        });
+        return;
+      }
+
+      if (err instanceof Error) {
+        res.status(400).json({
+          error: {
+            message: err.message,
+            code: 'UPLOAD_ERROR',
+          },
+        });
+        return;
+      }
+
+      next(err);
+    });
+  },
   async (req, res) => {
     try {
       const files = req.files as { [field: string]: Express.Multer.File[] } | undefined;
@@ -121,7 +154,7 @@ router.post(
         res.status(400).json({ error: { message: 'Missing document front image', code: 'MISSING_DOCUMENT_FRONT' } });
         return;
       }
-      if (!IMAGE_MIME_TYPES.has(documentFront.mimetype)) {
+      if (!IMAGE_MIME_TYPES.has(normalizeMimeType(documentFront.mimetype))) {
         res.status(400).json({ error: { message: 'Document front must be a JPG or PNG image', code: 'INVALID_DOCUMENT_FRONT_FORMAT' } });
         return;
       }
@@ -130,7 +163,7 @@ router.post(
         res.status(400).json({ error: { message: 'Missing driver license back image', code: 'MISSING_DOCUMENT_BACK' } });
         return;
       }
-      if (documentBack && !IMAGE_MIME_TYPES.has(documentBack.mimetype)) {
+      if (documentBack && !IMAGE_MIME_TYPES.has(normalizeMimeType(documentBack.mimetype))) {
         res.status(400).json({ error: { message: 'Document back must be a JPG or PNG image', code: 'INVALID_DOCUMENT_BACK_FORMAT' } });
         return;
       }
@@ -139,7 +172,7 @@ router.post(
         res.status(400).json({ error: { message: 'Missing live scan video', code: 'MISSING_LIVE_VIDEO' } });
         return;
       }
-      if (!VIDEO_MIME_TYPES.has(liveVideo.mimetype)) {
+      if (!VIDEO_MIME_TYPES.has(normalizeMimeType(liveVideo.mimetype))) {
         res.status(400).json({ error: { message: 'Live scan must be a WEBM, MP4, or MOV video', code: 'INVALID_LIVE_VIDEO_FORMAT' } });
         return;
       }

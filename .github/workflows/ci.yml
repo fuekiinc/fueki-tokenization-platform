@@ -2,9 +2,7 @@ name: Platform CI
 
 on:
   pull_request:
-    branches: [main]
   push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -14,61 +12,81 @@ concurrency:
 env:
   CI: true
 
+permissions:
+  contents: read
+
 jobs:
+  changes:
+    name: Detect Changed Areas
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+      security: ${{ steps.filter.outputs.security }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              - 'src/**'
+              - 'tests/**'
+              - 'public/**'
+              - 'index.html'
+              - 'vite.config.ts'
+              - 'playwright.config.ts'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig*.json'
+            backend:
+              - 'backend/**'
+            contracts:
+              - 'contracts/**'
+              - 'hardhat.config.cts'
+              - 'scripts/**'
+            workflows:
+              - '.github/workflows/**'
+              - '.github/scripts/**'
+            security:
+              - 'package.json'
+              - 'package-lock.json'
+              - 'backend/package.json'
+              - 'backend/package-lock.json'
+              - 'backend/src/**'
+              - 'src/**'
+
   frontend-quality:
     name: Frontend Quality Gate
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.workflows == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22.12.0'
-          cache: 'npm'
+          cache: npm
       - run: npm ci
-      - name: Lint (informational)
-        id: lint
-        continue-on-error: true
-        run: npm run lint
-      - name: Lint summary
-        if: always()
-        run: |
-          if [ "${{ steps.lint.outcome }}" = "success" ]; then
-            echo "Lint completed with no errors." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Lint reported issues (non-blocking). Review logs for current lint debt." >> "$GITHUB_STEP_SUMMARY"
-          fi
+      - run: npm run lint
       - run: npm run typecheck
-      - run: npx vite build
+      - run: npm run build
 
-  unit-tests:
-    name: Unit Tests (Node ${{ matrix.node-version }})
+  frontend-unit-tests:
+    name: Frontend Unit Tests + Coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: ['20.19.0', '22.12.0']
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run test:unit
-
-  unit-coverage:
-    name: Unit Coverage Report
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: unit-tests
+    timeout-minutes: 25
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.workflows == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22.12.0'
-          cache: 'npm'
+          cache: npm
       - run: npm ci
       - run: npm run test:unit:coverage
       - name: Publish coverage summary
@@ -80,46 +98,202 @@ jobs:
               const summary = JSON.parse(readFileSync("coverage/coverage-summary.json", "utf8"));
               const total = summary.total;
               const format = (metric) => metric.pct.toFixed(2) + "% (" + metric.covered + "/" + metric.total + ")";
-              console.log("### Unit Coverage");
+              console.log("## Frontend Unit Coverage");
               console.log("- Lines: " + format(total.lines));
               console.log("- Functions: " + format(total.functions));
               console.log("- Branches: " + format(total.branches));
               console.log("- Statements: " + format(total.statements));
             ' --input-type=module >> "$GITHUB_STEP_SUMMARY"
           else
-            echo 'coverage-summary.json was not generated.' >> "$GITHUB_STEP_SUMMARY"
+            echo "coverage/coverage-summary.json was not generated." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: unit-coverage
           path: coverage
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 7
 
-  backend-typecheck:
-    name: Typecheck (Backend)
+  backend-quality:
+    name: Backend Quality Gate
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.workflows == 'true'
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22.12.0'
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: backend/package-lock.json
-      - run: cd backend && npm ci
-      - run: cd backend && npx tsc --noEmit
+      - run: npm ci
+      - run: npx prisma validate
+      - run: npx tsc --noEmit
+      - run: npm run build
 
   contracts-compile:
     name: Contracts Compile
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true' || needs.changes.outputs.workflows == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22.12.0'
-          cache: 'npm'
+          cache: npm
       - run: npm ci
-      - run: npx hardhat compile
+      - run: npm run contracts:build
+
+  e2e-smoke:
+    name: E2E Smoke (Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.workflows == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-smoke
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  accessibility-smoke:
+    name: Accessibility Smoke (Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.workflows == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:a11y
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-a11y-smoke
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  security-gates:
+    name: Security Gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: changes
+    if: needs.changes.outputs.security == 'true' || needs.changes.outputs.workflows == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Root production dependency audit
+        run: |
+          npm audit --omit=dev --json > audit-root.json || true
+          node .github/scripts/npm-audit-report.mjs audit-root.json root
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+
+      - name: Backend production dependency audit
+        run: |
+          cd backend
+          npm audit --omit=dev --json > ../audit-backend.json || true
+          cd ..
+          node .github/scripts/npm-audit-report.mjs audit-backend.json backend
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: npm-audit-reports
+          path: |
+            audit-root.json
+            audit-backend.json
+          if-no-files-found: error
+          retention-days: 14
+
+  dependency-review:
+    name: Dependency Review (PR)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-2.0, GPL-3.0, AGPL-1.0, AGPL-3.0
+
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - changes
+      - frontend-quality
+      - frontend-unit-tests
+      - backend-quality
+      - contracts-compile
+      - e2e-smoke
+      - accessibility-smoke
+      - security-gates
+      - dependency-review
+    steps:
+      - name: Publish pipeline summary
+        run: |
+          echo "## Pipeline Result Matrix" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Frontend Quality: \`${{ needs.frontend-quality.result }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Frontend Unit Tests: \`${{ needs.frontend-unit-tests.result }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Backend Quality: \`${{ needs.backend-quality.result }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Contracts Compile: \`${{ needs.contracts-compile.result }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- E2E Smoke: \`${{ needs.e2e-smoke.result }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Accessibility Smoke: \`${{ needs.accessibility-smoke.result }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Security Gates: \`${{ needs.security-gates.result }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Dependency Review: \`${{ needs.dependency-review.result }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### What to do when this fails" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Open the failed job logs and start at the first failing step." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Use uploaded artifacts for detailed reports (Playwright, coverage, npm audit)." >> "$GITHUB_STEP_SUMMARY"
+          echo "- If only docs changed, skipped jobs are expected." >> "$GITHUB_STEP_SUMMARY"
