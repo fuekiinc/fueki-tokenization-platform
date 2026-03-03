@@ -34,7 +34,7 @@
  * ```
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FC } from 'react';
 import {
   Dialog,
@@ -43,21 +43,21 @@ import {
   DialogTitle,
 } from '@headlessui/react';
 import {
-  X,
-  CheckCircle2,
-  XCircle,
-  ExternalLink,
-  ArrowRight,
   AlertTriangle,
-  Copy,
+  ArrowRight,
   Check,
+  CheckCircle2,
+  Copy,
+  ExternalLink,
   RefreshCw,
+  X,
+  XCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
-import type { TransactionResponse, TransactionReceipt } from 'ethers';
+import type { TransactionReceipt, TransactionResponse } from 'ethers';
 
 import { SUPPORTED_NETWORKS } from '../../contracts/addresses.ts';
-import { useWalletStore, getProvider } from '../../store/walletStore.ts';
+import { getProvider, useWalletStore } from '../../store/walletStore.ts';
 import { addPendingTransaction } from '../../lib/transactionRecovery.ts';
 import type { PendingTransaction } from '../../lib/transactionRecovery.ts';
 import { parseContractError } from '../../lib/blockchain/contracts.ts';

@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import clsx from 'clsx';
 import {
-  Upload,
-  FileText,
-  Coins,
-  History,
   CheckCircle2,
+  Coins,
+  FileText,
+  History,
   Sparkles,
+  Upload,
 } from 'lucide-react';
 import { useDocumentStore } from '../store/documentStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';

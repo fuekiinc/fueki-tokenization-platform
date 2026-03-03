@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, ChevronDown, X } from 'lucide-react';
 import clsx from 'clsx';
 import TermsContent from './TermsContent';
 import PrivacyContent from './PrivacyContent';

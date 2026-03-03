@@ -15,11 +15,11 @@ import clsx from 'clsx';
 
 import { identitySchema, type IdentityValues } from './signupSchemas';
 import {
-  INPUT_BASE,
-  ICON_LEFT,
-  LABEL,
-  ERROR_TEXT,
   BACK_BUTTON,
+  ERROR_TEXT,
+  ICON_LEFT,
+  INPUT_BASE,
+  LABEL,
 } from './signupStyles';
 import type { DocumentType } from '../../types/auth';
 import LiveVideoCaptureCard from './LiveVideoCaptureCard';

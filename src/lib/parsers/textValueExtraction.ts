@@ -17,10 +17,10 @@ import type { ParsedTransaction } from '../../types';
 import { generateId, roundCurrency } from '../utils/helpers';
 import {
   classifyDocument,
+  type DocumentClassification,
+  type PrimaryValueResult,
   scoreAmounts,
   selectPrimaryValue,
-  type PrimaryValueResult,
-  type DocumentClassification,
 } from './documentIntelligence';
 
 // ---------------------------------------------------------------------------

@@ -1,19 +1,19 @@
-import { useState, useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import {
-  FileJson,
-  FileSpreadsheet,
-  FileCode,
-  CloudUpload,
-  Loader2,
   AlertCircle,
   CheckCircle2,
+  CloudUpload,
+  FileCode,
   FileIcon,
-  X,
-  RotateCcw,
-  Sparkles,
+  FileJson,
+  FileSpreadsheet,
   FileText,
   Image,
+  Loader2,
+  RotateCcw,
+  Sparkles,
+  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { parseFile } from '../../lib/parsers';

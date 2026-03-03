@@ -1,7 +1,7 @@
-import { Router, Response } from 'express';
+import { Response, Router } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { hashPassword, verifyPassword, createSession, refreshSession, invalidateSession, invalidateAllSessions } from '../services/auth';
+import { createSession, hashPassword, invalidateAllSessions, invalidateSession, refreshSession, verifyPassword } from '../services/auth';
 import { authenticate } from '../middleware/auth';
 import { config } from '../config';
 import { sendPasswordResetEmail } from '../services/email';

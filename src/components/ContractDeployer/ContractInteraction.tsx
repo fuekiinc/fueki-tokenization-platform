@@ -6,11 +6,11 @@
  * collapsible accordion (ReadFunction or WriteFunction).
  */
 
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { parseABI } from '../../lib/contractDeployer/abiParser';
 import { SUPPORTED_NETWORKS } from '../../contracts/addresses';
 import { formatAddress } from '../../lib/utils/helpers';
-import { CARD_CLASSES, BADGE_CLASSES } from '../../lib/designTokens';
+import { BADGE_CLASSES, CARD_CLASSES } from '../../lib/designTokens';
 import ReadFunction from './ReadFunction';
 import WriteFunction from './WriteFunction';
 

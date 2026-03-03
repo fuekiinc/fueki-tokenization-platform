@@ -11,15 +11,15 @@
  * blockchain network.
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useWallet } from '../hooks/useWallet';
 import { useAuthStore } from '../store/authStore';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
-import { useWalletStore, getProvider } from '../store/walletStore.ts';
-import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
+import { getProvider, useWalletStore } from '../store/walletStore.ts';
+import { getAssetFetchGeneration, nextAssetFetchGeneration, useAssetStore } from '../store/assetStore.ts';
 import { ContractService, getReadOnlyProvider } from '../lib/blockchain/contracts';
 import { retryAsync } from '../lib/utils/retry';
 import logger from '../lib/logger';
@@ -39,20 +39,20 @@ import { ComponentErrorBoundary } from '../components/ErrorBoundary';
 import { ErrorState } from '../components/Common/StateDisplays';
 import NetworkCapabilityGuard from '../components/Common/NetworkCapabilityGuard';
 import {
+  Activity,
+  AlertCircle,
   ArrowLeftRight,
-  TrendingUp,
+  BarChart3,
   BookOpen,
   Clock,
-  Loader2,
-  AlertCircle,
-  RefreshCw,
-  Zap,
-  Shield,
-  Globe,
-  Wallet,
-  Activity,
-  BarChart3,
   Droplets,
+  Globe,
+  Loader2,
+  RefreshCw,
+  Shield,
+  TrendingUp,
+  Wallet,
+  Zap,
 } from 'lucide-react';
 import type { WrappedAsset } from '../types';
 import { CARD_CLASSES } from '../lib/designTokens';
@@ -235,7 +235,7 @@ export default function ExchangePage() {
 
       // Also enumerate ALL platform assets via the factory index so we
       // include assets the user holds but didn't create themselves.
-      let allPlatformAddresses: string[] = [];
+      const allPlatformAddresses: string[] = [];
       try {
         const count = Math.min(Number(totalAssets), 100);
         const BATCH = 5;

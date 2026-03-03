@@ -1,23 +1,23 @@
 import { useMemo, useState } from 'react';
 import {
-  AreaChart,
   Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
 } from 'recharts';
 import clsx from 'clsx';
-import { TrendingUp, BarChart3 } from 'lucide-react';
+import { BarChart3, TrendingUp } from 'lucide-react';
 import type { TradeHistory } from '../../types/index';
 import { formatCurrency } from '../../lib/utils/helpers';
 import { formatCompact, formatPercent } from '../../lib/formatters';
 import {
   CARD_CLASSES,
+  CHART_AXIS,
   CHART_HEADER_CLASSES,
   CHART_TOOLTIP_STYLE,
-  CHART_AXIS,
   EMPTY_STATE_CLASSES,
   FILTER_PILL_CLASSES,
 } from '../../lib/designTokens';

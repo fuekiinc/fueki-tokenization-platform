@@ -1,5 +1,4 @@
 import { encrypt } from './encryption';
-import { saveEncryptedDocument } from './storage';
 import { sendKYCReviewEmail } from './email';
 import { prisma } from '../prisma';
 

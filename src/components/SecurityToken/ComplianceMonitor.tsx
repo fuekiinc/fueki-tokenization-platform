@@ -9,15 +9,15 @@
  *   E) Max Balance Utilization (balance vs max balance progress)
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ethers } from 'ethers';
 import {
   SecurityTokenABI,
   TRANSFER_RESTRICTION_CODES,
 } from '../../contracts/abis/SecurityToken';
 import { useWalletStore } from '../../store/walletStore';
-import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
-import { formatWeiAmount, truncateAddress, formatDateTime } from '../../lib/formatters';
+import { getReadOnlyProvider, parseContractError } from '../../lib/blockchain/contracts';
+import { formatDateTime, formatWeiAmount, truncateAddress } from '../../lib/formatters';
 import Card from '../Common/Card';
 import Spinner from '../Common/Spinner';
 import Badge from '../Common/Badge';

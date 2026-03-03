@@ -2,26 +2,26 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  Mail,
-  Lock,
+  ArrowRight,
   Eye,
   EyeOff,
-  ArrowRight,
+  Lock,
+  Mail,
 } from 'lucide-react';
 import clsx from 'clsx';
 
 import {
   accountSchema,
+  type AccountValues,
   getPasswordStrength,
   PASSWORD_STRENGTH_CONFIG,
-  type AccountValues,
 } from './signupSchemas';
 import {
-  INPUT_BASE,
-  ICON_LEFT,
-  LABEL,
-  ERROR_TEXT,
   CONTINUE_BUTTON,
+  ERROR_TEXT,
+  ICON_LEFT,
+  INPUT_BASE,
+  LABEL,
 } from './signupStyles';
 
 // ---------------------------------------------------------------------------

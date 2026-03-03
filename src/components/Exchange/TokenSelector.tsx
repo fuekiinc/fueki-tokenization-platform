@@ -12,9 +12,9 @@
  *   - Verification badges for known vs. address-searched tokens
  */
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, X, Search, Clock, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Clock, Loader2, Search, X } from 'lucide-react';
 import clsx from 'clsx';
 import { ethers } from 'ethers';
 import type { WrappedAsset } from '../../types';
@@ -23,8 +23,8 @@ import { ETH_SENTINEL, isETH } from '../../lib/blockchain/contracts';
 import { useWalletStore } from '../../store/walletStore';
 import { DEFAULT_CHAIN_ID } from '../../contracts/addresses';
 import {
-  getRpcEndpoints,
   getPrimaryRpcUrl,
+  getRpcEndpoints,
   reportRpcEndpointFailure,
   reportRpcEndpointSuccess,
 } from '../../lib/rpc/endpoints';

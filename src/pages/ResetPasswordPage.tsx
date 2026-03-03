@@ -4,15 +4,15 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Link } from 'react-router-dom';
 import {
-  Lock,
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
   Eye,
   EyeOff,
-  ArrowLeft,
-  Shield,
   KeyRound,
-  CheckCircle2,
   Loader2,
-  AlertTriangle,
+  Lock,
+  Shield,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';

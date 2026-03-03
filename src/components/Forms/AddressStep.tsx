@@ -1,27 +1,27 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  MapPin,
+  ArrowLeft,
+  ArrowRight,
   Building2,
   Hash,
-  ArrowRight,
-  ArrowLeft,
+  MapPin,
 } from 'lucide-react';
 import clsx from 'clsx';
 import usePlacesAutocomplete, { getGeocode } from 'use-places-autocomplete';
-import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
+import { importLibrary, setOptions } from '@googlemaps/js-api-loader';
 
 import { addressSchema, type AddressValues, COUNTRIES } from './signupSchemas';
 import {
+  BACK_BUTTON,
+  CONTINUE_BUTTON,
+  ERROR_TEXT,
+  ICON_LEFT,
   INPUT_BASE,
   INPUT_NO_ICON,
-  SELECT_BASE,
-  ICON_LEFT,
   LABEL,
-  ERROR_TEXT,
-  CONTINUE_BUTTON,
-  BACK_BUTTON,
+  SELECT_BASE,
 } from './signupStyles';
 
 // ---------------------------------------------------------------------------

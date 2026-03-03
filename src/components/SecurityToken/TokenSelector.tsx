@@ -6,20 +6,20 @@
  * "Deploy New Token" link to the deploy page.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ethers } from 'ethers';
 import clsx from 'clsx';
 import {
+  AlertCircle,
+  Check,
   ChevronDown,
+  Loader2,
   Plus,
   Shield,
-  Check,
-  Loader2,
-  AlertCircle,
 } from 'lucide-react';
 import { SecurityTokenFactoryABI } from '../../contracts/abis/SecurityTokenFactory';
-import { useWalletStore, getProvider } from '../../store/walletStore';
+import { getProvider, useWalletStore } from '../../store/walletStore';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { truncateAddress } from '../../lib/formatters';
 import { parseContractError } from '../../lib/blockchain/contracts';

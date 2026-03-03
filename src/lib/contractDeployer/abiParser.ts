@@ -7,7 +7,7 @@
  */
 
 import { ethers } from 'ethers';
-import type { ABIFunction, ABIEvent, ABIParam } from '../../types/contractDeployer';
+import type { ABIEvent, ABIFunction, ABIParam } from '../../types/contractDeployer';
 
 // ---------------------------------------------------------------------------
 // Types

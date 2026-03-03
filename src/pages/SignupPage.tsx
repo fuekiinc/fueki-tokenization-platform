@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Shield } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -8,18 +8,18 @@ import StepIndicator from '../components/Auth/StepIndicator';
 import FuekiBrand from '../components/Brand/FuekiBrand';
 import {
   AccountStep,
-  PersonalStep,
   AddressStep,
-  PlanStep,
   IdentityStep,
+  PersonalStep,
+  PlanStep,
   SIGNUP_STEPS,
   STEP_META,
 } from '../components/Forms';
 import type {
   AccountValues,
-  PersonalValues,
   AddressValues,
   IdentityValues,
+  PersonalValues,
 } from '../components/Forms';
 import type { KYCIdentityCaptureState, SubscriptionPlan } from '../types/auth';
 
@@ -289,9 +289,19 @@ export default function SignupPage() {
         : 'Account created. Your identity verification is being reviewed.',
       );
       navigate('/pending-approval');
-    } catch (err: any) {
-      const code = err?.response?.data?.error?.code;
-      const serverMessage = err?.response?.data?.error?.message;
+    } catch (err: unknown) {
+      const apiError = err as {
+        response?: {
+          data?: {
+            error?: {
+              code?: string;
+              message?: string;
+            };
+          };
+        };
+      };
+      const code = apiError.response?.data?.error?.code;
+      const serverMessage = apiError.response?.data?.error?.message;
 
       if (code === 'EMAIL_EXISTS') {
         toast.error('An account with this email already exists. Please log in instead.');

@@ -8,18 +8,18 @@
  * Reuses TokenSelector, glass-morphism styling, and existing patterns.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import {
-  Plus,
-  Minus,
-  Loader2,
-  Check,
   AlertCircle,
+  Check,
   Droplets,
   Fuel,
+  Loader2,
+  Minus,
+  Plus,
 } from 'lucide-react';
 import type { WrappedAsset } from '../../types';
 import { ContractService, isETH, parseContractError } from '../../lib/blockchain/contracts';
@@ -27,7 +27,7 @@ import type { Pool } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPercent, formatPrice } from '../../lib/formatters';
-import { txSubmittedToast, txConfirmedToast, txFailedToast } from '../../lib/utils/txToast';
+import { txConfirmedToast, txFailedToast, txSubmittedToast } from '../../lib/utils/txToast';
 import TokenSelector from './TokenSelector';
 
 // ---------------------------------------------------------------------------

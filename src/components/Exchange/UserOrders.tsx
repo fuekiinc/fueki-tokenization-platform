@@ -26,26 +26,26 @@
  * - Responsive: desktop table layout + mobile card layout
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import {
-  Loader2,
-  ExternalLink,
-  X,
-  Clock,
   AlertCircle,
   ArrowRight,
-  Download,
-  ChevronUp,
   ChevronDown,
+  ChevronUp,
+  Clock,
+  Download,
+  ExternalLink,
+  Loader2,
+  X,
 } from 'lucide-react';
-import { ContractService, isETH, parseContractError, type Order } from '../../lib/blockchain/contracts';
+import { ContractService, isETH, type Order, parseContractError } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import logger from '../../lib/logger';
 import { formatAddress } from '../../lib/utils/helpers';
-import { formatTokenAmount, formatPrice } from '../../lib/formatters';
+import { formatPrice, formatTokenAmount } from '../../lib/formatters';
 import Badge from '../Common/Badge';
 
 // ---------------------------------------------------------------------------
@@ -185,7 +185,7 @@ export default function UserOrders({
   );
 
   const filteredOrders = useMemo(() => {
-    let result = activeTab === 'all'
+    const result = activeTab === 'all'
       ? [...orders]
       : orders.filter((o) => deriveOrderStatus(o) === activeTab);
 

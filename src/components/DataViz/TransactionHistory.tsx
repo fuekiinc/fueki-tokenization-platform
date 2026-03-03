@@ -1,12 +1,12 @@
 import clsx from 'clsx';
 import {
-  ArrowUpRight,
   ArrowDownLeft,
-  Flame,
-  Repeat,
+  ArrowRight,
+  ArrowUpRight,
   Clock,
   ExternalLink,
-  ArrowRight,
+  Flame,
+  Repeat,
 } from 'lucide-react';
 import type { TradeHistory } from '../../types/index';
 import { formatAddress, formatDate } from '../../lib/utils/helpers';

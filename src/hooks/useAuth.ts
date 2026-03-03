@@ -1,5 +1,5 @@
 import { useAuthStore } from '../store/authStore';
-import type { User, KYCStatus } from '../types/auth';
+import type { KYCStatus, User } from '../types/auth';
 
 // ---------------------------------------------------------------------------
 // useAuth

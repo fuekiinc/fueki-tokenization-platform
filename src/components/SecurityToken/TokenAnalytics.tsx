@@ -11,18 +11,18 @@
  *   G) Snapshot Timeline
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ethers } from 'ethers';
 import {
   SecurityTokenABI,
 } from '../../contracts/abis/SecurityToken';
 import { useWalletStore } from '../../store/walletStore';
-import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
+import { getReadOnlyProvider, parseContractError } from '../../lib/blockchain/contracts';
 import {
+  formatCompact,
+  formatDateTime,
   formatWeiAmount,
   truncateAddress,
-  formatDateTime,
-  formatCompact,
 } from '../../lib/formatters';
 import Card from '../Common/Card';
 import Spinner from '../Common/Spinner';

@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import type { ElementType, ComponentPropsWithRef } from 'react';
+import type { ComponentPropsWithRef, ElementType } from 'react';
 import clsx from 'clsx';
 import { CARD_CLASSES } from '../../lib/designTokens';
 

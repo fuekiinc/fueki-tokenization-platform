@@ -19,23 +19,23 @@
  * - Prevents selling ETH for ETH
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { Link } from 'react-router-dom';
 import {
-  ArrowDown,
-  Check,
-  Loader2,
-  ExternalLink,
   AlertCircle,
+  ArrowDown,
   ArrowRightLeft,
-  Fuel,
-  Zap,
   BookOpen,
-  Settings2,
+  Check,
+  ExternalLink,
+  Fuel,
+  Loader2,
   RefreshCw,
+  Settings2,
+  Zap,
 } from 'lucide-react';
 import type { WrappedAsset } from '../../types';
 import HelpTooltip from '../Common/HelpTooltip';
@@ -44,7 +44,7 @@ import { ContractService, ETH_SENTINEL, isETH, parseContractError } from '../../
 import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPrice, formatTokenAmount } from '../../lib/formatters';
-import { txSubmittedToast, txConfirmedToast, txFailedToast } from '../../lib/utils/txToast';
+import { txConfirmedToast, txFailedToast, txSubmittedToast } from '../../lib/utils/txToast';
 import TokenSelector from './TokenSelector';
 import logger from '../../lib/logger';
 

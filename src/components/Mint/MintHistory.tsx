@@ -1,9 +1,9 @@
-import { ExternalLink, History, Clock, Copy, Check } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
+import { Check, Clock, Copy, ExternalLink, History } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useTradeStore } from '../../store/tradeStore.ts';
 import { useWallet } from '../../hooks/useWallet';
-import { formatAddress, copyToClipboard } from '../../lib/utils/helpers';
-import { formatTokenAmount, formatRelativeDate, formatDateTime } from '../../lib/formatters';
+import { copyToClipboard, formatAddress } from '../../lib/utils/helpers';
+import { formatDateTime, formatRelativeDate, formatTokenAmount } from '../../lib/formatters';
 import { getNetworkMetadata } from '../../contracts/addresses';
 
 // ---------------------------------------------------------------------------

@@ -12,38 +12,38 @@
  *   - Quick role indicators for the connected wallet
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ethers } from 'ethers';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import {
-  Shield,
-  Coins,
-  FileText,
+  AlertCircle,
+  Camera,
+  Check,
   Clock,
+  Coins,
+  Copy,
+  FileText,
+  Link as LinkIcon,
   Pause,
   Play,
-  Camera,
-  User,
-  Link as LinkIcon,
-  Copy,
-  Check,
-  AlertCircle,
+  Shield,
   ShieldCheck,
+  User,
 } from 'lucide-react';
 import {
-  SecurityTokenABI,
   ALL_ROLES,
-  ROLE_LABELS,
   ROLE_CONTRACT_ADMIN,
+  ROLE_LABELS,
+  SecurityTokenABI,
 } from '../../contracts/abis/SecurityToken';
-import { useWalletStore, getProvider } from '../../store/walletStore';
-import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
+import { getProvider, useWalletStore } from '../../store/walletStore';
+import { getReadOnlyProvider, parseContractError } from '../../lib/blockchain/contracts';
 import {
   sendTransactionWithRetry,
   waitForTransactionReceipt,
 } from '../../lib/blockchain/txExecution';
-import { truncateAddress, formatWeiAmount, formatDateTime } from '../../lib/formatters';
+import { formatDateTime, formatWeiAmount, truncateAddress } from '../../lib/formatters';
 import { copyToClipboard } from '../../lib/utils/helpers';
 import Card from '../Common/Card';
 import Badge from '../Common/Badge';

@@ -9,10 +9,10 @@
  *   - TemplateBrowser (filtered grid of TemplateCards)
  */
 
-import { useEffect, useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
-import { FileCode2, History, ArrowRight } from 'lucide-react';
+import { ArrowRight, FileCode2, History } from 'lucide-react';
 import { useContractDeployerStore } from '../store/contractDeployerStore';
 import { TemplateSearch } from '../components/ContractDeployer/TemplateSearch';
 import { TemplateBrowser } from '../components/ContractDeployer/TemplateBrowser';

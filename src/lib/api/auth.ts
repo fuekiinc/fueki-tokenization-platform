@@ -1,17 +1,17 @@
 import apiClient from './client';
 import type {
+  DocumentUploadResponse,
+  KYCFormData,
+  KYCStatusResponse,
+  KYCSubmitResponse,
+  KYCUploadPayload,
   LoginRequest,
   LoginResponse,
+  RefreshTokenResponse,
   RegisterRequest,
   RegisterResponse,
-  KYCFormData,
-  KYCUploadPayload,
-  KYCSubmitResponse,
-  DocumentUploadResponse,
-  KYCStatusResponse,
-  User,
-  RefreshTokenResponse,
   UpdatePreferencesRequest,
+  User,
 } from '../../types/auth';
 
 // ---------------------------------------------------------------------------

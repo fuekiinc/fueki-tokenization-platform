@@ -21,8 +21,8 @@ import { multicall, multicallSameTarget } from './multicall.ts';
 import type { MulticallRequest, MulticallResult } from './multicall.ts';
 import {
   getOrderedRpcEndpoints,
-  isRetryableRpcError,
   getWalletSwitchRpcUrls,
+  isRetryableRpcError,
   reportRpcEndpointFailure,
   reportRpcEndpointSuccess,
   selectRpcEndpoint,
@@ -465,7 +465,7 @@ export function parseContractError(err: unknown): string {
   }
 
   // RPC endpoint unavailable / overloaded upstream
-  if (/rpc endpoint not found or unavailable|service unavailable|bad gateway|gateway timeout|httpstatus\"?\s*:\s*521/i.test(reason)) {
+  if (/rpc endpoint not found or unavailable|service unavailable|bad gateway|gateway timeout|httpstatus"?\s*:\s*521/i.test(reason)) {
     return 'RPC endpoint is temporarily unavailable. Please retry in a few moments.';
   }
 

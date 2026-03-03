@@ -1,23 +1,23 @@
 import { useMemo } from 'react';
 import {
-  AreaChart,
   Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
 } from 'recharts';
 import clsx from 'clsx';
 import { TrendingUp } from 'lucide-react';
 import type { WrappedAsset } from '../../types/index';
-import { formatCurrency, formatCompact } from '../../lib/formatters';
+import { formatCompact, formatCurrency } from '../../lib/formatters';
 import { parseTokenAmount } from '../../lib/utils/helpers.ts';
 import {
   CARD_CLASSES,
+  CHART_AXIS,
   CHART_HEADER_CLASSES,
   CHART_TOOLTIP_STYLE,
-  CHART_AXIS,
   EMPTY_STATE_CLASSES,
 } from '../../lib/designTokens';
 import ChartSkeleton from '../DataViz/ChartSkeleton';

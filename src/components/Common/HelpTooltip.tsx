@@ -1,11 +1,11 @@
 import {
+  type CSSProperties,
   useCallback,
   useEffect,
   useId,
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
 } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import clsx from 'clsx';

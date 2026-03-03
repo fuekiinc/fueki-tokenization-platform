@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { CARD_CLASSES, SHIMMER_CLASSES, GRID_CLASSES } from '../../lib/designTokens';
+import { CARD_CLASSES, GRID_CLASSES, SHIMMER_CLASSES } from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------
 // Shared shimmer animation class

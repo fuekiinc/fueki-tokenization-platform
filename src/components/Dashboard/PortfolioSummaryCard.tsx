@@ -1,7 +1,7 @@
 import clsx from 'clsx';
 import {
-  ChevronUp,
   ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { InfoTooltip } from '../Common/Tooltip';
 import { formatPercent } from '../../lib/formatters';

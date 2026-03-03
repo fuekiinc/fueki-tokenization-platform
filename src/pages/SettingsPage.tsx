@@ -1,32 +1,32 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-  User,
-  Shield,
-  Palette,
   AlertTriangle,
-  Copy,
+  Calendar,
   Check,
+  CircleHelp,
+  Copy,
   Eye,
   EyeOff,
+  Loader2,
   Lock,
   Mail,
-  Wallet,
-  Calendar,
-  Loader2,
-  Sun,
   Moon,
-  CircleHelp,
+  Palette,
+  Shield,
+  Sun,
+  User,
+  Wallet,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useAuthStore } from '../store/authStore';
 import { useTheme } from '../hooks/useTheme';
 import apiClient from '../lib/api/client';
-import { formatAddress, copyToClipboard } from '../lib/utils/helpers';
-import type { KYCStatus, HelpLevel } from '../types/auth';
+import { copyToClipboard, formatAddress } from '../lib/utils/helpers';
+import type { HelpLevel, KYCStatus } from '../types/auth';
 import { HELP_LEVEL_OPTIONS } from '../lib/helpLevels';
 
 // ---------------------------------------------------------------------------

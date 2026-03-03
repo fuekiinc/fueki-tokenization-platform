@@ -7,26 +7,26 @@
  * confirmed or failed on-chain.
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  Coins,
   ArrowRightLeft,
-  Send,
+  ArrowUpDown,
+  CheckCircle2,
+  Coins,
   Droplets,
   ExternalLink,
+  Loader2,
+  Send,
   ShieldCheck,
-  ArrowUpDown,
+  XCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import {
-  getPendingTransactions,
   checkPendingTransactions,
+  getPendingTransactions,
 } from '../../lib/transactionRecovery';
 import type { PendingTransaction } from '../../lib/transactionRecovery';
-import { useWalletStore, getProvider } from '../../store/walletStore';
+import { getProvider, useWalletStore } from '../../store/walletStore';
 import { SUPPORTED_NETWORKS } from '../../contracts/addresses';
 import logger from '../../lib/logger';
 

@@ -6,7 +6,7 @@
  * FILTER_PILL_CLASSES for consistent styling.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Search, X } from 'lucide-react';
 import type { TemplateCategory } from '../../types/contractDeployer';

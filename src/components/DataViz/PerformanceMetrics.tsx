@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import clsx from 'clsx';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import type { WrappedAsset, TradeHistory } from '../../types/index.ts';
+import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
+import type { TradeHistory, WrappedAsset } from '../../types/index.ts';
 import {
   calculatePortfolioSummary,
   formatPnLCurrency,

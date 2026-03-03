@@ -1,10 +1,10 @@
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import {
-  ArrowUpRight,
-  TrendingUp,
-  Repeat,
   ArrowRight,
+  ArrowUpRight,
+  Repeat,
+  TrendingUp,
   Zap,
 } from 'lucide-react';
 import { CARD_CLASSES } from '../../lib/designTokens';

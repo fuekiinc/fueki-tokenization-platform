@@ -1,22 +1,22 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  User,
+  ArrowLeft,
+  ArrowRight,
   Calendar,
   Phone,
-  ArrowRight,
-  ArrowLeft,
+  User,
 } from 'lucide-react';
 import clsx from 'clsx';
 
-import { personalSchema, HELP_LEVEL_OPTIONS, type PersonalValues } from './signupSchemas';
+import { HELP_LEVEL_OPTIONS, personalSchema, type PersonalValues } from './signupSchemas';
 import {
-  INPUT_BASE,
-  ICON_LEFT,
-  LABEL,
-  ERROR_TEXT,
-  CONTINUE_BUTTON,
   BACK_BUTTON,
+  CONTINUE_BUTTON,
+  ERROR_TEXT,
+  ICON_LEFT,
+  INPUT_BASE,
+  LABEL,
 } from './signupStyles';
 
 // ---------------------------------------------------------------------------

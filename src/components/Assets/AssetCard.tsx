@@ -1,7 +1,7 @@
 import clsx from 'clsx';
-import { Send, Flame, ExternalLink, Copy } from 'lucide-react';
+import { Copy, ExternalLink, Flame, Send } from 'lucide-react';
 import type { WrappedAsset } from '../../types/index';
-import { formatBalance, formatAddress, copyToClipboard } from '../../lib/utils/helpers';
+import { copyToClipboard, formatAddress, formatBalance } from '../../lib/utils/helpers';
 import Badge from '../Common/Badge';
 
 // ---------------------------------------------------------------------------

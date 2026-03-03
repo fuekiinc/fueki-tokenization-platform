@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   getTooltipBody,
+  getTooltipDefinition,
+  getValidatedTooltipLinks,
   shouldShowLearnMore,
   shouldShowTooltipForHelpLevel,
-  getValidatedTooltipLinks,
   type TooltipDefinition,
-  getTooltipDefinition,
 } from '../../src/lib/tooltipRegistry';
 
 test('tier fallback always resolves toward more detail', () => {

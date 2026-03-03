@@ -6,7 +6,7 @@
  * walletStore so no signer (and therefore no gas) is required.
  */
 
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { ethers } from 'ethers';
 import type { ABIFunction, ABIParam } from '../../types/contractDeployer';
 import { getProvider } from '../../store/walletStore';

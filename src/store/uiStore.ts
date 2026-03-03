@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Notification, ModalContent } from '../types/index.ts';
+import type { ModalContent, Notification } from '../types/index.ts';
 
 // ---------------------------------------------------------------------------
 // Toast notification type

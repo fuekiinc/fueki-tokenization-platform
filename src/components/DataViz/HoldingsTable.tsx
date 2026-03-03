@@ -1,27 +1,27 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import {
-  ChevronUp,
-  ChevronDown,
-  Copy,
-  Send,
-  Flame,
-  ExternalLink,
-  Package,
   ArrowUpRight,
-  TrendingUp,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  ExternalLink,
+  Flame,
+  Package,
+  Send,
   TrendingDown,
+  TrendingUp,
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { InfoTooltip } from '../Common/Tooltip';
 import { TOOLTIPS } from '../../lib/tooltipContent';
-import type { WrappedAsset, TradeHistory } from '../../types/index.ts';
+import type { TradeHistory, WrappedAsset } from '../../types/index.ts';
 import {
-  formatBalance,
   copyToClipboard,
+  formatBalance,
   parseTokenAmount,
 } from '../../lib/utils/helpers.ts';
-import { formatTokenAmount, formatCurrency } from '../../lib/formatters.ts';
+import { formatCurrency, formatTokenAmount } from '../../lib/formatters.ts';
 import {
   calculateAssetPerformance,
   formatPnLPercent,

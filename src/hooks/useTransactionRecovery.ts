@@ -6,15 +6,15 @@
  * categorized results so the UI can show recovery banners.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import logger from '../lib/logger';
-import { useWalletStore, getProvider } from '../store/walletStore.ts';
+import { getProvider, useWalletStore } from '../store/walletStore.ts';
 import {
   checkPendingTransactions,
-  getPendingTransactions,
   clearPendingTransactions,
+  getPendingTransactions,
 } from '../lib/transactionRecovery.ts';
-import type { PendingTransaction, CheckResult } from '../lib/transactionRecovery.ts';
+import type { CheckResult, PendingTransaction } from '../lib/transactionRecovery.ts';
 
 // ---------------------------------------------------------------------------
 // Hook return type

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { WrappedAsset, SecurityToken } from '../types/index.ts';
+import type { SecurityToken, WrappedAsset } from '../types/index.ts';
 
 // ---------------------------------------------------------------------------
 // State & Actions interfaces

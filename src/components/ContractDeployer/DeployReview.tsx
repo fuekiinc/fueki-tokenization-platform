@@ -10,11 +10,11 @@
 import { useMemo } from 'react';
 import clsx from 'clsx';
 import {
-  Loader2,
   AlertTriangle,
+  FileCode2,
   Fuel,
   Globe,
-  FileCode2,
+  Loader2,
 } from 'lucide-react';
 
 import type {

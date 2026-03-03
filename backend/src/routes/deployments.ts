@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
 import {
   createDeployment,
-  listDeployments,
-  getDeployment,
   deleteDeployment,
+  getDeployment,
+  listDeployments,
 } from '../services/deployments';
 
 const router = Router();

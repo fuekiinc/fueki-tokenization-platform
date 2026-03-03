@@ -16,22 +16,22 @@
  * - Shows "(ETH)" label for orders involving native ETH
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import {
-  Loader2,
-  ExternalLink,
   AlertCircle,
   BookOpen,
+  ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import { InfoTooltip } from '../Common/Tooltip';
 import { TOOLTIPS } from '../../lib/tooltipContent';
-import { ContractService, isETH, parseContractError, type Order } from '../../lib/blockchain/contracts';
+import { ContractService, isETH, type Order, parseContractError } from '../../lib/blockchain/contracts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress } from '../../lib/utils/helpers';
-import { formatPrice, formatTokenAmount, formatPercent } from '../../lib/formatters';
+import { formatPercent, formatPrice, formatTokenAmount } from '../../lib/formatters';
 import logger from '../../lib/logger';
 
 // ---------------------------------------------------------------------------

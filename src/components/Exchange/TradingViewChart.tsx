@@ -6,27 +6,27 @@
  * support.
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  createChart,
   CandlestickSeries,
-  HistogramSeries,
   ColorType,
+  createChart,
   CrosshairMode,
+  HistogramSeries,
 } from 'lightweight-charts';
 import type {
+  CandlestickData,
+  ChartOptions,
+  DeepPartial,
+  HistogramData,
   IChartApi,
   ISeriesApi,
-  CandlestickData,
-  HistogramData,
   Time,
-  DeepPartial,
-  ChartOptions,
 } from 'lightweight-charts';
 import { useTheme } from '../../hooks/useTheme';
 import { usePriceHistory } from '../../hooks/usePriceHistory';
 import type { TimeInterval } from '../../hooks/usePriceHistory';
-import { Loader2, BarChart3 } from 'lucide-react';
+import { BarChart3, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 
 // ---------------------------------------------------------------------------

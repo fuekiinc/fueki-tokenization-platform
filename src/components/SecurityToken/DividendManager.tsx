@@ -9,30 +9,30 @@
  *   D) Claim Dividend       -- claim unclaimed dividends for connected wallet
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import {
+  AlertCircle,
+  ArrowRight,
   Camera,
+  Check,
+  Coins,
   DollarSign,
-  PieChart,
+  Download,
   Gift,
   Loader2,
-  AlertCircle,
+  PieChart,
   RefreshCw,
-  Check,
-  ArrowRight,
-  Download,
   Search,
-  Coins,
 } from 'lucide-react';
 import {
-  SecurityTokenABI,
   ROLE_CONTRACT_ADMIN,
+  SecurityTokenABI,
 } from '../../contracts/abis/SecurityToken';
-import { useWalletStore, getProvider } from '../../store/walletStore';
-import { parseContractError, getReadOnlyProvider } from '../../lib/blockchain/contracts';
+import { getProvider, useWalletStore } from '../../store/walletStore';
+import { getReadOnlyProvider, parseContractError } from '../../lib/blockchain/contracts';
 import {
   sendTransactionWithRetry,
   waitForTransactionReceipt,

@@ -7,7 +7,7 @@
  * no results.
  */
 
-import { useState, useMemo, useCallback } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import { Inbox, Plus, Search } from 'lucide-react';

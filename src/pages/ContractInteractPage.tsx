@@ -6,7 +6,7 @@
  * the full ContractInteraction panel with read/write function tabs.
  */
 
-import { useState, useMemo, useCallback } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ethers } from 'ethers';
 
@@ -14,7 +14,7 @@ import { getDeployment } from '../lib/contractDeployer/deploymentHistory';
 import { useWalletStore } from '../store/walletStore';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
 import { formatAddress } from '../lib/utils/helpers';
-import { CARD_CLASSES, INPUT_CLASSES, BADGE_CLASSES } from '../lib/designTokens';
+import { BADGE_CLASSES, CARD_CLASSES, INPUT_CLASSES } from '../lib/designTokens';
 import ContractInteraction from '../components/ContractDeployer/ContractInteraction';
 
 // ---------------------------------------------------------------------------

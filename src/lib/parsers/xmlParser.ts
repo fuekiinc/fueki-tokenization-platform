@@ -1,5 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
-import type { ParsedTransaction, ParsedDocument } from '../../types';
+import type { ParsedDocument, ParsedTransaction } from '../../types';
 import { generateDocumentHash, generateId, roundCurrency } from '../utils/helpers';
 import { determineCurrency } from './jsonParser';
 

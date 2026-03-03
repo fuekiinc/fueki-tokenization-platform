@@ -1,14 +1,14 @@
 import clsx from 'clsx';
 import {
-  Wallet,
-  Package,
   ArrowLeftRight,
-  TrendingUp,
-  TrendingDown,
-  ChevronUp,
   ChevronDown,
+  ChevronUp,
+  Package,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
 } from 'lucide-react';
-import type { WrappedAsset, ExchangeOrder, TradeHistory } from '../../types';
+import type { ExchangeOrder, TradeHistory, WrappedAsset } from '../../types';
 import { formatCurrency, parseTokenAmount } from '../../lib/utils/helpers';
 import { formatPercent } from '../../lib/formatters';
 import { CARD_CLASSES, GRID_CLASSES } from '../../lib/designTokens';

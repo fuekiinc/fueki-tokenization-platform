@@ -7,21 +7,21 @@
  * Compliance, and Analytics.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ethers } from 'ethers';
 import clsx from 'clsx';
 import {
-  Shield,
-  LayoutDashboard,
-  Settings,
-  Users,
-  CalendarClock,
-  Banknote,
   ArrowRightLeft,
-  ShieldAlert,
+  Banknote,
   BarChart3,
-  Wallet,
+  CalendarClock,
+  LayoutDashboard,
   Pause,
+  Settings,
+  Shield,
+  ShieldAlert,
+  Users,
+  Wallet,
 } from 'lucide-react';
 import { SecurityTokenABI } from '../contracts/abis/SecurityToken';
 import { useWalletStore } from '../store/walletStore';
@@ -134,7 +134,7 @@ export default function SecurityTokenPage() {
         decimals: Number(decimals),
         isPaused,
       });
-    } catch (err) {
+    } catch (_err) {
       // Non-fatal: header stats are supplementary
       setQuickStats(null);
     } finally {

@@ -36,6 +36,7 @@ import {
   Activity,
   ArrowDownUp,
   BarChart3,
+  BookOpen,
   Droplets,
   Globe,
   Layers,
@@ -44,7 +45,6 @@ import {
   PlusCircle,
   RefreshCw,
   Shield,
-  BookOpen,
   Wallet,
   Zap,
 } from 'lucide-react';

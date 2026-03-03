@@ -7,20 +7,20 @@
  * user into the swap or liquidity tab pre-configured for that pool.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import {
-  Loader2,
-  Search,
-  Droplets,
-  TrendingUp,
-  Layers,
-  ChevronRight,
-  RefreshCw,
   AlertCircle,
-  Orbit,
   ArrowUpDown,
+  ChevronRight,
+  Droplets,
+  Layers,
+  Loader2,
+  Orbit,
+  RefreshCw,
+  Search,
+  TrendingUp,
 } from 'lucide-react';
 import { OrbitalContractService } from '../../lib/blockchain/orbitalContracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';

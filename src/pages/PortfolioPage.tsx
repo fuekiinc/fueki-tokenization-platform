@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logger from '../lib/logger';
 import { showError } from '../lib/errorUtils';
@@ -6,49 +6,49 @@ import clsx from 'clsx';
 import { useAuthStore } from '../store/authStore';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 import {
-  Search,
-  Filter,
-  Wallet,
-  ArrowUpRight,
-  Copy,
   AlertTriangle,
+  ArrowUpRight,
+  ChevronDown,
+  ChevronUp,
+  Copy,
   DollarSign,
-  Layers,
-  Lock,
+  ExternalLink,
   FileText,
+  Filter,
+  Flame,
+  Layers,
   LayoutGrid,
   List,
-  ChevronUp,
-  ChevronDown,
-  Send,
-  Flame,
-  ExternalLink,
+  Lock,
   Package,
-  TrendingUp,
+  Search,
+  Send,
   TrendingDown,
+  TrendingUp,
+  Wallet,
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ethers } from 'ethers';
 import { ContractService, parseContractError } from '../lib/blockchain/contracts.ts';
 import { useWallet } from '../hooks/useWallet.ts';
 import { getProvider } from '../store/walletStore.ts';
-import { useAssetStore, nextAssetFetchGeneration, getAssetFetchGeneration } from '../store/assetStore.ts';
+import { getAssetFetchGeneration, nextAssetFetchGeneration, useAssetStore } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
-import { Modal, Button, EmptyState } from '../components/Common/index.ts';
+import { Button, EmptyState, Modal } from '../components/Common/index.ts';
 import {
-  formatBalance,
-  formatAddress,
   copyToClipboard,
+  formatAddress,
+  formatBalance,
   parseTokenAmount,
 } from '../lib/utils/helpers.ts';
 import { formatCurrency, formatTokenAmount } from '../lib/formatters.ts';
-import { SUPPORTED_NETWORKS, getNetworkConfig } from '../contracts/addresses.ts';
+import { getNetworkConfig, SUPPORTED_NETWORKS } from '../contracts/addresses.ts';
 import {
   calculateAssetPerformance,
   formatPnLPercent,
 } from '../lib/portfolioMetrics.ts';
 import type { AssetPerformance } from '../lib/portfolioMetrics.ts';
-import type { WrappedAsset, TradeHistory } from '../types/index.ts';
+import type { TradeHistory, WrappedAsset } from '../types/index.ts';
 
 // Sub-components extracted from this file
 import AssetAllocationChart from '../components/Charts/AssetAllocationChart.tsx';
@@ -574,7 +574,7 @@ export default function PortfolioPage() {
         logger.warn('Portfolio: unable to fetch user-created assets');
       }
 
-      let allAddresses: string[] = [];
+      const allAddresses: string[] = [];
       try {
         const total = await service.getTotalAssets();
         const count = Math.min(Number(total), 100);

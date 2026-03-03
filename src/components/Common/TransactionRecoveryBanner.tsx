@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, XCircle, X, ExternalLink } from 'lucide-react';
+import { CheckCircle2, ExternalLink, X, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import { useTransactionRecovery } from '../../hooks/useTransactionRecovery.ts';
 import { SUPPORTED_NETWORKS } from '../../contracts/addresses.ts';

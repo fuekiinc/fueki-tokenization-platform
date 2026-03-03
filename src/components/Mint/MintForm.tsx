@@ -1,19 +1,19 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import {
-  Loader2,
   AlertCircle,
+  ArrowRight,
+  Check,
   CheckCircle2,
+  Copy,
   ExternalLink,
-  Wallet,
   FileText,
   Hash,
-  Copy,
-  Sparkles,
-  ArrowRight,
+  Loader2,
   RotateCcw,
+  Sparkles,
   User,
-  Check,
+  Wallet,
   X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -28,8 +28,8 @@ import { useAssetStore } from '../../store/assetStore.ts';
 import { useDocumentStore } from '../../store/documentStore.ts';
 import { useAuthStore } from '../../store/authStore.ts';
 import { getProvider } from '../../store/walletStore.ts';
-import { formatAddress, generateId, copyToClipboard } from '../../lib/utils/helpers';
-import { txSubmittedToast, txConfirmedToast, txFailedToast } from '../../lib/utils/txToast';
+import { copyToClipboard, formatAddress, generateId } from '../../lib/utils/helpers';
+import { txConfirmedToast, txFailedToast, txSubmittedToast } from '../../lib/utils/txToast';
 import { formatTokenAmount } from '../../lib/formatters';
 import {
   DEFAULT_SWITCH_CHAIN_IDS,
@@ -37,7 +37,7 @@ import {
   getNetworkMetadata,
 } from '../../contracts/addresses';
 import { getNetworkCapabilities } from '../../contracts/networkCapabilities';
-import { sanitizePastedAddress, validateTokenSymbol, validatePositiveAmount } from '../../lib/utils/validation';
+import { sanitizePastedAddress, validatePositiveAmount, validateTokenSymbol } from '../../lib/utils/validation';
 import { INPUT_CLASSES } from '../../lib/designTokens';
 import { getMintApprovalStatus, submitMintApprovalRequest } from '../../lib/api/mintRequests';
 import type { ParsedDocument, TradeHistory } from '../../types';

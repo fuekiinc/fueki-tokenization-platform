@@ -1,28 +1,28 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import {
+  AlertTriangle,
   Check,
-  X,
-  Eye,
+  CheckSquare,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   ChevronUp,
-  AlertTriangle,
+  Eye,
   FileCheck,
   Filter,
-  CheckSquare,
-  Square,
   Loader2,
+  Square,
+  X,
 } from 'lucide-react';
 import {
+  approveKYC,
   getKYCSubmissions,
   getUserDetail,
-  approveKYC,
   rejectKYC,
 } from '../../lib/api/admin';
-import type { AdminUser, UserListResponse, UserDetail } from '../../lib/api/admin';
+import type { AdminUser, UserDetail, UserListResponse } from '../../lib/api/admin';
 import Badge from '../Common/Badge';
 import Spinner from '../Common/Spinner';
 import EmptyState from '../Common/EmptyState';

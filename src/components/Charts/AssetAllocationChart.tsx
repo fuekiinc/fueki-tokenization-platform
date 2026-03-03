@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
 import {
-  PieChart,
-  Pie,
   Cell,
-  Tooltip,
+  Pie,
+  PieChart,
   ResponsiveContainer,
+  Tooltip,
 } from 'recharts';
 import clsx from 'clsx';
 import { PieChart as PieChartIcon } from 'lucide-react';
@@ -13,9 +13,9 @@ import { formatCurrency, formatPercent } from '../../lib/formatters';
 import { parseTokenAmount } from '../../lib/utils/helpers.ts';
 import {
   CARD_CLASSES,
+  CHART_COLORS,
   CHART_HEADER_CLASSES,
   CHART_TOOLTIP_STYLE,
-  CHART_COLORS,
   EMPTY_STATE_CLASSES,
 } from '../../lib/designTokens';
 import ChartSkeleton from '../DataViz/ChartSkeleton';

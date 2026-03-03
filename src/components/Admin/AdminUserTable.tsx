@@ -1,12 +1,12 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import {
-  Search,
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Filter,
-  AlertTriangle,
+  Search,
   Users,
 } from 'lucide-react';
 import { getUsers, updateUserRole } from '../../lib/api/admin';

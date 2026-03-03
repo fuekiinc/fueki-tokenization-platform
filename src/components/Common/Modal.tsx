@@ -2,9 +2,9 @@ import type { ReactNode } from 'react';
 import {
   Dialog,
   DialogBackdrop,
+  DialogDescription,
   DialogPanel,
   DialogTitle,
-  DialogDescription,
 } from '@headlessui/react';
 import { X } from 'lucide-react';
 import clsx from 'clsx';

@@ -9,8 +9,8 @@
  * Usage: npx tsx scripts/extract-template-artifacts.ts
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { join, resolve, dirname } from 'path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);

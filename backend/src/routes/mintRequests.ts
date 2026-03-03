@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from 'express';
+import { type Request, type Response, Router } from 'express';
 import crypto from 'node:crypto';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';

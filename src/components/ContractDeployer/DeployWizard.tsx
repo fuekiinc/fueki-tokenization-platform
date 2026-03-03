@@ -11,18 +11,18 @@
  * re-renders.
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import {
-  Settings2,
-  FileSearch,
+  AlertCircle,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Rocket,
+  FileSearch,
   Loader2,
-  AlertCircle,
+  Rocket,
+  Settings2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 

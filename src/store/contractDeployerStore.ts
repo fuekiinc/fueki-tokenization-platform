@@ -15,10 +15,10 @@
 
 import { create } from 'zustand';
 import type {
-  TemplateCategory,
-  DeployWizardStep,
   DeploymentRecord,
+  DeployWizardStep,
   GasEstimate,
+  TemplateCategory,
 } from '../types/contractDeployer';
 
 // ---------------------------------------------------------------------------

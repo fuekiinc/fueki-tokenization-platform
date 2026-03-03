@@ -199,7 +199,7 @@ export default function DashboardPage() {
 
         // Source 2: all platform assets (iterate factory index)
         // Fetch in small sequential batches to avoid RPC rate limiting.
-        let allPlatformAddresses: string[] = [];
+        const allPlatformAddresses: string[] = [];
         try {
           const count = Number(totalAssetCount);
           const maxScan = Math.min(count, 100);

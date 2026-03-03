@@ -8,21 +8,21 @@
  * Clicking the card body navigates to the contract interaction page.
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import {
-  Copy,
   Check,
-  ExternalLink,
-  Trash2,
   Clock,
-  Fuel,
+  Copy,
+  ExternalLink,
   FileCode2,
+  Fuel,
+  Trash2,
 } from 'lucide-react';
 import type { DeploymentRecord } from '../../types/contractDeployer';
 import { SUPPORTED_NETWORKS } from '../../contracts/addresses';
-import { formatAddress, copyToClipboard } from '../../lib/utils/helpers';
+import { copyToClipboard, formatAddress } from '../../lib/utils/helpers';
 
 // ---------------------------------------------------------------------------
 // Chain name lookup (superset for deployer -- includes chains not in SUPPORTED_NETWORKS)

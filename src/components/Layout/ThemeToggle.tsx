@@ -1,4 +1,4 @@
-import { Sun, Moon } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 import clsx from 'clsx';
 import { useTheme } from '../../hooks/useTheme';
 

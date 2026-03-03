@@ -4,12 +4,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Link } from 'react-router-dom';
 import {
-  Mail,
   ArrowLeft,
-  Shield,
-  KeyRound,
   CheckCircle2,
+  KeyRound,
   Loader2,
+  Mail,
+  Shield,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';

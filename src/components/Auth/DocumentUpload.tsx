@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import { useDropzone, type FileRejection } from 'react-dropzone';
-import { Upload, FileText, X, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type FileRejection, useDropzone } from 'react-dropzone';
+import { AlertCircle, CheckCircle2, FileText, Loader2, Upload, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 

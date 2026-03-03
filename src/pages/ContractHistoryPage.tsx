@@ -6,7 +6,7 @@
  * deploy more contracts, and the filterable DeploymentHistoryList.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import { Plus, ScrollText } from 'lucide-react';

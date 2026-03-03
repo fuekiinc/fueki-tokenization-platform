@@ -1,25 +1,25 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import {
-  X,
-  Mail,
-  Shield,
-  Calendar,
-  Wallet,
-  FileCheck,
-  User,
-  MapPin,
   AlertTriangle,
+  Calendar,
   Check,
-  XCircle,
-  Loader2,
   Clock,
   Copy,
+  FileCheck,
+  Loader2,
+  Mail,
+  MapPin,
+  Shield,
+  User,
+  Wallet,
+  X,
+  XCircle,
 } from 'lucide-react';
 import {
-  getUserDetail,
   approveKYC,
+  getUserDetail,
   rejectKYC,
   updateUserRole,
 } from '../../lib/api/admin';

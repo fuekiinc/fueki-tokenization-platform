@@ -1,18 +1,18 @@
-import { useMemo, useState, useRef, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  PieChart,
-  Pie,
   Cell,
-  Tooltip,
+  Pie,
+  PieChart,
   ResponsiveContainer,
+  Tooltip,
 } from 'recharts';
 import toast from 'react-hot-toast';
-import { Package, PieChart as PieChartIcon, Copy, Check } from 'lucide-react';
+import { Check, Copy, Package, PieChart as PieChartIcon } from 'lucide-react';
 import clsx from 'clsx';
 import type { WrappedAsset } from '../../types/index';
 import {
-  formatAddress,
   copyToClipboard,
+  formatAddress,
   parseTokenAmount,
 } from '../../lib/utils/helpers';
 import { formatCurrency, formatPercent } from '../../lib/formatters';
@@ -20,8 +20,8 @@ import {
   CARD_CLASSES,
   CHART_HEADER_CLASSES,
   CHART_TOOLTIP_STYLE,
-  CHART_COLORS as TOKEN_CHART_COLORS,
   EMPTY_STATE_CLASSES,
+  CHART_COLORS as TOKEN_CHART_COLORS,
 } from '../../lib/designTokens';
 
 // ---------------------------------------------------------------------------

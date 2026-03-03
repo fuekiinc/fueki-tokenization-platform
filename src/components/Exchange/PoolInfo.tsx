@@ -10,21 +10,21 @@
  * Auto-refreshes every 15 seconds (same pattern as OrderBook).
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ethers } from 'ethers';
 import {
-  BarChart3,
-  RefreshCw,
-  Loader2,
   ArrowRightLeft,
+  BarChart3,
   Droplets,
+  Loader2,
+  RefreshCw,
   TrendingUp,
 } from 'lucide-react';
 import type { WrappedAsset } from '../../types';
 import { ContractService, isETH } from '../../lib/blockchain/contracts';
 import type { Pool } from '../../lib/blockchain/contracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
-import { formatPrice, formatPercent } from '../../lib/formatters';
+import { formatPercent, formatPrice } from '../../lib/formatters';
 
 // ---------------------------------------------------------------------------
 // Props

@@ -9,7 +9,7 @@
 
 import { useMemo } from 'react';
 import { FileCode2, SearchX } from 'lucide-react';
-import { TEMPLATES, searchTemplates } from '../../contracts/templates';
+import { searchTemplates, TEMPLATES } from '../../contracts/templates';
 import { useContractDeployerStore } from '../../store/contractDeployerStore';
 import { EMPTY_STATE_CLASSES } from '../../lib/designTokens';
 import { TemplateCard } from './TemplateCard';

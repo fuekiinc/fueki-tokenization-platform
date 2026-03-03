@@ -9,19 +9,19 @@
  * slippage settings, and receive-preview for removals.
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import {
-  Plus,
-  Minus,
-  Loader2,
-  Check,
   AlertCircle,
-  Droplets,
+  Check,
   ChevronDown,
+  Droplets,
   Info,
+  Loader2,
+  Minus,
+  Plus,
   Settings,
   Wallet,
 } from 'lucide-react';
@@ -29,7 +29,7 @@ import { OrbitalContractService } from '../../lib/blockchain/orbitalContracts';
 import { parseContractError } from '../../lib/blockchain/contracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPercent } from '../../lib/formatters';
-import { txSubmittedToast, txConfirmedToast, txFailedToast } from '../../lib/utils/txToast';
+import { txConfirmedToast, txFailedToast, txSubmittedToast } from '../../lib/utils/txToast';
 import { InfoTooltip } from '../Common/Tooltip';
 import { TOOLTIPS } from '../../lib/tooltipContent';
 import logger from '../../lib/logger';

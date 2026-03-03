@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import clsx from 'clsx';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
 import { formatPercent } from '../../lib/formatters';
 import { CARD_CLASSES, TYPOGRAPHY } from '../../lib/designTokens';
 

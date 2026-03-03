@@ -1,10 +1,10 @@
 import {
-  Package,
-  DollarSign,
-  BarChart3,
   Activity,
+  BarChart3,
+  DollarSign,
+  Package,
 } from 'lucide-react';
-import type { WrappedAsset, ExchangeOrder, TradeHistory } from '../../types';
+import type { ExchangeOrder, TradeHistory, WrappedAsset } from '../../types';
 import { formatCurrency, parseTokenAmount } from '../../lib/utils/helpers';
 import { TOOLTIPS } from '../../lib/tooltipContent';
 import { GRID_CLASSES } from '../../lib/designTokens';

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import multer from 'multer';
 import { authenticate } from '../middleware/auth';
 import { documentUpload } from '../middleware/upload';
-import { submitKYC, getKYCStatus, saveEncryptedDocument } from '../services/kyc';
+import { getKYCStatus, saveEncryptedDocument, submitKYC } from '../services/kyc';
 
 const router = Router();
 

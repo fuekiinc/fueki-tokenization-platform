@@ -9,9 +9,9 @@
  */
 
 import { useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import clsx from 'clsx';
-import { ArrowLeft, Sparkles, AlertCircle } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Sparkles } from 'lucide-react';
 
 import { getTemplateById } from '../contracts/templates';
 import { useContractDeployerStore } from '../store/contractDeployerStore';

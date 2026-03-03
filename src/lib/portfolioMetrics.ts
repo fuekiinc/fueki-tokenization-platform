@@ -5,7 +5,7 @@
 // performance summaries.  All functions are deterministic and side-effect free.
 // ---------------------------------------------------------------------------
 
-import type { WrappedAsset, TradeHistory } from '../types/index.ts';
+import type { TradeHistory, WrappedAsset } from '../types/index.ts';
 import { parseTokenAmount } from './tokenAmounts.ts';
 
 // ---------------------------------------------------------------------------

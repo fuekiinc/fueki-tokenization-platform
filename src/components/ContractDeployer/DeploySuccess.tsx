@@ -6,23 +6,23 @@
  * deployed contract or start a fresh deployment.
  */
 
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import {
-  CheckCircle2,
-  Copy,
-  Check,
-  ExternalLink,
-  Rocket,
   ArrowRight,
   Blocks,
+  Check,
+  CheckCircle2,
+  Copy,
+  ExternalLink,
   Fuel,
+  Rocket,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import {
-  SUPPORTED_NETWORKS,
-  getExplorerTxUrl,
   getExplorerAddressUrl,
+  getExplorerTxUrl,
+  SUPPORTED_NETWORKS,
 } from '../../contracts/addresses';
 
 // ---------------------------------------------------------------------------
