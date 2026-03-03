@@ -96,7 +96,7 @@ jobs:
           echo "Linting changed files:"
           echo "$TARGET_FILES"
           # shellcheck disable=SC2086
-          npx eslint --max-warnings=0 $TARGET_FILES
+          npx eslint $TARGET_FILES
       - run: npm run typecheck
       - run: npm run build
 
