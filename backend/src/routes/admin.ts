@@ -172,6 +172,8 @@ router.get('/users/:id', adminOnly, async (req: Request, res: Response) => {
         country: decrypt(kycData.encryptedCountry),
         documentType: kycData.documentType,
         documentOrigName: kycData.documentOrigName,
+        documentBackOrigName: kycData.documentBackOrigName,
+        liveVideoOrigName: kycData.liveVideoOrigName,
         submittedAt: kycData.submittedAt.toISOString(),
         reviewedAt: kycData.reviewedAt?.toISOString() ?? null,
         reviewNotes: kycData.reviewNotes,

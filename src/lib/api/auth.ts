@@ -5,6 +5,7 @@ import type {
   RegisterRequest,
   RegisterResponse,
   KYCFormData,
+  KYCUploadPayload,
   KYCSubmitResponse,
   DocumentUploadResponse,
   KYCStatusResponse,
@@ -68,12 +69,15 @@ export async function submitKYC(data: KYCFormData): Promise<KYCSubmitResponse> {
 }
 
 export async function uploadDocument(
-  file: File,
-  documentType: string,
+  payload: KYCUploadPayload,
 ): Promise<DocumentUploadResponse> {
   const formData = new FormData();
-  formData.append('document', file);
-  formData.append('documentType', documentType);
+  formData.append('documentType', payload.documentType);
+  formData.append('documentFront', payload.documentFront);
+  if (payload.documentBack) {
+    formData.append('documentBack', payload.documentBack);
+  }
+  formData.append('liveVideo', payload.liveVideo);
 
   const response = await apiClient.post<DocumentUploadResponse>(
     '/api/kyc/upload-document',

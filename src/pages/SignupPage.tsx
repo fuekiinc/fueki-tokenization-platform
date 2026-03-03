@@ -21,7 +21,22 @@ import type {
   AddressValues,
   IdentityValues,
 } from '../components/Forms';
-import type { SubscriptionPlan } from '../types/auth';
+import type { KYCIdentityCaptureState, SubscriptionPlan } from '../types/auth';
+
+const EMPTY_IDENTITY_CAPTURE_STATE: KYCIdentityCaptureState = {
+  documentFrontFile: null,
+  documentFrontPreview: null,
+  documentBackFile: null,
+  documentBackPreview: null,
+  liveVideoFile: null,
+  liveVideoPreview: null,
+};
+
+function revokePreview(previewUrl: string | null) {
+  if (previewUrl && previewUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(previewUrl);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // SignupPage -- Orchestrator for the 5-step registration wizard
@@ -49,15 +64,24 @@ export default function SignupPage() {
   const [addressData, setAddressData] = useState<AddressValues | null>(null);
   const [subscriptionPlan, setSubscriptionPlan] = useState<SubscriptionPlan | null>(null);
 
-  // Document upload
-  const [documentFile, setDocumentFile] = useState<File | null>(null);
-  const [documentPreview, setDocumentPreview] = useState<string | null>(null);
+  // Camera capture artifacts for KYC
+  const [identityCapture, setIdentityCapture] = useState<KYCIdentityCaptureState>(
+    EMPTY_IDENTITY_CAPTURE_STATE,
+  );
 
   // Track whether any data has been entered (for beforeunload warning)
-  const hasUnsavedData = accountData !== null || personalData !== null || addressData !== null || documentFile !== null;
+  const hasUnsavedData = (
+    accountData !== null
+    || personalData !== null
+    || addressData !== null
+    || identityCapture.documentFrontFile !== null
+    || identityCapture.documentBackFile !== null
+    || identityCapture.liveVideoFile !== null
+  );
 
   // Step heading ref for focus management
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+  const identityCaptureRef = useRef(identityCapture);
 
   // ---- Beforeunload warning -------------------------------------------------
 
@@ -82,6 +106,16 @@ export default function SignupPage() {
       stepHeadingRef.current?.focus();
     }
   }, [currentStep]);
+
+  useEffect(() => {
+    identityCaptureRef.current = identityCapture;
+  }, [identityCapture]);
+
+  useEffect(() => () => {
+    revokePreview(identityCaptureRef.current.documentFrontPreview);
+    revokePreview(identityCaptureRef.current.documentBackPreview);
+    revokePreview(identityCaptureRef.current.liveVideoPreview);
+  }, []);
 
   // ---- Navigation -----------------------------------------------------------
 
@@ -133,16 +167,65 @@ export default function SignupPage() {
     goToStep(3);
   }, [goToStep]);
 
-  const handleDocumentSelect = useCallback((file: File | null, preview: string | null) => {
-    setDocumentFile(file);
-    setDocumentPreview(preview);
+  const handleDocumentFrontCapture = useCallback((file: File | null, preview: string | null) => {
+    setIdentityCapture((previous) => {
+      if (previous.documentFrontPreview !== preview) {
+        revokePreview(previous.documentFrontPreview);
+      }
+      return {
+        ...previous,
+        documentFrontFile: file,
+        documentFrontPreview: preview,
+      };
+    });
+  }, []);
+
+  const handleDocumentBackCapture = useCallback((file: File | null, preview: string | null) => {
+    setIdentityCapture((previous) => {
+      if (previous.documentBackPreview !== preview) {
+        revokePreview(previous.documentBackPreview);
+      }
+      return {
+        ...previous,
+        documentBackFile: file,
+        documentBackPreview: preview,
+      };
+    });
+  }, []);
+
+  const handleLiveVideoCapture = useCallback((file: File | null, preview: string | null) => {
+    setIdentityCapture((previous) => {
+      if (previous.liveVideoPreview !== preview) {
+        revokePreview(previous.liveVideoPreview);
+      }
+      return {
+        ...previous,
+        liveVideoFile: file,
+        liveVideoPreview: preview,
+      };
+    });
   }, []);
 
   // ---- Final submission -----------------------------------------------------
 
   const handleFinalSubmit = useCallback(async (identityValues: IdentityValues) => {
-    if (!documentFile) {
-      toast.error('Please upload an identity document to continue.');
+    const documentFront = identityCapture.documentFrontFile;
+    const documentBack = identityCapture.documentBackFile;
+    const liveVideo = identityCapture.liveVideoFile;
+    const requiresDocumentBack = identityValues.documentType === 'drivers_license';
+
+    if (!documentFront) {
+      toast.error('Please capture your identity document photo to continue.');
+      return;
+    }
+
+    if (requiresDocumentBack && !documentBack) {
+      toast.error('Please capture the back side of your driver license to continue.');
+      return;
+    }
+
+    if (!liveVideo) {
+      toast.error('Please complete the live scan video to continue.');
       return;
     }
 
@@ -168,8 +251,13 @@ export default function SignupPage() {
         });
       }
 
-      // 2. Upload the identity document
-      await uploadDocument(documentFile, identityValues.documentType);
+      // 2. Upload KYC capture artifacts
+      const uploaded = await uploadDocument({
+        documentType: identityValues.documentType,
+        documentFront,
+        documentBack: requiresDocumentBack ? documentBack ?? undefined : undefined,
+        liveVideo,
+      });
 
       // 3. Submit KYC data
       await submitKYC({
@@ -184,6 +272,15 @@ export default function SignupPage() {
         zipCode: addressData.zipCode,
         country: addressData.country,
         documentType: identityValues.documentType,
+        documentPath: uploaded.documentFront.documentId,
+        documentOrigName: uploaded.documentFront.fileName,
+        documentMimeType: uploaded.documentFront.mimeType,
+        documentBackPath: uploaded.documentBack?.documentId,
+        documentBackOrigName: uploaded.documentBack?.fileName,
+        documentBackMimeType: uploaded.documentBack?.mimeType,
+        liveVideoPath: uploaded.liveVideo.documentId,
+        liveVideoOrigName: uploaded.liveVideo.fileName,
+        liveVideoMimeType: uploaded.liveVideo.mimeType,
         subscriptionPlan,
       });
 
@@ -207,7 +304,7 @@ export default function SignupPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [isAuthenticated, accountData, personalData, addressData, subscriptionPlan, documentFile, authRegister, uploadDocument, submitKYC, navigate]);
+  }, [isAuthenticated, accountData, personalData, addressData, subscriptionPlan, identityCapture.documentFrontFile, identityCapture.documentBackFile, identityCapture.liveVideoFile, authRegister, uploadDocument, submitKYC, navigate]);
 
   // ---- Step renderers -------------------------------------------------------
 
@@ -247,9 +344,15 @@ export default function SignupPage() {
       case 4:
         return (
           <IdentityStep
-            documentFile={documentFile}
-            documentPreview={documentPreview}
-            onDocumentSelect={handleDocumentSelect}
+            documentFrontFile={identityCapture.documentFrontFile}
+            documentFrontPreview={identityCapture.documentFrontPreview}
+            documentBackFile={identityCapture.documentBackFile}
+            documentBackPreview={identityCapture.documentBackPreview}
+            liveVideoFile={identityCapture.liveVideoFile}
+            liveVideoPreview={identityCapture.liveVideoPreview}
+            onDocumentFrontCapture={handleDocumentFrontCapture}
+            onDocumentBackCapture={handleDocumentBackCapture}
+            onLiveVideoCapture={handleLiveVideoCapture}
             onSubmit={handleFinalSubmit}
             onBack={handleIdentityBack}
             isSubmitting={isSubmitting}

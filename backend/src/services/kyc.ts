@@ -18,6 +18,13 @@ interface KYCInput {
   documentType: string;
   documentPath: string;
   documentOrigName: string;
+  documentMimeType?: string;
+  documentBackPath?: string;
+  documentBackOrigName?: string;
+  documentBackMimeType?: string;
+  liveVideoPath: string;
+  liveVideoOrigName: string;
+  liveVideoMimeType?: string;
   subscriptionPlan: string;
 }
 
@@ -38,6 +45,13 @@ export async function submitKYC(input: KYCInput) {
     documentType: input.documentType,
     documentPath: input.documentPath,
     documentOrigName: input.documentOrigName,
+    documentMimeType: input.documentMimeType ?? null,
+    documentBackPath: input.documentBackPath ?? null,
+    documentBackOrigName: input.documentBackOrigName ?? null,
+    documentBackMimeType: input.documentBackMimeType ?? null,
+    liveVideoPath: input.liveVideoPath,
+    liveVideoOrigName: input.liveVideoOrigName,
+    liveVideoMimeType: input.liveVideoMimeType ?? null,
     subscriptionPlan: input.subscriptionPlan,
   };
 

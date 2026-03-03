@@ -41,6 +41,9 @@ export interface UserDetail extends AdminUser {
     state: string;
     country: string;
     documentType: string;
+    documentOrigName?: string;
+    documentBackOrigName?: string;
+    liveVideoOrigName?: string;
     submittedAt: string;
     reviewedAt?: string;
     reviewNotes?: string;

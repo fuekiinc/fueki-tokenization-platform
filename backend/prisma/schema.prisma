@@ -51,6 +51,13 @@ model KYCData {
   documentType        String   // drivers_license or passport
   documentPath        String   // encrypted file stored on disk
   documentOrigName    String
+  documentMimeType    String?
+  documentBackPath    String?
+  documentBackOrigName String?
+  documentBackMimeType String?
+  liveVideoPath       String?
+  liveVideoOrigName   String?
+  liveVideoMimeType   String?
   subscriptionPlan    String?  // monthly, annual, full_service, or contract_deployment_* variants
 
   submittedAt         DateTime @default(now())

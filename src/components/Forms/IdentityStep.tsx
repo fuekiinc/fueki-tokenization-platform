@@ -1,18 +1,14 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useDropzone } from 'react-dropzone';
 import {
+  ArrowLeft,
+  CheckCircle2,
   CreditCard,
   FileCheck,
-  Upload,
-  CheckCircle2,
-  ArrowLeft,
-  Shield,
-  Loader2,
-  X,
-  Camera,
   IdCard,
+  Loader2,
+  Shield,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -25,43 +21,47 @@ import {
   ERROR_TEXT,
   BACK_BUTTON,
 } from './signupStyles';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const ACCEPTED_FILE_TYPES: Record<string, string[]> = {
-  'image/jpeg': ['.jpg', '.jpeg'],
-  'image/png': ['.png'],
-  'application/pdf': ['.pdf'],
-};
-
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+import type { DocumentType } from '../../types/auth';
+import LiveVideoCaptureCard from './LiveVideoCaptureCard';
+import PhotoCaptureCard from './PhotoCaptureCard';
 
 const DOCUMENT_TYPE_OPTIONS = [
   {
     value: 'drivers_license' as const,
-    label: "Driver's license",
+    label: "US Driver's License",
     icon: CreditCard,
-    description: 'Front side required',
+    description: 'Front and back photos are required',
   },
   {
     value: 'passport' as const,
     label: 'Passport',
     icon: FileCheck,
-    description: 'Photo page required',
+    description: 'Photo page capture is required',
   },
   {
     value: 'national_id' as const,
     label: 'National ID',
     icon: IdCard,
-    description: 'Front side required',
+    description: 'Front-side capture is required',
   },
 ] as const;
 
-// ---------------------------------------------------------------------------
-// SSN helpers
-// ---------------------------------------------------------------------------
+interface IdentityStepProps {
+  defaultSSN?: string;
+  defaultDocumentType?: DocumentType;
+  documentFrontFile: File | null;
+  documentFrontPreview: string | null;
+  documentBackFile: File | null;
+  documentBackPreview: string | null;
+  liveVideoFile: File | null;
+  liveVideoPreview: string | null;
+  onDocumentFrontCapture: (file: File | null, previewUrl: string | null) => void;
+  onDocumentBackCapture: (file: File | null, previewUrl: string | null) => void;
+  onLiveVideoCapture: (file: File | null, previewUrl: string | null) => void;
+  onSubmit: (values: IdentityValues) => void;
+  onBack: () => void;
+  isSubmitting: boolean;
+}
 
 function formatSSNDisplay(raw: string): string {
   const digits = raw.replace(/\D/g, '');
@@ -84,50 +84,23 @@ function maskSSN(formatted: string): string {
   return masked.join('');
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
-
-interface IdentityStepProps {
-  defaultSSN?: string;
-  defaultDocumentType?: 'drivers_license' | 'passport' | 'national_id';
-  documentFile: File | null;
-  documentPreview: string | null;
-  onDocumentSelect: (file: File | null, preview: string | null) => void;
-  onSubmit: (values: IdentityValues) => void;
-  onBack: () => void;
-  isSubmitting: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 export default function IdentityStep({
   defaultSSN,
   defaultDocumentType,
-  documentFile,
-  documentPreview,
-  onDocumentSelect,
+  documentFrontFile,
+  documentFrontPreview,
+  documentBackFile,
+  documentBackPreview,
+  liveVideoFile,
+  liveVideoPreview,
+  onDocumentFrontCapture,
+  onDocumentBackCapture,
+  onLiveVideoCapture,
   onSubmit: onFormSubmit,
   onBack,
   isSubmitting,
 }: IdentityStepProps) {
   const [ssnFocused, setSsnFocused] = useState(false);
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
 
   const {
     register,
@@ -139,11 +112,9 @@ export default function IdentityStep({
     resolver: zodResolver(identitySchema),
     defaultValues: {
       ssn: defaultSSN ?? '',
-      documentType: defaultDocumentType,
+      documentType: defaultDocumentType ?? 'drivers_license',
     },
   });
-
-  // ---- SSN helpers ----------------------------------------------------------
 
   const handleSSNChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 9);
@@ -152,77 +123,40 @@ export default function IdentityStep({
   };
 
   const ssnValue = watch('ssn');
+  const selectedDocType = watch('documentType');
   const displaySSN = ssnFocused ? ssnValue : maskSSN(ssnValue);
+  const requiresDocumentBack = selectedDocType === 'drivers_license';
 
-  // ---- Document dropzone ----------------------------------------------------
+  useEffect(() => {
+    if (!requiresDocumentBack && (documentBackFile || documentBackPreview)) {
+      onDocumentBackCapture(null, null);
+    }
+  }, [requiresDocumentBack, documentBackFile, documentBackPreview, onDocumentBackCapture]);
 
-  const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
-      const file = acceptedFiles[0];
-      if (!file) return;
-
-      if (file.size > MAX_FILE_SIZE) {
-        toast.error(`File exceeds the ${formatFileSize(MAX_FILE_SIZE)} size limit.`);
-        return;
-      }
-
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (mountedRef.current) {
-            onDocumentSelect(file, reader.result as string);
-          }
-        };
-        reader.readAsDataURL(file);
-      } else {
-        onDocumentSelect(file, null);
-      }
-    },
-    [onDocumentSelect],
-  );
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: ACCEPTED_FILE_TYPES,
-    maxFiles: 1,
-    maxSize: MAX_FILE_SIZE,
-    onDropRejected: (rejections) => {
-      const error = rejections[0]?.errors[0];
-      if (error?.code === 'file-too-large') {
-        toast.error(`File exceeds the ${formatFileSize(MAX_FILE_SIZE)} size limit.`);
-      } else if (error?.code === 'file-invalid-type') {
-        toast.error('Unsupported file type. Please upload a JPG, PNG, or PDF.');
-      } else {
-        toast.error(error?.message ?? 'File could not be uploaded.');
-      }
-    },
-  });
-
-  const removeDocument = useCallback(() => {
-    onDocumentSelect(null, null);
-  }, [onDocumentSelect]);
-
-  // ---- Submission -----------------------------------------------------------
+  const frontCaptureTitle = selectedDocType === 'drivers_license'
+    ? 'Driver license front photo'
+    : selectedDocType === 'passport'
+      ? 'Passport photo page'
+      : 'National ID photo';
 
   const handleFormSubmit = handleSubmit((values) => {
-    if (!documentFile) {
-      toast.error('Please upload an identity document to continue.');
+    if (!documentFrontFile) {
+      toast.error('Capture your identity document photo to continue.');
+      return;
+    }
+    if (values.documentType === 'drivers_license' && !documentBackFile) {
+      toast.error('Capture the back side of your driver license to continue.');
+      return;
+    }
+    if (!liveVideoFile) {
+      toast.error('Complete the 10-second live scan to continue.');
       return;
     }
     onFormSubmit(values);
   });
 
-  const fileSizeLabel = documentFile
-    ? `${formatFileSize(documentFile.size)} / ${formatFileSize(MAX_FILE_SIZE)} max`
-    : null;
-
-  const selectedDocType = watch('documentType');
-
-  // ---- Render ---------------------------------------------------------------
-
   return (
     <form onSubmit={handleFormSubmit} noValidate className="space-y-5">
-      {/* SSN */}
       <div>
         <label htmlFor="signup-ssn" className={LABEL}>
           Social Security Number
@@ -262,14 +196,13 @@ export default function IdentityStep({
         )}
       </div>
 
-      {/* Document Type */}
       <div>
         <label className={LABEL}>
           Identity document type
           <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
         </label>
         <div
-          className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1"
+          className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-3"
           role="radiogroup"
           aria-label="Identity document type"
         >
@@ -279,7 +212,7 @@ export default function IdentityStep({
               <label
                 key={value}
                 className={clsx(
-                  'relative flex items-center gap-3 p-4 rounded-xl cursor-pointer',
+                  'relative flex cursor-pointer items-center gap-3 rounded-xl p-4',
                   'border transition-all duration-200',
                   selected
                     ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 ring-1 ring-[var(--accent-primary)]'
@@ -295,30 +228,26 @@ export default function IdentityStep({
                 <Icon
                   className={clsx(
                     'h-5 w-5 shrink-0',
-                    selected
-                      ? 'text-[var(--accent-primary)]'
-                      : 'text-[var(--text-muted)]',
+                    selected ? 'text-[var(--accent-primary)]' : 'text-[var(--text-muted)]',
                   )}
                   aria-hidden="true"
                 />
                 <div className="min-w-0 flex-1">
                   <span
                     className={clsx(
-                      'text-sm font-medium block',
-                      selected
-                        ? 'text-[var(--text-primary)]'
-                        : 'text-[var(--text-secondary)]',
+                      'block text-sm font-medium',
+                      selected ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]',
                     )}
                   >
                     {label}
                   </span>
-                  <span className="text-xs text-[var(--text-muted)] block mt-0.5">
+                  <span className="mt-0.5 block text-xs text-[var(--text-muted)]">
                     {description}
                   </span>
                 </div>
                 {selected && (
                   <CheckCircle2
-                    className="absolute top-2 right-2 h-4 w-4 text-[var(--accent-primary)]"
+                    className="absolute right-2 top-2 h-4 w-4 text-[var(--accent-primary)]"
                     aria-hidden="true"
                   />
                 )}
@@ -333,133 +262,49 @@ export default function IdentityStep({
         )}
       </div>
 
-      {/* Document Upload */}
-      <div>
+      <div className="space-y-3">
         <label className={LABEL}>
-          Upload identity document
+          Camera document capture
           <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
         </label>
+        <p className="text-xs text-[var(--text-muted)]">
+          Camera-only capture is required. Uploading pre-existing files is disabled.
+        </p>
 
-        {!documentFile ? (
-          <div
-            {...getRootProps()}
-            className={clsx(
-              'mt-1 flex flex-col items-center justify-center gap-3',
-              'p-8 rounded-xl cursor-pointer',
-              'border-2 border-dashed transition-all duration-200',
-              isDragActive
-                ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5'
-                : 'border-[var(--border-primary)] bg-[var(--bg-tertiary)] hover:border-[var(--border-hover)]',
-            )}
-          >
-            <input {...getInputProps()} />
-            <div
-              className={clsx(
-                'flex items-center justify-center w-12 h-12 rounded-full',
-                'bg-[var(--accent-primary)]/10',
-              )}
-            >
-              <Upload
-                className={clsx(
-                  'h-6 w-6',
-                  isDragActive
-                    ? 'text-[var(--accent-primary)]'
-                    : 'text-[var(--text-muted)]',
-                )}
-                aria-hidden="true"
-              />
-            </div>
-            <div className="text-center">
-              <p className="text-sm text-[var(--text-secondary)]">
-                {isDragActive ? (
-                  <span className="text-[var(--accent-primary)] font-medium">
-                    Drop your file here
-                  </span>
-                ) : (
-                  <>
-                    <span className="text-[var(--accent-primary)] font-medium">
-                      Click to upload
-                    </span>{' '}
-                    or drag and drop
-                  </>
-                )}
-              </p>
-              <p className="mt-1 text-xs text-[var(--text-muted)]">
-                JPG, PNG, or PDF &middot; {formatFileSize(MAX_FILE_SIZE)} max
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div
-            className={clsx(
-              'mt-1 relative rounded-xl overflow-hidden',
-              'border border-[var(--border-primary)] bg-[var(--bg-tertiary)]',
-              'p-4',
-            )}
-          >
-            {/* Remove button */}
-            <button
-              type="button"
-              onClick={removeDocument}
-              className={clsx(
-                'absolute top-3 right-3 z-10',
-                'flex items-center justify-center w-8 h-8 rounded-full',
-                'bg-[var(--bg-primary)]/80 backdrop-blur-sm',
-                'border border-[var(--border-primary)]',
-                'text-[var(--text-muted)] hover:text-[var(--danger)]',
-                'transition-colors duration-150',
-              )}
-              aria-label="Remove document"
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
+        <PhotoCaptureCard
+          title={frontCaptureTitle}
+          description="Ensure all text is readable and edges are visible."
+          file={documentFrontFile}
+          previewUrl={documentFrontPreview}
+          onCapture={onDocumentFrontCapture}
+          disabled={isSubmitting}
+          filePrefix={`${selectedDocType}-front`}
+          facingMode="environment"
+        />
 
-            {/* Preview */}
-            {documentPreview ? (
-              <div className="flex flex-col items-center gap-3">
-                <div className="relative w-full max-h-48 rounded-lg overflow-hidden bg-black/20 flex items-center justify-center">
-                  <img
-                    src={documentPreview}
-                    alt="Document preview"
-                    className="max-h-48 object-contain rounded-lg"
-                  />
-                </div>
-                <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-                  <Camera className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />
-                  <span className="truncate max-w-[250px]">
-                    {documentFile.name}
-                  </span>
-                  <span className="text-[var(--text-muted)] text-xs">
-                    ({fileSizeLabel})
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3 py-2">
-                <div
-                  className={clsx(
-                    'flex items-center justify-center w-10 h-10 rounded-lg',
-                    'bg-[var(--accent-primary)]/10',
-                  )}
-                >
-                  <FileCheck className="h-5 w-5 text-[var(--accent-primary)]" aria-hidden="true" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[var(--text-primary)] truncate">
-                    {documentFile.name}
-                  </p>
-                  <p className="text-xs text-[var(--text-muted)]">
-                    {fileSizeLabel}
-                  </p>
-                </div>
-                <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" aria-hidden="true" />
-              </div>
-            )}
-          </div>
+        {requiresDocumentBack && (
+          <PhotoCaptureCard
+            title="Driver license back photo"
+            description="Capture the back side clearly, including barcode and issue text."
+            file={documentBackFile}
+            previewUrl={documentBackPreview}
+            onCapture={onDocumentBackCapture}
+            disabled={isSubmitting}
+            filePrefix="drivers-license-back"
+            facingMode="environment"
+          />
         )}
       </div>
 
-      {/* Navigation */}
+      <LiveVideoCaptureCard
+        title="Live identity scan (required)"
+        description="Record a continuous 10-second clip holding your government ID beside your face."
+        file={liveVideoFile}
+        previewUrl={liveVideoPreview}
+        onCapture={onLiveVideoCapture}
+        disabled={isSubmitting}
+      />
+
       <div className="flex gap-3 pt-2">
         <button
           type="button"
@@ -467,7 +312,7 @@ export default function IdentityStep({
           disabled={isSubmitting}
           className={clsx(
             BACK_BUTTON,
-            'disabled:opacity-50 disabled:cursor-not-allowed',
+            'disabled:cursor-not-allowed disabled:opacity-50',
           )}
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
@@ -477,13 +322,10 @@ export default function IdentityStep({
           type="submit"
           disabled={isSubmitting}
           className={clsx(
-            'flex-1 flex items-center justify-center gap-2',
-            'bg-gradient-to-r from-indigo-600 to-purple-600',
-            'hover:from-indigo-500 hover:to-purple-500',
-            'text-white font-semibold',
-            'rounded-xl px-4 py-3',
+            'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-white font-semibold',
+            'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500',
             'transition-all duration-200',
-            'disabled:opacity-50 disabled:cursor-not-allowed',
+            'disabled:cursor-not-allowed disabled:opacity-50',
             'shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30',
           )}
         >

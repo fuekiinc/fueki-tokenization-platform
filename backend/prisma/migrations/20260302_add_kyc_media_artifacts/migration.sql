@@ -1,0 +1,8 @@
+ALTER TABLE "KYCData"
+  ADD COLUMN IF NOT EXISTS "documentMimeType" TEXT,
+  ADD COLUMN IF NOT EXISTS "documentBackPath" TEXT,
+  ADD COLUMN IF NOT EXISTS "documentBackOrigName" TEXT,
+  ADD COLUMN IF NOT EXISTS "documentBackMimeType" TEXT,
+  ADD COLUMN IF NOT EXISTS "liveVideoPath" TEXT,
+  ADD COLUMN IF NOT EXISTS "liveVideoOrigName" TEXT,
+  ADD COLUMN IF NOT EXISTS "liveVideoMimeType" TEXT;

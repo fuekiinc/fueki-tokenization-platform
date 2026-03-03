@@ -11,11 +11,18 @@ const BASE_UPLOAD_CONFIG = {
 export const documentUpload = multer({
   ...BASE_UPLOAD_CONFIG,
   fileFilter: (_req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
+    const allowed = [
+      'image/jpeg',
+      'image/png',
+      'application/pdf',
+      'video/webm',
+      'video/mp4',
+      'video/quicktime',
+    ];
     if (allowed.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only JPG, PNG, and PDF files are allowed'));
+      cb(new Error('Only JPG, PNG, PDF, MP4, MOV, and WEBM files are allowed'));
     }
   },
 });

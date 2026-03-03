@@ -73,6 +73,15 @@ export interface KYCFormData {
   zipCode: string;
   country: string;
   documentType: DocumentType;
+  documentPath: string;
+  documentOrigName: string;
+  documentMimeType?: string;
+  documentBackPath?: string;
+  documentBackOrigName?: string;
+  documentBackMimeType?: string;
+  liveVideoPath: string;
+  liveVideoOrigName: string;
+  liveVideoMimeType?: string;
   subscriptionPlan: SubscriptionPlan;
 }
 
@@ -83,9 +92,32 @@ export interface KYCSubmitResponse {
 }
 
 export interface DocumentUploadResponse {
+  documentFront: UploadedKycMedia;
+  documentBack?: UploadedKycMedia;
+  liveVideo: UploadedKycMedia;
+}
+
+export interface UploadedKycMedia {
   documentId: string;
   fileName: string;
+  mimeType: string;
   uploadedAt: string;
+}
+
+export interface KYCUploadPayload {
+  documentType: DocumentType;
+  documentFront: File;
+  documentBack?: File;
+  liveVideo: File;
+}
+
+export interface KYCIdentityCaptureState {
+  documentFrontFile: File | null;
+  documentFrontPreview: string | null;
+  documentBackFile: File | null;
+  documentBackPreview: string | null;
+  liveVideoFile: File | null;
+  liveVideoPreview: string | null;
 }
 
 export interface KYCStatusResponse {

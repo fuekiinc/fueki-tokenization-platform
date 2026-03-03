@@ -17,6 +17,9 @@ const VALID_SUBSCRIPTION_PLANS = [
   'contract_deployment_white_glove',
 ] as const;
 
+const IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png']);
+const VIDEO_MIME_TYPES = new Set(['video/webm', 'video/mp4', 'video/quicktime']);
+
 const kycSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
@@ -29,7 +32,33 @@ const kycSchema = z.object({
   zipCode: z.string().min(1),
   country: z.string().min(1),
   documentType: z.enum(VALID_DOC_TYPES),
+  documentPath: z.string().min(1),
+  documentOrigName: z.string().min(1),
+  documentMimeType: z.string().min(1).optional(),
+  documentBackPath: z.string().min(1).optional(),
+  documentBackOrigName: z.string().min(1).optional(),
+  documentBackMimeType: z.string().min(1).optional(),
+  liveVideoPath: z.string().min(1),
+  liveVideoOrigName: z.string().min(1),
+  liveVideoMimeType: z.string().min(1).optional(),
   subscriptionPlan: z.enum(VALID_SUBSCRIPTION_PLANS),
+}).superRefine((data, ctx) => {
+  if (data.documentType === 'drivers_license') {
+    if (!data.documentBackPath) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['documentBackPath'],
+        message: 'Driver license back photo is required',
+      });
+    }
+    if (!data.documentBackOrigName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['documentBackOrigName'],
+        message: 'Driver license back filename is required',
+      });
+    }
+  }
 });
 
 // POST /api/kyc/submit
@@ -40,8 +69,6 @@ router.post('/submit', authenticate, async (req, res) => {
     await submitKYC({
       userId: req.userId!,
       ...data,
-      documentPath: req.body.documentPath || '',
-      documentOrigName: req.body.documentOrigName || '',
     });
 
     res.json({
@@ -60,36 +87,92 @@ router.post('/submit', authenticate, async (req, res) => {
 });
 
 // POST /api/kyc/upload-document
-// Accept file on field "document" or "file" (older frontends may use "file")
+// Accept files on fields:
+// - documentFront (required)
+// - documentBack (required for drivers_license)
+// - liveVideo (required)
+// Backward compatibility:
+// - document or file can still be used as documentFront.
 router.post(
   '/upload-document',
   authenticate,
   documentUpload.fields([
+    { name: 'documentFront', maxCount: 1 },
+    { name: 'documentBack', maxCount: 1 },
+    { name: 'liveVideo', maxCount: 1 },
     { name: 'document', maxCount: 1 },
     { name: 'file', maxCount: 1 },
   ]),
   async (req, res) => {
     try {
       const files = req.files as { [field: string]: Express.Multer.File[] } | undefined;
-      const file = files?.document?.[0] ?? files?.file?.[0];
+      const documentFront = files?.documentFront?.[0] ?? files?.document?.[0] ?? files?.file?.[0];
+      const documentBack = files?.documentBack?.[0];
+      const liveVideo = files?.liveVideo?.[0];
 
-      if (!file) {
-        res.status(400).json({ error: { message: 'No file uploaded', code: 'NO_FILE' } });
-        return;
-      }
-
-      const documentType = req.body.documentType;
-      if (!documentType || !VALID_DOC_TYPES.includes(documentType)) {
+      const parsedDocumentType = z.enum(VALID_DOC_TYPES).safeParse(req.body.documentType);
+      if (!parsedDocumentType.success) {
         res.status(400).json({ error: { message: 'Invalid document type', code: 'INVALID_TYPE' } });
         return;
       }
+      const documentType = parsedDocumentType.data;
 
-      const filePath = await saveEncryptedDocument(file, req.userId!);
+      if (!documentFront) {
+        res.status(400).json({ error: { message: 'Missing document front image', code: 'MISSING_DOCUMENT_FRONT' } });
+        return;
+      }
+      if (!IMAGE_MIME_TYPES.has(documentFront.mimetype)) {
+        res.status(400).json({ error: { message: 'Document front must be a JPG or PNG image', code: 'INVALID_DOCUMENT_FRONT_FORMAT' } });
+        return;
+      }
+
+      if (documentType === 'drivers_license' && !documentBack) {
+        res.status(400).json({ error: { message: 'Missing driver license back image', code: 'MISSING_DOCUMENT_BACK' } });
+        return;
+      }
+      if (documentBack && !IMAGE_MIME_TYPES.has(documentBack.mimetype)) {
+        res.status(400).json({ error: { message: 'Document back must be a JPG or PNG image', code: 'INVALID_DOCUMENT_BACK_FORMAT' } });
+        return;
+      }
+
+      if (!liveVideo) {
+        res.status(400).json({ error: { message: 'Missing live scan video', code: 'MISSING_LIVE_VIDEO' } });
+        return;
+      }
+      if (!VIDEO_MIME_TYPES.has(liveVideo.mimetype)) {
+        res.status(400).json({ error: { message: 'Live scan must be a WEBM, MP4, or MOV video', code: 'INVALID_LIVE_VIDEO_FORMAT' } });
+        return;
+      }
+
+      const [documentFrontPath, documentBackPath, liveVideoPath] = await Promise.all([
+        saveEncryptedDocument(documentFront, req.userId!),
+        documentBack ? saveEncryptedDocument(documentBack, req.userId!) : Promise.resolve<string | null>(null),
+        saveEncryptedDocument(liveVideo, req.userId!),
+      ]);
+
+      const uploadedAt = new Date().toISOString();
 
       res.json({
-        documentId: filePath,
-        fileName: file.originalname,
-        uploadedAt: new Date().toISOString(),
+        documentFront: {
+          documentId: documentFrontPath,
+          fileName: documentFront.originalname,
+          mimeType: documentFront.mimetype,
+          uploadedAt,
+        },
+        documentBack: documentBackPath && documentBack
+          ? {
+            documentId: documentBackPath,
+            fileName: documentBack.originalname,
+            mimeType: documentBack.mimetype,
+            uploadedAt,
+          }
+          : undefined,
+        liveVideo: {
+          documentId: liveVideoPath,
+          fileName: liveVideo.originalname,
+          mimeType: liveVideo.mimetype,
+          uploadedAt,
+        },
       });
     } catch (err) {
       if (err instanceof multer.MulterError) {

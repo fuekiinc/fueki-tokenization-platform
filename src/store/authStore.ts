@@ -3,6 +3,7 @@ import type {
   AuthTokens,
   DocumentUploadResponse,
   HelpLevel,
+  KYCUploadPayload,
   KYCStatus,
   KYCFormData,
   KYCStatusResponse,
@@ -42,7 +43,7 @@ interface AuthStore {
   register: (data: RegisterRequest) => Promise<void>;
   logout: () => Promise<void>;
   submitKYC: (data: KYCFormData) => Promise<KYCSubmitResponse>;
-  uploadDocument: (file: File, documentType: string) => Promise<DocumentUploadResponse>;
+  uploadDocument: (payload: KYCUploadPayload) => Promise<DocumentUploadResponse>;
   checkKYCStatus: () => Promise<KYCStatusResponse>;
   updateHelpLevel: (helpLevel: HelpLevel) => Promise<User>;
   startDemo: () => Promise<void>;
@@ -231,8 +232,8 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
   },
 
   // ---- uploadDocument ------------------------------------------------------
-  uploadDocument: async (file, documentType) => {
-    const response = await authApi.uploadDocument(file, documentType);
+  uploadDocument: async (payload) => {
+    const response = await authApi.uploadDocument(payload);
     return response;
   },
 
