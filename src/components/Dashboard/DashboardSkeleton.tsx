@@ -103,35 +103,6 @@ function ActivitySkeleton() {
 }
 
 // ---------------------------------------------------------------------------
-// Quick Actions skeleton
-// ---------------------------------------------------------------------------
-
-function QuickActionsSkeleton() {
-  return (
-    <div className={clsx(GLASS, 'p-7 sm:p-9')}>
-      <div className="flex items-center gap-3 mb-10">
-        <div className={clsx('h-10 w-10 rounded-xl', SHIMMER)} />
-        <div>
-          <div className={clsx('h-4 w-24 rounded-md', SHIMMER)} />
-          <div className={clsx('mt-2 h-3 w-32 rounded-md', SHIMMER)} />
-        </div>
-      </div>
-      <div className="space-y-5">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className={clsx(GLASS, 'flex items-center gap-5 p-5 sm:p-7')}>
-            <div className={clsx('h-11 w-11 shrink-0 rounded-xl', SHIMMER)} />
-            <div className="flex-1 min-w-0">
-              <div className={clsx('h-4 w-28 rounded-md', SHIMMER)} />
-              <div className={clsx('mt-2 h-3 w-40 rounded-md', SHIMMER)} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Full Dashboard Skeleton
 // ---------------------------------------------------------------------------
 
@@ -172,12 +143,8 @@ export default function DashboardSkeleton() {
         <ActivitySkeleton />
       </div>
 
-      {/* Quick Actions -- full width */}
-      <div className={GRID_CLASSES.sectionGap}>
-        <QuickActionsSkeleton />
-      </div>
     </div>
   );
 }
 
-export { StatCardSkeleton, ChartSkeleton, ActivitySkeleton, QuickActionsSkeleton };
+export { StatCardSkeleton, ChartSkeleton, ActivitySkeleton };

@@ -27,7 +27,6 @@ import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 // Dashboard sub-components
 import StatsGrid from '../components/Dashboard/StatsGrid';
 import RecentActivity from '../components/Dashboard/RecentActivity';
-import QuickActions from '../components/Dashboard/QuickActions';
 import PortfolioChart from '../components/Dashboard/PortfolioChart';
 import ValueChart from '../components/Dashboard/ValueChart';
 import DashboardSkeleton from '../components/Dashboard/DashboardSkeleton';
@@ -839,12 +838,6 @@ export default function DashboardPage() {
         </ComponentErrorBoundary>
       </div>
 
-      {/* ================================================================== */}
-      {/* Quick Actions -- full width at bottom                             */}
-      {/* ================================================================== */}
-      <div className="mt-8 sm:mt-10">
-        <QuickActions />
-      </div>
     </div>
   );
 }
