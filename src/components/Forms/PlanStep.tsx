@@ -102,6 +102,14 @@ export default function PlanStep({ defaultValue, onNext, onBack }: PlanStepProps
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-5">
+      <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+        <p className="text-sm leading-relaxed text-amber-100">
+          Please select a subscription plan. You will only be invoiced after your account is
+          verified and approved. On the next page, you can enter demo mode and test the platform
+          before any invoice is due.
+        </p>
+      </div>
+
       <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
         A platform subscription is required to access the tokenization platform
         and to interact with your on-chain assets. Deployer-only plans are
