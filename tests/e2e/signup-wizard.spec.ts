@@ -57,7 +57,7 @@ test.describe('Signup Wizard', () => {
     await page.getByRole('button', { name: 'Complete sign-up' }).click();
 
     await expect(
-      page.getByText('Please upload an identity document to continue.'),
+      page.getByText('Capture your identity document photo to continue.'),
     ).toBeVisible();
   });
 });

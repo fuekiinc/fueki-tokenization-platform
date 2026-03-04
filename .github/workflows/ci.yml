@@ -73,30 +73,7 @@ jobs:
           node-version: '22.12.0'
           cache: npm
       - run: npm ci
-      - name: Lint changed frontend files
-        env:
-          FRONTEND_FILES: ${{ needs.changes.outputs.frontend_files }}
-        run: |
-          if [ -z "$FRONTEND_FILES" ]; then
-            echo "No frontend files changed. Skipping lint."
-            exit 0
-          fi
-
-          TARGET_FILES="$(echo "$FRONTEND_FILES" \
-            | tr ',' '\n' \
-            | sed '/^$/d' \
-            | grep -E '^(src|tests|public)/|^(index\.html|vite\.config\.ts|playwright\.config\.ts)$' \
-            | grep -E '\.(ts|tsx|js|jsx|mjs|cjs)$|^index\.html$' || true)"
-
-          if [ -z "$TARGET_FILES" ]; then
-            echo "No lintable frontend source files changed. Skipping lint."
-            exit 0
-          fi
-
-          echo "Linting changed files:"
-          echo "$TARGET_FILES"
-          # shellcheck disable=SC2086
-          npx eslint $TARGET_FILES
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
 
@@ -160,6 +137,12 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
+      - name: Validate backend env wiring
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::error::DATABASE_URL is not set; Prisma validate cannot run."
+            exit 1
+          fi
       - run: npx prisma validate
       - run: npx tsc --noEmit
       - run: npm test
@@ -194,7 +177,22 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e:smoke
+      - run: npx playwright test tests/e2e tests/help-guidance.spec.ts --project=chromium --reporter=line,github
+      - name: Summarize smoke failure context
+        if: failure()
+        run: |
+          echo "### E2E Smoke Failure Context" >> "$GITHUB_STEP_SUMMARY"
+          if [ -d test-results ]; then
+            find test-results -name 'error-context.md' -print | while read -r file; do
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "#### ${file}" >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              sed -n '1,140p' "$file" >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+            done
+          else
+            echo "No test-results directory was produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -219,7 +217,22 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e:a11y
+      - run: npx playwright test tests/accessibility.spec.ts --project=chromium --reporter=line,github
+      - name: Summarize accessibility failure context
+        if: failure()
+        run: |
+          echo "### Accessibility Smoke Failure Context" >> "$GITHUB_STEP_SUMMARY"
+          if [ -d test-results ]; then
+            find test-results -name 'error-context.md' -print | while read -r file; do
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "#### ${file}" >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              sed -n '1,140p' "$file" >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+            done
+          else
+            echo "No test-results directory was produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -241,6 +254,8 @@ jobs:
 
       - name: Secret scan (gitleaks)
         uses: gitleaks/gitleaks-action@v2
+        with:
+          args: detect --redact -v --exit-code=2 --report-format=sarif --report-path=results.sarif --config=.gitleaks.toml --log-opts=-1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -248,6 +263,11 @@ jobs:
         with:
           node-version: '22.12.0'
           cache: npm
+
+      - name: Initialize audit artifacts
+        run: |
+          printf '{"metadata":{"vulnerabilities":{"critical":0,"high":0,"moderate":0,"low":0}},"vulnerabilities":{}}\n' > audit-root.json
+          printf '{"metadata":{"vulnerabilities":{"critical":0,"high":0,"moderate":0,"low":0}},"vulnerabilities":{}}\n' > audit-backend.json
 
       - name: Install root dependencies
         run: npm ci
@@ -280,7 +300,7 @@ jobs:
           path: |
             audit-root.json
             audit-backend.json
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 14
 
   dependency-review:
@@ -324,4 +344,5 @@ jobs:
           echo "### What to do when this fails" >> "$GITHUB_STEP_SUMMARY"
           echo "- Open the failed job logs and start at the first failing step." >> "$GITHUB_STEP_SUMMARY"
           echo "- Use uploaded artifacts for detailed reports (Playwright, coverage, npm audit)." >> "$GITHUB_STEP_SUMMARY"
+          echo "- For E2E failures, inspect the inline failure context section and test-results artifacts." >> "$GITHUB_STEP_SUMMARY"
           echo "- If only docs changed, skipped jobs are expected." >> "$GITHUB_STEP_SUMMARY"

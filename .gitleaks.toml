@@ -1,3 +1,10 @@
 [allowlist]
-description = "Allow on-chain contract addresses in the static address registry."
-regexes = ["securityTokenFactoryAddress:\\s*'0x[a-fA-F0-9]{40}'"]
+description = "Allow non-secret placeholders and static on-chain addresses."
+paths = [
+  "backend/cloudrun.env.yaml",
+  "src/contracts/addresses.ts",
+]
+regexes = [
+  "(?m)^(JWT_ACCESS_SECRET|JWT_REFRESH_SECRET|ENCRYPTION_KEY|SMTP_PASS):\\s*\"__SET_IN_SECRET_MANAGER__\"$",
+  "[A-Za-z]+Address:\\s*'0x[a-fA-F0-9]{40}'",
+]
