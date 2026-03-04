@@ -2,19 +2,13 @@ import { Component, StrictMode } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import { AutoConnect, ThirdwebProvider } from 'thirdweb/react'
+import { ThirdwebProvider } from 'thirdweb/react'
 import './index.css'
 import App from './App'
-import { datadogRum } from '@datadog/browser-rum'
 import logger from './lib/logger'
 import { classifyError } from './lib/errorUtils'
-import {
-  getThirdwebAppMetadata,
-  THIRDWEB_WALLETS,
-  thirdwebClient,
-} from './lib/thirdweb'
+import { addRumError, initRumDeferred } from './lib/rum'
 import { installThirdwebNetworkGuard } from './lib/thirdwebNetworkGuard'
-import { WalletConnectionController } from './wallet/WalletConnectionController'
 
 installThirdwebNetworkGuard()
 
@@ -29,24 +23,8 @@ function isLikelyExtensionNoise(message: string, filename?: string) {
   return false
 }
 
-// Datadog RUM -- credentials loaded from environment variables to avoid
-// baking them into source control and to separate dev/prod telemetry.
-const ddAppId = import.meta.env.VITE_DD_APPLICATION_ID as string | undefined;
-const ddClientToken = import.meta.env.VITE_DD_CLIENT_TOKEN as string | undefined;
-if (ddAppId && ddClientToken) {
-  datadogRum.init({
-    applicationId: ddAppId,
-    clientToken: ddClientToken,
-    site: (import.meta.env.VITE_DD_SITE as string) || 'us5.datadoghq.com',
-    service: 'fueki-frontend',
-    env: (import.meta.env.VITE_DD_ENV as string) || (import.meta.env.DEV ? 'dev' : 'prod'),
-    version: '0.1.0',
-    sessionSampleRate: 100,
-    sessionReplaySampleRate: 20,
-    trackBfcacheViews: true,
-    defaultPrivacyLevel: 'mask-user-input',
-  });
-}
+// Delay telemetry boot so app interactivity (LCP/TTI) is prioritized.
+initRumDeferred(1500)
 
 // ---------------------------------------------------------------------------
 // Global error handlers
@@ -74,11 +52,14 @@ window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => 
     `[global] Unhandled promise rejection [${classified.category}]: ${classified.message}`,
     event.reason,
   )
-  datadogRum.addError(event.reason instanceof Error ? event.reason : new Error(String(event.reason)), {
+  addRumError(
+    event.reason instanceof Error ? event.reason : new Error(String(event.reason)),
+    {
     source: 'unhandledrejection',
     category: classified.category,
     severity: classified.severity,
-  })
+    },
+  )
   // Do NOT call event.preventDefault() -- let the browser log it in the
   // console as well so developers see it during local development.
 })
@@ -93,14 +74,17 @@ window.addEventListener('error', (event: ErrorEvent) => {
     `[global] Uncaught error [${classified.category}]: ${classified.message}`,
     event.error,
   )
-  datadogRum.addError(event.error instanceof Error ? event.error : new Error(event.message), {
+  addRumError(
+    event.error instanceof Error ? event.error : new Error(event.message),
+    {
     source: 'window.onerror',
     category: classified.category,
     severity: classified.severity,
     filename: event.filename,
     lineno: event.lineno,
     colno: event.colno,
-  })
+    },
+  )
 })
 
 // ---------------------------------------------------------------------------
@@ -125,7 +109,7 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, EBState> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     logger.error('[RootErrorBoundary] caught an error:', error, info.componentStack)
-    datadogRum.addError(error, {
+    addRumError(error, {
       source: 'RootErrorBoundary',
       componentStack: info.componentStack ?? '',
     })
@@ -303,14 +287,6 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <RootErrorBoundary>
       <ThirdwebProvider>
-        {thirdwebClient && (
-          <AutoConnect
-            client={thirdwebClient}
-            wallets={THIRDWEB_WALLETS}
-            appMetadata={getThirdwebAppMetadata()}
-          />
-        )}
-        <WalletConnectionController />
         <BrowserRouter>
           <App />
         </BrowserRouter>

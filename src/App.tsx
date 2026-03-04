@@ -5,7 +5,6 @@ import AuthLayout from './components/Layout/AuthLayout'
 import ProtectedRoute, { AuthRedirect } from './components/Auth/ProtectedRoute'
 import { useAuthStore } from './store/authStore'
 import OctopusLoader from './components/Common/OctopusLoader'
-import SupportWidget from './components/Support/SupportWidget'
 
 // Auto-reload on stale chunk after deploy (avoids "Failed to fetch dynamically imported module")
 function lazyWithRetry(factory: () => Promise<{ default: React.ComponentType }>) {
@@ -49,6 +48,8 @@ const ContractBrowserPage = lazyWithRetry(() => import('./pages/ContractBrowserP
 const ContractDeployPage = lazyWithRetry(() => import('./pages/ContractDeployPage'))
 const ContractInteractPage = lazyWithRetry(() => import('./pages/ContractInteractPage'))
 const ContractHistoryPage = lazyWithRetry(() => import('./pages/ContractHistoryPage'))
+const WalletRuntime = lazyWithRetry(() => import('./wallet/WalletRuntime'))
+const SupportWidget = lazyWithRetry(() => import('./components/Support/SupportWidget'))
 
 // ---------------------------------------------------------------------------
 // Page title map for document.title updates and screen reader announcements
@@ -130,7 +131,26 @@ function RouteAnnouncer() {
   return null;
 }
 
+function shouldEnableWalletRuntime(pathname: string) {
+  if (
+    pathname === '/login' ||
+    pathname === '/signup' ||
+    pathname === '/forgot-password' ||
+    pathname === '/reset-password' ||
+    pathname === '/pending-approval' ||
+    pathname === '/terms' ||
+    pathname === '/privacy' ||
+    pathname === '/explore'
+  ) {
+    return false
+  }
+  return true
+}
+
 export default function App() {
+  const location = useLocation()
+  const enableWalletRuntime = shouldEnableWalletRuntime(location.pathname)
+
   return (
     <AuthInitializer>
       {/* Skip to main content link -- WCAG 2.1 criterion 2.4.1 */}
@@ -195,7 +215,15 @@ export default function App() {
         <Route path="*" element={<Suspense fallback={<PageLoader />}><NotFoundPage /></Suspense>} />
       </Routes>
 
-      <SupportWidget />
+      {enableWalletRuntime && (
+        <Suspense fallback={null}>
+          <WalletRuntime />
+        </Suspense>
+      )}
+
+      <Suspense fallback={null}>
+        <SupportWidget />
+      </Suspense>
     </AuthInitializer>
   )
 }

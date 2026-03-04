@@ -28,6 +28,7 @@ import {
 
 interface ValueChartProps {
   tradeHistory: TradeHistory[];
+  currentPortfolioValue?: number;
 }
 
 type TimeRange = '7D' | '30D' | '90D' | 'ALL';
@@ -101,6 +102,28 @@ function buildDataPoints(
   return points;
 }
 
+function buildHoldingsFallback(range: TimeRange, currentPortfolioValue: number): DataPoint[] {
+  if (!Number.isFinite(currentPortfolioValue) || currentPortfolioValue <= 0) {
+    return [];
+  }
+
+  const now = Date.now();
+  const start = range === 'ALL' ? now - RANGE_MS['30D'] : now - RANGE_MS[range];
+
+  return [
+    {
+      date: new Date(start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      timestamp: start,
+      value: currentPortfolioValue,
+    },
+    {
+      date: new Date(now).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      timestamp: now,
+      value: currentPortfolioValue,
+    },
+  ];
+}
+
 function formatYAxis(value: number): string {
   if (!Number.isFinite(value)) return '0';
   return `$${formatCompact(value)}`;
@@ -151,13 +174,14 @@ function ActiveDot(props: Record<string, unknown>) {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function ValueChart({ tradeHistory }: ValueChartProps) {
+export default function ValueChart({ tradeHistory, currentPortfolioValue = 0 }: ValueChartProps) {
   const [range, setRange] = useState<TimeRange>('30D');
 
-  const dataPoints = useMemo(
-    () => buildDataPoints(tradeHistory, range),
-    [tradeHistory, range],
-  );
+  const dataPoints = useMemo(() => {
+    const fromTrades = buildDataPoints(tradeHistory, range);
+    if (fromTrades.length > 0) return fromTrades;
+    return buildHoldingsFallback(range, currentPortfolioValue);
+  }, [tradeHistory, range, currentPortfolioValue]);
 
   // Calculate change for the period
   const periodChange = useMemo(() => {

@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import axios from 'axios';
 import clsx from 'clsx';
-import { datadogRum } from '@datadog/browser-rum';
 import { LifeBuoy, Loader2, Send, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useLocation } from 'react-router-dom';
 import { useTheme } from '../../hooks/useTheme';
 import { submitSupportRequest } from '../../lib/api/support';
 import logger from '../../lib/logger';
+import { addRumAction } from '../../lib/rum';
 import { useAuthStore } from '../../store/authStore';
 import type { SupportRequestCategory } from '../../types/support';
 
@@ -118,7 +118,7 @@ export default function SupportWidget() {
   useEffect(() => {
     if (!isOpen) return;
     try {
-      datadogRum.addAction('support_widget_opened', {
+      addRumAction('support_widget_opened', {
         eventName: 'support_widget_opened',
         route: location.pathname,
         isAuthenticated: Boolean(user),
@@ -194,7 +194,7 @@ export default function SupportWidget() {
       await submitSupportRequest(payload);
 
       try {
-        datadogRum.addAction('support_request_submitted', {
+        addRumAction('support_request_submitted', {
           eventName: 'support_request_submitted',
           route: location.pathname,
           category: form.category,

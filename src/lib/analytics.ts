@@ -1,5 +1,5 @@
-import { datadogRum } from '@datadog/browser-rum';
 import logger from './logger';
+import { addRumAction } from './rum';
 import type { HelpLevel } from '../types/auth';
 
 export interface TooltipOpenedAnalyticsEvent {
@@ -12,7 +12,7 @@ export interface TooltipOpenedAnalyticsEvent {
 
 export function trackTooltipOpened(event: TooltipOpenedAnalyticsEvent): void {
   try {
-    datadogRum.addAction('tooltip_opened', {
+    addRumAction('tooltip_opened', {
       eventName: 'tooltip_opened',
       tooltipId: event.tooltipId,
       helpLevel: event.helpLevel,

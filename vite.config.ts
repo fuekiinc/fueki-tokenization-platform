@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     target: 'es2020',
-    sourcemap: true,
+    sourcemap: mode !== 'production',
     cssCodeSplit: true,
     assetsInlineLimit: 4096,
     chunkSizeWarningLimit: 500,
@@ -26,6 +26,8 @@ export default defineConfig(({ mode }) => ({
           ui: ['@headlessui/react', 'lucide-react'],
           web3: ['ethers'],
           charts: ['lightweight-charts', 'recharts'],
+          ocr: ['tesseract.js'],
+          pdf: ['pdfjs-dist'],
         },
       },
     },

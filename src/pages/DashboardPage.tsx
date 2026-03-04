@@ -20,7 +20,7 @@ import { useWallet } from '../hooks/useWallet';
 import { ContractService } from '../lib/blockchain/contracts';
 import { isRetryableRpcError } from '../lib/rpc/endpoints';
 import { retryAsync } from '../lib/utils/retry';
-import { copyToClipboard, formatAddress } from '../lib/utils/helpers';
+import { copyToClipboard, formatAddress, parseTokenAmount } from '../lib/utils/helpers';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 
@@ -318,6 +318,42 @@ export default function DashboardPage() {
       logger.warn('Unable to load exchange orders:', error);
     }
 
+    const resolveFromBlock = async (
+      provider: ethers.Provider,
+      lookbackBlocks: number,
+    ): Promise<number | undefined> => {
+      try {
+        const latest = await provider.getBlockNumber();
+        return Math.max(0, latest - lookbackBlocks);
+      } catch {
+        return undefined;
+      }
+    };
+
+    const queryFilterResilient = async (
+      contract: ethers.Contract,
+      runQuery: (fromBlock?: number) => Promise<Array<ethers.Log | ethers.EventLog>>,
+      lookbackBlocks: number,
+    ): Promise<Array<ethers.Log | ethers.EventLog>> => {
+      try {
+        return await runQuery();
+      } catch (fullRangeError) {
+        logger.warn('Full-range log scan failed, retrying with bounded lookback', {
+          lookbackBlocks,
+          error: fullRangeError,
+        });
+
+        const provider = contract.runner && 'provider' in contract.runner
+          ? (contract.runner as { provider: ethers.Provider }).provider
+          : null;
+        if (!provider) throw fullRangeError;
+
+        const fromBlock = await resolveFromBlock(provider, lookbackBlocks);
+        if (fromBlock === undefined) throw fullRangeError;
+        return runQuery(fromBlock);
+      }
+    };
+
     // Fetch trade history from on-chain events
     // We query three event sources:
     //   1. AssetCreated events from the factory (mint history)
@@ -332,7 +368,14 @@ export default function DashboardPage() {
       try {
         const factory = service.getFactoryContract();
         const mintFilter = factory.filters.AssetCreated(address);
-        const mintEvents = await factory.queryFilter(mintFilter);
+        const mintEvents = await queryFilterResilient(
+          factory,
+          (fromBlock) =>
+            fromBlock === undefined
+              ? factory.queryFilter(mintFilter)
+              : factory.queryFilter(mintFilter, fromBlock),
+          500_000,
+        );
 
         for (const evt of mintEvents) {
           const log = evt as ethers.EventLog;
@@ -374,22 +417,31 @@ export default function DashboardPage() {
       // 2 & 3. Exchange trade history (fills as taker and maker)
       try {
         const exchange = service.getAssetBackedExchangeContract();
-
         const takerFilter = exchange.filters.OrderFilled(null, address);
-        const takerFillEvents = await exchange.queryFilter(takerFilter);
-
-        const makerFilter = exchange.filters.OrderCreated(null, address);
-        const makerEvents = await exchange.queryFilter(makerFilter);
-        const makerOrderIds = new Set(
-          makerEvents.map((e) => ((e as ethers.EventLog).args[0] as bigint).toString()),
+        const takerFillEvents = await queryFilterResilient(
+          exchange,
+          (fromBlock) =>
+            fromBlock === undefined
+              ? exchange.queryFilter(takerFilter)
+              : exchange.queryFilter(takerFilter, fromBlock),
+          300_000,
         );
 
-        const allFillEvents = makerOrderIds.size > 0
-          ? await exchange.queryFilter(exchange.filters.OrderFilled())
-          : [];
-        const makerFillEvents = allFillEvents.filter((e) =>
-          makerOrderIds.has(((e as ethers.EventLog).args[0] as bigint).toString()),
+        const makerOrderIds = await service.getExchangeUserOrders(address);
+        const makerFillEventGroups = await Promise.all(
+          makerOrderIds.map((orderId) => {
+            const filter = exchange.filters.OrderFilled(orderId);
+            return queryFilterResilient(
+              exchange,
+              (fromBlock) =>
+                fromBlock === undefined
+                  ? exchange.queryFilter(filter)
+                  : exchange.queryFilter(filter, fromBlock),
+              500_000,
+            ).catch(() => []);
+          }),
         );
+        const makerFillEvents = makerFillEventGroups.flat();
 
         for (const evt of [...takerFillEvents, ...makerFillEvents]) {
           const log = evt as ethers.EventLog;
@@ -768,7 +820,13 @@ export default function DashboardPage() {
           <PortfolioChart assets={wrappedAssets} />
         </ComponentErrorBoundary>
         <ComponentErrorBoundary name="ValueChart">
-          <ValueChart tradeHistory={tradeHistory} />
+          <ValueChart
+            tradeHistory={tradeHistory}
+            currentPortfolioValue={wrappedAssets.reduce(
+              (sum, asset) => sum + parseTokenAmount(asset.originalValue || '0'),
+              0,
+            )}
+          />
         </ComponentErrorBoundary>
       </div>
 
