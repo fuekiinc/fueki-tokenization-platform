@@ -19,18 +19,7 @@ export default defineConfig(({ mode }) => ({
     assetsInlineLimit: 4096,
     chunkSizeWarningLimit: 500,
     minify: 'esbuild',
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          ui: ['@headlessui/react', 'lucide-react'],
-          web3: ['ethers'],
-          charts: ['lightweight-charts', 'recharts'],
-          ocr: ['tesseract.js'],
-          pdf: ['pdfjs-dist'],
-        },
-      },
-    },
+    rollupOptions: {},
   },
   esbuild: {
     drop: mode === 'production' ? ['console', 'debugger'] : [],

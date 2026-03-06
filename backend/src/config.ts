@@ -13,7 +13,17 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
+}
+
 const isProduction = process.env.NODE_ENV === 'production';
+const kycUploadMaxSizeMb = parsePositiveInt(process.env.KYC_UPLOAD_MAX_SIZE_MB, 20);
 type CookieSameSite = 'strict' | 'lax' | 'none';
 
 function resolveRefreshCookieSameSite(): CookieSameSite {
@@ -111,6 +121,11 @@ export const config = {
   // Local upload fallback (dev only, not used on Cloud Run)
   upload: {
     dir: process.env.UPLOAD_DIR || './uploads',
-    maxSize: 10 * 1024 * 1024, // 10MB
+    // Generic upload limit used for non-KYC uploads (mint requests, etc).
+    maxSize: 10 * 1024 * 1024,
+    // KYC capture payload can include a short live video clip, so allow a
+    // higher file-size ceiling than generic document uploads.
+    kycMaxSizeMb: kycUploadMaxSizeMb,
+    kycMaxSize: kycUploadMaxSizeMb * 1024 * 1024,
   },
 };

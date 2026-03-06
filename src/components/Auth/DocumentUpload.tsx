@@ -259,6 +259,8 @@ export default function DocumentUpload({
                     src={uploaded.previewUrl}
                     alt={`Preview of ${uploaded.file.name}`}
                     className="h-full w-full object-cover"
+                    width={48}
+                    height={48}
                   />
                 ) : (
                   <FileText className="h-6 w-6 text-[var(--text-muted)]" aria-hidden="true" />
@@ -383,6 +385,8 @@ export default function DocumentUpload({
                   src={previewUrl}
                   alt={`Preview of ${selectedFile.name}`}
                   className="h-full w-full object-cover"
+                  width={64}
+                  height={64}
                 />
               ) : (
                 <FileText

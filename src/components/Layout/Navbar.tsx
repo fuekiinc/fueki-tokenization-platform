@@ -395,7 +395,7 @@ function WalletButton({ compact = false }: { compact?: boolean }) {
   const connectedAccountName = address
     ? `${address.slice(0, 6)}...${address.slice(-4)}`
     : 'Connected';
-  const connectedAccountAvatarUrl = `${origin}/fueki-logo.jpg`;
+  const connectedAccountAvatarUrl = `${origin}/fueki-logo.avif`;
 
   return (
     <div className={clsx('wallet-connect-shell', compact && 'w-full')}>

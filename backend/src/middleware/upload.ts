@@ -16,13 +16,14 @@ function normalizeMimeType(rawMimeType: string): string {
 
 const BASE_UPLOAD_CONFIG = {
   storage: multer.memoryStorage(),
-  limits: {
-    fileSize: config.upload.maxSize,
-  },
 } as const;
 
 export const documentUpload = multer({
   ...BASE_UPLOAD_CONFIG,
+  limits: {
+    fileSize: config.upload.kycMaxSize,
+    files: 5,
+  },
   fileFilter: (_req, file, cb) => {
     const normalizedMimeType = normalizeMimeType(file.mimetype);
 
@@ -36,6 +37,9 @@ export const documentUpload = multer({
 
 export const mintApprovalUpload = multer({
   ...BASE_UPLOAD_CONFIG,
+  limits: {
+    fileSize: config.upload.maxSize,
+  },
   fileFilter: (_req, file, cb) => {
     const allowed = [
       'application/json',

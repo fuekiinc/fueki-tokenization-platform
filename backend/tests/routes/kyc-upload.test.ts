@@ -120,4 +120,23 @@ describe('POST /api/kyc/upload-document', () => {
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('INVALID_LIVE_VIDEO_FORMAT');
   });
+
+  it('returns a specific error when a KYC file exceeds the configured upload size', async () => {
+    const app = createApp();
+    const response = await request(app)
+      .post('/api/kyc/upload-document')
+      .field('documentType', 'passport')
+      .attach('documentFront', Buffer.from('front-image-bytes'), {
+        filename: 'front.jpg',
+        contentType: 'image/jpeg',
+      })
+      .attach('liveVideo', Buffer.alloc(21 * 1024 * 1024, 1), {
+        filename: 'live.webm',
+        contentType: 'video/webm',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('UPLOAD_FILE_TOO_LARGE');
+    expect(response.body.error.message).toContain('20 MB');
+  });
 });

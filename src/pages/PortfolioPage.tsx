@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logger from '../lib/logger';
 import { showError } from '../lib/errorUtils';
+import { mapInBatches } from '../lib/utils/asyncBatch';
 import clsx from 'clsx';
 import { useAuthStore } from '../store/authStore';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
@@ -577,9 +578,11 @@ export default function PortfolioPage() {
       const allAddresses: string[] = [];
       try {
         const total = await service.getTotalAssets();
-        const count = Math.min(Number(total), 100);
+        const count = Number(total);
+        const maxScan = Math.min(count, 500);
+        const startIndex = Math.max(0, count - maxScan);
         const BATCH = 5;
-        for (let s = 0; s < count; s += BATCH) {
+        for (let s = startIndex; s < count; s += BATCH) {
           if (gen !== getAssetFetchGeneration()) return;
           const end = Math.min(s + BATCH, count);
           const batch = [];
@@ -600,29 +603,27 @@ export default function PortfolioPage() {
       );
       if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
 
-      const assets: WrappedAsset[] = (
-        await Promise.all(
-          uniqueAddresses.map(async (addr) => {
-            try {
-              const details = await service.getAssetDetails(addr);
-              const balanceWei = await service.getAssetBalance(addr, address);
-              return {
-                address: addr,
-                name: details.name,
-                symbol: details.symbol,
-                totalSupply: details.totalSupply.toString(),
-                balance: balanceWei.toString(),
-                documentHash: details.documentHash,
-                documentType: details.documentType,
-                originalValue: details.originalValue.toString(),
-              };
-            } catch (err) {
-              logger.warn(`Portfolio: skipping asset ${addr}:`, err);
-              return null;
-            }
-          }),
-        )
-      ).filter((a): a is WrappedAsset => a !== null);
+      const assets = (
+        await mapInBatches(uniqueAddresses, 8, async (addr) => {
+          try {
+            const details = await service.getAssetDetails(addr);
+            const balanceWei = await service.getAssetBalance(addr, address);
+            return {
+              address: addr,
+              name: details.name,
+              symbol: details.symbol,
+              totalSupply: details.totalSupply.toString(),
+              balance: balanceWei.toString(),
+              documentHash: details.documentHash,
+              documentType: details.documentType,
+              originalValue: details.originalValue.toString(),
+            } satisfies WrappedAsset;
+          } catch (err) {
+            logger.warn(`Portfolio: skipping asset ${addr}:`, err);
+            return null;
+          }
+        })
+      ).filter((asset): asset is WrappedAsset => asset !== null);
 
       if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
 

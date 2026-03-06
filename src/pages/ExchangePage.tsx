@@ -22,6 +22,7 @@ import { getProvider, useWalletStore } from '../store/walletStore.ts';
 import { getAssetFetchGeneration, nextAssetFetchGeneration, useAssetStore } from '../store/assetStore.ts';
 import { ContractService, getReadOnlyProvider } from '../lib/blockchain/contracts';
 import { retryAsync } from '../lib/utils/retry';
+import { mapInBatches } from '../lib/utils/asyncBatch';
 import logger from '../lib/logger';
 // RPC endpoint imports retained for potential future fallback use.
 import { DEFAULT_SWITCH_CHAIN_IDS, getNetworkMetadata } from '../contracts/addresses';
@@ -237,9 +238,11 @@ export default function ExchangePage() {
       // include assets the user holds but didn't create themselves.
       const allPlatformAddresses: string[] = [];
       try {
-        const count = Math.min(Number(totalAssets), 100);
+        const count = Number(totalAssets);
+        const maxScan = Math.min(count, 500);
+        const startIndex = Math.max(0, count - maxScan);
         const BATCH = 5;
-        for (let s = 0; s < count; s += BATCH) {
+        for (let s = startIndex; s < count; s += BATCH) {
           if (gen !== getAssetFetchGeneration()) return;
           const end = Math.min(s + BATCH, count);
           const batch = [];
@@ -263,19 +266,17 @@ export default function ExchangePage() {
         ...wrappedAssetsRef.current.map((a) => a.address),
       ]);
 
-      // Fetch details and balances for every known asset
-      const assetList: WrappedAsset[] = [];
+      // Fetch details and balances for every known asset in bounded batches.
       let failedCount = 0;
-
-      await Promise.all(
-        Array.from(knownAddresses).map(async (addr) => {
+      const assetList = (
+        await mapInBatches(Array.from(knownAddresses), 8, async (addr) => {
           try {
             const [details, balance] = await Promise.all([
               contractService.getAssetDetails(addr),
               contractService.getAssetBalance(addr, address),
             ]);
 
-            assetList.push({
+            return {
               address: addr,
               name: details.name,
               symbol: details.symbol,
@@ -284,13 +285,14 @@ export default function ExchangePage() {
               documentHash: details.documentHash,
               documentType: details.documentType,
               originalValue: details.originalValue.toString(),
-            });
+            } satisfies WrappedAsset;
           } catch (err) {
             failedCount++;
             logger.error(`Failed to load asset ${addr}:`, err);
+            return null;
           }
-        }),
-      );
+        })
+      ).filter((asset): asset is WrappedAsset => asset !== null);
 
       if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
 

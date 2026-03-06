@@ -32,6 +32,7 @@ import toast from 'react-hot-toast';
 import { ethers } from 'ethers';
 
 import { getProvider, useWalletStore } from '../store/walletStore.ts';
+import { useTradeStore } from '../store/tradeStore.ts';
 import { useWallet } from '../hooks/useWallet.ts';
 import { SecurityTokenFactoryABI } from '../contracts/abis/SecurityTokenFactory.ts';
 import { RESTRICTED_SWAP_BYTECODE, TRANSFER_RULES_BYTECODE } from '../contracts/bytecodes.ts';
@@ -547,6 +548,7 @@ export default function DeployTokenPage() {
   const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
 
   const wallet = useWalletStore((s) => s.wallet);
+  const addTrade = useTradeStore((s) => s.addTrade);
   const {
     isSwitchingNetwork,
     switchNetwork: switchWalletNetwork,
@@ -1090,6 +1092,19 @@ export default function DeployTokenPage() {
           chainId: targetChainId,
         });
       }
+
+      addTrade({
+        id: `security-mint-${receipt.hash}`,
+        type: 'security-mint',
+        asset: form.name.trim(),
+        assetSymbol: form.symbol.trim().toUpperCase(),
+        amount: form.totalSupply || '0',
+        txHash: receipt.hash,
+        timestamp: Date.now(),
+        from: ethers.ZeroAddress,
+        to: wallet.address ?? ethers.ZeroAddress,
+        status: 'confirmed',
+      });
     } catch (err) {
       const msg = parseContractError(err);
       toast.error(msg, { id: 'deploy-tx', duration: 5000 });
@@ -1107,6 +1122,7 @@ export default function DeployTokenPage() {
     targetChainId,
     targetNetwork,
     wallet,
+    addTrade,
   ]);
 
   // -----------------------------------------------------------------------

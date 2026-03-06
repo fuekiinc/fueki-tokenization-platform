@@ -20,6 +20,7 @@ import { useWallet } from '../hooks/useWallet';
 import { ContractService } from '../lib/blockchain/contracts';
 import { isRetryableRpcError } from '../lib/rpc/endpoints';
 import { retryAsync } from '../lib/utils/retry';
+import { mapInBatches } from '../lib/utils/asyncBatch';
 import { copyToClipboard, formatAddress, parseTokenAmount } from '../lib/utils/helpers';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
@@ -128,10 +129,49 @@ export default function DashboardPage() {
     tradeHistoryRef.current = tradeHistory;
   }, [tradeHistory]);
 
+  // Reset wallet-bound dashboard data whenever the active scope changes.
+  // This prevents stale assets/trades from a previous chain or account from
+  // leaking into the next view while fresh RPC data is loading.
+  const dashboardScopeRef = useRef<{ address: string | null; chainId: number | null }>({
+    address: null,
+    chainId: null,
+  });
+
+  useEffect(() => {
+    const normalizedAddress = address?.toLowerCase() ?? null;
+    const previous = dashboardScopeRef.current;
+    const scopeChanged =
+      previous.address !== normalizedAddress || previous.chainId !== chainId;
+
+    if (!scopeChanged) return;
+
+    dashboardScopeRef.current = {
+      address: normalizedAddress,
+      chainId,
+    };
+
+    // Invalidate any in-flight asset fetch started on the previous scope.
+    nextAssetFetchGeneration();
+
+    setAssets([]);
+    setUserOrders([]);
+    setTrades([]);
+    setLoadError(null);
+
+    if (isConnected && chainId) {
+      setIsInitialLoading(true);
+    }
+  }, [address, chainId, isConnected, setAssets, setTrades, setUserOrders]);
+
   const fetchData = useCallback(async () => {
     setLoadError(null);
 
-    if (!isConnected || !address || !chainId || isSwitchingNetwork) {
+    if (isSwitchingNetwork) {
+      setIsInitialLoading(true);
+      return;
+    }
+
+    if (!isConnected || !address || !chainId) {
       setIsInitialLoading(false);
       return;
     }
@@ -201,11 +241,12 @@ export default function DashboardPage() {
         const allPlatformAddresses: string[] = [];
         try {
           const count = Number(totalAssetCount);
-          const maxScan = Math.min(count, 100);
+          const maxScan = Math.min(count, 500);
+          const startIndex = Math.max(0, count - maxScan);
           const BATCH_SIZE = 5;
-          for (let start = 0; start < maxScan; start += BATCH_SIZE) {
+          for (let start = startIndex; start < count; start += BATCH_SIZE) {
             if (gen !== getAssetFetchGeneration()) return;
-            const end = Math.min(start + BATCH_SIZE, maxScan);
+            const end = Math.min(start + BATCH_SIZE, count);
             const batch = [];
             for (let i = start; i < end; i++) {
               batch.push(service.getAssetAtIndex(i).catch(() => null));
@@ -227,16 +268,15 @@ export default function DashboardPage() {
           ...wrappedAssetsRef.current.map((a) => a.address),
         ]);
 
-        // Fetch details + user balance for each asset in parallel
-        const assetList: import('../types').WrappedAsset[] = [];
-        await Promise.all(
-          Array.from(knownAddresses).map(async (addr) => {
+        // Fetch details in bounded batches to avoid RPC thundering-herd spikes.
+        const assetList = (
+          await mapInBatches(Array.from(knownAddresses), 8, async (addr) => {
             try {
               const [details, balance] = await Promise.all([
                 service.getAssetDetails(addr),
                 service.getAssetBalance(addr, address),
               ]);
-              assetList.push({
+              return {
                 address: addr,
                 name: details.name,
                 symbol: details.symbol,
@@ -245,12 +285,13 @@ export default function DashboardPage() {
                 documentHash: details.documentHash,
                 documentType: details.documentType,
                 originalValue: details.originalValue.toString(),
-              });
+              } satisfies import('../types').WrappedAsset;
             } catch (error) {
               logger.warn(`Skipping asset ${addr}:`, error);
+              return null;
             }
-          }),
-        );
+          })
+        ).filter((asset): asset is import('../types').WrappedAsset => asset !== null);
         if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
         setAssets(assetList);
       }
@@ -413,9 +454,99 @@ export default function DashboardPage() {
         logger.warn('Unable to load mint history:', error);
       }
 
-      // 2 & 3. Exchange trade history (fills as taker and maker)
+      // 2. Security-token deployment history — query SecurityTokenCreated events
+      try {
+        const securityFactory = service.getSecurityTokenFactoryContract();
+        const securityMintFilter = securityFactory.filters.SecurityTokenCreated(address);
+        const securityMintEvents = await queryFilterResilient(
+          securityFactory,
+          (fromBlock) =>
+            fromBlock === undefined
+              ? securityFactory.queryFilter(securityMintFilter)
+              : securityFactory.queryFilter(securityMintFilter, fromBlock),
+          500_000,
+        );
+
+        for (const evt of securityMintEvents) {
+          const log = evt as ethers.EventLog;
+          const txKey = `security-mint-${log.transactionHash}`;
+          if (seenTx.has(txKey)) continue;
+          seenTx.add(txKey);
+
+          let timestampMs = Date.now();
+          try {
+            const block = await log.getBlock();
+            if (block) timestampMs = block.timestamp * 1000;
+          } catch { /* use current time as fallback */ }
+
+          const name = String(log.args[3] ?? 'Security Token');
+          const symbol = String(log.args[4] ?? 'ST');
+          const totalSupply = log.args[5] as bigint;
+
+          trades.push({
+            id: txKey,
+            type: 'security-mint',
+            asset: name,
+            assetSymbol: symbol,
+            amount: ethers.formatUnits(totalSupply, 18),
+            txHash: log.transactionHash,
+            timestamp: timestampMs,
+            from: ethers.ZeroAddress,
+            to: address,
+            status: 'confirmed',
+          });
+        }
+      } catch (error) {
+        logger.warn('Unable to load security-token mint history:', error);
+      }
+
+      // 3, 4 & 5. Exchange history:
+      //   3) OrderCreated as maker
+      //   4) OrderFilled as taker
+      //   5) OrderFilled for maker orders
       try {
         const exchange = service.getAssetBackedExchangeContract();
+        const orderCreatedFilter = exchange.filters.OrderCreated(null, address);
+        const orderCreatedEvents = await queryFilterResilient(
+          exchange,
+          (fromBlock) =>
+            fromBlock === undefined
+              ? exchange.queryFilter(orderCreatedFilter)
+              : exchange.queryFilter(orderCreatedFilter, fromBlock),
+          300_000,
+        );
+
+        for (const evt of orderCreatedEvents) {
+          const log = evt as ethers.EventLog;
+          const txKey = `order-${log.transactionHash}`;
+          if (seenTx.has(txKey)) continue;
+          seenTx.add(txKey);
+
+          const orderId = log.args[0] as bigint;
+          const tokenSell = String(log.args[2] ?? '');
+          const tokenBuy = String(log.args[3] ?? '');
+          const amountSell = log.args[4] as bigint;
+
+          let timestampMs = Date.now();
+          try {
+            const block = await log.getBlock();
+            if (block) timestampMs = block.timestamp * 1000;
+          } catch { /* use current time as fallback */ }
+
+          trades.push({
+            id: txKey,
+            type: 'exchange',
+            asset: `Order #${orderId.toString()}`,
+            assetSymbol: 'ORDER',
+            amount: ethers.formatUnits(amountSell, 18),
+            txHash: log.transactionHash,
+            timestamp: timestampMs,
+            from: tokenSell,
+            to: tokenBuy,
+            status: 'confirmed',
+          });
+        }
+
         const takerFilter = exchange.filters.OrderFilled(null, address);
         const takerFillEvents = await queryFilterResilient(
           exchange,
@@ -479,10 +610,16 @@ export default function DashboardPage() {
 
       // Merge with existing in-memory trade history
       const existing = tradeHistoryRef.current;
-      const existingIds = new Set(existing.map((t) => t.id));
+      const existingKeys = new Set(
+        existing.map((t) => `${t.type}:${t.txHash.toLowerCase()}:${t.status}`),
+      );
       const merged = [...existing];
       for (const t of trades) {
-        if (!existingIds.has(t.id)) merged.push(t);
+        const key = `${t.type}:${t.txHash.toLowerCase()}:${t.status}`;
+        if (!existingKeys.has(key)) {
+          existingKeys.add(key);
+          merged.push(t);
+        }
       }
       merged.sort((a, b) => b.timestamp - a.timestamp);
       setTrades(merged);
@@ -539,6 +676,10 @@ export default function DashboardPage() {
   }
 
   // ---- Not connected state -------------------------------------------------
+
+  if (isSwitchingNetwork) {
+    return <DashboardSkeleton />;
+  }
 
   if (!isConnected) {
     return (

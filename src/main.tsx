@@ -2,7 +2,6 @@ import { Component, StrictMode } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import { ThirdwebProvider } from 'thirdweb/react'
 import './index.css'
 import App from './App'
 import logger from './lib/logger'
@@ -25,6 +24,48 @@ function isLikelyExtensionNoise(message: string, filename?: string) {
 
 // Delay telemetry boot so app interactivity (LCP/TTI) is prioritized.
 initRumDeferred(1500)
+
+function loadBrandFontsDeferred(delayMs = 1500) {
+  if (typeof document === 'undefined') return
+  if (document.querySelector('link[data-fueki-fonts]')) return
+
+  const href = 'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap'
+
+  const inject = () => {
+    if (document.querySelector('link[data-fueki-fonts]')) return
+    const preconnectApi = document.createElement('link')
+    preconnectApi.rel = 'preconnect'
+    preconnectApi.href = 'https://fonts.googleapis.com'
+    preconnectApi.setAttribute('data-fueki-fonts', 'true')
+
+    const preconnectStatic = document.createElement('link')
+    preconnectStatic.rel = 'preconnect'
+    preconnectStatic.href = 'https://fonts.gstatic.com'
+    preconnectStatic.crossOrigin = 'anonymous'
+    preconnectStatic.setAttribute('data-fueki-fonts', 'true')
+
+    const stylesheet = document.createElement('link')
+    stylesheet.rel = 'stylesheet'
+    stylesheet.href = href
+    stylesheet.media = 'print'
+    stylesheet.onload = () => {
+      stylesheet.media = 'all'
+    }
+    stylesheet.setAttribute('data-fueki-fonts', 'true')
+
+    document.head.append(preconnectApi, preconnectStatic, stylesheet)
+  }
+
+  window.setTimeout(() => {
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(() => inject(), { timeout: 1500 })
+      return
+    }
+    inject()
+  }, delayMs)
+}
+
+loadBrandFontsDeferred()
 
 // ---------------------------------------------------------------------------
 // Global error handlers
@@ -286,11 +327,9 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, EBState> {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <RootErrorBoundary>
-      <ThirdwebProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </ThirdwebProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
     </RootErrorBoundary>
   </StrictMode>,
 )

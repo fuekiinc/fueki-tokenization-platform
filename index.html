@@ -5,17 +5,72 @@
     <link rel="icon" type="image/jpeg" href="/fueki-logo.jpg" />
     <link rel="shortcut icon" href="/fueki-logo.jpg" />
     <link rel="apple-touch-icon" href="/fueki-logo.jpg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="preload"
+      as="image"
+      href="/fueki-logo-320.avif"
+      type="image/avif"
+      fetchpriority="high"
     />
+    <meta name="theme-color" content="#06070A" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Fueki is a tokenization platform for minting assets, trading, security tokens, and DeFi operations across supported blockchain networks."
+    />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://fueki-tech.com/" />
+    <style>
+      #boot-shell {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #06070a;
+        color: #a7c0d3;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      #boot-shell .inner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+      #boot-shell .logo {
+        width: 80px;
+        height: 79px;
+        filter: drop-shadow(0 20px 44px rgba(8, 24, 38, 0.45));
+      }
+      #boot-shell .label {
+        font-size: 14px;
+        letter-spacing: 0.01em;
+      }
+    </style>
     <title>Fueki</title>
   </head>
   <body style="background:#06070A;">
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot-shell" aria-label="Loading Fueki">
+        <div class="inner">
+          <picture>
+            <source srcset="/fueki-logo-160.avif 160w, /fueki-logo-320.avif 320w" type="image/avif" sizes="80px" />
+            <img
+              src="/fueki-logo-160.jpg"
+              srcset="/fueki-logo-160.jpg 160w, /fueki-logo-320.jpg 320w"
+              sizes="80px"
+              alt="Fueki logo"
+              width="80"
+              height="79"
+              class="logo"
+              fetchpriority="high"
+              decoding="async"
+            />
+          </picture>
+          <p class="label">Loading Fueki...</p>
+        </div>
+      </div>
+    </div>
+    <script src="/runtime-env.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

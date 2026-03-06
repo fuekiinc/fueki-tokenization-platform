@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Response, Router } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
@@ -135,6 +136,48 @@ function normalizeKycStatus(raw: string): 'not_submitted' | 'pending' | 'approve
   return 'not_submitted';
 }
 
+function isPrismaUniqueConstraintError(
+  err: unknown,
+  targetField?: string,
+): boolean {
+  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    if (err.code !== 'P2002') return false;
+
+    if (!targetField) return true;
+
+    const target = err.meta?.target;
+    if (Array.isArray(target)) {
+      return target.includes(targetField);
+    }
+    if (typeof target === 'string') {
+      return target.includes(targetField);
+    }
+
+    return true;
+  }
+
+  const maybeErr = err as {
+    code?: unknown;
+    meta?: { target?: unknown };
+  };
+
+  if (maybeErr.code !== 'P2002') {
+    return false;
+  }
+
+  if (!targetField) return true;
+
+  const target = maybeErr.meta?.target;
+  if (Array.isArray(target)) {
+    return target.includes(targetField);
+  }
+  if (typeof target === 'string') {
+    return target.includes(targetField);
+  }
+
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/auth/register
 // ---------------------------------------------------------------------------
@@ -174,6 +217,10 @@ router.post('/register', async (req, res) => {
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: { message: err.errors[0].message, code: 'VALIDATION_ERROR' } });
+      return;
+    }
+    if (isPrismaUniqueConstraintError(err, 'email')) {
+      res.status(409).json({ error: { message: 'An account with this email already exists', code: 'EMAIL_EXISTS' } });
       return;
     }
     console.error('Register error:', err);

@@ -28,14 +28,25 @@ import {
 // Google Maps loader (singleton – avoids loading the script twice)
 // ---------------------------------------------------------------------------
 
-const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+type RuntimeEnvWindow = Window & {
+  __FUEKI_RUNTIME_ENV__?: Record<string, string>;
+};
+
+function resolveGoogleApiKey(): string {
+  if (typeof window !== 'undefined') {
+    const runtimeKey = (window as RuntimeEnvWindow).__FUEKI_RUNTIME_ENV__?.VITE_GOOGLE_MAPS_API_KEY;
+    if (typeof runtimeKey === 'string' && runtimeKey.trim()) return runtimeKey.trim();
+  }
+  const buildKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  return typeof buildKey === 'string' ? buildKey.trim() : '';
+}
 
 let loaderPromise: Promise<void> | null = null;
 
-function ensurePlacesApi(): Promise<void> {
-  if (!GOOGLE_API_KEY) return Promise.resolve();
+function ensurePlacesApi(apiKey: string): Promise<void> {
+  if (!apiKey) return Promise.resolve();
   if (loaderPromise) return loaderPromise;
-  setOptions({ key: GOOGLE_API_KEY });
+  setOptions({ key: apiKey });
   loaderPromise = importLibrary('places').then(() => {});
   return loaderPromise;
 }
@@ -118,6 +129,7 @@ interface AddressStepProps {
 // ---------------------------------------------------------------------------
 
 export default function AddressStep({ defaultValues, onNext, onBack }: AddressStepProps) {
+  const googleApiKey = resolveGoogleApiKey();
   const {
     register,
     handleSubmit,
@@ -136,10 +148,32 @@ export default function AddressStep({ defaultValues, onNext, onBack }: AddressSt
   });
 
   const [apiReady, setApiReady] = useState(false);
+  const [apiLoadError, setApiLoadError] = useState(false);
 
   useEffect(() => {
-    ensurePlacesApi().then(() => setApiReady(true));
-  }, []);
+    if (!googleApiKey) return;
+
+    let cancelled = false;
+
+    ensurePlacesApi(googleApiKey)
+      .then(() => {
+        if (cancelled) return;
+        setApiReady(true);
+        setApiLoadError(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setApiReady(false);
+        setApiLoadError(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [googleApiKey]);
+
+  const showPlacesAutocomplete = Boolean(googleApiKey) && apiReady && !apiLoadError;
+  const showManualAddressNotice = !googleApiKey || apiLoadError;
 
   const onSubmit = handleSubmit((values) => {
     onNext(values);
@@ -153,7 +187,7 @@ export default function AddressStep({ defaultValues, onNext, onBack }: AddressSt
           Street address
           <span className="ml-0.5 text-red-400" aria-hidden="true">*</span>
         </label>
-        {apiReady && GOOGLE_API_KEY ? (
+        {showPlacesAutocomplete ? (
           <PlacesInput
             defaultValue={defaultValues?.addressLine1 ?? ''}
             error={!!errors.addressLine1}
@@ -181,6 +215,11 @@ export default function AddressStep({ defaultValues, onNext, onBack }: AddressSt
               {...register('addressLine1')}
             />
           </div>
+        )}
+        {showManualAddressNotice && (
+          <p className="mt-2 text-xs text-[var(--text-muted)]" role="status">
+            Address autocomplete is unavailable right now. You can still enter your address manually.
+          </p>
         )}
         {errors.addressLine1 && (
           <p id="signup-addressLine1-error" role="alert" className={ERROR_TEXT}>

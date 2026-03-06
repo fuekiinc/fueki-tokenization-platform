@@ -1,8 +1,9 @@
-import { Router } from 'express';
+import { Response, Router } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
 import { authenticate } from '../middleware/auth';
 import { documentUpload } from '../middleware/upload';
+import { config } from '../config';
 import { getKYCStatus, saveEncryptedDocument, submitKYC } from '../services/kyc';
 
 const router = Router();
@@ -22,6 +23,33 @@ const VIDEO_MIME_TYPES = new Set(['video/webm', 'video/mp4', 'video/quicktime'])
 
 function normalizeMimeType(rawMimeType: string): string {
   return rawMimeType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+}
+
+function formatKycUploadSizeMb(): string {
+  return `${config.upload.kycMaxSizeMb} MB`;
+}
+
+function respondUploadError(res: Response, err: multer.MulterError | Error) {
+  if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+    res.status(400).json({
+      error: {
+        message: `Upload failed: each KYC file must be ${formatKycUploadSizeMb()} or smaller.`,
+        code: 'UPLOAD_FILE_TOO_LARGE',
+      },
+    });
+    return;
+  }
+
+  const message = err instanceof multer.MulterError
+    ? `Upload failed: ${err.message}`
+    : err.message;
+
+  res.status(400).json({
+    error: {
+      message,
+      code: 'UPLOAD_ERROR',
+    },
+  });
 }
 
 const kycSchema = z.object({
@@ -114,22 +142,12 @@ router.post(
       }
 
       if (err instanceof multer.MulterError) {
-        res.status(400).json({
-          error: {
-            message: `Upload failed: ${err.message}`,
-            code: 'UPLOAD_ERROR',
-          },
-        });
+        respondUploadError(res, err);
         return;
       }
 
       if (err instanceof Error) {
-        res.status(400).json({
-          error: {
-            message: err.message,
-            code: 'UPLOAD_ERROR',
-          },
-        });
+        respondUploadError(res, err);
         return;
       }
 
@@ -177,11 +195,14 @@ router.post(
         return;
       }
 
-      const [documentFrontPath, documentBackPath, liveVideoPath] = await Promise.all([
-        saveEncryptedDocument(documentFront, req.userId!),
-        documentBack ? saveEncryptedDocument(documentBack, req.userId!) : Promise.resolve<string | null>(null),
-        saveEncryptedDocument(liveVideo, req.userId!),
-      ]);
+      // Save sequentially to reduce peak memory pressure: each save performs
+      // encryption and buffering, so parallelizing 3 large files can spike RAM
+      // under concurrent traffic.
+      const documentFrontPath = await saveEncryptedDocument(documentFront, req.userId!);
+      const documentBackPath = documentBack
+        ? await saveEncryptedDocument(documentBack, req.userId!)
+        : null;
+      const liveVideoPath = await saveEncryptedDocument(liveVideo, req.userId!);
 
       const uploadedAt = new Date().toISOString();
 
@@ -210,7 +231,7 @@ router.post(
     } catch (err) {
       if (err instanceof multer.MulterError) {
         console.error('Multer error:', err);
-        res.status(400).json({ error: { message: `Upload failed: ${err.message}`, code: 'UPLOAD_ERROR' } });
+        respondUploadError(res, err);
         return;
       }
       console.error('Upload error:', err);

@@ -163,7 +163,7 @@ export function getThirdwebAppMetadata() {
     name: 'Fueki Tokenization Platform',
     url: origin,
     description: 'Enterprise-grade real-world asset tokenization and exchange.',
-    logoUrl: `${origin}/fueki-logo.jpg`,
+    logoUrl: `${origin}/fueki-logo.avif`,
   };
 }
 

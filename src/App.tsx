@@ -1,6 +1,5 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import Layout from './components/Layout/Layout'
 import AuthLayout from './components/Layout/AuthLayout'
 import ProtectedRoute, { AuthRedirect } from './components/Auth/ProtectedRoute'
 import { useAuthStore } from './store/authStore'
@@ -25,6 +24,10 @@ function lazyWithRetry(factory: () => Promise<{ default: React.ComponentType }>)
 }
 
 // Lazy-load all page components for better initial bundle size
+const ThirdwebProvider = lazyWithRetry(() =>
+  import('thirdweb/react').then((module) => ({ default: module.ThirdwebProvider })),
+) as React.ComponentType<React.PropsWithChildren<unknown>>
+const Layout = lazyWithRetry(() => import('./components/Layout/Layout'))
 const DashboardPage = lazyWithRetry(() => import('./pages/DashboardPage'))
 const MintPage = lazyWithRetry(() => import('./pages/MintPage'))
 const ExchangePage = lazyWithRetry(() => import('./pages/ExchangePage'))
@@ -131,26 +134,54 @@ function RouteAnnouncer() {
   return null;
 }
 
-function shouldEnableWalletRuntime(pathname: string) {
-  if (
-    pathname === '/login' ||
-    pathname === '/signup' ||
-    pathname === '/forgot-password' ||
-    pathname === '/reset-password' ||
-    pathname === '/pending-approval' ||
-    pathname === '/terms' ||
-    pathname === '/privacy' ||
-    pathname === '/explore'
-  ) {
-    return false
+function ProtectedShell() {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <ThirdwebProvider>
+        <Layout />
+        <WalletRuntime />
+      </ThirdwebProvider>
+    </Suspense>
+  )
+}
+
+function DeferredSupportWidget() {
+  const [shouldLoad, setShouldLoad] = useState(false)
+
+  useEffect(() => {
+    if (shouldLoad) return
+
+    const loadWidget = () => {
+      setShouldLoad(true)
+    }
+
+    const timeoutId = window.setTimeout(loadWidget, 3500)
+    window.addEventListener('pointerdown', loadWidget, { once: true, passive: true })
+    window.addEventListener('touchstart', loadWidget, { once: true, passive: true })
+    window.addEventListener('scroll', loadWidget, { once: true, passive: true })
+    window.addEventListener('keydown', loadWidget, { once: true })
+
+    return () => {
+      window.clearTimeout(timeoutId)
+      window.removeEventListener('pointerdown', loadWidget)
+      window.removeEventListener('touchstart', loadWidget)
+      window.removeEventListener('scroll', loadWidget)
+      window.removeEventListener('keydown', loadWidget)
+    }
+  }, [shouldLoad])
+
+  if (!shouldLoad) {
+    return null
   }
-  return true
+
+  return (
+    <Suspense fallback={null}>
+      <SupportWidget />
+    </Suspense>
+  )
 }
 
 export default function App() {
-  const location = useLocation()
-  const enableWalletRuntime = shouldEnableWalletRuntime(location.pathname)
-
   return (
     <AuthInitializer>
       {/* Skip to main content link -- WCAG 2.1 criterion 2.4.1 */}
@@ -190,7 +221,7 @@ export default function App() {
 
         {/* Protected app pages - with navbar */}
         <Route element={<ProtectedRoute />}>
-          <Route element={<Layout />}>
+          <Route element={<ProtectedShell />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
             <Route path="mint" element={<Suspense fallback={<PageLoader />}><MintPage /></Suspense>} />
@@ -215,15 +246,7 @@ export default function App() {
         <Route path="*" element={<Suspense fallback={<PageLoader />}><NotFoundPage /></Suspense>} />
       </Routes>
 
-      {enableWalletRuntime && (
-        <Suspense fallback={null}>
-          <WalletRuntime />
-        </Suspense>
-      )}
-
-      <Suspense fallback={null}>
-        <SupportWidget />
-      </Suspense>
+      <DeferredSupportWidget />
     </AuthInitializer>
   )
 }

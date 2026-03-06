@@ -11,6 +11,13 @@ import {
 import { parseMediaError, pickSupportedVideoMimeType } from './captureUtils';
 
 const LIVE_SCAN_SECONDS = 10;
+const LIVE_SCAN_MAX_SIZE_BYTES = 20 * 1024 * 1024;
+const LIVE_SCAN_MAX_SIZE_MB = LIVE_SCAN_MAX_SIZE_BYTES / (1024 * 1024);
+const LIVE_SCAN_VIDEO_BITS_PER_SECOND = 900_000;
+
+function formatMegabytes(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 interface LiveVideoCaptureCardProps {
   title: string;
@@ -110,8 +117,8 @@ export default function LiveVideoCaptureCard({
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'user',
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 960, max: 1280 },
+          height: { ideal: 540, max: 720 },
         },
         audio: false,
       });
@@ -123,9 +130,16 @@ export default function LiveVideoCaptureCard({
       }
 
       const mimeType = pickSupportedVideoMimeType();
-      const recorder = mimeType
-        ? new MediaRecorder(stream, { mimeType })
-        : new MediaRecorder(stream);
+      let recorder: MediaRecorder;
+      try {
+        recorder = mimeType
+          ? new MediaRecorder(stream, { mimeType, videoBitsPerSecond: LIVE_SCAN_VIDEO_BITS_PER_SECOND })
+          : new MediaRecorder(stream, { videoBitsPerSecond: LIVE_SCAN_VIDEO_BITS_PER_SECOND });
+      } catch {
+        recorder = mimeType
+          ? new MediaRecorder(stream, { mimeType })
+          : new MediaRecorder(stream);
+      }
 
       recorderRef.current = recorder;
       chunksRef.current = [];
@@ -148,7 +162,11 @@ export default function LiveVideoCaptureCard({
           })
           : null;
 
-        if (shouldPersist && blob && blob.size > 0) {
+        if (shouldPersist && blob && blob.size > LIVE_SCAN_MAX_SIZE_BYTES) {
+          setCameraError(
+            `Recorded clip is ${formatMegabytes(blob.size)}, which exceeds the ${LIVE_SCAN_MAX_SIZE_MB} MB limit. Record again with steadier framing and good lighting.`,
+          );
+        } else if (shouldPersist && blob && blob.size > 0) {
           const extension = blob.type.includes('mp4')
             ? 'mp4'
             : blob.type.includes('quicktime')
@@ -322,7 +340,7 @@ export default function LiveVideoCaptureCard({
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
         <span>
           Hold your government ID next to your face and remain clearly visible for the full{' '}
-          {`${LIVE_SCAN_SECONDS}-second`} scan.
+          {`${LIVE_SCAN_SECONDS}-second`} scan. Keep the clip under {LIVE_SCAN_MAX_SIZE_MB} MB.
         </span>
       </p>
 

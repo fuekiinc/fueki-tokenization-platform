@@ -17,6 +17,8 @@ import type { TradeHistory } from '../types/index.ts';
 
 /** localStorage key for persisted slippage tolerance. */
 const SLIPPAGE_PERSISTENCE_KEY = 'fueki:trade:slippage';
+/** localStorage key for persisted recent trade history. */
+const TRADE_HISTORY_PERSISTENCE_KEY = 'fueki:trade:history:v1';
 
 /** Default slippage tolerance (0.5%). */
 const DEFAULT_SLIPPAGE_BPS = 50;
@@ -83,6 +85,51 @@ function saveSlippage(bps: number): void {
   }
 }
 
+function isValidTradeHistoryEntry(value: unknown): value is TradeHistory {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<TradeHistory>;
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.type === 'string' &&
+    typeof candidate.asset === 'string' &&
+    typeof candidate.assetSymbol === 'string' &&
+    typeof candidate.amount === 'string' &&
+    typeof candidate.txHash === 'string' &&
+    typeof candidate.timestamp === 'number' &&
+    typeof candidate.from === 'string' &&
+    typeof candidate.to === 'string' &&
+    (candidate.status === 'pending' ||
+      candidate.status === 'confirmed' ||
+      candidate.status === 'failed')
+  );
+}
+
+function loadTradeHistory(): TradeHistory[] {
+  try {
+    const raw = localStorage.getItem(TRADE_HISTORY_PERSISTENCE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(isValidTradeHistoryEntry)
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, MAX_RECENT_TRADES);
+  } catch {
+    return [];
+  }
+}
+
+function saveTradeHistory(trades: TradeHistory[]): void {
+  try {
+    localStorage.setItem(
+      TRADE_HISTORY_PERSISTENCE_KEY,
+      JSON.stringify(trades.slice(0, MAX_RECENT_TRADES)),
+    );
+  } catch {
+    // localStorage may be unavailable
+  }
+}
+
 // ---------------------------------------------------------------------------
 // State & Actions interfaces
 // ---------------------------------------------------------------------------
@@ -122,7 +169,7 @@ export type TradeStore = TradeState & TradeActions;
 // ---------------------------------------------------------------------------
 
 const initialTradesState: TradeState = {
-  tradeHistory: [],
+  tradeHistory: loadTradeHistory(),
   isLoadingTrades: false,
   tradesError: null,
   slippageBps: loadSlippage(),
@@ -141,25 +188,30 @@ export const useTradeStore = create<TradeStore>()((set, get) => ({
     const trimmed = trades.length > MAX_RECENT_TRADES
       ? trades.slice(0, MAX_RECENT_TRADES)
       : trades;
+    saveTradeHistory(trimmed);
     set({ tradeHistory: trimmed, tradesError: null });
   },
 
   addTrade: (trade) =>
     set((state) => {
       const updated = [trade, ...state.tradeHistory];
+      const trimmed = updated.length > MAX_RECENT_TRADES
+        ? updated.slice(0, MAX_RECENT_TRADES)
+        : updated;
+      saveTradeHistory(trimmed);
       return {
-        tradeHistory: updated.length > MAX_RECENT_TRADES
-          ? updated.slice(0, MAX_RECENT_TRADES)
-          : updated,
+        tradeHistory: trimmed,
       };
     }),
 
   updateTrade: (id, partial) =>
-    set((state) => ({
-      tradeHistory: state.tradeHistory.map((t) =>
+    set((state) => {
+      const updated = state.tradeHistory.map((t) =>
         t.id === id ? { ...t, ...partial } : t,
-      ),
-    })),
+      );
+      saveTradeHistory(updated);
+      return { tradeHistory: updated };
+    }),
 
   setLoadingTrades: (loading) => set({ isLoadingTrades: loading }),
 

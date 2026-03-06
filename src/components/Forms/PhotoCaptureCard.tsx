@@ -164,6 +164,8 @@ export default function PhotoCaptureCard({
               src={previewUrl}
               alt={`${title} preview`}
               className="max-h-56 w-full object-contain"
+              width={950}
+              height={935}
             />
           </div>
           <div className="flex flex-wrap gap-2">

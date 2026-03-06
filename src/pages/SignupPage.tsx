@@ -31,6 +31,7 @@ const EMPTY_IDENTITY_CAPTURE_STATE: KYCIdentityCaptureState = {
   liveVideoFile: null,
   liveVideoPreview: null,
 };
+const MAX_KYC_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 
 function revokePreview(previewUrl: string | null) {
   if (previewUrl && previewUrl.startsWith('blob:')) {
@@ -226,6 +227,10 @@ export default function SignupPage() {
 
     if (!liveVideo) {
       toast.error('Please complete the live scan video to continue.');
+      return;
+    }
+    if (liveVideo.size > MAX_KYC_FILE_SIZE_BYTES) {
+      toast.error('Live scan video is too large. Please retake it and keep it under 20 MB.');
       return;
     }
 

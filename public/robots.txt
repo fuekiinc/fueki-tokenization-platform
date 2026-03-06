@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://fueki-tech.com/sitemap.xml

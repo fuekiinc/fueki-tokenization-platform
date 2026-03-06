@@ -129,4 +129,23 @@ describe('POST /api/auth/register', () => {
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
     expect(mocks.prisma.user.create).not.toHaveBeenCalled();
   });
+
+  it('returns 409 when create hits a unique email race (P2002)', async () => {
+    mocks.prisma.user.findUnique.mockResolvedValue(null);
+    mocks.prisma.user.create.mockRejectedValue({
+      code: 'P2002',
+      meta: { target: ['email'] },
+    });
+
+    const app = createApp();
+    const response = await request(app)
+      .post('/api/auth/register')
+      .send({
+        email: 'racing.user@example.com',
+        password: 'StrongPass1!',
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('EMAIL_EXISTS');
+  });
 });
