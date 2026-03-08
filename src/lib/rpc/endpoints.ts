@@ -89,17 +89,20 @@ function endpointKey(chainId: number, url: string): string {
 }
 
 function getEnvValue(name: string): string {
+  // In Node/test contexts, allow process env overrides to take precedence.
+  // Browser builds still rely on import.meta.env because process is unavailable.
+  if (typeof process !== 'undefined') {
+    const processRaw = process.env?.[name];
+    if (typeof processRaw === 'string' && processRaw.trim().length > 0) {
+      return processRaw.trim();
+    }
+  }
+
   const env = (import.meta as ImportMeta & {
     env?: Record<string, unknown>;
   }).env;
   const raw = env?.[name];
   if (typeof raw === 'string') return raw.trim();
-
-  // Test/runtime fallback when import.meta.env is not populated.
-  if (typeof process !== 'undefined') {
-    const processRaw = process.env?.[name];
-    if (typeof processRaw === 'string') return processRaw.trim();
-  }
 
   return '';
 }

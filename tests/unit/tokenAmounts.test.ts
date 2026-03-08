@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { parseTokenAmount } from '../../src/lib/tokenAmounts';
 
 function assertClose(actual: number, expected: number, tolerance = 1e-12): void {

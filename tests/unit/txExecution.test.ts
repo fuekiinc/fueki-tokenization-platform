@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { ethers } from 'ethers';
 import { sendTransactionWithRetry } from '../../src/lib/blockchain/txExecution';
 

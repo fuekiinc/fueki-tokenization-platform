@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { normalizeKycStatus } from '../../src/lib/auth/kycStatus';
 
 test('normalizeKycStatus keeps canonical statuses intact', () => {

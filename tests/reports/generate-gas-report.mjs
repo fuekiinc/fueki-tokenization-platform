@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 
 const hardhatGasFile = 'gas-report.txt';
+const hardhatGasJsonFile = 'gasReporterOutput.json';
 const forgeSnapshotFile = 'tests/reports/forge-gas-snapshot.txt';
 
 const targets = {
@@ -86,6 +87,49 @@ function parseHardhatReport(filePath) {
   };
 }
 
+function parseHardhatJson(filePath) {
+  if (!fs.existsSync(filePath)) return { available: false, methods: [] };
+  try {
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const methodMap = raw?.data?.methods ?? {};
+    const methods = Object.values(methodMap)
+      .filter(
+        (entry) =>
+          entry &&
+          typeof entry === 'object' &&
+          Array.isArray(entry.gasData) &&
+          entry.gasData.length > 0,
+      )
+      .map((entry) => ({
+        contract: entry.contract ?? null,
+        method: entry.method ?? null,
+        fnSig: entry.fnSig ?? null,
+        avgGas:
+          typeof entry.executionGasAverage === 'number'
+            ? entry.executionGasAverage
+            : parseIntSafe(String(entry.executionGasAverage ?? '')),
+        minGas: typeof entry.min === 'number' ? entry.min : parseIntSafe(String(entry.min ?? '')),
+        maxGas: typeof entry.max === 'number' ? entry.max : parseIntSafe(String(entry.max ?? '')),
+        numberOfCalls:
+          typeof entry.numberOfCalls === 'number'
+            ? entry.numberOfCalls
+            : parseIntSafe(String(entry.numberOfCalls ?? '')),
+      }));
+    return {
+      available: true,
+      path: filePath,
+      methods,
+    };
+  } catch {
+    return {
+      available: true,
+      path: filePath,
+      parseError: true,
+      methods: [],
+    };
+  }
+}
+
 function firstMatchingGas(rows, candidates) {
   for (const row of rows) {
     const rowName = row.name?.toLowerCase() ?? '';
@@ -111,6 +155,7 @@ function evaluate(measured, limit) {
 const report = {
   generatedAt: new Date().toISOString(),
   hardhat: parseHardhatReport(hardhatGasFile),
+  hardhatJson: parseHardhatJson(hardhatGasJsonFile),
   forge: parseForgeSnapshot(forgeSnapshotFile),
   targets,
   measurements: {},
@@ -135,12 +180,27 @@ report.evaluation = {
   quote: evaluate(report.measurements.quote, targets.quote),
 };
 
+const requiredTargets = Object.keys(targets);
+report.completeness = {
+  requiredBenchmarks: requiredTargets.length,
+  measuredBenchmarks: requiredTargets.filter(
+    (name) => typeof report.measurements[name] === 'number',
+  ).length,
+};
+report.completeness.missingBenchmarks = requiredTargets.filter(
+  (name) => typeof report.measurements[name] !== 'number',
+);
+report.completeness.isComplete = report.completeness.missingBenchmarks.length === 0;
+
 report.hasMeasuredValues = Object.values(report.measurements).some(
   (value) => typeof value === 'number',
 );
 report.notes = [];
 if (!report.hardhat.available) {
   report.notes.push(`Missing ${hardhatGasFile}`);
+}
+if (!report.hardhatJson.available) {
+  report.notes.push(`Missing ${hardhatGasJsonFile}`);
 }
 if (!report.forge.available) {
   report.notes.push(`Missing ${forgeSnapshotFile}`);
@@ -152,8 +212,20 @@ if (!report.hasMeasuredValues) {
 if (report.forge.available && report.forge.rows.length === 0) {
   report.notes.push('Forge snapshot file is present but no rows matched parser patterns.');
 }
-if (report.hardhat.available && report.hardhat.methods.length === 0) {
+if (
+  report.hardhat.available &&
+  report.hardhat.methods.length === 0 &&
+  !(report.hardhatJson.available && report.hardhatJson.methods.length > 0)
+) {
   report.notes.push('Hardhat gas report file is present but no table rows matched parser patterns.');
+}
+if (report.hardhatJson.available && report.hardhatJson.methods.length === 0) {
+  report.notes.push('Hardhat gas JSON file is present but no executed methods contained gas data.');
+}
+if (!report.completeness.isComplete) {
+  report.notes.push(
+    `Missing benchmark measurements for: ${report.completeness.missingBenchmarks.join(', ')}`,
+  );
 }
 
 if (report.forge.available) {
@@ -166,6 +238,12 @@ if (report.hardhat.available) {
   report.hardhat = {
     ...report.hardhat,
     sampleMethods: report.hardhat.methods.slice(0, 20),
+  };
+};
+if (report.hardhatJson.available) {
+  report.hardhatJson = {
+    ...report.hardhatJson,
+    sampleMethods: report.hardhatJson.methods.slice(0, 20),
   };
 }
 

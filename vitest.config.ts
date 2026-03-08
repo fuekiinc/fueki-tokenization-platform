@@ -22,10 +22,7 @@ export default defineConfig({
     environment: 'happy-dom',
     setupFiles: ['./tests/setup.ts'],
     include: [
-      'tests/unit/components/**/*.test.{ts,tsx}',
-      'tests/unit/hooks/**/*.test.{ts,tsx}',
-      'tests/unit/stores/**/*.test.{ts,tsx}',
-      'tests/unit/utils/**/*.test.{ts,tsx}',
+      'tests/unit/**/*.test.{ts,tsx}',
       'tests/api/**/*.test.ts',
       'tests/security/**/*.test.ts',
     ],
@@ -60,10 +57,7 @@ export default defineConfig({
           environment: 'happy-dom',
           setupFiles: ['./tests/setup.ts'],
           include: [
-            'tests/unit/components/**/*.test.{ts,tsx}',
-            'tests/unit/hooks/**/*.test.{ts,tsx}',
-            'tests/unit/stores/**/*.test.{ts,tsx}',
-            'tests/unit/utils/**/*.test.{ts,tsx}',
+            'tests/unit/**/*.test.{ts,tsx}',
           ],
         },
       },

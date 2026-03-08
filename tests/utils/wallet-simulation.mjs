@@ -16,14 +16,62 @@ const WALLET_FIXTURES = [
 ];
 
 const CHAIN_FIXTURES = [
-  { chainId: 1, name: 'Ethereum Mainnet', symbol: 'ETH', rpcEnv: 'MAINNET_RPC_URL' },
-  { chainId: 17000, name: 'Holesky', symbol: 'ETH', rpcEnv: 'HOLESKY_RPC_URL' },
-  { chainId: 11155111, name: 'Sepolia', symbol: 'ETH', rpcEnv: 'SEPOLIA_RPC_URL' },
-  { chainId: 42161, name: 'Arbitrum One', symbol: 'ETH', rpcEnv: 'ARBITRUM_RPC_URL' },
-  { chainId: 421614, name: 'Arbitrum Sepolia', symbol: 'ETH', rpcEnv: 'ARBITRUM_SEPOLIA_RPC_URL' },
-  { chainId: 8453, name: 'Base', symbol: 'ETH', rpcEnv: 'BASE_RPC_URL' },
-  { chainId: 84532, name: 'Base Sepolia', symbol: 'ETH', rpcEnv: 'BASE_SEPOLIA_RPC_URL' },
-  { chainId: 43114, name: 'Avalanche C-Chain', symbol: 'AVAX', rpcEnv: 'AVALANCHE_RPC_URL' },
+  {
+    chainId: 1,
+    name: 'Ethereum Mainnet',
+    symbol: 'ETH',
+    rpcEnv: 'MAINNET_RPC_URL',
+    rpcEnvFallbacks: ['ETHEREUM_RPC_URL', 'VITE_RPC_1_URLS'],
+  },
+  {
+    chainId: 17000,
+    name: 'Holesky',
+    symbol: 'ETH',
+    rpcEnv: 'HOLESKY_RPC_URL',
+    rpcEnvFallbacks: ['ETHEREUM_HOLESKY_RPC_URL', 'VITE_RPC_17000_URLS'],
+  },
+  {
+    chainId: 11155111,
+    name: 'Sepolia',
+    symbol: 'ETH',
+    rpcEnv: 'SEPOLIA_RPC_URL',
+    rpcEnvFallbacks: ['ETHEREUM_SEPOLIA_RPC_URL', 'VITE_RPC_11155111_URLS'],
+  },
+  {
+    chainId: 42161,
+    name: 'Arbitrum One',
+    symbol: 'ETH',
+    rpcEnv: 'ARBITRUM_RPC_URL',
+    rpcEnvFallbacks: ['VITE_RPC_42161_URLS'],
+  },
+  {
+    chainId: 421614,
+    name: 'Arbitrum Sepolia',
+    symbol: 'ETH',
+    rpcEnv: 'ARBITRUM_SEPOLIA_RPC_URL',
+    rpcEnvFallbacks: ['VITE_RPC_421614_URLS'],
+  },
+  {
+    chainId: 8453,
+    name: 'Base',
+    symbol: 'ETH',
+    rpcEnv: 'BASE_RPC_URL',
+    rpcEnvFallbacks: ['VITE_RPC_8453_URLS'],
+  },
+  {
+    chainId: 84532,
+    name: 'Base Sepolia',
+    symbol: 'ETH',
+    rpcEnv: 'BASE_SEPOLIA_RPC_URL',
+    rpcEnvFallbacks: ['VITE_RPC_84532_URLS'],
+  },
+  {
+    chainId: 43114,
+    name: 'Avalanche C-Chain',
+    symbol: 'AVAX',
+    rpcEnv: 'AVALANCHE_RPC_URL',
+    rpcEnvFallbacks: ['VITE_RPC_43114_URLS'],
+  },
 ];
 
 const report = {
@@ -40,18 +88,34 @@ function withTimeout(promise, label, timeoutMs = 10000) {
   ]);
 }
 
+function resolveRpcUrl(chain) {
+  const envKeys = [chain.rpcEnv, ...(chain.rpcEnvFallbacks ?? [])];
+  for (const key of envKeys) {
+    const raw = process.env[key];
+    if (!raw || typeof raw !== 'string') continue;
+    const candidate = raw
+      .split(',')
+      .map((part) => part.trim())
+      .find((part) => part.length > 0);
+    if (candidate) {
+      return { url: candidate, key };
+    }
+  }
+  return null;
+}
+
 for (const chain of CHAIN_FIXTURES) {
-  const envKey = chain.rpcEnv;
-  const rpcUrl = process.env[envKey];
-  if (!rpcUrl) {
+  const resolvedRpc = resolveRpcUrl(chain);
+  if (!resolvedRpc) {
     report.chains.push({
       chainId: chain.chainId,
       name: chain.name,
       skipped: true,
-      reason: `Missing ${envKey}`,
+      reason: `Missing RPC env (${[chain.rpcEnv, ...(chain.rpcEnvFallbacks ?? [])].join(', ')})`,
     });
     continue;
   }
+  const rpcUrl = resolvedRpc.url;
 
   const provider = new JsonRpcProvider(
     rpcUrl,
@@ -66,6 +130,7 @@ for (const chain of CHAIN_FIXTURES) {
     chainId: chain.chainId,
     name: chain.name,
     symbol: chain.symbol,
+    rpcSourceEnv: resolvedRpc.key,
     walletBalances: [],
   };
 

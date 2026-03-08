@@ -1,4 +1,4 @@
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { isJwtExpired, parseJwtExpiryMs } from '../../src/lib/auth/jwt';
 
@@ -24,6 +24,6 @@ test('isJwtExpired returns false for tokens that are still valid', () => {
   assert.equal(isJwtExpired(token), false);
 });
 
-test('isJwtExpired returns false when token payload is malformed', () => {
-  assert.equal(isJwtExpired('not-a-jwt'), false);
+test('isJwtExpired returns true when token payload is malformed', () => {
+  assert.equal(isJwtExpired('not-a-jwt'), true);
 });

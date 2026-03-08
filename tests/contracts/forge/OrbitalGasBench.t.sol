@@ -60,6 +60,16 @@ contract OrbitalGasBenchTest is TestBase {
         poolAB.swap(0, 1, 1_000 ether, out - 1, block.timestamp + 1 hours);
     }
 
+    function testGas_tickCrossingSwap() public {
+        uint256 largeAmountIn = 100_000 ether;
+        (uint256 out,) = poolAB.getAmountOut(0, 1, largeAmountIn);
+        poolAB.swap(0, 1, largeAmountIn, out - 1, block.timestamp + 1 hours);
+    }
+
+    function testGas_quote() public {
+        poolAB.getAmountOut(0, 1, 1_000 ether);
+    }
+
     function testGas_addLiquidity() public {
         poolAB.addLiquidity(_pair(10_000 ether, 10_000 ether), 0, block.timestamp + 1 hours);
     }
