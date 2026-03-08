@@ -4,10 +4,11 @@ import { JsonRpcProvider } from 'ethers';
 const CHAINS = [
   ['mainnet', process.env.MAINNET_RPC_URL || 'https://ethereum-rpc.publicnode.com', 1],
   ['holesky', process.env.HOLESKY_RPC_URL || 'https://ethereum-holesky-rpc.publicnode.com', 17000],
-  ['sepolia', process.env.SEPOLIA_RPC_URL || 'https://1rpc.io/sepolia', 11155111],
+  ['sepolia', process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com', 11155111],
   ['arbitrum-one', process.env.ARBITRUM_RPC_URL || 'https://arb1.arbitrum.io/rpc', 42161],
   ['arbitrum-sepolia', process.env.ARBITRUM_SEPOLIA_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc', 421614],
   ['polygon', process.env.POLYGON_RPC_URL || 'https://polygon-bor-rpc.publicnode.com', 137],
+  ['avalanche', process.env.AVALANCHE_RPC_URL || 'https://avalanche-c-chain-rpc.publicnode.com', 43114],
   ['base', process.env.BASE_RPC_URL || 'https://mainnet.base.org', 8453],
   ['base-sepolia', process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org', 84532],
 ];

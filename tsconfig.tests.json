@@ -1,17 +1,4 @@
 {
-  "compilerOptions": {
-    "target": "ES2023",
-    "lib": ["ES2023"],
-    "module": "ESNext",
-    "types": ["node"],
-    "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-    "strict": true,
-    "erasableSyntaxOnly": true
-  },
-  "include": ["tests"]
+  "extends": "./tsconfig.test.json",
+  "include": ["src", "tests"]
 }

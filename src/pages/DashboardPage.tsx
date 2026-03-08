@@ -94,6 +94,7 @@ function getNetworkName(chainId: number | null): string {
 
 const DASHBOARD_TRADES_SCOPE_CACHE_PREFIX = 'fueki:dashboard:trades:v1:';
 const MAX_SCOPED_TRADES = 100;
+const INITIAL_DASHBOARD_SKELETON_MAX_MS = 3000;
 
 function makeScopedTradesCacheKey(address: string | null, chainId: number | null): string | null {
   if (!address || !chainId) return null;
@@ -174,6 +175,15 @@ export default function DashboardPage() {
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   // Track critical load failure for inline error display
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Avoid long full-page skeleton states when RPC/auth bootstrap is slow.
+  useEffect(() => {
+    if (!isInitialLoading) return;
+    const timer = window.setTimeout(() => {
+      setIsInitialLoading(false);
+    }, INITIAL_DASHBOARD_SKELETON_MAX_MS);
+    return () => window.clearTimeout(timer);
+  }, [isInitialLoading]);
 
   // ---- Data fetching -------------------------------------------------------
 

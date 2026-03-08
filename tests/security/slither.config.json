@@ -1,5 +1,5 @@
 {
-  "filter_paths": "node_modules,test,tests,artifacts,cache,dist,out,out-foundry",
+  "filter_paths": "node_modules,test,tests,contracts/templates,artifacts,cache,dist,out,out-foundry",
   "solc_remaps": [
     "@openzeppelin/=node_modules/@openzeppelin/"
   ],

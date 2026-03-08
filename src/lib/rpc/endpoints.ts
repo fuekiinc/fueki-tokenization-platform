@@ -31,6 +31,7 @@ const RPC_ENV_BY_CHAIN: Record<number, string> = {
   17000: 'VITE_RPC_17000_URLS',
   42161: 'VITE_RPC_42161_URLS',
   421614: 'VITE_RPC_421614_URLS',
+  43114: 'VITE_RPC_43114_URLS',
   8453: 'VITE_RPC_8453_URLS',
   84532: 'VITE_RPC_84532_URLS',
   11155111: 'VITE_RPC_11155111_URLS',
@@ -67,6 +68,10 @@ const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
     'https://arbitrum-sepolia-rpc.publicnode.com',
     'https://arbitrum-sepolia.drpc.org',
     'https://sepolia-rollup.arbitrum.io/rpc',
+  ],
+  43114: [
+    'https://avalanche-c-chain-rpc.publicnode.com',
+    'https://avalanche.drpc.org',
   ],
   8453: [
     'https://delicate-red-cloud.base-mainnet.quiknode.pro/3ae2b0cd08e640c9c6a3e4c0ca89351dc879e5c8/',

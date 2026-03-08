@@ -31,12 +31,12 @@ contract OrbitalGasBenchTest is TestBase {
         address[] memory pairAB = new address[](2);
         pairAB[0] = address(tokenA);
         pairAB[1] = address(tokenB);
-        factory.createPool(pairAB, 4, 30, "AB", "ABLP");
+        factory.createPool(pairAB, 2, 30, "AB", "ABLP");
 
         address[] memory pairBC = new address[](2);
         pairBC[0] = address(tokenB);
         pairBC[1] = address(tokenC);
-        factory.createPool(pairBC, 4, 30, "BC", "BCLP");
+        factory.createPool(pairBC, 2, 30, "BC", "BCLP");
 
         address[] memory pools = factory.getAllPools();
         poolAB = OrbitalPool(pools[0]);

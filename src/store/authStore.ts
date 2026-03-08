@@ -84,6 +84,18 @@ function normalizeUser(user: User | null | undefined): User {
 // ---------------------------------------------------------------------------
 
 let _initPromise: Promise<void> | null = null;
+const AUTH_BOOTSTRAP_TIMEOUT_MS = 3500;
+
+async function withAuthBootstrapTimeout<T>(promise: Promise<T>, operation: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Auth bootstrap timeout during ${operation}`));
+      }, AUTH_BOOTSTRAP_TIMEOUT_MS);
+    }),
+  ]);
+}
 
 // ---------------------------------------------------------------------------
 // Store
@@ -111,13 +123,18 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       const refreshAndHydrate = async (): Promise<void> => {
         // Access token may have expired -- attempt a refresh.
         // The refresh token is sent automatically via httpOnly cookie.
-        const newTokens = await authApi.refreshToken();
+        const newTokens = await withAuthBootstrapTimeout(
+          authApi.refreshToken(),
+          'token refresh',
+        );
         persistTokens(storageMode, newTokens);
 
         // Fetch the user profile with the new access token.
         let user: User | null = savedUser ? normalizeUser(savedUser) : null;
         try {
-          user = normalizeUser(await authApi.getProfile());
+          user = normalizeUser(
+            await withAuthBootstrapTimeout(authApi.getProfile(), 'profile fetch after refresh'),
+          );
           persistUser(storageMode, user);
         } catch {
           // If profile fetch fails, use the previously saved user data.
@@ -147,7 +164,9 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
       // Tokens found in storage -- validate by fetching the profile.
       try {
-        const user = normalizeUser(await authApi.getProfile());
+        const user = normalizeUser(
+          await withAuthBootstrapTimeout(authApi.getProfile(), 'profile fetch'),
+        );
         persistUser(storageMode, user);
         set({
           user,

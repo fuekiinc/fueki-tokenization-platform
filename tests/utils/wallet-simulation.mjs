@@ -22,6 +22,7 @@ const CHAIN_FIXTURES = [
     symbol: 'ETH',
     rpcEnv: 'MAINNET_RPC_URL',
     rpcEnvFallbacks: ['ETHEREUM_RPC_URL', 'VITE_RPC_1_URLS'],
+    defaultRpcUrls: ['https://ethereum-rpc.publicnode.com'],
   },
   {
     chainId: 17000,
@@ -29,6 +30,7 @@ const CHAIN_FIXTURES = [
     symbol: 'ETH',
     rpcEnv: 'HOLESKY_RPC_URL',
     rpcEnvFallbacks: ['ETHEREUM_HOLESKY_RPC_URL', 'VITE_RPC_17000_URLS'],
+    defaultRpcUrls: ['https://ethereum-holesky-rpc.publicnode.com'],
   },
   {
     chainId: 11155111,
@@ -36,6 +38,7 @@ const CHAIN_FIXTURES = [
     symbol: 'ETH',
     rpcEnv: 'SEPOLIA_RPC_URL',
     rpcEnvFallbacks: ['ETHEREUM_SEPOLIA_RPC_URL', 'VITE_RPC_11155111_URLS'],
+    defaultRpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com'],
   },
   {
     chainId: 42161,
@@ -43,6 +46,7 @@ const CHAIN_FIXTURES = [
     symbol: 'ETH',
     rpcEnv: 'ARBITRUM_RPC_URL',
     rpcEnvFallbacks: ['VITE_RPC_42161_URLS'],
+    defaultRpcUrls: ['https://arb1.arbitrum.io/rpc'],
   },
   {
     chainId: 421614,
@@ -50,6 +54,7 @@ const CHAIN_FIXTURES = [
     symbol: 'ETH',
     rpcEnv: 'ARBITRUM_SEPOLIA_RPC_URL',
     rpcEnvFallbacks: ['VITE_RPC_421614_URLS'],
+    defaultRpcUrls: ['https://arbitrum-sepolia-rpc.publicnode.com'],
   },
   {
     chainId: 8453,
@@ -57,6 +62,7 @@ const CHAIN_FIXTURES = [
     symbol: 'ETH',
     rpcEnv: 'BASE_RPC_URL',
     rpcEnvFallbacks: ['VITE_RPC_8453_URLS'],
+    defaultRpcUrls: ['https://mainnet.base.org'],
   },
   {
     chainId: 84532,
@@ -64,6 +70,7 @@ const CHAIN_FIXTURES = [
     symbol: 'ETH',
     rpcEnv: 'BASE_SEPOLIA_RPC_URL',
     rpcEnvFallbacks: ['VITE_RPC_84532_URLS'],
+    defaultRpcUrls: ['https://sepolia.base.org'],
   },
   {
     chainId: 43114,
@@ -71,6 +78,7 @@ const CHAIN_FIXTURES = [
     symbol: 'AVAX',
     rpcEnv: 'AVALANCHE_RPC_URL',
     rpcEnvFallbacks: ['VITE_RPC_43114_URLS'],
+    defaultRpcUrls: ['https://avalanche-c-chain-rpc.publicnode.com'],
   },
 ];
 
@@ -88,55 +96,98 @@ function withTimeout(promise, label, timeoutMs = 10000) {
   ]);
 }
 
-function resolveRpcUrl(chain) {
+function parseUrls(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  return raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+function resolveRpcCandidates(chain) {
   const envKeys = [chain.rpcEnv, ...(chain.rpcEnvFallbacks ?? [])];
+  const candidates = [];
+  const seen = new Set();
+
   for (const key of envKeys) {
-    const raw = process.env[key];
-    if (!raw || typeof raw !== 'string') continue;
-    const candidate = raw
-      .split(',')
-      .map((part) => part.trim())
-      .find((part) => part.length > 0);
-    if (candidate) {
-      return { url: candidate, key };
+    const urls = parseUrls(process.env[key]);
+    for (const url of urls) {
+      if (seen.has(url)) continue;
+      seen.add(url);
+      candidates.push({ url, key });
     }
   }
-  return null;
+
+  for (const url of chain.defaultRpcUrls ?? []) {
+    if (seen.has(url)) continue;
+    seen.add(url);
+    candidates.push({ url, key: 'default' });
+  }
+
+  return candidates;
 }
 
 for (const chain of CHAIN_FIXTURES) {
-  const resolvedRpc = resolveRpcUrl(chain);
-  if (!resolvedRpc) {
+  const rpcCandidates = resolveRpcCandidates(chain);
+  if (rpcCandidates.length === 0) {
     report.chains.push({
       chainId: chain.chainId,
       name: chain.name,
       skipped: true,
-      reason: `Missing RPC env (${[chain.rpcEnv, ...(chain.rpcEnvFallbacks ?? [])].join(', ')})`,
+      reason: `Missing RPC env and no defaults available (${[chain.rpcEnv, ...(chain.rpcEnvFallbacks ?? [])].join(', ')})`,
     });
     continue;
   }
-  const rpcUrl = resolvedRpc.url;
-
-  const provider = new JsonRpcProvider(
-    rpcUrl,
-    {
-      chainId: chain.chainId,
-      name: chain.name.toLowerCase().replace(/\s+/g, '-'),
-    },
-    { staticNetwork: true },
-  );
 
   const chainResult = {
     chainId: chain.chainId,
     name: chain.name,
     symbol: chain.symbol,
-    rpcSourceEnv: resolvedRpc.key,
+    rpcSourceEnv: null,
+    rpcUrl: null,
+    fallbackErrors: [],
     walletBalances: [],
   };
 
-  try {
-    await withTimeout(provider.getBlockNumber(), `${chain.name} RPC health check`);
+  let provider = null;
+  for (const candidate of rpcCandidates) {
+    const testProvider = new JsonRpcProvider(
+      candidate.url,
+      {
+        chainId: chain.chainId,
+        name: chain.name.toLowerCase().replace(/\s+/g, '-'),
+      },
+      { staticNetwork: true },
+    );
 
+    try {
+      await withTimeout(testProvider.getBlockNumber(), `${chain.name} RPC health check`);
+      chainResult.rpcSourceEnv = candidate.key;
+      chainResult.rpcUrl = candidate.url;
+      provider = testProvider;
+      break;
+    } catch (error) {
+      chainResult.fallbackErrors.push({
+        source: candidate.key,
+        rpcUrl: candidate.url,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (typeof testProvider.destroy === 'function') {
+        testProvider.destroy();
+      }
+    }
+  }
+
+  if (!provider) {
+    chainResult.walletBalances.push({
+      label: 'rpc',
+      error: `All configured RPC endpoints failed for ${chain.name}`,
+    });
+    report.chains.push(chainResult);
+    continue;
+  }
+
+  try {
     for (const walletFixture of WALLET_FIXTURES) {
       const wallet = new Wallet(walletFixture.privateKey, provider);
       try {
@@ -157,11 +208,6 @@ for (const chain of CHAIN_FIXTURES) {
         });
       }
     }
-  } catch (error) {
-    chainResult.walletBalances.push({
-      label: 'rpc',
-      error: error instanceof Error ? error.message : String(error),
-    });
   } finally {
     if (typeof provider.destroy === 'function') {
       provider.destroy();

@@ -33,10 +33,18 @@ run_step() {
 
 run_step "Frontend lint" npm run lint
 run_step "Frontend typecheck" npm run typecheck
-run_step "Legacy unit tests" npm run test:unit
+run_step "Unit tests" npm run test:unit
 run_step "Vitest workspace" env VITEST_JSON_OUTPUT_FILE=./tests/reports/vitest-workspace-results.json npm run test:vitest
 run_step "Vitest coverage" env VITEST_JSON_OUTPUT_FILE=./tests/reports/vitest-coverage-results.json npm run test:vitest:coverage
-run_step "API contract tests" env VITEST_JSON_OUTPUT_FILE=./tests/reports/vitest-api-results.json npm run test:api
+db_integration_flag="false"
+if [ -n "${DATABASE_URL:-}" ] && echo "${DATABASE_URL}" | grep -qi "test"; then
+  db_integration_flag="true"
+fi
+run_step "API contract tests" env \
+  VITEST_JSON_OUTPUT_FILE=./tests/reports/vitest-api-results.json \
+  FUEKI_ENABLE_LIVE_API=true \
+  FUEKI_ALLOW_DB_INTEGRATION="${db_integration_flag}" \
+  npm run test:api
 run_step "Newman API contract validation" bash tests/api/run-newman-contract.sh
 run_step "Backend tests" env BACKEND_VITEST_JSON_OUTPUT_FILE=../tests/reports/backend-vitest-results.json npm --prefix backend run test
 run_step "Backend coverage" env BACKEND_VITEST_JSON_OUTPUT_FILE=../tests/reports/backend-vitest-coverage-results.json npm --prefix backend run test -- --coverage
