@@ -55,7 +55,7 @@ for (const chain of CHAIN_FIXTURES) {
   for (const walletFixture of WALLET_FIXTURES) {
     const wallet = new Wallet(walletFixture.privateKey, provider);
     try {
-      const balance = await wallet.getBalance();
+      const balance = await provider.getBalance(wallet.address);
       chainResult.walletBalances.push({
         label: walletFixture.label,
         address: wallet.address,
