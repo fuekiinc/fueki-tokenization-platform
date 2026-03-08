@@ -13,6 +13,7 @@ import { searchTemplates, TEMPLATES } from '../../contracts/templates';
 import { useContractDeployerStore } from '../../store/contractDeployerStore';
 import { EMPTY_STATE_CLASSES } from '../../lib/designTokens';
 import { TemplateCard } from './TemplateCard';
+import { BespokeContractCard } from './BespokeContractCard';
 import type { ContractTemplate } from '../../types/contractDeployer';
 
 // ---------------------------------------------------------------------------
@@ -37,25 +38,6 @@ export function TemplateBrowser() {
     return results;
   }, [searchQuery, selectedCategory]);
 
-  // ---- Empty state --------------------------------------------------------
-
-  if (filteredTemplates.length === 0) {
-    return (
-      <div className={EMPTY_STATE_CLASSES.container}>
-        <div className={EMPTY_STATE_CLASSES.iconBox}>
-          <SearchX className={EMPTY_STATE_CLASSES.icon} />
-        </div>
-        <p className={EMPTY_STATE_CLASSES.title}>
-          No templates match your search
-        </p>
-        <p className={EMPTY_STATE_CLASSES.description}>
-          Try adjusting your search terms or selecting a different category to
-          find the contract you need.
-        </p>
-      </div>
-    );
-  }
-
   // ---- Grid ---------------------------------------------------------------
 
   return (
@@ -70,10 +52,28 @@ export function TemplateBrowser() {
 
       {/* Template grid */}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3 sm:gap-6">
+        {/* Bespoke request card -- always first */}
+        <BespokeContractCard />
         {filteredTemplates.map((template) => (
           <TemplateCard key={template.id} template={template} />
         ))}
       </div>
+
+      {/* Empty state for template filters (bespoke card remains available) */}
+      {filteredTemplates.length === 0 && (
+        <div className={EMPTY_STATE_CLASSES.container}>
+          <div className={EMPTY_STATE_CLASSES.iconBox}>
+            <SearchX className={EMPTY_STATE_CLASSES.icon} />
+          </div>
+          <p className={EMPTY_STATE_CLASSES.title}>
+            No templates match your search
+          </p>
+          <p className={EMPTY_STATE_CLASSES.description}>
+            Adjust your search/category filters, or use the Bespoke Smart Contract
+            card above for a custom build request.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

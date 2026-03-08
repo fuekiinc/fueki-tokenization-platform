@@ -48,6 +48,7 @@ const OrbitalAMMGuidePage = lazyWithRetry(() => import('./pages/OrbitalAMMGuideP
 const TermsPage = lazyWithRetry(() => import('./pages/TermsPage'))
 const PrivacyPage = lazyWithRetry(() => import('./pages/PrivacyPage'))
 const ContractBrowserPage = lazyWithRetry(() => import('./pages/ContractBrowserPage'))
+const BespokeContractPage = lazyWithRetry(() => import('./pages/BespokeContractPage'))
 const ContractDeployPage = lazyWithRetry(() => import('./pages/ContractDeployPage'))
 const ContractInteractPage = lazyWithRetry(() => import('./pages/ContractInteractPage'))
 const ContractHistoryPage = lazyWithRetry(() => import('./pages/ContractHistoryPage'))
@@ -76,6 +77,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/security-tokens': 'Security Tokens',
   '/security-tokens/deploy': 'Deploy Token',
   '/contracts': 'Smart Contracts',
+  '/contracts/bespoke': 'Bespoke Contract Request',
   '/contracts/deploy': 'Deploy Contract',
   '/contracts/history': 'Deployed Contracts',
   '/terms': 'Terms of Service',
@@ -234,6 +236,7 @@ export default function App() {
             <Route path="security-tokens" element={<Suspense fallback={<PageLoader />}><SecurityTokenPage /></Suspense>} />
             <Route path="security-tokens/deploy" element={<Suspense fallback={<PageLoader />}><DeployTokenPage /></Suspense>} />
             <Route path="contracts" element={<Suspense fallback={<PageLoader />}><ContractBrowserPage /></Suspense>} />
+            <Route path="contracts/bespoke" element={<Suspense fallback={<PageLoader />}><BespokeContractPage /></Suspense>} />
             <Route path="contracts/deploy/:templateId" element={<Suspense fallback={<PageLoader />}><ContractDeployPage /></Suspense>} />
             <Route path="contracts/history" element={<Suspense fallback={<PageLoader />}><ContractHistoryPage /></Suspense>} />
             <Route path="contracts/:chainId/:address" element={<Suspense fallback={<PageLoader />}><ContractInteractPage /></Suspense>} />

@@ -22,6 +22,7 @@ export const OrbitalRouterABI = [
   'event LiquidityAdded(address indexed sender, address indexed pool, uint256 lpMinted)',
   'event LiquidityRemoved(address indexed sender, address indexed pool, uint256 lpBurned)',
   'event SwapExecuted(address indexed sender, address indexed pool, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut)',
+  'event MultiHopSwapExecuted(address indexed sender, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut, uint256 hops)',
 
   // View functions
   'function getAmountOut(address pool, address tokenIn, address tokenOut, uint256 amountIn) view returns (uint256 amountOut, uint256 feeAmount)',

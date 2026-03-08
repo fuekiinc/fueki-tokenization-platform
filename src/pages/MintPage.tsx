@@ -363,21 +363,32 @@ export default function MintPage() {
           <SectionCard
             stepNumber={4}
             title="Minting history"
-            subtitle="Track minted assets and review pending tokens."
+            subtitle="Track minted assets."
             icon={History}
             isActive={activeStep === 4}
           >
-            <div className="space-y-6">
-              <MintHistory />
-              <div className="h-px bg-gradient-to-r from-white/[0.08] via-white/[0.04] to-transparent" />
-              <PendingTokensPanel
-                selectedRequestId={selectedMintRequest?.id ?? null}
-                onSelectRequest={setSelectedMintRequest}
-              />
-            </div>
+            <MintHistory />
           </SectionCard>
         </div>
       </div>
+
+      <section
+        aria-label="Pending token requests"
+        className="mt-10 rounded-2xl border border-white/[0.06] bg-[#0D0F14]/80 p-6 backdrop-blur-xl sm:mt-12 sm:p-8"
+      >
+        <div className="mb-5">
+          <h2 className="text-base font-semibold tracking-tight text-gray-100">
+            Pending Tokens
+          </h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Use pending and approved requests to prefill the mint form.
+          </p>
+        </div>
+        <PendingTokensPanel
+          selectedRequestId={selectedMintRequest?.id ?? null}
+          onSelectRequest={setSelectedMintRequest}
+        />
+      </section>
     </div>
   );
 }

@@ -25,6 +25,7 @@ import { copyToClipboard, formatAddress, parseTokenAmount } from '../lib/utils/h
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
 import { OrbitalRouterABI } from '../contracts/abis/OrbitalRouter.ts';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
+import type { TradeHistory } from '../types';
 
 // Dashboard sub-components
 import StatsGrid from '../components/Dashboard/StatsGrid';
@@ -91,6 +92,63 @@ function getNetworkName(chainId: number | null): string {
   return network?.name ?? `Chain ${chainId}`;
 }
 
+const DASHBOARD_TRADES_SCOPE_CACHE_PREFIX = 'fueki:dashboard:trades:v1:';
+const MAX_SCOPED_TRADES = 100;
+
+function makeScopedTradesCacheKey(address: string | null, chainId: number | null): string | null {
+  if (!address || !chainId) return null;
+  return `${DASHBOARD_TRADES_SCOPE_CACHE_PREFIX}${chainId}:${address.toLowerCase()}`;
+}
+
+function isValidTradeHistoryEntry(value: unknown): value is TradeHistory {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<TradeHistory>;
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.type === 'string' &&
+    typeof candidate.asset === 'string' &&
+    typeof candidate.assetSymbol === 'string' &&
+    typeof candidate.amount === 'string' &&
+    typeof candidate.txHash === 'string' &&
+    typeof candidate.timestamp === 'number' &&
+    typeof candidate.from === 'string' &&
+    typeof candidate.to === 'string' &&
+    (candidate.status === 'pending' ||
+      candidate.status === 'confirmed' ||
+      candidate.status === 'failed')
+  );
+}
+
+function loadScopedTrades(address: string | null, chainId: number | null): TradeHistory[] {
+  const key = makeScopedTradesCacheKey(address, chainId);
+  if (!key) return [];
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(isValidTradeHistoryEntry)
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, MAX_SCOPED_TRADES);
+  } catch {
+    return [];
+  }
+}
+
+function saveScopedTrades(address: string, chainId: number, trades: TradeHistory[]): void {
+  const key = makeScopedTradesCacheKey(address, chainId);
+  if (!key) return;
+  try {
+    const normalized = [...trades]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, MAX_SCOPED_TRADES);
+    localStorage.setItem(key, JSON.stringify(normalized));
+  } catch {
+    // localStorage may be unavailable
+  }
+}
+
 // ---------------------------------------------------------------------------
 // DashboardPage
 // ---------------------------------------------------------------------------
@@ -151,7 +209,7 @@ export default function DashboardPage() {
 
     setAssets([]);
     setUserOrders([]);
-    setTrades([]);
+    setTrades(loadScopedTrades(normalizedAddress, chainId));
     setLoadError(null);
 
     if (isConnected && chainId) {
@@ -368,39 +426,83 @@ export default function DashboardPage() {
       logger.warn('Unable to load exchange orders:', error);
     }
 
-    const resolveFromBlock = async (
-      provider: ethers.Provider,
-      lookbackBlocks: number,
-    ): Promise<number | undefined> => {
-      try {
-        const latest = await provider.getBlockNumber();
-        return Math.max(0, latest - lookbackBlocks);
-      } catch {
-        return undefined;
-      }
-    };
-
     const queryFilterResilient = async (
       contract: ethers.Contract,
       runQuery: (fromBlock?: number) => Promise<Array<ethers.Log | ethers.EventLog>>,
       lookbackBlocks: number,
     ): Promise<Array<ethers.Log | ethers.EventLog>> => {
-      try {
-        return await runQuery();
-      } catch (fullRangeError) {
-        logger.warn('Full-range log scan failed, retrying with bounded lookback', {
+      const provider = contract.runner && 'provider' in contract.runner
+        ? (contract.runner as { provider: ethers.Provider }).provider
+        : null;
+
+      const attemptedFromBlocks = new Set<number | undefined>();
+      const fromBlockCandidates: Array<number | undefined> = [];
+
+      if (provider) {
+        let latestBlock: number | null = null;
+        try {
+          latestBlock = await provider.getBlockNumber();
+        } catch {
+          latestBlock = null;
+        }
+
+        const candidateLookbacks = [
           lookbackBlocks,
-          error: fullRangeError,
-        });
+          Math.floor(lookbackBlocks / 3),
+          Math.floor(lookbackBlocks / 8),
+          5_000_000,
+          2_000_000,
+          1_000_000,
+          50_000,
+          10_000,
+          2_000,
+        ];
 
-        const provider = contract.runner && 'provider' in contract.runner
-          ? (contract.runner as { provider: ethers.Provider }).provider
-          : null;
-        if (!provider) throw fullRangeError;
+        for (const rawCandidate of candidateLookbacks) {
+          if (latestBlock === null) continue;
+          const candidate = Math.floor(rawCandidate);
+          if (!Number.isFinite(candidate) || candidate <= 0) continue;
+          fromBlockCandidates.push(Math.max(0, latestBlock - candidate));
+        }
+      }
 
-        const fromBlock = await resolveFromBlock(provider, lookbackBlocks);
-        if (fromBlock === undefined) throw fullRangeError;
-        return runQuery(fromBlock);
+      // If we cannot compute a bounded range, fall back to provider default.
+      if (fromBlockCandidates.length === 0) {
+        fromBlockCandidates.push(undefined);
+      }
+
+      let lastError: unknown = null;
+
+      for (const fromBlock of fromBlockCandidates) {
+        if (attemptedFromBlocks.has(fromBlock)) continue;
+        attemptedFromBlocks.add(fromBlock);
+
+        try {
+          return await runQuery(fromBlock);
+        } catch (error) {
+          lastError = error;
+          logger.warn('Event log query attempt failed', {
+            fromBlock,
+            lookbackBlocks,
+            error,
+          });
+        }
+      }
+
+      throw lastError ?? new Error('Event log query failed');
+    };
+
+    const queryFilterBestEffort = async (
+      contract: ethers.Contract,
+      runQuery: (fromBlock?: number) => Promise<Array<ethers.Log | ethers.EventLog>>,
+      lookbackBlocks: number,
+      label: string,
+    ): Promise<Array<ethers.Log | ethers.EventLog>> => {
+      try {
+        return await queryFilterResilient(contract, runQuery, lookbackBlocks);
+      } catch (error) {
+        logger.warn(`Skipping ${label} events after repeated log query failures`, error);
+        return [];
       }
     };
 
@@ -424,13 +526,14 @@ export default function DashboardPage() {
       try {
         const factory = service.getFactoryContract(readProvider);
         const mintFilter = factory.filters.AssetCreated(address);
-        const mintEvents = await queryFilterResilient(
+        const mintEvents = await queryFilterBestEffort(
           factory,
           (fromBlock) =>
             fromBlock === undefined
               ? factory.queryFilter(mintFilter)
               : factory.queryFilter(mintFilter, fromBlock),
-          500_000,
+          5_000_000,
+          'factory AssetCreated',
         );
 
         for (const evt of mintEvents) {
@@ -474,13 +577,14 @@ export default function DashboardPage() {
       try {
         const securityFactory = service.getSecurityTokenFactoryContract(readProvider);
         const securityMintFilter = securityFactory.filters.SecurityTokenCreated(address);
-        const securityMintEvents = await queryFilterResilient(
+        const securityMintEvents = await queryFilterBestEffort(
           securityFactory,
           (fromBlock) =>
             fromBlock === undefined
               ? securityFactory.queryFilter(securityMintFilter)
               : securityFactory.queryFilter(securityMintFilter, fromBlock),
-          500_000,
+          5_000_000,
+          'security factory SecurityTokenCreated',
         );
 
         for (const evt of securityMintEvents) {
@@ -523,13 +627,14 @@ export default function DashboardPage() {
       try {
         const exchange = service.getAssetBackedExchangeContract(readProvider);
         const orderCreatedFilter = exchange.filters.OrderCreated(null, address);
-        const orderCreatedEvents = await queryFilterResilient(
+        const orderCreatedEvents = await queryFilterBestEffort(
           exchange,
           (fromBlock) =>
             fromBlock === undefined
               ? exchange.queryFilter(orderCreatedFilter)
               : exchange.queryFilter(orderCreatedFilter, fromBlock),
-          300_000,
+          2_000_000,
+          'exchange OrderCreated',
         );
 
         for (const evt of orderCreatedEvents) {
@@ -564,27 +669,29 @@ export default function DashboardPage() {
         }
 
         const takerFilter = exchange.filters.OrderFilled(null, address);
-        const takerFillEvents = await queryFilterResilient(
+        const takerFillEvents = await queryFilterBestEffort(
           exchange,
           (fromBlock) =>
             fromBlock === undefined
               ? exchange.queryFilter(takerFilter)
               : exchange.queryFilter(takerFilter, fromBlock),
-          300_000,
+          2_000_000,
+          'exchange OrderFilled (taker)',
         );
 
         const makerOrderIds = await service.getExchangeUserOrders(address);
         const makerFillEventGroups = await Promise.all(
           makerOrderIds.map((orderId) => {
             const filter = exchange.filters.OrderFilled(orderId);
-            return queryFilterResilient(
+            return queryFilterBestEffort(
               exchange,
               (fromBlock) =>
                 fromBlock === undefined
                   ? exchange.queryFilter(filter)
                   : exchange.queryFilter(filter, fromBlock),
-              500_000,
-            ).catch(() => []);
+              5_000_000,
+              'exchange OrderFilled (maker)',
+            );
           }),
         );
         const makerFillEvents = makerFillEventGroups.flat();
@@ -640,13 +747,14 @@ export default function DashboardPage() {
           );
 
           const liquidityAddedFilter = orbitalRouter.filters.LiquidityAdded(address);
-          const liquidityAddedEvents = await queryFilterResilient(
+          const liquidityAddedEvents = await queryFilterBestEffort(
             orbitalRouter,
             (fromBlock) =>
               fromBlock === undefined
                 ? orbitalRouter.queryFilter(liquidityAddedFilter)
                 : orbitalRouter.queryFilter(liquidityAddedFilter, fromBlock),
-            300_000,
+            2_000_000,
+            'orbital LiquidityAdded',
           );
 
           for (const evt of liquidityAddedEvents) {
@@ -679,13 +787,14 @@ export default function DashboardPage() {
           }
 
           const liquidityRemovedFilter = orbitalRouter.filters.LiquidityRemoved(address);
-          const liquidityRemovedEvents = await queryFilterResilient(
+          const liquidityRemovedEvents = await queryFilterBestEffort(
             orbitalRouter,
             (fromBlock) =>
               fromBlock === undefined
                 ? orbitalRouter.queryFilter(liquidityRemovedFilter)
                 : orbitalRouter.queryFilter(liquidityRemovedFilter, fromBlock),
-            300_000,
+            2_000_000,
+            'orbital LiquidityRemoved',
           );
 
           for (const evt of liquidityRemovedEvents) {
@@ -718,13 +827,14 @@ export default function DashboardPage() {
           }
 
           const swapExecutedFilter = orbitalRouter.filters.SwapExecuted(address);
-          const swapExecutedEvents = await queryFilterResilient(
+          const swapExecutedEvents = await queryFilterBestEffort(
             orbitalRouter,
             (fromBlock) =>
               fromBlock === undefined
                 ? orbitalRouter.queryFilter(swapExecutedFilter)
                 : orbitalRouter.queryFilter(swapExecutedFilter, fromBlock),
-            300_000,
+            2_000_000,
+            'orbital SwapExecuted',
           );
 
           for (const evt of swapExecutedEvents) {
@@ -763,6 +873,54 @@ export default function DashboardPage() {
               status: 'confirmed',
             });
           }
+
+          const multiHopSwapFilter = orbitalRouter.filters.MultiHopSwapExecuted(address);
+          const multiHopSwapEvents = await queryFilterBestEffort(
+            orbitalRouter,
+            (fromBlock) =>
+              fromBlock === undefined
+                ? orbitalRouter.queryFilter(multiHopSwapFilter)
+                : orbitalRouter.queryFilter(multiHopSwapFilter, fromBlock),
+            2_000_000,
+            'orbital MultiHopSwapExecuted',
+          );
+
+          for (const evt of multiHopSwapEvents) {
+            const log = evt as ethers.EventLog;
+            const txKey = `orbital-multihop-${log.transactionHash}-${log.index}`;
+            if (seenTx.has(txKey)) continue;
+            seenTx.add(txKey);
+
+            const tokenIn = String(log.args[1] ?? '');
+            const tokenOut = String(log.args[2] ?? '');
+            const amountOut = log.args[4] as bigint;
+
+            const tokenInAsset = wrappedAssetsRef.current.find(
+              (a) => a.address.toLowerCase() === tokenIn.toLowerCase(),
+            );
+            const tokenOutAsset = wrappedAssetsRef.current.find(
+              (a) => a.address.toLowerCase() === tokenOut.toLowerCase(),
+            );
+
+            let timestampMs = Date.now();
+            try {
+              const block = await log.getBlock();
+              if (block) timestampMs = block.timestamp * 1000;
+            } catch { /* use current time as fallback */ }
+
+            trades.push({
+              id: txKey,
+              type: 'exchange',
+              asset: `Orbital Multi-hop ${tokenInAsset?.symbol ?? 'IN'}->${tokenOutAsset?.symbol ?? 'OUT'}`,
+              assetSymbol: tokenOutAsset?.symbol ?? 'SWAP',
+              amount: ethers.formatUnits(amountOut, 18),
+              txHash: log.transactionHash,
+              timestamp: timestampMs,
+              from: tokenIn,
+              to: tokenOut,
+              status: 'confirmed',
+            });
+          }
         }
       } catch (error) {
         logger.warn('Unable to load Orbital AMM trade history:', error);
@@ -772,7 +930,14 @@ export default function DashboardPage() {
       // This prevents cross-network/cross-wallet leakage from stale in-memory
       // entries and keeps metrics/activity aligned with the active wallet scope.
       trades.sort((a, b) => b.timestamp - a.timestamp);
-      setTrades(trades);
+      if (trades.length > 0) {
+        setTrades(trades);
+        saveScopedTrades(address, chainId, trades);
+      } else {
+        // Keep previously known history for this exact wallet+chain scope
+        // when fresh event scans return no rows (RPC/filter constraints).
+        setTrades(loadScopedTrades(address, chainId));
+      }
     } catch (error) {
       logger.warn('Unable to load trade history:', error);
     }
