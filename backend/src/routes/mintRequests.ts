@@ -11,7 +11,7 @@ import { prisma } from '../prisma';
 
 const router = Router();
 
-type MintRequestStatus = 'pending' | 'approved' | 'rejected';
+type MintRequestStatus = 'pending' | 'approved' | 'rejected' | 'minted';
 
 const submitSchema = z.object({
   tokenName: z.string().trim().min(1, 'Token name is required').max(120),
@@ -47,8 +47,18 @@ const statusSchema = z.object({
 
 const listSchema = z.object({
   chainId: z.coerce.number().int().positive().optional(),
-  status: z.enum(['pending', 'approved', 'rejected']).optional(),
+  status: z.enum(['pending', 'approved', 'rejected', 'minted']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
+});
+
+const requestIdSchema = z.string().trim().uuid('Invalid mint request id');
+
+const markMintedSchema = z.object({
+  txHash: z
+    .string()
+    .trim()
+    .regex(/^0x[a-fA-F0-9]{64}$/, 'Transaction hash must be a valid 0x-prefixed 32-byte hex string')
+    .optional(),
 });
 
 function mintRateLimitKey(req: Request): string {
@@ -497,6 +507,108 @@ router.get('/list', authenticate, mintListLimiter, async (req, res) => {
       error: {
         message: 'Unable to fetch mint requests',
         code: 'MINT_REQUEST_LIST_FAILED',
+      },
+    });
+  }
+});
+
+// POST /api/mint-requests/:requestId/mark-minted
+router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (req, res) => {
+  try {
+    const requestId = requestIdSchema.parse(String(req.params.requestId ?? ''));
+    const parsedBody = markMintedSchema.parse(req.body ?? {});
+
+    const request = await prisma.mintApprovalRequest.findFirst({
+      where: {
+        id: requestId,
+        userId: req.userId!,
+      },
+      select: {
+        id: true,
+        status: true,
+        reviewNotes: true,
+        reviewedAt: true,
+      },
+    });
+
+    if (!request) {
+      res.status(404).json({
+        error: {
+          message: 'Mint approval request not found',
+          code: 'MINT_REQUEST_NOT_FOUND',
+        },
+      });
+      return;
+    }
+
+    if (request.status === 'minted') {
+      res.json({
+        success: true,
+        requestId: request.id,
+        status: request.status,
+        reviewNotes: request.reviewNotes,
+        reviewedAt: request.reviewedAt?.toISOString() ?? null,
+        canMint: false,
+        alreadyMinted: true,
+      });
+      return;
+    }
+
+    if (request.status !== 'approved') {
+      res.status(409).json({
+        error: {
+          message: `Only approved requests can be marked minted (current status: ${request.status}).`,
+          code: 'MINT_REQUEST_STATUS_INVALID',
+        },
+      });
+      return;
+    }
+
+    const mintedNote = parsedBody.txHash
+      ? `Minted on-chain. Tx: ${parsedBody.txHash}`
+      : 'Minted on-chain.';
+    const reviewNotes = request.reviewNotes
+      ? `${request.reviewNotes}\n${mintedNote}`
+      : mintedNote;
+
+    const updated = await prisma.mintApprovalRequest.update({
+      where: { id: request.id },
+      data: {
+        status: 'minted',
+        reviewNotes,
+      },
+      select: {
+        id: true,
+        status: true,
+        reviewNotes: true,
+        reviewedAt: true,
+      },
+    });
+
+    res.json({
+      success: true,
+      requestId: updated.id,
+      status: updated.status,
+      reviewNotes: updated.reviewNotes,
+      reviewedAt: updated.reviewedAt?.toISOString() ?? null,
+      canMint: false,
+      alreadyMinted: false,
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({
+        error: {
+          message: err.errors[0]?.message ?? 'Invalid request payload',
+          code: 'VALIDATION_ERROR',
+        },
+      });
+      return;
+    }
+    console.error('Mint request mark minted error:', err);
+    res.status(500).json({
+      error: {
+        message: 'Unable to update mint request status',
+        code: 'MINT_REQUEST_MARK_MINTED_FAILED',
       },
     });
   }

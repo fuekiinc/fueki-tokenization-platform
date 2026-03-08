@@ -482,6 +482,7 @@ async function fetchBalanceWithRetry(
 }
 
 export function useWallet() {
+  const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
   const wallet = useWalletStore((s) => s.wallet);
   const setWallet = useWalletStore((s) => s.setWallet);
   const resetWallet = useWalletStore((s) => s.resetWallet);
@@ -499,6 +500,13 @@ export function useWallet() {
   const switchActiveWalletChain = useSwitchActiveWalletChain();
 
   const connectWallet = useCallback(async () => {
+    if (isDemoActive) {
+      toast(
+        'Demo wallet is auto-connected. Exit demo mode to connect your own wallet.',
+      );
+      return;
+    }
+
     if (!thirdwebClient || !isThirdwebConfigured) {
       const msg =
         'Wallet connection is not configured. Set VITE_THIRDWEB_CLIENT_ID before using on-chain features.';
@@ -563,6 +571,7 @@ export function useWallet() {
     activeWalletChain,
     connect,
     connectionStatus,
+    isDemoActive,
     isModalConnecting,
     setConnectionStatus,
     setLastError,

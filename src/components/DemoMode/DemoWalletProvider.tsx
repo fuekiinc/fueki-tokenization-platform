@@ -11,6 +11,22 @@ import { findHealthyEndpoint, getOrderedRpcEndpoints } from '../../lib/rpc/endpo
  */
 const HOLESKY_CHAIN_ID = 17000;
 
+type RuntimeEnvWindow = Window & {
+  __FUEKI_RUNTIME_ENV__?: Record<string, string>;
+};
+
+function resolveDemoWalletKey(): string {
+  if (typeof window !== 'undefined') {
+    const runtimeKey = (window as RuntimeEnvWindow).__FUEKI_RUNTIME_ENV__?.VITE_DEMO_WALLET_KEY;
+    if (typeof runtimeKey === 'string' && runtimeKey.trim()) {
+      return runtimeKey.trim();
+    }
+  }
+
+  const buildKey = import.meta.env.VITE_DEMO_WALLET_KEY;
+  return typeof buildKey === 'string' ? buildKey.trim() : '';
+}
+
 // ---------------------------------------------------------------------------
 // Demo wallet lifecycle store – consumed by DashboardPage and other components
 // to show appropriate loading / error states while the demo wallet initialises.
@@ -98,7 +114,7 @@ export default function DemoWalletProvider() {
 
     if (setupDone.current) return;
 
-    const demoKey = import.meta.env.VITE_DEMO_WALLET_KEY as string | undefined;
+    const demoKey = resolveDemoWalletKey();
     if (!demoKey) {
       const msg =
         'Demo wallet key is not configured. Please contact support or try again later.';

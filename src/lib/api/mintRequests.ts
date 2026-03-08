@@ -2,6 +2,7 @@ import apiClient from './client';
 import type {
   ListMintApprovalRequestsQuery,
   ListMintApprovalRequestsResponse,
+  MarkMintApprovalMintedResponse,
   MintApprovalStatusQuery,
   MintApprovalStatusResponse,
   SubmitMintApprovalPayload,
@@ -46,6 +47,17 @@ export async function listMintApprovalRequests(
   const response = await apiClient.get<ListMintApprovalRequestsResponse>(
     '/api/mint-requests/list',
     { params },
+  );
+  return response.data;
+}
+
+export async function markMintApprovalRequestMinted(
+  requestId: string,
+  txHash?: string,
+): Promise<MarkMintApprovalMintedResponse> {
+  const response = await apiClient.post<MarkMintApprovalMintedResponse>(
+    `/api/mint-requests/${requestId}/mark-minted`,
+    txHash ? { txHash } : {},
   );
   return response.data;
 }

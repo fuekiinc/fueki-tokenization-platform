@@ -20,7 +20,7 @@ import { useAuthStore } from '../store/authStore';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 import { getProvider, useWalletStore } from '../store/walletStore.ts';
 import { getAssetFetchGeneration, nextAssetFetchGeneration, useAssetStore } from '../store/assetStore.ts';
-import { ContractService, getReadOnlyProvider } from '../lib/blockchain/contracts';
+import { ContractService, ETH_SENTINEL, getReadOnlyProvider } from '../lib/blockchain/contracts';
 import { retryAsync } from '../lib/utils/retry';
 import { mapInBatches } from '../lib/utils/asyncBatch';
 import logger from '../lib/logger';
@@ -131,6 +131,7 @@ export default function ExchangePage() {
   const wallet = useWalletStore((s) => s.wallet);
   const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
   const demoWalletSettingUp = useDemoWalletStore((s) => s.isSettingUp);
+  const demoWalletError = useDemoWalletStore((s) => s.setupError);
   const demoWalletReady = useDemoWalletStore((s) => s.isReady);
   const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
   const setAssets = useAssetStore((s) => s.setAssets);
@@ -201,6 +202,21 @@ export default function ExchangePage() {
   useEffect(() => {
     wrappedAssetsRef.current = wrappedAssets;
   }, [wrappedAssets]);
+
+  // Clear chain-specific token state immediately when the wallet network
+  // changes so stale addresses from the previous chain are never merged into
+  // the next fetch cycle.
+  const lastAssetsChainIdRef = useRef<number | null>(wallet.chainId ?? null);
+  useEffect(() => {
+    if (lastAssetsChainIdRef.current === wallet.chainId) return;
+    lastAssetsChainIdRef.current = wallet.chainId ?? null;
+    wrappedAssetsRef.current = [];
+    setLocalAssets([]);
+    setAssets([]);
+    setSelectedSellToken(null);
+    setSelectedBuyToken(null);
+    setEthBalance('0');
+  }, [wallet.chainId, setAssets]);
 
   const fetchAssets = useCallback(async () => {
     if (!contractService || !address || isSwitchingNetwork) return;
@@ -366,19 +382,55 @@ export default function ExchangePage() {
     });
   }, [fetchAssets]);
 
+  // Default to a valid token pair so chart/orderbook are populated immediately.
+  useEffect(() => {
+    if (assets.length === 0) return;
+
+    setSelectedSellToken((prev) => prev ?? assets[0].address);
+    setSelectedBuyToken((prev) => {
+      if (prev) return prev;
+      const defaultSell = assets[0].address.toLowerCase();
+      const secondAsset = assets.find(
+        (asset) => asset.address.toLowerCase() !== defaultSell,
+      );
+      return secondAsset?.address ?? ETH_SENTINEL;
+    });
+  }, [assets]);
+
+  const handlePairChange = useCallback(
+    (sellToken: string | null, buyToken: string | null) => {
+      setSelectedSellToken(sellToken);
+      setSelectedBuyToken(buyToken);
+    },
+    [],
+  );
+
   // =========================================================================
   // Render: demo wallet loading
   // =========================================================================
 
-  if (isDemoActive && !isConnected && (demoWalletSettingUp || !demoWalletReady)) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-          <p className="text-sm text-gray-400">Setting up demo wallet…</p>
+  if (isDemoActive && !isConnected) {
+    if (demoWalletSettingUp || (!demoWalletReady && !demoWalletError)) {
+      return (
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="text-center">
+            <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+            <p className="text-sm text-gray-400">Setting up demo wallet…</p>
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
+
+    if (demoWalletError) {
+      return (
+        <div className="w-full pt-12">
+          <ErrorState
+            message={`Demo wallet could not be activated: ${demoWalletError}`}
+            onRetry={() => window.location.reload()}
+          />
+        </div>
+      );
+    }
   }
 
   // =========================================================================
@@ -675,22 +727,20 @@ export default function ExchangePage() {
         {/* ================================================================= */}
         {/* Price chart                                                       */}
         {/* ================================================================= */}
-        {assets.length > 0 && (
-          <div className="mb-6 md:mb-8">
-            <GlassCard
-              gradientFrom="from-emerald-500"
-              gradientTo="to-indigo-500"
-            >
-              <div className="p-4">
-                <TradingViewChart
-                  tokenSell={selectedSellToken ?? ''}
-                  tokenBuy={selectedBuyToken ?? ''}
-                  height={400}
-                />
-              </div>
-            </GlassCard>
-          </div>
-        )}
+        <div className="mb-6 md:mb-8">
+          <GlassCard
+            gradientFrom="from-emerald-500"
+            gradientTo="to-indigo-500"
+          >
+            <div className="p-4">
+              <TradingViewChart
+                tokenSell={selectedSellToken ?? ''}
+                tokenBuy={selectedBuyToken ?? ''}
+                height={400}
+              />
+            </div>
+          </GlassCard>
+        </div>
 
         {/* ================================================================= */}
         {/* Three-column desktop / tabbed mobile layout                       */}
@@ -783,6 +833,9 @@ export default function ExchangePage() {
                       assets={assets}
                       contractService={contractService}
                       onOrderCreated={handleRefresh}
+                      selectedSellToken={selectedSellToken}
+                      selectedBuyToken={selectedBuyToken}
+                      onPairChange={handlePairChange}
                       enableAMM={isAMMReady}
                       orbitalFallbackEnabled={!isAMMReady && isOrbitalReady}
                     />

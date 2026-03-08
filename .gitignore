@@ -8,6 +8,37 @@ dist/
 .env
 .env.local
 .env.*.local
+
+# Local runtime state
+.swarm/
+vectors.db
+AGENTS.override.md
+
+# Local security tool environments
+.venv-security/
+.venv-slither/
+.venv-mythril/
+
+# Lighthouse temporary workspace
+.lighthouseci/
+
+# Gas tooling artifacts
+gas-report.txt
+gasReporterOutput.json
+
+# Foundry build outputs
+out-foundry/
+.gas-snapshot
+tests/reports/forge-gas-snapshot.txt
+
+# Generated test reports (keep report generator scripts trackable)
+tests/reports/*.json
+tests/reports/*.log
+tests/reports/*.txt
+tests/reports/*.md
+tests/reports/lighthouse/
+tests/reports/mythril/
+!tests/reports/generate-*.mjs
 vite.build.env
 
 # Uploads (dev only)

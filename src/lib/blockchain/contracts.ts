@@ -156,6 +156,13 @@ interface RawPool {
   kLast?: BigNumberishLike;
 }
 
+const SECURITY_TOKEN_CREATE_MODERN_SIGNATURE =
+  'createSecurityToken(bytes,bytes,string,string,uint8,uint256,uint256,bytes32,string,uint256,uint256,uint256)';
+const SECURITY_TOKEN_CREATE_LEGACY_SIGNATURE =
+  'createSecurityToken(string,string,uint8,uint256,uint256,bytes32,string,uint256,uint256,uint256)';
+const PAYLOAD_MISMATCH_PATTERN =
+  /function selector was not recognized|unknown selector|no matching fragment|unrecognized function selector|selector[^|]*not recognized/i;
+
 /** Sentinel address representing native ETH in AssetBackedExchange orders. */
 export const ETH_SENTINEL = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 
@@ -431,11 +438,7 @@ export function parseContractError(err: unknown): string {
     return 'This order is no longer active (already filled or cancelled).';
   }
 
-  if (
-    /function selector was not recognized|unknown selector|no matching fragment|missing revert data.*CALL_EXCEPTION/i.test(
-      deepReason,
-    )
-  ) {
+  if (PAYLOAD_MISMATCH_PATTERN.test(deepReason)) {
     return 'The transaction payload is incompatible with the deployed contract on this network. Refresh and try again.';
   }
 
@@ -524,11 +527,20 @@ export function parseContractError(err: unknown): string {
   return 'Transaction failed. Please try again or check your wallet for details.';
 }
 
-function isAmmPayloadMismatchError(err: unknown): boolean {
+function isPayloadMismatchError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /transaction payload is incompatible with the deployed contract|function selector was not recognized|unknown selector|no matching fragment|missing revert data.*call_exception/i.test(
-    msg,
+  return (
+    /transaction payload is incompatible with the deployed contract/i.test(msg) ||
+    PAYLOAD_MISMATCH_PATTERN.test(msg)
   );
+}
+
+function isSecurityTokenFactoryPayloadMismatchError(err: unknown): boolean {
+  return isPayloadMismatchError(err);
+}
+
+function isAmmPayloadMismatchError(err: unknown): boolean {
+  return isPayloadMismatchError(err);
 }
 
 /**
@@ -1424,11 +1436,14 @@ export class ContractService {
    * Creates both a TransferRules contract and a RestrictedSwap token with
    * built-in lockups, dividends, and atomic swap capabilities.
    *
-   * The on-chain factory uses a SecurityTokenDeployer pattern: the caller
-   * must supply the creation bytecodes for the TransferRules and
-   * RestrictedSwap contracts. These are passed as the first two parameters
-   * (`rulesBytecode` and `swapBytecode`) and forwarded verbatim to the
-   * deployer.
+   * Compatibility notes:
+   * - Newer factory deployments accept child contract bytecodes as the first
+   *   two parameters.
+   * - Legacy factory deployments use an immutable deployer and do not accept
+   *   bytecode parameters.
+   *
+   * This method attempts the modern signature first and falls back to the
+   * legacy signature when the deployed contract rejects the selector.
    */
   async createSecurityToken(
     rulesBytecode: string,
@@ -1449,7 +1464,7 @@ export class ContractService {
 
     const encodedHash = encodeDocumentHash(documentHash);
 
-    const tx = await this.executeWrite(factory, 'createSecurityToken', [
+    const modernArgs: unknown[] = [
       rulesBytecode,
       swapBytecode,
       name,
@@ -1462,7 +1477,54 @@ export class ContractService {
       originalValue,
       minTimelockAmount,
       maxReleaseDelay,
-    ]);
+    ];
+
+    const legacyArgs: unknown[] = [
+      name,
+      symbol,
+      decimals,
+      totalSupply,
+      maxTotalSupply,
+      encodedHash,
+      documentType,
+      originalValue,
+      minTimelockAmount,
+      maxReleaseDelay,
+    ];
+
+    let tx: ethers.ContractTransactionResponse;
+    try {
+      tx = await this.executeWrite(
+        factory,
+        SECURITY_TOKEN_CREATE_MODERN_SIGNATURE,
+        modernArgs,
+      );
+    } catch (modernErr: unknown) {
+      if (!isSecurityTokenFactoryPayloadMismatchError(modernErr)) {
+        throw modernErr;
+      }
+
+      logger.warn(
+        '[SecurityTokenFactory compatibility] modern createSecurityToken selector rejected, retrying legacy signature',
+        modernErr,
+      );
+
+      try {
+        tx = await this.executeWrite(
+          factory,
+          SECURITY_TOKEN_CREATE_LEGACY_SIGNATURE,
+          legacyArgs,
+        );
+      } catch (legacyErr: unknown) {
+        if (isSecurityTokenFactoryPayloadMismatchError(legacyErr)) {
+          throw new Error(
+            'This network uses an incompatible SecurityTokenFactory deployment. Refresh and verify the selected network before retrying.',
+          );
+        }
+        throw legacyErr;
+      }
+    }
+
     this.invalidateCachePrefix('factory:');
     return tx;
   }
@@ -1490,7 +1552,7 @@ export class ContractService {
     const factory = this.getSecurityTokenFactoryContract(signer);
     const encodedHash = encodeDocumentHash(documentHash);
 
-    const args: unknown[] = [
+    const modernArgs: unknown[] = [
       rulesBytecode,
       swapBytecode,
       name,
@@ -1504,13 +1566,53 @@ export class ContractService {
       minTimelockAmount,
       maxReleaseDelay,
     ];
+    const legacyArgs: unknown[] = [
+      name,
+      symbol,
+      decimals,
+      totalSupply,
+      maxTotalSupply,
+      encodedHash,
+      documentType,
+      originalValue,
+      minTimelockAmount,
+      maxReleaseDelay,
+    ];
 
-    const gasUnits = await this.estimateGasWithFallback(
-      factory,
-      'createSecurityToken',
-      args,
-      signerAddress,
-    );
+    let gasUnits: bigint | null;
+    try {
+      gasUnits = await this.estimateGasWithFallback(
+        factory,
+        SECURITY_TOKEN_CREATE_MODERN_SIGNATURE,
+        modernArgs,
+        signerAddress,
+      );
+    } catch (modernErr: unknown) {
+      if (!isSecurityTokenFactoryPayloadMismatchError(modernErr)) {
+        throw modernErr;
+      }
+
+      logger.warn(
+        '[SecurityTokenFactory compatibility] modern createSecurityToken estimate selector rejected, retrying legacy signature',
+        modernErr,
+      );
+
+      try {
+        gasUnits = await this.estimateGasWithFallback(
+          factory,
+          SECURITY_TOKEN_CREATE_LEGACY_SIGNATURE,
+          legacyArgs,
+          signerAddress,
+        );
+      } catch (legacyErr: unknown) {
+        if (isSecurityTokenFactoryPayloadMismatchError(legacyErr)) {
+          throw new Error(
+            'Unable to estimate security token deployment gas because this network has an incompatible factory deployment.',
+          );
+        }
+        throw legacyErr;
+      }
+    }
 
     if (gasUnits === null) {
       throw new Error(

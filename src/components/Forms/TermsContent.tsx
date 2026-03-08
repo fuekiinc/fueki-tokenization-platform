@@ -250,7 +250,7 @@ export default function TermsContent() {
           </li>
           <li>
             <span className="font-medium text-[var(--text-primary)]">Smart Contract Deployment Monthly:</span>{' '}
-            $50.00 USD per month for deployer-only access, plus a per-contract
+            $70.00 USD per month for deployer-only access, plus a per-contract
             deployment fee.
           </li>
           <li>

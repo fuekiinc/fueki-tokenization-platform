@@ -11,6 +11,8 @@ import type * as securityToken from "./security-token";
 export type { securityToken };
 import type * as templates from "./templates";
 export type { templates };
+import type * as test from "./test";
+export type { test };
 export type { AssetExchange } from "./AssetExchange";
 export type { TestWBTC } from "./TestWBTC";
 export type { WrappedAsset } from "./WrappedAsset";

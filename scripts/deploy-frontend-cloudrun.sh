@@ -132,6 +132,9 @@ fi
 if [ -z "$VITE_GOOGLE_MAPS_API_KEY" ]; then
   echo "WARNING: VITE_GOOGLE_MAPS_API_KEY is empty; address autocomplete will be disabled."
 fi
+if [ -z "$VITE_DEMO_WALLET_KEY" ]; then
+  echo "WARNING: VITE_DEMO_WALLET_KEY is empty; demo mode wallet activation will fail."
+fi
 
 TMP_BACKUP=''
 if [ -f "$ENV_FILE" ]; then

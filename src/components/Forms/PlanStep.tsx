@@ -83,7 +83,7 @@ const PLANS: {
     id: 'contract_deployment_monthly',
     category: 'deployer_only',
     name: 'Contract Deploy Monthly',
-    price: '$50',
+    price: '$70',
     period: '/month',
     description: 'Access only to the smart contract deployment workflow.',
     highlights: [

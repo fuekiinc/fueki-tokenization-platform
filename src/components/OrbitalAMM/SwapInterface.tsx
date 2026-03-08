@@ -489,7 +489,7 @@ export default function SwapInterface({
   const sameTokenError = tokenIn && tokenOut && tokenIn.address === tokenOut.address;
   const insufficientBalance = parsedAmountIn > 0n && parsedAmountIn > balanceIn;
 
-  const swapDisabled =
+  const baseSwapDisabled =
     !contractService ||
     !selectedPool ||
     !tokenIn ||
@@ -498,8 +498,9 @@ export default function SwapInterface({
     parsedAmountIn === 0n ||
     quoteOut === 0n ||
     !!insufficientBalance ||
-    priceImpactSeverity === 'blocking' ||
     (txStatus !== 'idle' && txStatus !== 'confirmed');
+
+  const swapDisabled = baseSwapDisabled;
 
   // ---- Render ---------------------------------------------------------------
 
@@ -778,7 +779,7 @@ export default function SwapInterface({
               {priceImpactSeverity === 'blocking' && (
                 <div className="flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2.5 text-[11px] text-red-400 font-medium">
                   <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                  Price impact exceeds 10%. This swap would result in a significant loss.
+                  Very high price impact (&gt;10%). You can still proceed, but expected output may be significantly lower.
                 </div>
               )}
               {priceImpactSeverity === 'high' && (
@@ -966,7 +967,7 @@ export default function SwapInterface({
           <button
             type="button"
             onClick={() => {
-              if (!showSwapReview && !swapDisabled && parsedAmountIn > 0n && quoteOut > 0n) {
+              if (!showSwapReview && !baseSwapDisabled && parsedAmountIn > 0n && quoteOut > 0n) {
                 setShowSwapReview(true);
               } else if (showSwapReview) {
                 void handleSwap();
@@ -997,8 +998,8 @@ export default function SwapInterface({
                 <Check className="h-4 w-4" />
                 Swap Complete!
               </>
-            ) : priceImpactSeverity === 'blocking' ? (
-              'Price Impact Too High'
+            ) : priceImpactSeverity === 'blocking' && !showSwapReview ? (
+              'Review High-Impact Swap'
             ) : insufficientBalance ? (
               'Insufficient Balance'
             ) : parsedAmountIn === 0n ? (

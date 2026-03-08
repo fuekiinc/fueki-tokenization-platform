@@ -22,6 +22,7 @@ import logger from '../../lib/logger';
 import HelpTooltip from '../Common/HelpTooltip';
 import { FormField } from '../Common/FormField';
 import NetworkCapabilityGuard from '../Common/NetworkCapabilityGuard';
+import { useDemoWalletStore } from '../DemoMode/DemoWalletProvider';
 import { useWallet } from '../../hooks/useWallet';
 import { useTradeStore } from '../../store/tradeStore.ts';
 import { useAssetStore } from '../../store/assetStore.ts';
@@ -39,7 +40,11 @@ import {
 import { getNetworkCapabilities } from '../../contracts/networkCapabilities';
 import { sanitizePastedAddress, validatePositiveAmount, validateTokenSymbol } from '../../lib/utils/validation';
 import { INPUT_CLASSES } from '../../lib/designTokens';
-import { getMintApprovalStatus, submitMintApprovalRequest } from '../../lib/api/mintRequests';
+import {
+  getMintApprovalStatus,
+  markMintApprovalRequestMinted,
+  submitMintApprovalRequest,
+} from '../../lib/api/mintRequests';
 import type { ParsedDocument, TradeHistory } from '../../types';
 import type {
   MintApprovalRequestItem,
@@ -126,6 +131,9 @@ export default function MintForm({
   onClearSelectedRequest,
 }: MintFormProps) {
   const isDemoMode = useAuthStore((s) => s.user?.demoActive === true);
+  const demoWalletSettingUp = useDemoWalletStore((s) => s.isSettingUp);
+  const demoWalletError = useDemoWalletStore((s) => s.setupError);
+  const demoWalletReady = useDemoWalletStore((s) => s.isReady);
   const { address, chainId, isConnected, connectWallet, switchNetwork } = useWallet();
   const addTrade = useTradeStore((s) => s.addTrade);
   const addAsset = useAssetStore((s) => s.addAsset);
@@ -811,6 +819,25 @@ export default function MintForm({
         originalValue: originalValueWei.toString(),
         createdAt: Date.now(),
       });
+
+      // Mark the approved mint request as consumed so it cannot be reused for
+      // another mint action.
+      if (approvalsRequired && approvalRequestId) {
+        try {
+          const markResult = await markMintApprovalRequestMinted(
+            approvalRequestId,
+            receipt.hash,
+          );
+          applyApprovalStatus(markResult.status, {
+            requestId: markResult.requestId,
+            reviewNotes: markResult.reviewNotes,
+            submittedAt: approvalSubmittedAt,
+            reviewedAt: markResult.reviewedAt,
+          });
+        } catch (markErr) {
+          logger.warn('Mint succeeded but approval request status update failed:', markErr);
+        }
+      }
     } catch (err: unknown) {
       let message = 'Minting transaction failed';
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -867,6 +894,10 @@ export default function MintForm({
       return;
     }
 
+    if (approvalStatus === 'minted') {
+      toast('This approved request was already used. Submit a new request to mint again.');
+    }
+
     await handleSubmitMintRequest();
   }, [approvalStatus, approvalsRequired, handleSubmitMintRequest, handleMint]);
 
@@ -894,6 +925,46 @@ export default function MintForm({
   // ---- Not connected prompt -----------------------------------------------
 
   if (!isConnected) {
+    if (isDemoMode) {
+      if (demoWalletSettingUp || (!demoWalletReady && !demoWalletError)) {
+        return (
+          <section
+            aria-label="Demo wallet setup in progress"
+            className="flex flex-col items-center justify-center py-12 sm:py-20 text-center px-4"
+          >
+            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-white/[0.06]">
+              <Loader2 className="h-7 w-7 animate-spin text-indigo-400" aria-hidden="true" />
+            </div>
+            <h3 className="text-base font-semibold text-gray-200">
+              Activating Demo Wallet
+            </h3>
+            <p className="mt-3 max-w-xs text-sm text-gray-500 leading-relaxed">
+              Connecting the pre-funded Holesky demo wallet for this session.
+            </p>
+          </section>
+        );
+      }
+
+      if (demoWalletError) {
+        return (
+          <section
+            aria-label="Demo wallet setup failed"
+            className="flex flex-col items-center justify-center py-12 sm:py-20 text-center px-4"
+          >
+            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-500/10 border border-red-500/20">
+              <AlertCircle className="h-7 w-7 text-red-400" aria-hidden="true" />
+            </div>
+            <h3 className="text-base font-semibold text-gray-200">
+              Demo wallet unavailable
+            </h3>
+            <p className="mt-3 max-w-md text-sm text-red-400 leading-relaxed">
+              {demoWalletError}
+            </p>
+          </section>
+        );
+      }
+    }
+
     return (
       <section aria-label="Wallet connection required" className="flex flex-col items-center justify-center py-12 sm:py-20 text-center px-4">
         <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-white/[0.06]">
@@ -1146,7 +1217,7 @@ export default function MintForm({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-cyan-200">
-                Pending Token Selected
+                Mint Request Selected
               </p>
               <p className="mt-1 text-xs text-cyan-100/80">
                 Request ID: <span className="font-mono">{selectedRequest.id}</span>
@@ -1481,6 +1552,17 @@ export default function MintForm({
         </div>
       )}
 
+      {approvalsRequired && approvalStatus === 'minted' && (
+        <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.08] p-4">
+          <p className="text-sm font-semibold text-indigo-300">
+            This approval was already used for a successful mint.
+          </p>
+          <p className="mt-1 text-xs text-indigo-300/80">
+            Submit a new mint request to mint another token with these details.
+          </p>
+        </div>
+      )}
+
       {approvalsRequired && approvalError && (
         <p className="text-xs text-red-400" role="alert">
           {approvalError}
@@ -1496,11 +1578,13 @@ export default function MintForm({
           approvalsRequired && approvalStatus === 'pending';
         const approvalRejected =
           approvalsRequired && approvalStatus === 'rejected';
+        const approvalMinted =
+          approvalsRequired && approvalStatus === 'minted';
 
         let buttonLabel = approvalsRequired
           ? (mintUnlocked
               ? 'Mint Token'
-              : approvalRejected
+              : approvalRejected || approvalMinted
                 ? 'Resubmit Mint Request to Banker'
                 : 'Submit Mint Request to Banker')
           : 'Mint Token';

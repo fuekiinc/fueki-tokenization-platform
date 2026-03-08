@@ -657,7 +657,7 @@ export default function CreatePoolForm({
             {showTokenPicker && (
               <div
                 className={clsx(
-                  'absolute z-50 mt-2 w-full rounded-xl',
+                  'absolute bottom-full z-[60] mb-2 w-full rounded-xl',
                   'bg-[#12141A] border border-white/[0.08]',
                   'shadow-2xl shadow-black/50',
                   'overflow-hidden',

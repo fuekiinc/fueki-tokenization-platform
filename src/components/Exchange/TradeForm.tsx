@@ -60,6 +60,12 @@ interface TradeFormProps {
   assets: WrappedAsset[];
   contractService: ContractService | null;
   onOrderCreated: () => void;
+  /** Current page-level selected sell token (used to sync chart/orderbook pair). */
+  selectedSellToken?: string | null;
+  /** Current page-level selected buy token (used to sync chart/orderbook pair). */
+  selectedBuyToken?: string | null;
+  /** Notify parent when the selected token pair changes. */
+  onPairChange?: (sellToken: string | null, buyToken: string | null) => void;
   /** Disable AMM mode when AMM contracts are not deployed on the active chain. */
   enableAMM?: boolean;
   /** Show Orbital AMM fallback when the legacy AMM is unavailable. */
@@ -74,6 +80,9 @@ export default function TradeForm({
   assets,
   contractService,
   onOrderCreated,
+  selectedSellToken,
+  selectedBuyToken,
+  onPairChange,
   enableAMM = true,
   orbitalFallbackEnabled = false,
 }: TradeFormProps) {
@@ -107,6 +116,24 @@ export default function TradeForm({
       setTradeMode('limit');
     }
   }, [enableAMM, tradeMode]);
+
+  // Keep local token selectors in sync with page-level pair state.
+  useEffect(() => {
+    if (selectedSellToken !== undefined) {
+      setSellToken(selectedSellToken);
+    }
+  }, [selectedSellToken]);
+
+  useEffect(() => {
+    if (selectedBuyToken !== undefined) {
+      setBuyToken(selectedBuyToken);
+    }
+  }, [selectedBuyToken]);
+
+  // Notify parent shell (chart/orderbook) whenever the pair changes in-form.
+  useEffect(() => {
+    onPairChange?.(sellToken, buyToken);
+  }, [sellToken, buyToken, onPairChange]);
 
   // ---- Derived ------------------------------------------------------------
 

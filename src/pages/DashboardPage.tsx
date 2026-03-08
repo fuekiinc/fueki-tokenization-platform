@@ -17,12 +17,13 @@ import { useTradeStore } from '../store/tradeStore.ts';
 import { useExchangeStore } from '../store/exchangeStore.ts';
 import { useAuthStore } from '../store/authStore';
 import { useWallet } from '../hooks/useWallet';
-import { ContractService } from '../lib/blockchain/contracts';
+import { ContractService, getReadOnlyProvider } from '../lib/blockchain/contracts';
 import { isRetryableRpcError } from '../lib/rpc/endpoints';
 import { retryAsync } from '../lib/utils/retry';
 import { mapInBatches } from '../lib/utils/asyncBatch';
 import { copyToClipboard, formatAddress, parseTokenAmount } from '../lib/utils/helpers';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
+import { OrbitalRouterABI } from '../contracts/abis/OrbitalRouter.ts';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 
 // Dashboard sub-components
@@ -123,11 +124,6 @@ export default function DashboardPage() {
   useEffect(() => {
     wrappedAssetsRef.current = wrappedAssets;
   }, [wrappedAssets]);
-
-  const tradeHistoryRef = useRef(tradeHistory);
-  useEffect(() => {
-    tradeHistoryRef.current = tradeHistory;
-  }, [tradeHistory]);
 
   // Reset wallet-bound dashboard data whenever the active scope changes.
   // This prevents stale assets/trades from a previous chain or account from
@@ -292,8 +288,22 @@ export default function DashboardPage() {
             }
           })
         ).filter((asset): asset is import('../types').WrappedAsset => asset !== null);
+        // Wallet-scoped dashboard view:
+        // 1) Prefer assets where this wallet holds a positive balance.
+        // 2) If none, fall back to assets created by this wallet.
+        const walletScopedAssets = assetList.filter(
+          (asset) => parseTokenAmount(asset.balance || '0') > 0,
+        );
+        const userCreatedAddressSet = new Set(
+          userAssetAddresses.map((addr) => addr.toLowerCase()),
+        );
+        const userCreatedAssets = assetList.filter((asset) =>
+          userCreatedAddressSet.has(asset.address.toLowerCase()),
+        );
+        const resolvedAssets =
+          walletScopedAssets.length > 0 ? walletScopedAssets : userCreatedAssets;
         if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
-        setAssets(assetList);
+        setAssets(resolvedAssets);
       }
     } catch (error) {
       const classified = classifyError(error);
@@ -395,18 +405,24 @@ export default function DashboardPage() {
     };
 
     // Fetch trade history from on-chain events
-    // We query three event sources:
+    // We query on-chain event sources across minting, exchange, and Orbital AMM:
     //   1. AssetCreated events from the factory (mint history)
-    //   2. OrderFilled events where user is the taker
-    //   3. OrderFilled events for orders the user created (maker fills)
+    //   2. SecurityTokenCreated events from the security factory
+    //   3. Legacy exchange events (orders + fills)
+    //   4. Orbital AMM router events (liquidity + swaps)
     try {
       const trades: import('../types').TradeHistory[] = [];
       const seenTx = new Set<string>();
       const addr = address.toLowerCase();
 
+      // Query events from a chain-scoped read-only provider rather than the
+      // wallet provider. This avoids wallet RPC/proxy `eth_getLogs` limits and
+      // keeps history reliable on mainnet/testnets.
+      const readProvider = getReadOnlyProvider(chainId);
+
       // 1. Mint history — query AssetCreated events from the factory
       try {
-        const factory = service.getFactoryContract();
+        const factory = service.getFactoryContract(readProvider);
         const mintFilter = factory.filters.AssetCreated(address);
         const mintEvents = await queryFilterResilient(
           factory,
@@ -456,7 +472,7 @@ export default function DashboardPage() {
 
       // 2. Security-token deployment history — query SecurityTokenCreated events
       try {
-        const securityFactory = service.getSecurityTokenFactoryContract();
+        const securityFactory = service.getSecurityTokenFactoryContract(readProvider);
         const securityMintFilter = securityFactory.filters.SecurityTokenCreated(address);
         const securityMintEvents = await queryFilterResilient(
           securityFactory,
@@ -505,7 +521,7 @@ export default function DashboardPage() {
       //   4) OrderFilled as taker
       //   5) OrderFilled for maker orders
       try {
-        const exchange = service.getAssetBackedExchangeContract();
+        const exchange = service.getAssetBackedExchangeContract(readProvider);
         const orderCreatedFilter = exchange.filters.OrderCreated(null, address);
         const orderCreatedEvents = await queryFilterResilient(
           exchange,
@@ -608,21 +624,155 @@ export default function DashboardPage() {
         logger.warn('Unable to load exchange trade history:', error);
       }
 
-      // Merge with existing in-memory trade history
-      const existing = tradeHistoryRef.current;
-      const existingKeys = new Set(
-        existing.map((t) => `${t.type}:${t.txHash.toLowerCase()}:${t.status}`),
-      );
-      const merged = [...existing];
-      for (const t of trades) {
-        const key = `${t.type}:${t.txHash.toLowerCase()}:${t.status}`;
-        if (!existingKeys.has(key)) {
-          existingKeys.add(key);
-          merged.push(t);
+      // 6, 7 & 8. Orbital AMM history:
+      //   6) LiquidityAdded as sender
+      //   7) LiquidityRemoved as sender
+      //   8) SwapExecuted as sender
+      try {
+        const networkConfig = SUPPORTED_NETWORKS[chainId];
+        const orbitalRouterAddress = networkConfig?.orbitalRouterAddress;
+
+        if (orbitalRouterAddress && orbitalRouterAddress !== ethers.ZeroAddress) {
+          const orbitalRouter = new ethers.Contract(
+            orbitalRouterAddress,
+            OrbitalRouterABI,
+            readProvider,
+          );
+
+          const liquidityAddedFilter = orbitalRouter.filters.LiquidityAdded(address);
+          const liquidityAddedEvents = await queryFilterResilient(
+            orbitalRouter,
+            (fromBlock) =>
+              fromBlock === undefined
+                ? orbitalRouter.queryFilter(liquidityAddedFilter)
+                : orbitalRouter.queryFilter(liquidityAddedFilter, fromBlock),
+            300_000,
+          );
+
+          for (const evt of liquidityAddedEvents) {
+            const log = evt as ethers.EventLog;
+            const txKey = `orbital-add-${log.transactionHash}-${log.index}`;
+            if (seenTx.has(txKey)) continue;
+            seenTx.add(txKey);
+
+            const pool = String(log.args[1] ?? '');
+            const lpMinted = log.args[2] as bigint;
+
+            let timestampMs = Date.now();
+            try {
+              const block = await log.getBlock();
+              if (block) timestampMs = block.timestamp * 1000;
+            } catch { /* use current time as fallback */ }
+
+            trades.push({
+              id: txKey,
+              type: 'exchange',
+              asset: 'Orbital Liquidity Added',
+              assetSymbol: 'OLP',
+              amount: ethers.formatUnits(lpMinted, 18),
+              txHash: log.transactionHash,
+              timestamp: timestampMs,
+              from: addr,
+              to: pool,
+              status: 'confirmed',
+            });
+          }
+
+          const liquidityRemovedFilter = orbitalRouter.filters.LiquidityRemoved(address);
+          const liquidityRemovedEvents = await queryFilterResilient(
+            orbitalRouter,
+            (fromBlock) =>
+              fromBlock === undefined
+                ? orbitalRouter.queryFilter(liquidityRemovedFilter)
+                : orbitalRouter.queryFilter(liquidityRemovedFilter, fromBlock),
+            300_000,
+          );
+
+          for (const evt of liquidityRemovedEvents) {
+            const log = evt as ethers.EventLog;
+            const txKey = `orbital-remove-${log.transactionHash}-${log.index}`;
+            if (seenTx.has(txKey)) continue;
+            seenTx.add(txKey);
+
+            const pool = String(log.args[1] ?? '');
+            const lpBurned = log.args[2] as bigint;
+
+            let timestampMs = Date.now();
+            try {
+              const block = await log.getBlock();
+              if (block) timestampMs = block.timestamp * 1000;
+            } catch { /* use current time as fallback */ }
+
+            trades.push({
+              id: txKey,
+              type: 'exchange',
+              asset: 'Orbital Liquidity Removed',
+              assetSymbol: 'OLP',
+              amount: ethers.formatUnits(lpBurned, 18),
+              txHash: log.transactionHash,
+              timestamp: timestampMs,
+              from: pool,
+              to: addr,
+              status: 'confirmed',
+            });
+          }
+
+          const swapExecutedFilter = orbitalRouter.filters.SwapExecuted(address);
+          const swapExecutedEvents = await queryFilterResilient(
+            orbitalRouter,
+            (fromBlock) =>
+              fromBlock === undefined
+                ? orbitalRouter.queryFilter(swapExecutedFilter)
+                : orbitalRouter.queryFilter(swapExecutedFilter, fromBlock),
+            300_000,
+          );
+
+          for (const evt of swapExecutedEvents) {
+            const log = evt as ethers.EventLog;
+            const txKey = `orbital-swap-${log.transactionHash}-${log.index}`;
+            if (seenTx.has(txKey)) continue;
+            seenTx.add(txKey);
+
+            const tokenIn = String(log.args[2] ?? '');
+            const tokenOut = String(log.args[3] ?? '');
+            const amountOut = log.args[5] as bigint;
+
+            const tokenInAsset = wrappedAssetsRef.current.find(
+              (a) => a.address.toLowerCase() === tokenIn.toLowerCase(),
+            );
+            const tokenOutAsset = wrappedAssetsRef.current.find(
+              (a) => a.address.toLowerCase() === tokenOut.toLowerCase(),
+            );
+
+            let timestampMs = Date.now();
+            try {
+              const block = await log.getBlock();
+              if (block) timestampMs = block.timestamp * 1000;
+            } catch { /* use current time as fallback */ }
+
+            trades.push({
+              id: txKey,
+              type: 'exchange',
+              asset: `Orbital ${tokenInAsset?.symbol ?? 'IN'}->${tokenOutAsset?.symbol ?? 'OUT'}`,
+              assetSymbol: tokenOutAsset?.symbol ?? 'SWAP',
+              amount: ethers.formatUnits(amountOut, 18),
+              txHash: log.transactionHash,
+              timestamp: timestampMs,
+              from: tokenIn,
+              to: tokenOut,
+              status: 'confirmed',
+            });
+          }
         }
+      } catch (error) {
+        logger.warn('Unable to load Orbital AMM trade history:', error);
       }
-      merged.sort((a, b) => b.timestamp - a.timestamp);
-      setTrades(merged);
+
+      // Replace dashboard trade history with the fresh, chain-scoped result.
+      // This prevents cross-network/cross-wallet leakage from stale in-memory
+      // entries and keeps metrics/activity aligned with the active wallet scope.
+      trades.sort((a, b) => b.timestamp - a.timestamp);
+      setTrades(trades);
     } catch (error) {
       logger.warn('Unable to load trade history:', error);
     }

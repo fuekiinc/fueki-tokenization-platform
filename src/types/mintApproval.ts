@@ -1,4 +1,4 @@
-export type MintApprovalStatus = 'none' | 'pending' | 'approved' | 'rejected';
+export type MintApprovalStatus = 'none' | 'pending' | 'approved' | 'rejected' | 'minted';
 
 export interface MintApprovalStatusResponse {
   status: MintApprovalStatus;
@@ -63,4 +63,14 @@ export interface ListMintApprovalRequestsQuery {
 
 export interface ListMintApprovalRequestsResponse {
   requests: MintApprovalRequestItem[];
+}
+
+export interface MarkMintApprovalMintedResponse {
+  success: boolean;
+  requestId: string;
+  status: Exclude<MintApprovalStatus, 'none'>;
+  reviewNotes: string | null;
+  reviewedAt: string | null;
+  canMint: boolean;
+  alreadyMinted?: boolean;
 }

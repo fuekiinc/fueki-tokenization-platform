@@ -1,0 +1,14 @@
+config:
+  target: "https://fueki-backend-pojr5zp2oq-uc.a.run.app"
+  phases:
+    - duration: 240
+      arrivalRate: 2
+      name: sustained-health-check
+  defaults:
+    headers:
+      content-type: application/json
+scenarios:
+  - name: health-poll
+    flow:
+      - get:
+          url: "/health"

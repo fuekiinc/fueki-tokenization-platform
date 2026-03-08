@@ -1,0 +1,45 @@
+name: Fueki Nightly Live API Checks
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  live-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      FUEKI_ENABLE_LIVE_API: true
+      FUEKI_ALLOW_DB_INTEGRATION: false
+      FUEKI_API_URL: https://fueki-backend-pojr5zp2oq-uc.a.run.app
+      FUEKI_API_PREFIX: /api
+      FUEKI_EXPECT_UNAUTHORIZED_STATUS: 401
+      FUEKI_EXPECT_COMPILE_STATUS: 404
+      FUEKI_EXPECT_GAS_STATUS: 404
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run API tests
+        run: npm run test:api
+
+      - name: Run Newman contract checks
+        run: bash tests/api/run-newman-contract.sh
+
+      - name: Upload API reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-live-reports
+          path: tests/reports

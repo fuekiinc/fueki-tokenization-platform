@@ -348,33 +348,33 @@ export default function MintPage() {
           <SectionCard
             stepNumber={3}
             title="Configure and mint asset"
-            subtitle="Review pending approvals and finalize minting after banker approval."
+            subtitle="Configure token details and mint your asset."
             icon={Coins}
             isActive={activeStep >= 2 && activeStep < 4}
             isCompleted={activeStep === 4}
           >
-            <div className="space-y-6">
-              <PendingTokensPanel
-                selectedRequestId={selectedMintRequest?.id ?? null}
-                onSelectRequest={setSelectedMintRequest}
-              />
-              <div className="h-px bg-gradient-to-r from-white/[0.08] via-white/[0.04] to-transparent" />
-              <MintForm
-                document={currentDocument}
-                selectedRequest={selectedMintRequest}
-                onClearSelectedRequest={() => setSelectedMintRequest(null)}
-              />
-            </div>
+            <MintForm
+              document={currentDocument}
+              selectedRequest={selectedMintRequest}
+              onClearSelectedRequest={() => setSelectedMintRequest(null)}
+            />
           </SectionCard>
 
           <SectionCard
             stepNumber={4}
             title="Minting history"
-            subtitle="Track your recently minted assets and their on-chain status."
+            subtitle="Track minted assets and review pending tokens."
             icon={History}
             isActive={activeStep === 4}
           >
-            <MintHistory />
+            <div className="space-y-6">
+              <MintHistory />
+              <div className="h-px bg-gradient-to-r from-white/[0.08] via-white/[0.04] to-transparent" />
+              <PendingTokensPanel
+                selectedRequestId={selectedMintRequest?.id ?? null}
+                onSelectRequest={setSelectedMintRequest}
+              />
+            </div>
           </SectionCard>
         </div>
       </div>

@@ -1,0 +1,73 @@
+name: Fueki Comprehensive Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'contracts/**'
+      - 'backend/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vitest.config.ts'
+      - 'vitest.workspace.ts'
+      - 'foundry.toml'
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      CI: true
+      FUEKI_ENABLE_LIVE_API: false
+      FUEKI_ALLOW_DB_INTEGRATION: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        run: npm --prefix backend ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit + API tests (Vitest)
+        run: npm run test:vitest
+
+      - name: Backend tests + build
+        run: |
+          npm --prefix backend run test
+          npm --prefix backend run build
+
+      - name: Contracts compile + hardhat tests
+        run: |
+          npm run contracts:build
+          npm run test:contracts:hardhat
+
+      - name: Security smoke
+        run: npm run test:security
+
+      - name: Generate report index
+        run: npm run test:reports
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-reports
+          path: tests/reports

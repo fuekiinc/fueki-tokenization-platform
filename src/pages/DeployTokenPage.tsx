@@ -34,6 +34,7 @@ import { ethers } from 'ethers';
 import { getProvider, useWalletStore } from '../store/walletStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
 import { useWallet } from '../hooks/useWallet.ts';
+import { useAuthStore } from '../store/authStore.ts';
 import { SecurityTokenFactoryABI } from '../contracts/abis/SecurityTokenFactory.ts';
 import { RESTRICTED_SWAP_BYTECODE, TRANSFER_RULES_BYTECODE } from '../contracts/bytecodes.ts';
 import {
@@ -44,6 +45,7 @@ import {
 } from '../contracts/addresses.ts';
 import { ContractService, encodeDocumentHash, parseContractError } from '../lib/blockchain/contracts.ts';
 import HelpTooltip, { type TooltipId } from '../components/Common/HelpTooltip';
+import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 import PendingDeploymentsPanel from '../components/SecurityToken/PendingDeploymentsPanel.tsx';
 import {
   getSecurityTokenApprovalStatus,
@@ -548,6 +550,10 @@ export default function DeployTokenPage() {
   const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
 
   const wallet = useWalletStore((s) => s.wallet);
+  const isDemoMode = useAuthStore((s) => s.user?.demoActive === true);
+  const demoWalletSettingUp = useDemoWalletStore((s) => s.isSettingUp);
+  const demoWalletError = useDemoWalletStore((s) => s.setupError);
+  const demoWalletReady = useDemoWalletStore((s) => s.isReady);
   const addTrade = useTradeStore((s) => s.addTrade);
   const {
     isSwitchingNetwork,
@@ -1223,6 +1229,28 @@ export default function DeployTokenPage() {
                 </p>
               </div>
 
+              <PendingDeploymentsPanel
+                selectedRequestId={selectedApprovalRequest?.id ?? null}
+                onSelectRequest={handleSelectApprovalRequest}
+              />
+
+              {selectedApprovalRequest && (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.08] px-4 py-3 text-sm text-indigo-200">
+                  <span>
+                    Using request <span className="font-mono">{selectedApprovalRequest.id}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedApprovalRequest(null);
+                    }}
+                    className="rounded-lg border border-indigo-400/25 bg-indigo-400/10 px-2.5 py-1 text-xs font-medium text-indigo-100 transition-colors hover:bg-indigo-400/20"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 {/* Token name */}
                 <div className="sm:col-span-2">
@@ -1615,28 +1643,6 @@ export default function DeployTokenPage() {
                 </p>
               </div>
 
-              <PendingDeploymentsPanel
-                selectedRequestId={selectedApprovalRequest?.id ?? null}
-                onSelectRequest={handleSelectApprovalRequest}
-              />
-
-              {selectedApprovalRequest && (
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.08] px-4 py-3 text-sm text-indigo-200">
-                  <span>
-                    Using request <span className="font-mono">{selectedApprovalRequest.id}</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedApprovalRequest(null);
-                    }}
-                    className="rounded-lg border border-indigo-400/25 bg-indigo-400/10 px-2.5 py-1 text-xs font-medium text-indigo-100 transition-colors hover:bg-indigo-400/20"
-                  >
-                    Clear
-                  </button>
-                </div>
-              )}
-
               {/* Summary table */}
               <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl divide-y divide-white/[0.04]">
                 {summaryItems.map((item) => (
@@ -1816,7 +1822,13 @@ export default function DeployTokenPage() {
                     className="h-4 w-4 shrink-0"
                     aria-hidden="true"
                   />
-                  Please connect your wallet to deploy.
+                  {isDemoMode
+                    ? (
+                      demoWalletSettingUp || (!demoWalletReady && !demoWalletError)
+                        ? 'Activating demo wallet...'
+                        : (demoWalletError || 'Demo wallet unavailable.')
+                    )
+                    : 'Please connect your wallet to deploy.'}
                 </div>
               )}
 

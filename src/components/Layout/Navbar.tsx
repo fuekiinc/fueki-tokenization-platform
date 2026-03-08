@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Check, ChevronDown, LogOut, Menu, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, Loader2, LogOut, Menu, Wallet, X } from 'lucide-react';
 import clsx from 'clsx';
 import { ConnectButton as ThirdwebConnectButton } from 'thirdweb/react';
 import FuekiBrand from '../Brand/FuekiBrand';
 import { useWallet } from '../../hooks/useWallet';
 import { useWalletStore } from '../../store/walletStore.ts';
 import { useAuthStore } from '../../store/authStore';
+import { useDemoWalletStore } from '../DemoMode/DemoWalletProvider';
 import { ComponentErrorBoundary } from '../ErrorBoundary';
 import logger from '../../lib/logger';
 import { isContractDeploymentOnlyPlan } from '../../lib/subscriptionPlans';
@@ -371,7 +372,65 @@ function NetworkSelector({ compact = false }: { compact?: boolean }) {
 // ---------------------------------------------------------------------------
 
 function WalletButton({ compact = false }: { compact?: boolean }) {
+  const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
+  const demoWalletSettingUp = useDemoWalletStore((s) => s.isSettingUp);
+  const demoWalletError = useDemoWalletStore((s) => s.setupError);
   const { isConnecting, error: walletError, address } = useWallet();
+
+  if (isDemoActive) {
+    if (address) {
+      const shortAddress = `${address.slice(0, 6)}...${address.slice(-4)}`;
+      return (
+        <div
+          className={clsx(
+            'flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold',
+            'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+            compact && 'w-full',
+          )}
+          title="Demo wallet is auto-connected."
+        >
+          <Wallet className="h-4 w-4" />
+          <span>Demo: {shortAddress}</span>
+        </div>
+      );
+    }
+
+    if (demoWalletSettingUp || !demoWalletError) {
+      return (
+        <button
+          type="button"
+          disabled
+          className={clsx(
+            'flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold',
+            'border border-indigo-500/30 bg-indigo-500/10 text-indigo-300',
+            'cursor-not-allowed',
+            compact && 'w-full',
+          )}
+          title="Activating demo wallet..."
+        >
+          <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+          Activating Demo Wallet
+        </button>
+      );
+    }
+
+    return (
+      <div className={clsx('space-y-2', compact && 'w-full')}>
+        <div
+          className={clsx(
+            'flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold',
+            'border border-red-500/30 bg-red-500/10 text-red-300',
+            compact && 'w-full',
+          )}
+          title="Demo wallet failed to initialize."
+        >
+          <AlertTriangle className="h-4 w-4" />
+          Demo Wallet Error
+        </div>
+        <p className="text-xs text-red-400">{demoWalletError}</p>
+      </div>
+    );
+  }
 
   if (!thirdwebClient || !isThirdwebConfigured) {
     return (

@@ -508,6 +508,7 @@ export default function PortfolioPage() {
   const { isConnected, address, chainId, connectWallet, error: walletError } = useWallet();
   const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
   const demoWalletSettingUp = useDemoWalletStore((s) => s.isSettingUp);
+  const demoWalletError = useDemoWalletStore((s) => s.setupError);
   const demoWalletReady = useDemoWalletStore((s) => s.isReady);
   const wrappedAssets = useAssetStore((s) => s.wrappedAssets);
   const isLoadingAssets = useAssetStore((s) => s.isLoadingAssets);
@@ -949,15 +950,28 @@ export default function PortfolioPage() {
 
   // ---- Demo mode: wallet still initialising --------------------------------
 
-  if (isDemoActive && !isConnected && (demoWalletSettingUp || !demoWalletReady)) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-          <p className="text-sm text-gray-400">Setting up demo wallet…</p>
+  if (isDemoActive && !isConnected) {
+    if (demoWalletSettingUp || (!demoWalletReady && !demoWalletError)) {
+      return (
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="text-center">
+            <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+            <p className="text-sm text-gray-400">Setting up demo wallet…</p>
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
+
+    if (demoWalletError) {
+      return (
+        <div className="w-full pt-12">
+          <ErrorState
+            message={`Demo wallet could not be activated: ${demoWalletError}`}
+            onRetry={() => window.location.reload()}
+          />
+        </div>
+      );
+    }
   }
 
   // ---- Not connected -------------------------------------------------------

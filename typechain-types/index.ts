@@ -174,6 +174,8 @@ export type { Lottery } from "./contracts/templates/utility/Lottery.sol/Lottery"
 export { Lottery__factory } from "./factories/contracts/templates/utility/Lottery.sol/Lottery__factory";
 export type { PaymentSplitter } from "./contracts/templates/utility/PaymentSplitter";
 export { PaymentSplitter__factory } from "./factories/contracts/templates/utility/PaymentSplitter__factory";
+export type { MockERC20 } from "./contracts/test/MockERC20";
+export { MockERC20__factory } from "./factories/contracts/test/MockERC20__factory";
 export type { TestWBTC } from "./contracts/TestWBTC";
 export { TestWBTC__factory } from "./factories/contracts/TestWBTC__factory";
 export type { WrappedAsset } from "./contracts/WrappedAsset";

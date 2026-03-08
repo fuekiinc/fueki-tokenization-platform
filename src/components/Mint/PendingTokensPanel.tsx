@@ -6,6 +6,7 @@ import {
   Clock,
   Loader2,
   RefreshCw,
+  RotateCcw,
   Wallet,
 } from 'lucide-react';
 import { useWallet } from '../../hooks/useWallet';
@@ -94,7 +95,7 @@ export default function PendingTokensPanel({
           Pending Tokens
         </p>
         <p className="mt-2 text-sm text-gray-400">
-          Connect your wallet to view pending and approved mint requests.
+          Connect your wallet to view pending, approved, and previously minted requests.
         </p>
       </div>
     );
@@ -102,6 +103,7 @@ export default function PendingTokensPanel({
 
   const approvedCount = requests.filter((r) => r.status === 'approved').length;
   const pendingCount = requests.filter((r) => r.status === 'pending').length;
+  const mintedCount = requests.filter((r) => r.status === 'minted').length;
 
   return (
     <section aria-label="Pending tokens" className="space-y-4">
@@ -111,7 +113,7 @@ export default function PendingTokensPanel({
             Pending Tokens
           </p>
           <p className="mt-1 text-sm text-gray-400">
-            {approvedCount} approved, {pendingCount} awaiting banker review.
+            {approvedCount} approved, {pendingCount} awaiting banker review, {mintedCount} already minted.
           </p>
         </div>
         <button
@@ -153,6 +155,7 @@ export default function PendingTokensPanel({
           {requests.map((request) => {
             const isApproved = request.status === 'approved';
             const isPending = request.status === 'pending';
+            const isMinted = request.status === 'minted';
             const network = getNetworkMetadata(request.chainId);
             const chainLabel = network?.name ?? `Chain ${request.chainId}`;
             const onCurrentChain = chainId === request.chainId;
@@ -187,6 +190,11 @@ export default function PendingTokensPanel({
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/[0.12] px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
                       <CheckCircle2 className="h-3 w-3" />
                       Approved
+                    </span>
+                  ) : isMinted ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/[0.12] px-2.5 py-1 text-[11px] font-semibold text-indigo-300">
+                      <RotateCcw className="h-3 w-3" />
+                      Minted
                     </span>
                   ) : isPending ? (
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/[0.12] px-2.5 py-1 text-[11px] font-semibold text-amber-300">
@@ -229,6 +237,15 @@ export default function PendingTokensPanel({
                         Switch to {chainLabel}
                       </button>
                     )
+                  ) : isMinted ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelectRequest(request)}
+                      className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/[0.12] px-4 py-2 text-xs font-semibold text-indigo-200 transition-all hover:bg-indigo-500/[0.18]"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Use Details for New Request
+                    </button>
                   ) : (
                     <button
                       type="button"

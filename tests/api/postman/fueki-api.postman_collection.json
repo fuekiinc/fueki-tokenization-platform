@@ -1,0 +1,170 @@
+{
+  "info": {
+    "name": "Fueki API Contract Tests",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Non-destructive API contract checks for deployed Fueki backend with explicit status semantics."
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/health"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('health endpoint returns 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('health response has status ok', function () {",
+              "  pm.expect(body.status).to.eql('ok');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "KYC Status Missing Auth",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}{{apiPrefix}}/kyc/status"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const expected = Number(pm.environment.get('expectedUnauthorizedStatus') || '401');",
+              "pm.test('kyc status missing auth has expected status', function () {",
+              "  pm.expect(pm.response.code).to.eql(expected);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('kyc status missing auth returns AUTH_REQUIRED', function () {",
+              "  pm.expect(body.error && body.error.code).to.eql('AUTH_REQUIRED');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Stats Missing Auth",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}{{apiPrefix}}/admin/stats"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const expected = Number(pm.environment.get('expectedUnauthorizedStatus') || '401');",
+              "pm.test('admin stats missing auth has expected status', function () {",
+              "  pm.expect(pm.response.code).to.eql(expected);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('admin stats missing auth returns AUTH_REQUIRED', function () {",
+              "  pm.expect(body.error && body.error.code).to.eql('AUTH_REQUIRED');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Compile Endpoint Semantics",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sourceCode\": \"// SPDX-License-Identifier: MIT\\npragma solidity ^0.8.20;\\ncontract C { function ping() external pure returns (uint256) { return 1; } }\",\n  \"contractName\": \"C\"\n}"
+        },
+        "url": "{{baseUrl}}{{compilePath}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const expected = Number(pm.environment.get('expectedCompileStatus') || '404');",
+              "pm.test('compile endpoint returns expected status', function () {",
+              "  pm.expect(pm.response.code).to.eql(expected);",
+              "});",
+              "if (expected === 200) {",
+              "  const body = pm.response.json();",
+              "  pm.test('compile success payload shape', function () {",
+              "    pm.expect(body.success).to.eql(true);",
+              "    pm.expect(typeof body.bytecode).to.eql('string');",
+              "    pm.expect(Array.isArray(body.abi)).to.eql(true);",
+              "  });",
+              "} else {",
+              "  pm.test('compile endpoint is not deployed in this environment', function () {",
+              "    pm.expect(pm.response.text()).to.include('/contracts/compile');",
+              "  });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Gas Endpoint Semantics",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"bytecode\": \"0x6080604052348015600f57600080fd5b5060f68061001d6000396000f3fe60806040\",\n  \"chainId\": 1,\n  \"constructorArgs\": []\n}"
+        },
+        "url": "{{baseUrl}}{{gasPath}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const expected = Number(pm.environment.get('expectedGasStatus') || '404');",
+              "pm.test('gas endpoint returns expected status', function () {",
+              "  pm.expect(pm.response.code).to.eql(expected);",
+              "});",
+              "if (expected === 200) {",
+              "  const body = pm.response.json();",
+              "  pm.test('gas payload contains estimate fields', function () {",
+              "    pm.expect(body.gasLimit || body.estimatedGas || body.estimate).to.not.eql(undefined);",
+              "  });",
+              "} else {",
+              "  pm.test('gas endpoint is not deployed in this environment', function () {",
+              "    pm.expect(pm.response.text()).to.include('/gas/estimate');",
+              "  });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    }
+  ]
+}

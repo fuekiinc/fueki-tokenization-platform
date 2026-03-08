@@ -30,6 +30,7 @@ import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 import { formatWeiAmount, truncateAddress } from '../lib/formatters';
 import { retryAsync } from '../lib/utils/retry';
 import { getReadOnlyProvider } from '../lib/blockchain/contracts';
+import { ErrorState } from '../components/Common/StateDisplays';
 import Spinner from '../components/Common/Spinner';
 import Badge from '../components/Common/Badge';
 
@@ -95,6 +96,7 @@ export default function SecurityTokenPage() {
   const isConnected = useWalletStore((s) => s.wallet.isConnected);
   const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
   const demoWalletSettingUp = useDemoWalletStore((s) => s.isSettingUp);
+  const demoWalletError = useDemoWalletStore((s) => s.setupError);
   const demoWalletReady = useDemoWalletStore((s) => s.isReady);
 
   // -----------------------------------------------------------------------
@@ -150,15 +152,28 @@ export default function SecurityTokenPage() {
   // Demo wallet loading
   // -----------------------------------------------------------------------
 
-  if (isDemoActive && !isConnected && (demoWalletSettingUp || !demoWalletReady)) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-          <p className="text-sm text-gray-400">Setting up demo wallet…</p>
+  if (isDemoActive && !isConnected) {
+    if (demoWalletSettingUp || (!demoWalletReady && !demoWalletError)) {
+      return (
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <div className="text-center">
+            <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+            <p className="text-sm text-gray-400">Setting up demo wallet…</p>
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
+
+    if (demoWalletError) {
+      return (
+        <div className="w-full pt-12">
+          <ErrorState
+            message={`Demo wallet could not be activated: ${demoWalletError}`}
+            onRetry={() => window.location.reload()}
+          />
+        </div>
+      );
+    }
   }
 
   // -----------------------------------------------------------------------

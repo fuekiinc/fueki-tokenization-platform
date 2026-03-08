@@ -1,0 +1,42 @@
+[profile.default]
+src = "contracts"
+test = "tests/contracts/forge"
+out = "out-foundry"
+libs = ["node_modules", "lib"]
+solc_version = "0.8.20"
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+verbosity = 2
+fs_permissions = [{ access = "read", path = "./" }]
+gas_reports = [
+  "OrbitalFactory",
+  "OrbitalPool",
+  "OrbitalRouter",
+  "RestrictedSwap",
+  "TransferRules",
+  "SecurityTokenFactory"
+]
+
+[fuzz]
+runs = 10000
+max_test_rejects = 200000
+
+[invariant]
+runs = 50000
+depth = 150
+fail_on_revert = true
+
+[rpc_endpoints]
+mainnet = "${MAINNET_RPC_URL}"
+holesky = "${HOLESKY_RPC_URL}"
+sepolia = "${SEPOLIA_RPC_URL}"
+arbitrum_one = "${ARBITRUM_RPC_URL}"
+arbitrum_sepolia = "${ARBITRUM_SEPOLIA_RPC_URL}"
+polygon = "${POLYGON_RPC_URL}"
+base = "${BASE_RPC_URL}"
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+
+[profile.ci]
+verbosity = 3

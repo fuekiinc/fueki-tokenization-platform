@@ -14,6 +14,7 @@ import type {
 } from '../types/auth';
 import * as authApi from '../lib/api/auth';
 import { normalizeKycStatus } from '../lib/auth/kycStatus';
+import { isJwtExpired } from '../lib/auth/jwt';
 import {
   type AuthStorageMode,
   clearPersistedAuth,
@@ -107,7 +108,44 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       const { tokens: savedTokens, user: savedUser, mode: storageMode } =
         snapshot;
 
-      // Tokens found in storage -- try to validate them by fetching the profile.
+      const refreshAndHydrate = async (): Promise<void> => {
+        // Access token may have expired -- attempt a refresh.
+        // The refresh token is sent automatically via httpOnly cookie.
+        const newTokens = await authApi.refreshToken();
+        persistTokens(storageMode, newTokens);
+
+        // Fetch the user profile with the new access token.
+        let user: User | null = savedUser ? normalizeUser(savedUser) : null;
+        try {
+          user = normalizeUser(await authApi.getProfile());
+          persistUser(storageMode, user);
+        } catch {
+          // If profile fetch fails, use the previously saved user data.
+          // This is a degraded state but better than logging the user out.
+        }
+
+        set({
+          user,
+          tokens: newTokens,
+          isAuthenticated: true,
+          isInitialized: true,
+          storageMode,
+        });
+      };
+
+      // If the access token is already expired, skip /auth/me and refresh first
+      // to avoid an expected 401 during app bootstrap.
+      if (isJwtExpired(savedTokens.accessToken)) {
+        try {
+          await refreshAndHydrate();
+        } catch {
+          get().clearAuth();
+          set({ isInitialized: true });
+        }
+        return;
+      }
+
+      // Tokens found in storage -- validate by fetching the profile.
       try {
         const user = normalizeUser(await authApi.getProfile());
         persistUser(storageMode, user);
@@ -119,32 +157,8 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
           storageMode,
         });
       } catch {
-        // Access token may have expired -- attempt a refresh.
-        // The refresh token is sent automatically via httpOnly cookie.
         try {
-          const newTokens = await authApi.refreshToken();
-
-          persistTokens(storageMode, newTokens);
-
-          // Fetch the user profile with the new access token.
-          let user: User | null = savedUser ? normalizeUser(savedUser) : null;
-          try {
-            user = normalizeUser(await authApi.getProfile());
-            if (user) {
-              persistUser(storageMode, user);
-            }
-          } catch {
-            // If profile fetch fails, use the previously saved user data.
-            // This is a degraded state but better than logging the user out.
-          }
-
-          set({
-            user,
-            tokens: newTokens,
-            isAuthenticated: true,
-            isInitialized: true,
-            storageMode,
-          });
+          await refreshAndHydrate();
         } catch {
           // Refresh also failed -- clear everything.
           get().clearAuth();

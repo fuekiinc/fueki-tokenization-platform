@@ -1,0 +1,9 @@
+{
+  "filter_paths": "node_modules,test,tests,artifacts,cache,dist,out,out-foundry",
+  "solc_remaps": [
+    "@openzeppelin/=node_modules/@openzeppelin/"
+  ],
+  "exclude_low": false,
+  "exclude_informational": false,
+  "json": "tests/reports/slither-findings.json"
+}
