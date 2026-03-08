@@ -122,6 +122,7 @@ export default function OrderBook({
   const [fillTxHash, setFillTxHash] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fetchRequestRef = useRef(0);
 
   // ---- Derived state ------------------------------------------------------
 
@@ -221,6 +222,8 @@ export default function OrderBook({
   // ---- Fetch orders -------------------------------------------------------
 
   const fetchOrders = useCallback(async () => {
+    const requestId = ++fetchRequestRef.current;
+
     if (!contractService || !tokenSell || !tokenBuy) {
       setOrders([]);
       return;
@@ -235,18 +238,24 @@ export default function OrderBook({
         contractService.getExchangeActiveOrders(tokenBuy, tokenSell).catch(() => []),
       ]);
 
+      if (fetchRequestRef.current !== requestId) return;
       setOrders([...sellSide, ...buySide]);
     } catch (err) {
+      if (fetchRequestRef.current !== requestId) return;
       logger.error('Failed to fetch order book:', err);
       toast.error('Unable to load the order book. Check your connection and try again.');
     } finally {
-      setLoading(false);
+      if (fetchRequestRef.current === requestId) {
+        setLoading(false);
+      }
     }
   }, [contractService, tokenSell, tokenBuy]);
 
   // ---- Resolve chainId ----------------------------------------------------
 
   useEffect(() => {
+    let cancelled = false;
+
     async function resolveChain() {
       if (!contractService) return;
       try {
@@ -254,14 +263,20 @@ export default function OrderBook({
         const provider = signer.provider;
         if (provider) {
           const network = await provider.getNetwork();
-          setChainId(Number(network.chainId));
+          if (!cancelled) {
+            setChainId(Number(network.chainId));
+          }
         }
       } catch (error) {
+        if (cancelled) return;
         logger.error('Failed to resolve chain:', error);
         toast.error('Unable to detect your network. Please check your wallet connection.');
       }
     }
     void resolveChain();
+    return () => {
+      cancelled = true;
+    };
   }, [contractService]);
 
   // ---- Periodic refresh ---------------------------------------------------
@@ -274,6 +289,7 @@ export default function OrderBook({
     }, REFRESH_INTERVAL_MS);
 
     return () => {
+      fetchRequestRef.current += 1;
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [fetchOrders]);

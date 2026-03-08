@@ -91,6 +91,7 @@ export default function LiquidityPanel({
   const [loadingPools, setLoadingPools] = useState(false);
   const [selectedPool, setSelectedPool] = useState<PoolMeta | null>(null);
   const [poolDropdownOpen, setPoolDropdownOpen] = useState(false);
+  const selectedPoolRef = useRef<PoolMeta | null>(null);
 
   // ---- Balances & LP --------------------------------------------------------
 
@@ -115,8 +116,15 @@ export default function LiquidityPanel({
   // ---- Chain ID for txToast explorer links -----------------------------------
 
   const [chainId, setChainId] = useState<number | null>(null);
+  const fetchPoolsRequestRef = useRef(0);
 
   useEffect(() => {
+    selectedPoolRef.current = selectedPool;
+  }, [selectedPool]);
+
+  useEffect(() => {
+    let cancelled = false;
+
     async function resolveChainId() {
       if (!contractService) return;
       try {
@@ -124,11 +132,16 @@ export default function LiquidityPanel({
         const provider = signer.provider;
         if (provider) {
           const network = await provider.getNetwork();
-          setChainId(Number(network.chainId));
+          if (!cancelled) {
+            setChainId(Number(network.chainId));
+          }
         }
       } catch { /* ignore */ }
     }
     void resolveChainId();
+    return () => {
+      cancelled = true;
+    };
   }, [contractService]);
 
   // ---- Timer ref for status reset -------------------------------------------
@@ -142,6 +155,8 @@ export default function LiquidityPanel({
   // ---- Load pools -----------------------------------------------------------
 
   const fetchPools = useCallback(async () => {
+    const requestId = ++fetchPoolsRequestRef.current;
+
     if (!contractService) return;
 
     setLoadingPools(true);
@@ -182,27 +197,44 @@ export default function LiquidityPanel({
         }),
       );
 
+      if (fetchPoolsRequestRef.current !== requestId) return;
       setPools(poolList);
 
-      if (selectedPoolAddress) {
-        const match = poolList.find(
+      const explicitSelection = selectedPoolAddress
+        ? poolList.find(
           (p) => p.address.toLowerCase() === selectedPoolAddress.toLowerCase(),
-        );
-        if (match) {
-          setSelectedPool(match);
-          setAddAmounts(match.tokens.map(() => ''));
-        }
+        ) ?? null
+        : null;
+      const currentSelection = selectedPoolRef.current
+        ? poolList.find(
+          (p) => p.address.toLowerCase() === selectedPoolRef.current!.address.toLowerCase(),
+        ) ?? null
+        : null;
+      const nextSelectedPool = explicitSelection ?? currentSelection;
+
+      setSelectedPool(nextSelectedPool);
+      if (nextSelectedPool) {
+        setAddAmounts(nextSelectedPool.tokens.map(() => ''));
+      } else {
+        setAddAmounts([]);
+        setRemoveAmount('');
       }
     } catch (err) {
+      if (fetchPoolsRequestRef.current !== requestId) return;
       logger.error('Failed to load pools:', err);
       toast.error('Unable to load liquidity pools. Check your connection and try again.');
     } finally {
-      setLoadingPools(false);
+      if (fetchPoolsRequestRef.current === requestId) {
+        setLoadingPools(false);
+      }
     }
   }, [contractService, selectedPoolAddress]);
 
   useEffect(() => {
     void fetchPools();
+    return () => {
+      fetchPoolsRequestRef.current += 1;
+    };
   }, [fetchPools]);
 
   // ---- Fetch balances + LP --------------------------------------------------

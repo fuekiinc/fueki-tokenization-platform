@@ -25,8 +25,6 @@ import { copyToClipboard, formatAddress, parseTokenAmount } from '../lib/utils/h
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
 import { OrbitalRouterABI } from '../contracts/abis/OrbitalRouter.ts';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
-import type { TradeHistory } from '../types';
-
 // Dashboard sub-components
 import StatsGrid from '../components/Dashboard/StatsGrid';
 import RecentActivity from '../components/Dashboard/RecentActivity';
@@ -92,63 +90,7 @@ function getNetworkName(chainId: number | null): string {
   return network?.name ?? `Chain ${chainId}`;
 }
 
-const DASHBOARD_TRADES_SCOPE_CACHE_PREFIX = 'fueki:dashboard:trades:v1:';
-const MAX_SCOPED_TRADES = 100;
 const INITIAL_DASHBOARD_SKELETON_MAX_MS = 3000;
-
-function makeScopedTradesCacheKey(address: string | null, chainId: number | null): string | null {
-  if (!address || !chainId) return null;
-  return `${DASHBOARD_TRADES_SCOPE_CACHE_PREFIX}${chainId}:${address.toLowerCase()}`;
-}
-
-function isValidTradeHistoryEntry(value: unknown): value is TradeHistory {
-  if (!value || typeof value !== 'object') return false;
-  const candidate = value as Partial<TradeHistory>;
-  return (
-    typeof candidate.id === 'string' &&
-    typeof candidate.type === 'string' &&
-    typeof candidate.asset === 'string' &&
-    typeof candidate.assetSymbol === 'string' &&
-    typeof candidate.amount === 'string' &&
-    typeof candidate.txHash === 'string' &&
-    typeof candidate.timestamp === 'number' &&
-    typeof candidate.from === 'string' &&
-    typeof candidate.to === 'string' &&
-    (candidate.status === 'pending' ||
-      candidate.status === 'confirmed' ||
-      candidate.status === 'failed')
-  );
-}
-
-function loadScopedTrades(address: string | null, chainId: number | null): TradeHistory[] {
-  const key = makeScopedTradesCacheKey(address, chainId);
-  if (!key) return [];
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(isValidTradeHistoryEntry)
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, MAX_SCOPED_TRADES);
-  } catch {
-    return [];
-  }
-}
-
-function saveScopedTrades(address: string, chainId: number, trades: TradeHistory[]): void {
-  const key = makeScopedTradesCacheKey(address, chainId);
-  if (!key) return;
-  try {
-    const normalized = [...trades]
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, MAX_SCOPED_TRADES);
-    localStorage.setItem(key, JSON.stringify(normalized));
-  } catch {
-    // localStorage may be unavailable
-  }
-}
 
 // ---------------------------------------------------------------------------
 // DashboardPage
@@ -200,6 +142,7 @@ export default function DashboardPage() {
     address: null,
     chainId: null,
   });
+  const dashboardFetchRunRef = useRef(0);
 
   useEffect(() => {
     const normalizedAddress = address?.toLowerCase() ?? null;
@@ -213,30 +156,46 @@ export default function DashboardPage() {
       address: normalizedAddress,
       chainId,
     };
+    dashboardFetchRunRef.current += 1;
 
     // Invalidate any in-flight asset fetch started on the previous scope.
     nextAssetFetchGeneration();
 
     setAssets([]);
     setUserOrders([]);
-    setTrades(loadScopedTrades(normalizedAddress, chainId));
     setLoadError(null);
 
     if (isConnected && chainId) {
       setIsInitialLoading(true);
     }
-  }, [address, chainId, isConnected, setAssets, setTrades, setUserOrders]);
+  }, [address, chainId, isConnected, setAssets, setUserOrders]);
 
   const fetchData = useCallback(async () => {
+    const fetchRunId = ++dashboardFetchRunRef.current;
+    const scopedAddress = address?.toLowerCase() ?? null;
+    const scopedChainId = chainId;
+    const isStaleFetch = () => {
+      const scope = dashboardScopeRef.current;
+      return (
+        dashboardFetchRunRef.current !== fetchRunId ||
+        scope.address !== scopedAddress ||
+        scope.chainId !== scopedChainId
+      );
+    };
+
     setLoadError(null);
 
     if (isSwitchingNetwork) {
-      setIsInitialLoading(true);
+      if (!isStaleFetch()) {
+        setIsInitialLoading(true);
+      }
       return;
     }
 
     if (!isConnected || !address || !chainId) {
-      setIsInitialLoading(false);
+      if (!isStaleFetch()) {
+        setIsInitialLoading(false);
+      }
       return;
     }
 
@@ -257,8 +216,10 @@ export default function DashboardPage() {
       service = new ContractService(provider, chainId);
     } catch (error) {
       showError(error, 'Unable to initialize contracts on this network');
-      setIsInitialLoading(false);
-      setLoadError('Unable to initialize contracts. Please check your network and try again.');
+      if (!isStaleFetch()) {
+        setIsInitialLoading(false);
+        setLoadError('Unable to initialize contracts. Please check your network and try again.');
+      }
       return;
     }
 
@@ -279,9 +240,12 @@ export default function DashboardPage() {
           isRetryable: isRetryableRpcError,
         },
       );
+      if (isStaleFetch()) return;
       if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
       if (totalAssetCount === 0n) {
-        setAssets([]);
+        if (!isStaleFetch()) {
+          setAssets([]);
+        }
       } else {
         // Source 1: assets the connected wallet created
         let userAssetAddresses: string[] = [];
@@ -298,6 +262,7 @@ export default function DashboardPage() {
         } catch (error) {
           logger.warn('Unable to fetch user-created asset list:', error);
         }
+        if (isStaleFetch()) return;
         if (gen !== getAssetFetchGeneration()) return;
 
         // Source 2: all platform assets (iterate factory index)
@@ -323,6 +288,7 @@ export default function DashboardPage() {
         } catch (error) {
           logger.warn('Unable to enumerate platform assets:', error);
         }
+        if (isStaleFetch()) return;
         if (gen !== getAssetFetchGeneration()) return;
 
         // Merge all address sources and deduplicate
@@ -370,6 +336,7 @@ export default function DashboardPage() {
         );
         const resolvedAssets =
           walletScopedAssets.length > 0 ? walletScopedAssets : userCreatedAssets;
+        if (isStaleFetch()) return;
         if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
         setAssets(resolvedAssets);
       }
@@ -378,19 +345,27 @@ export default function DashboardPage() {
       if (classified.category === 'network') {
         logger.warn('Dashboard asset load degraded by network/RPC issue', error);
         if (wrappedAssetsRef.current.length === 0) {
-          setAssets([]);
+          if (!isStaleFetch()) {
+            setAssets([]);
+          }
         }
       } else {
         showError(error, 'Unable to load assets from blockchain RPC');
         if (wrappedAssetsRef.current.length === 0) {
-          setLoadError(
-            'Unable to load your assets from the current network. Please retry, then verify your wallet network and RPC connectivity.',
-          );
+          if (!isStaleFetch()) {
+            setLoadError(
+              'Unable to load your assets from the current network. Please retry, then verify your wallet network and RPC connectivity.',
+            );
+          }
         }
       }
     } finally {
-      setLoadingAssets(false);
+      if (!isStaleFetch()) {
+        setLoadingAssets(false);
+      }
     }
+
+    if (isStaleFetch()) return;
 
     // Fetch user orders from AssetBackedExchange (maker + taker)
     try {
@@ -414,6 +389,7 @@ export default function DashboardPage() {
         const orderDetails = await Promise.all(
           allIds.map((id) => service.getExchangeOrder(id).catch(() => null)),
         );
+        if (isStaleFetch()) return;
         const exchangeOrders: import('../types').ExchangeOrder[] = orderDetails
           .filter((o): o is NonNullable<typeof o> => o !== null)
           .map((o) => ({
@@ -429,12 +405,16 @@ export default function DashboardPage() {
           }));
         setUserOrders(exchangeOrders);
       } else {
-        setUserOrders([]);
+        if (!isStaleFetch()) {
+          setUserOrders([]);
+        }
       }
     } catch (error) {
       // Non-critical: exchange data is supplementary on the dashboard
       logger.warn('Unable to load exchange orders:', error);
     }
+
+    if (isStaleFetch()) return;
 
     const queryFilterResilient = async (
       contract: ethers.Contract,
@@ -936,23 +916,18 @@ export default function DashboardPage() {
         logger.warn('Unable to load Orbital AMM trade history:', error);
       }
 
-      // Replace dashboard trade history with the fresh, chain-scoped result.
-      // This prevents cross-network/cross-wallet leakage from stale in-memory
-      // entries and keeps metrics/activity aligned with the active wallet scope.
       trades.sort((a, b) => b.timestamp - a.timestamp);
+      if (isStaleFetch()) return;
       if (trades.length > 0) {
         setTrades(trades);
-        saveScopedTrades(address, chainId, trades);
-      } else {
-        // Keep previously known history for this exact wallet+chain scope
-        // when fresh event scans return no rows (RPC/filter constraints).
-        setTrades(loadScopedTrades(address, chainId));
       }
     } catch (error) {
       logger.warn('Unable to load trade history:', error);
     }
 
-    setIsInitialLoading(false);
+    if (!isStaleFetch()) {
+      setIsInitialLoading(false);
+    }
   }, [
     isConnected,
     address,

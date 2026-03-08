@@ -158,6 +158,7 @@ export default function UserOrders({
   const [confirmCancelId, setConfirmCancelId] = useState<bigint | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancellingRef = useRef(false);
+  const fetchRequestRef = useRef(0);
 
   // ---- Derived ------------------------------------------------------------
 
@@ -228,6 +229,8 @@ export default function UserOrders({
   // ---- Fetch user orders --------------------------------------------------
 
   const fetchUserOrders = useCallback(async () => {
+    const requestId = ++fetchRequestRef.current;
+
     if (!contractService || !userAddress) {
       setOrders([]);
       return;
@@ -279,26 +282,34 @@ export default function UserOrders({
         return 0;
       });
 
+      if (fetchRequestRef.current !== requestId) return;
       setOrders(validOrders);
 
       // Also check if user has withdrawable ETH from cancelled sell-ETH orders
       try {
         const ethBal = await contractService.getExchangeEthBalance(userAddress);
-        setEthWithdrawable(ethBal);
+        if (fetchRequestRef.current === requestId) {
+          setEthWithdrawable(ethBal);
+        }
       } catch {
         // Non-critical
       }
     } catch (err) {
+      if (fetchRequestRef.current !== requestId) return;
       logger.error('Failed to fetch user orders:', err);
       toast.error('Unable to load your orders. Check your connection and try again.');
     } finally {
-      setLoading(false);
+      if (fetchRequestRef.current === requestId) {
+        setLoading(false);
+      }
     }
   }, [contractService, userAddress]);
 
   // ---- Resolve chainId ----------------------------------------------------
 
   useEffect(() => {
+    let cancelled = false;
+
     async function resolveChain() {
       if (!contractService) return;
       try {
@@ -306,13 +317,18 @@ export default function UserOrders({
         const provider = signer.provider;
         if (provider) {
           const network = await provider.getNetwork();
-          setChainId(Number(network.chainId));
+          if (!cancelled) {
+            setChainId(Number(network.chainId));
+          }
         }
       } catch {
         // ignore
       }
     }
     void resolveChain();
+    return () => {
+      cancelled = true;
+    };
   }, [contractService]);
 
   // ---- Periodic refresh ---------------------------------------------------
@@ -325,6 +341,7 @@ export default function UserOrders({
     }, REFRESH_INTERVAL_MS);
 
     return () => {
+      fetchRequestRef.current += 1;
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [fetchUserOrders]);

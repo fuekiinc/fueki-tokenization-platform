@@ -14,7 +14,7 @@
  *   - Errors are parsed through parseContractError for user-friendly messages.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import logger from '../lib/logger';
@@ -213,6 +213,18 @@ export function useSecurityToken() {
   const tokenDetails = useSecurityTokenStore((s) => s.tokenDetails);
   const userRoles = useSecurityTokenStore((s) => s.userRoles);
 
+  const securityScopeRef = useRef<{ address: string | null; chainId: number | null }>({
+    address: address?.toLowerCase() ?? null,
+    chainId: chainId ?? null,
+  });
+
+  useEffect(() => {
+    securityScopeRef.current = {
+      address: address?.toLowerCase() ?? null,
+      chainId: chainId ?? null,
+    };
+  }, [address, chainId]);
+
   // -----------------------------------------------------------------------
   // Validation helpers
   // -----------------------------------------------------------------------
@@ -229,6 +241,23 @@ export function useSecurityToken() {
     }
   }, []);
 
+  const isStaleSecurityScope = useCallback(
+    (scopedAddress: string | null, scopedChainId: number | null, tokenAddress?: string) => {
+      const scope = securityScopeRef.current;
+      if (scope.address !== scopedAddress || scope.chainId !== scopedChainId) {
+        return true;
+      }
+
+      if (!tokenAddress) {
+        return false;
+      }
+
+      const selected = store.getState().selectedTokenAddress;
+      return selected !== null && selected.toLowerCase() !== tokenAddress.toLowerCase();
+    },
+    [store],
+  );
+
   // -----------------------------------------------------------------------
   // READ OPERATIONS
   // -----------------------------------------------------------------------
@@ -241,6 +270,8 @@ export function useSecurityToken() {
     requireConnected();
     const provider = getProvider();
     if (!provider || !chainId) return;
+    const scopedAddress = address?.toLowerCase() ?? null;
+    const scopedChainId = chainId;
 
     store.getState().setLoading(true);
     store.getState().setError(null);
@@ -248,6 +279,7 @@ export function useSecurityToken() {
     try {
       const service = new ContractService(provider, chainId);
       const tokens = await service.getUserSecurityTokens(address!);
+      if (isStaleSecurityScope(scopedAddress, scopedChainId)) return;
       store.getState().setTokenList(tokens);
 
       // Auto-select first token if none is selected.
@@ -257,11 +289,12 @@ export function useSecurityToken() {
 
       store.getState().setLoading(false);
     } catch (err: unknown) {
+      if (isStaleSecurityScope(scopedAddress, scopedChainId)) return;
       const msg = parseContractError(err);
       log.error('Failed to load token list', err);
       store.getState().setError(msg);
     }
-  }, [address, chainId, requireConnected, store]);
+  }, [address, chainId, isStaleSecurityScope, requireConnected, store]);
 
   /**
    * Load full on-chain details for a security token from the factory
@@ -271,10 +304,13 @@ export function useSecurityToken() {
     validateAddress(tokenAddress, 'token');
     const provider = getProvider();
     if (!provider || !chainId) return;
+    const scopedAddress = address?.toLowerCase() ?? null;
+    const scopedChainId = chainId;
 
     const cacheKey = chainScopedKey(chainId, `sectoken:${tokenAddress}:details`);
     const cached = getCached<SecurityTokenDetails>(cacheKey);
     if (cached) {
+      if (isStaleSecurityScope(scopedAddress, scopedChainId)) return cached;
       store.getState().setTokenDetails(tokenAddress, cached);
       return cached;
     }
@@ -282,16 +318,20 @@ export function useSecurityToken() {
     try {
       const service = new ContractService(provider, chainId);
       const details = await service.getSecurityTokenDetails(tokenAddress);
+      if (isStaleSecurityScope(scopedAddress, scopedChainId)) return details;
       store.getState().setTokenDetails(tokenAddress, details);
       setCache(cacheKey, details, TTL_METADATA);
       return details;
     } catch (err: unknown) {
+      if (isStaleSecurityScope(scopedAddress, scopedChainId)) {
+        throw err;
+      }
       const msg = parseContractError(err);
       log.error('Failed to load token details', err);
       toast.error(`Failed to load token details: ${msg}`);
       throw err;
     }
-  }, [chainId, validateAddress, store]);
+  }, [address, chainId, isStaleSecurityScope, validateAddress, store]);
 
   /**
    * Check all 4 admin roles for the connected wallet on a given token.
@@ -301,6 +341,8 @@ export function useSecurityToken() {
     validateAddress(tokenAddress, 'token');
     const provider = getProvider();
     if (!provider) return;
+    const scopedAddress = address?.toLowerCase() ?? null;
+    const scopedChainId = chainId ?? null;
 
     try {
       const results = await multicallSameTarget(
@@ -312,6 +354,7 @@ export function useSecurityToken() {
           args: [address!, role],
         })),
       );
+      if (isStaleSecurityScope(scopedAddress, scopedChainId, tokenAddress)) return;
 
       const roles: Record<number, boolean> = {};
       ALL_ROLES.forEach((role, index) => {
@@ -321,11 +364,14 @@ export function useSecurityToken() {
       store.getState().setUserRoles(roles);
       return roles;
     } catch (err: unknown) {
+      if (isStaleSecurityScope(scopedAddress, scopedChainId, tokenAddress)) {
+        throw err;
+      }
       log.error('Failed to load user roles', err);
       toast.error(`Failed to check roles: ${parseContractError(err)}`);
       throw err;
     }
-  }, [address, requireConnected, validateAddress, store]);
+  }, [address, chainId, isStaleSecurityScope, requireConnected, validateAddress, store]);
 
   /**
    * Get the full balance breakdown for a holder on a security token.

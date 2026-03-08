@@ -84,6 +84,7 @@ export default function SwapInterface({
   const [loadingPools, setLoadingPools] = useState(false);
   const [selectedPool, setSelectedPool] = useState<PoolMeta | null>(null);
   const [poolDropdownOpen, setPoolDropdownOpen] = useState(false);
+  const selectedPoolRef = useRef<PoolMeta | null>(null);
 
   // ---- Swap state -----------------------------------------------------------
 
@@ -105,6 +106,11 @@ export default function SwapInterface({
 
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const fetchPoolsRequestRef = useRef(0);
+
+  useEffect(() => {
+    selectedPoolRef.current = selectedPool;
+  }, [selectedPool]);
 
   useEffect(() => {
     return () => {
@@ -176,6 +182,8 @@ export default function SwapInterface({
   // ---- Load pool list -------------------------------------------------------
 
   const fetchPools = useCallback(async () => {
+    const requestId = ++fetchPoolsRequestRef.current;
+
     if (!contractService) return;
 
     setLoadingPools(true);
@@ -214,31 +222,45 @@ export default function SwapInterface({
         }),
       );
 
+      if (fetchPoolsRequestRef.current !== requestId) return;
       setPools(poolList);
 
-      // Auto-select pool if specified
-      if (selectedPoolAddress) {
-        const match = poolList.find(
+      const explicitSelection = selectedPoolAddress
+        ? poolList.find(
           (p) => p.address.toLowerCase() === selectedPoolAddress.toLowerCase(),
-        );
-        if (match) {
-          setSelectedPool(match);
-          if (match.tokens.length >= 2) {
-            setTokenIn(match.tokens[0]);
-            setTokenOut(match.tokens[1]);
-          }
-        }
+        ) ?? null
+        : null;
+      const currentSelection = selectedPoolRef.current
+        ? poolList.find(
+          (p) => p.address.toLowerCase() === selectedPoolRef.current!.address.toLowerCase(),
+        ) ?? null
+        : null;
+      const nextSelectedPool = explicitSelection ?? currentSelection;
+
+      setSelectedPool(nextSelectedPool);
+      if (nextSelectedPool && nextSelectedPool.tokens.length >= 2) {
+        setTokenIn(nextSelectedPool.tokens[0]);
+        setTokenOut(nextSelectedPool.tokens[1]);
+      } else {
+        setTokenIn(null);
+        setTokenOut(null);
       }
     } catch (err) {
+      if (fetchPoolsRequestRef.current !== requestId) return;
       logger.error('Failed to fetch pools:', err);
       toast.error('Unable to load liquidity pools. Check your connection and try again.');
     } finally {
-      setLoadingPools(false);
+      if (fetchPoolsRequestRef.current === requestId) {
+        setLoadingPools(false);
+      }
     }
   }, [contractService, selectedPoolAddress]);
 
   useEffect(() => {
     void fetchPools();
+    return () => {
+      fetchPoolsRequestRef.current += 1;
+    };
   }, [fetchPools]);
 
   // ---- Fetch balances -------------------------------------------------------
@@ -324,6 +346,8 @@ export default function SwapInterface({
   // ---- Auto-refresh quotes every 15 seconds ---------------------------------
 
   useEffect(() => {
+    let cancelled = false;
+
     if (!contractService || !selectedPool || !tokenIn || !tokenOut || parsedAmountIn === 0n) {
       setQuoteCountdown(15);
       clearInterval(refreshIntervalRef.current);
@@ -343,8 +367,10 @@ export default function SwapInterface({
                 tokenOut.index,
                 parsedAmountIn,
               );
-              setQuoteOut(result.amountOut);
-              setFeeAmount(result.feeAmount);
+              if (!cancelled) {
+                setQuoteOut(result.amountOut);
+                setFeeAmount(result.feeAmount);
+              }
             } catch {
               // keep existing quote
             }
@@ -355,7 +381,10 @@ export default function SwapInterface({
       });
     }, 1000);
 
-    return () => clearInterval(refreshIntervalRef.current);
+    return () => {
+      cancelled = true;
+      clearInterval(refreshIntervalRef.current);
+    };
   }, [contractService, selectedPool, tokenIn, tokenOut, parsedAmountIn]);
 
   // ---- Price impact severity classification ---------------------------------

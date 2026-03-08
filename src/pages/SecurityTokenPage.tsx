@@ -7,7 +7,7 @@
  * Compliance, and Analytics.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ethers } from 'ethers';
 import clsx from 'clsx';
 import {
@@ -94,6 +94,7 @@ export default function SecurityTokenPage() {
   const [statsLoading, setStatsLoading] = useState(false);
 
   const isConnected = useWalletStore((s) => s.wallet.isConnected);
+  const chainId = useWalletStore((s) => s.wallet.chainId);
   const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
   const demoWalletSettingUp = useDemoWalletStore((s) => s.isSettingUp);
   const demoWalletError = useDemoWalletStore((s) => s.setupError);
@@ -103,50 +104,59 @@ export default function SecurityTokenPage() {
   // Fetch quick stats for header
   // -----------------------------------------------------------------------
 
-  const fetchQuickStats = useCallback(async () => {
-    if (!selectedToken) {
-      setQuickStats(null);
-      return;
-    }
-
-    const { chainId } = useWalletStore.getState().wallet;
-    if (!chainId) return;
-
-    setStatsLoading(true);
-    try {
-      // Use a direct RPC provider for reads instead of the wallet's
-      // thirdweb proxy to avoid rate-limit errors.
-      const readProvider = getReadOnlyProvider(chainId);
-      const contract = new ethers.Contract(selectedToken, SecurityTokenABI, readProvider);
-      const [name, symbol, totalSupply, decimals, isPaused] = await retryAsync(
-        () =>
-          Promise.all([
-            contract.name() as Promise<string>,
-            contract.symbol() as Promise<string>,
-            contract.totalSupply() as Promise<bigint>,
-            contract.decimals() as Promise<bigint>,
-            contract.isPaused() as Promise<boolean>,
-          ]),
-        { maxAttempts: 3, baseDelayMs: 1_500, label: 'securityToken:quickStats' },
-      );
-      setQuickStats({
-        name,
-        symbol,
-        totalSupply,
-        decimals: Number(decimals),
-        isPaused,
-      });
-    } catch (_err) {
-      // Non-fatal: header stats are supplementary
-      setQuickStats(null);
-    } finally {
-      setStatsLoading(false);
-    }
-  }, [selectedToken]);
-
   useEffect(() => {
-    void fetchQuickStats();
-  }, [fetchQuickStats]);
+    let cancelled = false;
+
+    async function loadQuickStats() {
+      if (!selectedToken || !chainId) {
+        setQuickStats(null);
+        setStatsLoading(false);
+        return;
+      }
+
+      setStatsLoading(true);
+      try {
+        // Use a direct RPC provider for reads instead of the wallet's
+        // thirdweb proxy to avoid rate-limit errors.
+        const readProvider = getReadOnlyProvider(chainId);
+        const contract = new ethers.Contract(selectedToken, SecurityTokenABI, readProvider);
+        const [name, symbol, totalSupply, decimals, isPaused] = await retryAsync(
+          () =>
+            Promise.all([
+              contract.name() as Promise<string>,
+              contract.symbol() as Promise<string>,
+              contract.totalSupply() as Promise<bigint>,
+              contract.decimals() as Promise<bigint>,
+              contract.isPaused() as Promise<boolean>,
+            ]),
+          { maxAttempts: 3, baseDelayMs: 1_500, label: 'securityToken:quickStats' },
+        );
+
+        if (cancelled) return;
+        setQuickStats({
+          name,
+          symbol,
+          totalSupply,
+          decimals: Number(decimals),
+          isPaused,
+        });
+      } catch {
+        if (!cancelled) {
+          // Non-fatal: header stats are supplementary
+          setQuickStats(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setStatsLoading(false);
+        }
+      }
+    }
+
+    void loadQuickStats();
+    return () => {
+      cancelled = true;
+    };
+  }, [chainId, selectedToken]);
 
   // -----------------------------------------------------------------------
   // Demo wallet loading

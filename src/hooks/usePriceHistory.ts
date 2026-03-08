@@ -53,6 +53,9 @@ const INTERVAL_SECONDS: Record<TimeInterval, number> = {
   '1d': 86400,
 };
 
+/** Values above this are unlikely to be Unix seconds and are normalized down. */
+const TIMESTAMP_SECONDS_UPPER_BOUND = 10_000_000_000; // year 2286
+
 // ---------------------------------------------------------------------------
 // Deterministic seed-based price generator
 // ---------------------------------------------------------------------------
@@ -137,6 +140,59 @@ function generateSeedSeries(
   return data;
 }
 
+function normalizeTimestampToSeconds(rawTimestamp: number): number | null {
+  if (!Number.isFinite(rawTimestamp) || rawTimestamp <= 0) return null;
+  let timestamp = Math.floor(rawTimestamp);
+  // Handle ms/us/ns timestamp formats defensively.
+  for (let i = 0; i < 3 && timestamp > TIMESTAMP_SECONDS_UPPER_BOUND; i++) {
+    timestamp = Math.floor(timestamp / 1000);
+  }
+  return timestamp > 0 ? timestamp : null;
+}
+
+function parseTradeAmount(rawAmount: string): number | null {
+  const normalized = rawAmount.replaceAll(',', '').trim();
+  if (!normalized) return null;
+  const value = Number(normalized);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return value;
+}
+
+function matchesPair(trade: TradeHistory, tokenSell: string, tokenBuy: string): boolean {
+  const sellLower = tokenSell.toLowerCase();
+  const buyLower = tokenBuy.toLowerCase();
+  const assetLower = trade.asset.toLowerCase();
+  const fromLower = trade.from.toLowerCase();
+  const toLower = trade.to.toLowerCase();
+
+  const byAsset = assetLower === sellLower || assetLower === buyLower;
+  const byFromTo =
+    (fromLower === sellLower && toLower === buyLower) ||
+    (fromLower === buyLower && toLower === sellLower);
+
+  return byAsset || byFromTo;
+}
+
+function hasValidCandleShape(candle: CandlestickDataPoint): boolean {
+  if (!Number.isFinite(candle.time) || candle.time <= 0) return false;
+  if (!Number.isFinite(candle.open) || candle.open <= 0) return false;
+  if (!Number.isFinite(candle.high) || candle.high <= 0) return false;
+  if (!Number.isFinite(candle.low) || candle.low <= 0) return false;
+  if (!Number.isFinite(candle.close) || candle.close <= 0) return false;
+  if (!Number.isFinite(candle.volume) || candle.volume < 0) return false;
+  if (candle.low > candle.high) return false;
+  if (candle.open < candle.low || candle.open > candle.high) return false;
+  if (candle.close < candle.low || candle.close > candle.high) return false;
+  return true;
+}
+
+function hasStrictlyIncreasingTime(candles: CandlestickDataPoint[]): boolean {
+  for (let i = 1; i < candles.length; i++) {
+    if (candles[i].time <= candles[i - 1].time) return false;
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Group actual trades into OHLCV candles
 // ---------------------------------------------------------------------------
@@ -153,11 +209,7 @@ function tradesToCandles(
     const isExchangeType =
       t.type === 'exchange' || t.type === 'swap-eth' || t.type === 'swap-erc20';
     if (!isExchangeType) return false;
-
-    const assetLower = t.asset.toLowerCase();
-    const sellLower = tokenSell.toLowerCase();
-    const buyLower = tokenBuy.toLowerCase();
-    return assetLower === sellLower || assetLower === buyLower;
+    return matchesPair(t, tokenSell, tokenBuy);
   });
 
   if (relevantTrades.length === 0) return [];
@@ -171,10 +223,12 @@ function tradesToCandles(
   const buckets = new Map<number, { prices: number[]; volumes: number[] }>();
 
   for (const trade of sorted) {
-    const price = parseFloat(trade.amount);
-    if (isNaN(price) || price <= 0) continue;
+    const price = parseTradeAmount(trade.amount);
+    if (price === null) continue;
+    const timestampSec = normalizeTimestampToSeconds(trade.timestamp);
+    if (timestampSec === null) continue;
 
-    const bucket = Math.floor(trade.timestamp / intervalSec) * intervalSec;
+    const bucket = Math.floor(timestampSec / intervalSec) * intervalSec;
     let entry = buckets.get(bucket);
     if (!entry) {
       entry = { prices: [], volumes: [] };
@@ -189,14 +243,22 @@ function tradesToCandles(
   const sortedBuckets = Array.from(buckets.entries()).sort(([a], [b]) => a - b);
 
   for (const [time, { prices, volumes }] of sortedBuckets) {
-    candles.push({
+    const candle: CandlestickDataPoint = {
       time,
       open: prices[0],
       high: Math.max(...prices),
       low: Math.min(...prices),
       close: prices[prices.length - 1],
       volume: volumes.reduce((sum, v) => sum + v, 0),
-    });
+    };
+
+    if (hasValidCandleShape(candle)) {
+      candles.push(candle);
+    }
+  }
+
+  if (!hasStrictlyIncreasingTime(candles)) {
+    return [];
   }
 
   return candles;

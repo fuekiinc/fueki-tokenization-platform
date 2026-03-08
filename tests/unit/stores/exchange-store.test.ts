@@ -75,4 +75,37 @@ describe('useExchangeStore', () => {
     expect(useExchangeStore.getState().orders).toHaveLength(2);
     expect(useExchangeStore.getState().userOrders).toHaveLength(1);
   });
+
+  it('resets wallet-bound exchange state on scope clear', () => {
+    useExchangeStore.setState({
+      orders: [buildOrder({ id: '1' })],
+      userOrders: [buildOrder({ id: '2' })],
+      isLoadingOrders: true,
+      ordersError: 'stale',
+      selectedPair: {
+        tokenSell: '0xSell',
+        tokenBuy: '0xBuy',
+        tokenSellSymbol: 'SELL',
+        tokenBuySymbol: 'BUY',
+      },
+      cachedQuote: {
+        tokenIn: '0xSell',
+        tokenOut: '0xBuy',
+        amountIn: '1',
+        amountOut: '2',
+        fetchedAt: Date.now(),
+      },
+      pairTradeHistory: [buildOrder({ id: '3' })],
+    });
+
+    useExchangeStore.getState().reset();
+
+    expect(useExchangeStore.getState().orders).toEqual([]);
+    expect(useExchangeStore.getState().userOrders).toEqual([]);
+    expect(useExchangeStore.getState().selectedPair).toBeNull();
+    expect(useExchangeStore.getState().cachedQuote).toBeNull();
+    expect(useExchangeStore.getState().pairTradeHistory).toEqual([]);
+    expect(useExchangeStore.getState().isLoadingOrders).toBe(false);
+    expect(useExchangeStore.getState().ordersError).toBeNull();
+  });
 });

@@ -548,14 +548,53 @@ export default function PortfolioPage() {
   const [burnLoading, setBurnLoading] = useState(false);
   const [burnError, setBurnError] = useState<string | null>(null);
 
+  // ---- Scope guard ----------------------------------------------------------
+
+  const portfolioScopeRef = useRef<{ address: string | null; chainId: number | null }>({
+    address: address?.toLowerCase() ?? null,
+    chainId,
+  });
+
+  useEffect(() => {
+    const normalizedAddress = address?.toLowerCase() ?? null;
+    const previous = portfolioScopeRef.current;
+    const scopeChanged =
+      previous.address !== normalizedAddress ||
+      previous.chainId !== chainId;
+
+    if (!scopeChanged) return;
+
+    portfolioScopeRef.current = {
+      address: normalizedAddress,
+      chainId,
+    };
+
+    nextAssetFetchGeneration();
+    setAssets([]);
+    setFetchError(null);
+  }, [address, chainId, setAssets]);
+
   // ---- Fetch assets on wallet connect --------------------------------------
 
   const fetchAssets = useCallback(async () => {
     if (!isConnected || !address || !chainId) return;
 
+    const scopedAddress = address.toLowerCase();
+    const scopedChainId = chainId;
+    const isStaleScope = (generation: number) => {
+      const scope = portfolioScopeRef.current;
+      return (
+        generation !== getAssetFetchGeneration() ||
+        scope.address !== scopedAddress ||
+        scope.chainId !== scopedChainId
+      );
+    };
+
     const provider = getProvider();
     if (!provider) {
-      setFetchError('Please connect your wallet to view your portfolio.');
+      if (!isStaleScope(getAssetFetchGeneration())) {
+        setFetchError('Please connect your wallet to view your portfolio.');
+      }
       return;
     }
 
@@ -575,6 +614,7 @@ export default function PortfolioPage() {
       } catch {
         logger.warn('Portfolio: unable to fetch user-created assets');
       }
+      if (isStaleScope(gen)) return;
 
       const allAddresses: string[] = [];
       try {
@@ -598,11 +638,12 @@ export default function PortfolioPage() {
       } catch {
         logger.warn('Portfolio: unable to enumerate all platform assets');
       }
+      if (isStaleScope(gen)) return;
 
       const uniqueAddresses = Array.from(
         new Set([...userAddresses, ...allAddresses]),
       );
-      if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
+      if (isStaleScope(gen)) return;
 
       const assets = (
         await mapInBatches(uniqueAddresses, 8, async (addr) => {
@@ -626,10 +667,11 @@ export default function PortfolioPage() {
         })
       ).filter((asset): asset is WrappedAsset => asset !== null);
 
-      if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
+      if (isStaleScope(gen)) return;
 
       setAssets(assets);
     } catch (err) {
+      if (isStaleScope(gen)) return;
       logger.warn('Failed to fetch portfolio assets:', err);
       // Only show error UI if this is a genuine connectivity problem,
       // not a missing-contract / unsupported-network situation.
@@ -644,7 +686,9 @@ export default function PortfolioPage() {
         setFetchError('Failed to load portfolio data. Please try again.');
       }
     } finally {
-      setLoadingAssets(false);
+      if (!isStaleScope(gen)) {
+        setLoadingAssets(false);
+      }
     }
   }, [isConnected, address, chainId, setAssets, setLoadingAssets]);
 

@@ -7,7 +7,7 @@
  * user into the swap or liquidity tab pre-configured for that pool.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import {
@@ -94,10 +94,13 @@ export default function PoolList({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [sortBy, setSortBy] = useState<'tvl' | 'concentration' | 'fee' | 'tokens'>('tvl');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const fetchRequestRef = useRef(0);
 
   // ---- Fetch all pools -----------------------------------------------------
 
   const fetchPools = useCallback(async () => {
+    const requestId = ++fetchRequestRef.current;
+
     if (!contractService) return;
 
     setLoading(true);
@@ -150,17 +153,24 @@ export default function PoolList({
         return 0;
       });
 
+      if (fetchRequestRef.current !== requestId) return;
       setPools(poolDataList);
     } catch (err) {
+      if (fetchRequestRef.current !== requestId) return;
       logger.error('Failed to fetch pools:', err);
       toast.error('Unable to load Orbital pools. Check your connection and try again.');
     } finally {
-      setLoading(false);
+      if (fetchRequestRef.current === requestId) {
+        setLoading(false);
+      }
     }
   }, [contractService]);
 
   useEffect(() => {
     void fetchPools();
+    return () => {
+      fetchRequestRef.current += 1;
+    };
   }, [fetchPools]);
 
   // ---- Refresh handler -----------------------------------------------------

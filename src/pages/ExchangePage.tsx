@@ -204,25 +204,53 @@ export default function ExchangePage() {
     wrappedAssetsRef.current = wrappedAssets;
   }, [wrappedAssets]);
 
-  // Clear chain-specific token state immediately when the wallet network
-  // changes so stale addresses from the previous chain are never merged into
-  // the next fetch cycle.
-  const lastAssetsChainIdRef = useRef<number | null>(wallet.chainId ?? null);
+  // Clear wallet-bound token state immediately when the active scope changes
+  // so stale assets, pairs, and balances never survive account/network
+  // switches or land after an old RPC call resolves.
+  const exchangeScopeRef = useRef<{ address: string | null; chainId: number | null }>({
+    address: address?.toLowerCase() ?? null,
+    chainId: wallet.chainId ?? null,
+  });
+
   useEffect(() => {
-    if (lastAssetsChainIdRef.current === wallet.chainId) return;
-    lastAssetsChainIdRef.current = wallet.chainId ?? null;
+    const normalizedAddress = address?.toLowerCase() ?? null;
+    const previous = exchangeScopeRef.current;
+    const scopeChanged =
+      previous.address !== normalizedAddress ||
+      previous.chainId !== (wallet.chainId ?? null);
+
+    if (!scopeChanged) return;
+
+    exchangeScopeRef.current = {
+      address: normalizedAddress,
+      chainId: wallet.chainId ?? null,
+    };
+
+    nextAssetFetchGeneration();
     wrappedAssetsRef.current = [];
     setLocalAssets([]);
     setAssets([]);
     setSelectedSellToken(null);
     setSelectedBuyToken(null);
     setEthBalance('0');
-  }, [wallet.chainId, setAssets]);
+    setInitError(null);
+  }, [address, wallet.chainId, setAssets]);
 
   const fetchAssets = useCallback(async () => {
     if (!contractService || !address || isSwitchingNetwork) return;
 
+    const scopedAddress = address.toLowerCase();
+    const scopedChainId = wallet.chainId ?? null;
     const gen = nextAssetFetchGeneration();
+    const isStaleScope = () => {
+      const scope = exchangeScopeRef.current;
+      return (
+        gen !== getAssetFetchGeneration() ||
+        scope.address !== scopedAddress ||
+        scope.chainId !== scopedChainId
+      );
+    };
+
     setLocalLoadingAssets(true);
     setLoadingAssets(true);
 
@@ -232,7 +260,7 @@ export default function ExchangePage() {
         () => contractService.getTotalAssets(),
         { maxAttempts: 3, baseDelayMs: 1_500, label: 'exchange:getTotalAssets' },
       );
-      if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
+      if (isStaleScope()) return;
       if (totalAssets === 0n) {
         setLocalAssets([]);
         setAssets([]);
@@ -249,7 +277,7 @@ export default function ExchangePage() {
       } catch (err) {
         logger.error('Failed to fetch user assets:', err);
       }
-      if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
+      if (isStaleScope()) return;
 
       // Also enumerate ALL platform assets via the factory index so we
       // include assets the user holds but didn't create themselves.
@@ -274,7 +302,7 @@ export default function ExchangePage() {
       } catch (err) {
         logger.warn('Exchange: unable to enumerate all platform assets:', err);
       }
-      if (gen !== getAssetFetchGeneration()) return;
+      if (isStaleScope()) return;
 
       // Merge all address sources, normalize, and drop invalid placeholders.
       const knownAddresses = Array.from(
@@ -339,7 +367,7 @@ export default function ExchangePage() {
         })
       ).filter((asset): asset is WrappedAsset => asset !== null);
 
-      if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
+      if (isStaleScope()) return;
 
       if (failedCount > 0 && assetList.length === 0) {
         toast.error('Unable to load tokens for this network right now. Please refresh or try again in a moment.');
@@ -359,7 +387,7 @@ export default function ExchangePage() {
       setLocalAssets(assetList);
       setAssets(assetList);
     } catch (err) {
-      if (isSwitchingNetwork) return;
+      if (isSwitchingNetwork || isStaleScope()) return;
       logger.error('Failed to fetch assets:', err);
       const msg =
         err instanceof Error && /network|timeout|fetch|rpc|connect/i.test(err.message)
@@ -367,8 +395,10 @@ export default function ExchangePage() {
           : 'Unable to load your tokens. Check your connection and try again.';
       toast.error(msg);
     } finally {
-      setLocalLoadingAssets(false);
-      setLoadingAssets(false);
+      if (!isStaleScope()) {
+        setLocalLoadingAssets(false);
+        setLoadingAssets(false);
+      }
     }
   }, [contractService, address, isSwitchingNetwork, setAssets, setLoadingAssets, wallet.chainId]);
 
@@ -379,6 +409,8 @@ export default function ExchangePage() {
   // ---- Fetch native ETH balance for token selectors ----------------------
 
   useEffect(() => {
+    let cancelled = false;
+
     async function loadEthBalance() {
       if (!contractService || !address || !wallet.chainId || isSwitchingNetwork) return;
       try {
@@ -388,10 +420,19 @@ export default function ExchangePage() {
           () => readProvider.getBalance(address),
           { maxAttempts: 2, baseDelayMs: 500, label: 'exchange:getEthBalance:direct' },
         );
-        setEthBalance(bal.toString());
+        if (!cancelled) {
+          const scope = exchangeScopeRef.current;
+          if (
+            scope.address === address.toLowerCase() &&
+            scope.chainId === wallet.chainId
+          ) {
+            setEthBalance(bal.toString());
+          }
+        }
         return;
       } catch (error) {
         logger.warn('Failed to fetch ETH balance:', error);
+        if (cancelled) return;
         if (
           !(error instanceof Error) ||
           !/network|timeout|fetch|rpc|connect|429|50[234]/i.test(error.message)
@@ -401,6 +442,9 @@ export default function ExchangePage() {
       }
     }
     void loadEthBalance();
+    return () => {
+      cancelled = true;
+    };
   }, [contractService, address, isSwitchingNetwork, refreshKey, wallet.chainId]);
 
   // ---- Refresh handler (shared across child components) -------------------

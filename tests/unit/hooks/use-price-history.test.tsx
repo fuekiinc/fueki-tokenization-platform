@@ -30,6 +30,7 @@ describe('usePriceHistory', () => {
   beforeEach(() => {
     localStorage.clear();
     useTradeStore.setState({
+      activeScopeKey: null,
       tradeHistory: [],
       isLoadingTrades: false,
       tradesError: null,
@@ -85,5 +86,65 @@ describe('usePriceHistory', () => {
     const lastCandle = result.current.data[result.current.data.length - 1];
     expect(lastCandle.high).toBeGreaterThanOrEqual(lastCandle.low);
     expect(lastCandle.volume).toBeGreaterThan(0);
+  });
+
+  it('normalizes millisecond timestamps from trade history to second buckets', () => {
+    const nowMs = Date.now();
+    useTradeStore.setState({
+      tradeHistory: [
+        buildTrade({
+          id: 'ms1',
+          amount: '120.5',
+          timestamp: nowMs - 120_000,
+          from: '0xTokenA',
+          to: '0xTokenB',
+        }),
+        buildTrade({
+          id: 'ms2',
+          amount: '125.25',
+          timestamp: nowMs - 60_000,
+          from: '0xTokenA',
+          to: '0xTokenB',
+        }),
+      ],
+    });
+
+    const { result } = renderHook(() =>
+      usePriceHistory('0xTokenA', '0xTokenB', '1m'),
+    );
+
+    expect(result.current.isRealData).toBe(true);
+    expect(result.current.data.length).toBeGreaterThanOrEqual(2);
+    for (const candle of result.current.data) {
+      expect(candle.time).toBeLessThan(10_000_000_000);
+    }
+  });
+
+  it('falls back to deterministic seed data when real trades are invalid', () => {
+    useTradeStore.setState({
+      tradeHistory: [
+        buildTrade({
+          id: 'bad1',
+          amount: 'not-a-number',
+          timestamp: Date.now(),
+          from: '0xTokenA',
+          to: '0xTokenB',
+        }),
+        buildTrade({
+          id: 'bad2',
+          amount: '-12',
+          timestamp: Date.now() - 10_000,
+          from: '0xTokenA',
+          to: '0xTokenB',
+        }),
+      ],
+    });
+
+    const { result } = renderHook(() =>
+      usePriceHistory('0xTokenA', '0xTokenB', '5m'),
+    );
+
+    expect(result.current.isRealData).toBe(false);
+    expect(result.current.data.length).toBe(100);
   });
 });

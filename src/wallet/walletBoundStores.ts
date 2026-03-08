@@ -11,8 +11,7 @@ import { useSecurityTokenStore } from '../store/securityTokenStore';
 export function clearWalletBoundStores(): void {
   useAssetStore.getState().setAssets([]);
   useAssetStore.getState().setSecurityTokens([]);
-  useTradeStore.getState().setTrades([]);
-  useExchangeStore.getState().setOrders([]);
-  useExchangeStore.getState().setUserOrders([]);
+  useTradeStore.getState().clearVisibleTrades();
+  useExchangeStore.getState().reset();
   useSecurityTokenStore.getState().reset();
 }

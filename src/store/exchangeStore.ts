@@ -55,6 +55,7 @@ export interface ExchangeState {
 }
 
 export interface ExchangeActions {
+  reset: () => void;
   setOrders: (orders: ExchangeOrder[]) => void;
   addOrder: (order: ExchangeOrder) => void;
   /** Update an existing order in-place (e.g. after a partial fill). */
@@ -105,6 +106,8 @@ const initialExchangeState: ExchangeState = {
 
 export const useExchangeStore = create<ExchangeStore>()((set, get) => ({
   ...initialExchangeState,
+
+  reset: () => set({ ...initialExchangeState }),
 
   setOrders: (orders) => set({ orders, ordersError: null }),
 

@@ -17,8 +17,8 @@ import type { TradeHistory } from '../types/index.ts';
 
 /** localStorage key for persisted slippage tolerance. */
 const SLIPPAGE_PERSISTENCE_KEY = 'fueki:trade:slippage';
-/** localStorage key for persisted recent trade history. */
-const TRADE_HISTORY_PERSISTENCE_KEY = 'fueki:trade:history:v1';
+/** localStorage prefix for wallet/network-scoped recent trade history. */
+const TRADE_HISTORY_PERSISTENCE_PREFIX = 'fueki:trade:history:v2';
 
 /** Default slippage tolerance (0.5%). */
 const DEFAULT_SLIPPAGE_BPS = 50;
@@ -104,27 +104,35 @@ function isValidTradeHistoryEntry(value: unknown): value is TradeHistory {
   );
 }
 
-function loadTradeHistory(): TradeHistory[] {
+function makeTradeHistoryScopeKey(address: string | null, chainId: number | null): string | null {
+  if (!address || !chainId) return null;
+  return `${TRADE_HISTORY_PERSISTENCE_PREFIX}:${chainId}:${address.toLowerCase()}`;
+}
+
+function normalizeTradeHistory(trades: TradeHistory[]): TradeHistory[] {
+  return trades
+    .filter(isValidTradeHistoryEntry)
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, MAX_RECENT_TRADES);
+}
+
+function loadTradeHistory(scopeKey: string | null): TradeHistory[] {
+  if (!scopeKey) return [];
   try {
-    const raw = localStorage.getItem(TRADE_HISTORY_PERSISTENCE_KEY);
+    const raw = localStorage.getItem(scopeKey);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(isValidTradeHistoryEntry)
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, MAX_RECENT_TRADES);
+    return normalizeTradeHistory(parsed);
   } catch {
     return [];
   }
 }
 
-function saveTradeHistory(trades: TradeHistory[]): void {
+function saveTradeHistory(scopeKey: string | null, trades: TradeHistory[]): void {
+  if (!scopeKey) return;
   try {
-    localStorage.setItem(
-      TRADE_HISTORY_PERSISTENCE_KEY,
-      JSON.stringify(trades.slice(0, MAX_RECENT_TRADES)),
-    );
+    localStorage.setItem(scopeKey, JSON.stringify(normalizeTradeHistory(trades)));
   } catch {
     // localStorage may be unavailable
   }
@@ -135,6 +143,7 @@ function saveTradeHistory(trades: TradeHistory[]): void {
 // ---------------------------------------------------------------------------
 
 export interface TradeState {
+  activeScopeKey: string | null;
   tradeHistory: TradeHistory[];
   isLoadingTrades: boolean;
   tradesError: string | null;
@@ -145,6 +154,8 @@ export interface TradeState {
 }
 
 export interface TradeActions {
+  setScope: (address: string | null, chainId: number | null) => void;
+  clearVisibleTrades: () => void;
   setTrades: (trades: TradeHistory[]) => void;
   addTrade: (trade: TradeHistory) => void;
   updateTrade: (id: string, partial: Partial<TradeHistory>) => void;
@@ -169,7 +180,8 @@ export type TradeStore = TradeState & TradeActions;
 // ---------------------------------------------------------------------------
 
 const initialTradesState: TradeState = {
-  tradeHistory: loadTradeHistory(),
+  activeScopeKey: null,
+  tradeHistory: [],
   isLoadingTrades: false,
   tradesError: null,
   slippageBps: loadSlippage(),
@@ -183,22 +195,37 @@ const initialTradesState: TradeState = {
 export const useTradeStore = create<TradeStore>()((set, get) => ({
   ...initialTradesState,
 
+  setScope: (address, chainId) =>
+    set((state) => {
+      const nextScopeKey = makeTradeHistoryScopeKey(address, chainId);
+      if (state.activeScopeKey === nextScopeKey) {
+        return state;
+      }
+
+      return {
+        activeScopeKey: nextScopeKey,
+        tradeHistory: loadTradeHistory(nextScopeKey),
+        tradesError: null,
+      };
+    }),
+
+  clearVisibleTrades: () =>
+    set({
+      tradeHistory: [],
+      isLoadingTrades: false,
+      tradesError: null,
+    }),
+
   setTrades: (trades) => {
-    // Keep only the most recent MAX_RECENT_TRADES entries.
-    const trimmed = trades.length > MAX_RECENT_TRADES
-      ? trades.slice(0, MAX_RECENT_TRADES)
-      : trades;
-    saveTradeHistory(trimmed);
+    const trimmed = normalizeTradeHistory(trades);
+    saveTradeHistory(get().activeScopeKey, trimmed);
     set({ tradeHistory: trimmed, tradesError: null });
   },
 
   addTrade: (trade) =>
     set((state) => {
-      const updated = [trade, ...state.tradeHistory];
-      const trimmed = updated.length > MAX_RECENT_TRADES
-        ? updated.slice(0, MAX_RECENT_TRADES)
-        : updated;
-      saveTradeHistory(trimmed);
+      const trimmed = normalizeTradeHistory([trade, ...state.tradeHistory]);
+      saveTradeHistory(state.activeScopeKey, trimmed);
       return {
         tradeHistory: trimmed,
       };
@@ -209,7 +236,7 @@ export const useTradeStore = create<TradeStore>()((set, get) => ({
       const updated = state.tradeHistory.map((t) =>
         t.id === id ? { ...t, ...partial } : t,
       );
-      saveTradeHistory(updated);
+      saveTradeHistory(state.activeScopeKey, updated);
       return { tradeHistory: updated };
     }),
 

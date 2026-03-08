@@ -3,6 +3,8 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import AuthLayout from './components/Layout/AuthLayout'
 import ProtectedRoute, { AuthRedirect } from './components/Auth/ProtectedRoute'
 import { useAuthStore } from './store/authStore'
+import { useTradeStore } from './store/tradeStore'
+import { useWalletStore } from './store/walletStore'
 import OctopusLoader from './components/Common/OctopusLoader'
 
 // Auto-reload on stale chunk after deploy (avoids "Failed to fetch dynamically imported module")
@@ -109,6 +111,24 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function TradeScopeSync() {
+  const isConnected = useWalletStore((s) => s.wallet.isConnected)
+  const address = useWalletStore((s) => s.wallet.address)
+  const chainId = useWalletStore((s) => s.wallet.chainId)
+  const setScope = useTradeStore((s) => s.setScope)
+
+  useEffect(() => {
+    if (!isConnected || !address || !chainId) {
+      setScope(null, null)
+      return
+    }
+
+    setScope(address, chainId)
+  }, [address, chainId, isConnected, setScope])
+
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // Route change announcer -- updates document title and announces to
 // screen readers when the route changes (WCAG 2.1 criterion 2.4.2)
@@ -186,6 +206,8 @@ function DeferredSupportWidget() {
 export default function App() {
   return (
     <AuthInitializer>
+      <TradeScopeSync />
+
       {/* Skip to main content link -- WCAG 2.1 criterion 2.4.1 */}
       <a
         href="#main-content"
