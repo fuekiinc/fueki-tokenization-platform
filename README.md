@@ -257,12 +257,12 @@ VITE_GOOGLE_MAPS_API_KEY=                   # for address autocomplete
 VITE_THIRDWEB_CLIENT_ID=                    # required for wallet connectivity
 
 # Optional RPC pools (comma-separated, QuickNode first)
-VITE_RPC_1_URLS=https://billowing-rough-moon.quiknode.pro/a3cc003399fc8c72876d87c1f516c0897574e60c/,https://ethereum-rpc.publicnode.com,https://eth.drpc.org
-VITE_RPC_17000_URLS=https://flashy-crimson-borough.ethereum-holesky.quiknode.pro/f43097bbd32a1c3476c2f3f1ff1d4780361be827/,https://holesky.drpc.org,https://ethereum-holesky-rpc.publicnode.com
-VITE_RPC_42161_URLS=https://snowy-blue-frost.arbitrum-mainnet.quiknode.pro/a691b5e884e8df719f8ce8ec8ad5e22092d17cdb/,https://arb1.arbitrum.io/rpc
-VITE_RPC_421614_URLS=https://ancient-holy-tent.arbitrum-sepolia.quiknode.pro/53623a401aa412366b43ddea31aa6538ef24d7fd/,https://arbitrum-sepolia-rpc.publicnode.com,https://arbitrum-sepolia.drpc.org,https://sepolia-rollup.arbitrum.io/rpc
-VITE_RPC_8453_URLS=https://delicate-red-cloud.base-mainnet.quiknode.pro/3ae2b0cd08e640c9c6a3e4c0ca89351dc879e5c8/,https://mainnet.base.org
-VITE_RPC_84532_URLS=https://billowing-wandering-yard.base-sepolia.quiknode.pro/70e0d692e7ba902f935ff17774c1aed59a21e0d0/,https://sepolia.base.org
+VITE_RPC_1_URLS=
+VITE_RPC_17000_URLS=
+VITE_RPC_42161_URLS=
+VITE_RPC_421614_URLS=
+VITE_RPC_8453_URLS=
+VITE_RPC_84532_URLS=
 ```
 
 ### Backend (`backend/.env`)
@@ -317,12 +317,12 @@ gcloud run deploy fueki --source . --region europe-west1 \
   --set-build-env-vars \
 VITE_API_URL=https://<your-backend-domain>,\
 VITE_THIRDWEB_CLIENT_ID=<your-thirdweb-client-id>,\
-VITE_RPC_1_URLS=https://billowing-rough-moon.quiknode.pro/a3cc003399fc8c72876d87c1f516c0897574e60c/,https://ethereum-rpc.publicnode.com,\
-VITE_RPC_17000_URLS=https://flashy-crimson-borough.ethereum-holesky.quiknode.pro/f43097bbd32a1c3476c2f3f1ff1d4780361be827/,https://holesky.drpc.org,\
-VITE_RPC_42161_URLS=https://snowy-blue-frost.arbitrum-mainnet.quiknode.pro/a691b5e884e8df719f8ce8ec8ad5e22092d17cdb/,https://arb1.arbitrum.io/rpc,\
-VITE_RPC_421614_URLS=https://ancient-holy-tent.arbitrum-sepolia.quiknode.pro/53623a401aa412366b43ddea31aa6538ef24d7fd/,https://arbitrum-sepolia-rpc.publicnode.com,\
-VITE_RPC_8453_URLS=https://delicate-red-cloud.base-mainnet.quiknode.pro/3ae2b0cd08e640c9c6a3e4c0ca89351dc879e5c8/,https://mainnet.base.org,\
-VITE_RPC_84532_URLS=https://billowing-wandering-yard.base-sepolia.quiknode.pro/70e0d692e7ba902f935ff17774c1aed59a21e0d0/,https://sepolia.base.org
+VITE_RPC_1_URLS=
+VITE_RPC_17000_URLS=
+VITE_RPC_42161_URLS=
+VITE_RPC_421614_URLS=
+VITE_RPC_8453_URLS=
+VITE_RPC_84532_URLS=
 
 # Backend
 cd backend
