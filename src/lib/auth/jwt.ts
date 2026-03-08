@@ -15,6 +15,8 @@ export function parseJwtExpiryMs(token: string): number | null {
 
 export function isJwtExpired(token: string, skewMs = 30_000): boolean {
   const expiryMs = parseJwtExpiryMs(token);
-  if (!expiryMs) return false;
+  // Treat malformed tokens (no parseable exp) as expired to avoid
+  // unnecessary authenticated calls with invalid credentials.
+  if (!expiryMs) return true;
   return expiryMs <= Date.now() + skewMs;
 }

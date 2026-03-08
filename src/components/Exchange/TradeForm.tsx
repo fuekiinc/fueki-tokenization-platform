@@ -1413,7 +1413,7 @@ export default function TradeForm({
           {priceImpactSeverity === 'blocking' && (
             <div className="mt-3 flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-3 text-xs text-red-400 font-medium">
               <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-              Price impact too high ({formatPrice(priceImpact ?? 0, 2)}%). This trade would result in a significant loss. Try a smaller amount.
+              Very high price impact ({formatPrice(priceImpact ?? 0, 2)}%). You can still proceed, but expected output may be significantly lower.
             </div>
           )}
           {priceImpactSeverity === 'high' && (
@@ -1514,7 +1514,6 @@ export default function TradeForm({
           sellToken && buyToken && !sameTokenError &&
           parsedSellAmount > 0n && ammQuote > 0n &&
           !insufficientBalance &&
-          priceImpactSeverity !== 'blocking' &&
           (status === 'idle' || status === 'approved');
 
         // Determine button label with clear reason when disabled
@@ -1533,8 +1532,6 @@ export default function TradeForm({
           swapLabel = 'Enter an amount';
         } else if (insufficientBalance) {
           swapLabel = 'Insufficient balance';
-        } else if (priceImpactSeverity === 'blocking') {
-          swapLabel = 'Price impact too high';
         } else if (ammQuote === 0n && !ammQuoteLoading) {
           swapLabel = 'No liquidity available';
         }

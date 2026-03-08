@@ -217,14 +217,20 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
   // ---- logout --------------------------------------------------------------
   logout: async () => {
+    const currentTokens = get().tokens;
+    const shouldCallServerLogout =
+      !!currentTokens?.accessToken && !isJwtExpired(currentTokens.accessToken, 0);
+
     // If in demo mode, end it first so the backend marks demoUsed=true.
     const user = get().user;
     if (user?.demoActive) {
       try { await authApi.endDemo(); } catch { /* best-effort */ }
     }
     // Fire-and-forget -- don't block the UI on the server call.
-    // The refresh token is sent via httpOnly cookie automatically.
-    authApi.logout().catch(() => {});
+    // Skip server logout when the token is already invalid to avoid noisy 401s.
+    if (shouldCallServerLogout) {
+      authApi.logout().catch(() => {});
+    }
     get().clearAuth();
   },
 

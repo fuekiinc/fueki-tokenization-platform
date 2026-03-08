@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { ethers } from 'ethers';
 import { useWallet } from '../hooks/useWallet';
 import { useAuthStore } from '../store/authStore';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
@@ -275,21 +276,49 @@ export default function ExchangePage() {
       }
       if (gen !== getAssetFetchGeneration()) return;
 
-      // Merge all address sources and deduplicate
-      const knownAddresses = new Set<string>([
-        ...userAssetAddresses,
-        ...allPlatformAddresses,
-        ...wrappedAssetsRef.current.map((a) => a.address),
-      ]);
+      // Merge all address sources, normalize, and drop invalid placeholders.
+      const knownAddresses = Array.from(
+        new Set(
+          [
+            ...userAssetAddresses,
+            ...allPlatformAddresses,
+            ...wrappedAssetsRef.current.map((a) => a.address),
+          ]
+            .map((addr) => (typeof addr === 'string' ? addr.trim() : ''))
+            .filter((addr) => !!addr)
+            .map((addr) => {
+              try {
+                return ethers.getAddress(addr);
+              } catch {
+                return null;
+              }
+            })
+            .filter((addr): addr is string => !!addr && addr !== ethers.ZeroAddress),
+        ),
+      );
 
       // Fetch details and balances for every known asset in bounded batches.
       let failedCount = 0;
+      const readProvider = getReadOnlyProvider(wallet.chainId!);
       const assetList = (
-        await mapInBatches(Array.from(knownAddresses), 8, async (addr) => {
+        await mapInBatches(knownAddresses, 8, async (addr) => {
           try {
+            // Skip stale registry entries that do not point to deployed contracts.
+            const bytecode = await readProvider.getCode(addr);
+            if (!bytecode || bytecode === '0x') {
+              logger.warn(`Skipping non-contract token address: ${addr}`);
+              return null;
+            }
+
             const [details, balance] = await Promise.all([
-              contractService.getAssetDetails(addr),
-              contractService.getAssetBalance(addr, address),
+              retryAsync(
+                () => contractService.getAssetDetails(addr),
+                { maxAttempts: 2, baseDelayMs: 400, label: `exchange:getAssetDetails:${addr}` },
+              ),
+              retryAsync(
+                () => contractService.getAssetBalance(addr, address),
+                { maxAttempts: 2, baseDelayMs: 400, label: `exchange:getAssetBalance:${addr}` },
+              ),
             ]);
 
             return {
@@ -312,8 +341,10 @@ export default function ExchangePage() {
 
       if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
 
-      if (failedCount > 0) {
-        toast.error(`Could not load ${failedCount} token(s). Some tokens may not appear in your list.`);
+      if (failedCount > 0 && assetList.length === 0) {
+        toast.error('Unable to load tokens for this network right now. Please refresh or try again in a moment.');
+      } else if (failedCount > 0) {
+        logger.warn(`Skipped ${failedCount} token(s) that failed to refresh.`);
       }
 
       // Sort by balance descending
@@ -339,7 +370,7 @@ export default function ExchangePage() {
       setLocalLoadingAssets(false);
       setLoadingAssets(false);
     }
-  }, [contractService, address, isSwitchingNetwork, setAssets, setLoadingAssets]);
+  }, [contractService, address, isSwitchingNetwork, setAssets, setLoadingAssets, wallet.chainId]);
 
   useEffect(() => {
     void fetchAssets();

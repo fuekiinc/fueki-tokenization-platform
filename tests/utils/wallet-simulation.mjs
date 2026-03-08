@@ -31,6 +31,15 @@ const report = {
   chains: [],
 };
 
+function withTimeout(promise, label, timeoutMs = 10000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    }),
+  ]);
+}
+
 for (const chain of CHAIN_FIXTURES) {
   const envKey = chain.rpcEnv;
   const rpcUrl = process.env[envKey];
@@ -44,7 +53,15 @@ for (const chain of CHAIN_FIXTURES) {
     continue;
   }
 
-  const provider = new JsonRpcProvider(rpcUrl, chain.chainId);
+  const provider = new JsonRpcProvider(
+    rpcUrl,
+    {
+      chainId: chain.chainId,
+      name: chain.name.toLowerCase().replace(/\s+/g, '-'),
+    },
+    { staticNetwork: true },
+  );
+
   const chainResult = {
     chainId: chain.chainId,
     name: chain.name,
@@ -52,21 +69,37 @@ for (const chain of CHAIN_FIXTURES) {
     walletBalances: [],
   };
 
-  for (const walletFixture of WALLET_FIXTURES) {
-    const wallet = new Wallet(walletFixture.privateKey, provider);
-    try {
-      const balance = await provider.getBalance(wallet.address);
-      chainResult.walletBalances.push({
-        label: walletFixture.label,
-        address: wallet.address,
-        balance: balance.toString(),
-      });
-    } catch (error) {
-      chainResult.walletBalances.push({
-        label: walletFixture.label,
-        address: wallet.address,
-        error: error instanceof Error ? error.message : String(error),
-      });
+  try {
+    await withTimeout(provider.getBlockNumber(), `${chain.name} RPC health check`);
+
+    for (const walletFixture of WALLET_FIXTURES) {
+      const wallet = new Wallet(walletFixture.privateKey, provider);
+      try {
+        const balance = await withTimeout(
+          provider.getBalance(wallet.address),
+          `${chain.name} ${walletFixture.label} balance`,
+        );
+        chainResult.walletBalances.push({
+          label: walletFixture.label,
+          address: wallet.address,
+          balance: balance.toString(),
+        });
+      } catch (error) {
+        chainResult.walletBalances.push({
+          label: walletFixture.label,
+          address: wallet.address,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  } catch (error) {
+    chainResult.walletBalances.push({
+      label: 'rpc',
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    if (typeof provider.destroy === 'function') {
+      provider.destroy();
     }
   }
 

@@ -544,7 +544,7 @@ export default function OrbitalAMMPage() {
 
         {/* ---- Pools Tab ---- */}
         {activeTab === 'pools' && (
-          <div role="tabpanel" id="orbital-panel-pools" aria-labelledby="orbital-tab-pools">
+          <div role="tabpanel" id="orbital-panel-pools" aria-labelledby="orbital-tab-pools" className="relative z-20">
           <GlassCard gradientFrom="from-indigo-500" gradientTo="to-cyan-500">
             {/* Card header */}
             <div className="flex items-center justify-between border-b border-white/[0.04] p-5 sm:p-7">
@@ -578,7 +578,7 @@ export default function OrbitalAMMPage() {
 
         {/* ---- Swap Tab ---- */}
         {activeTab === 'swap' && (
-          <div role="tabpanel" id="orbital-panel-swap" aria-labelledby="orbital-tab-swap" className="mx-auto max-w-xl">
+          <div role="tabpanel" id="orbital-panel-swap" aria-labelledby="orbital-tab-swap" className="relative z-20 mx-auto max-w-xl">
             <GlassCard gradientFrom="from-cyan-500" gradientTo="to-indigo-500">
               {/* Card header */}
               <div className="flex items-center justify-between border-b border-white/[0.04] p-5 sm:p-7">
@@ -613,7 +613,7 @@ export default function OrbitalAMMPage() {
 
         {/* ---- Liquidity Tab ---- */}
         {activeTab === 'liquidity' && (
-          <div role="tabpanel" id="orbital-panel-liquidity" aria-labelledby="orbital-tab-liquidity" className="mx-auto max-w-xl">
+          <div role="tabpanel" id="orbital-panel-liquidity" aria-labelledby="orbital-tab-liquidity" className="relative z-20 mx-auto max-w-xl">
             <GlassCard gradientFrom="from-purple-500" gradientTo="to-teal-500">
               {/* Card header */}
               <div className="flex items-center justify-between border-b border-white/[0.04] p-5 sm:p-7">
@@ -648,7 +648,7 @@ export default function OrbitalAMMPage() {
 
         {/* ---- Create Pool Tab ---- */}
         {activeTab === 'create' && (
-          <div role="tabpanel" id="orbital-panel-create" aria-labelledby="orbital-tab-create" className="mx-auto max-w-2xl">
+          <div role="tabpanel" id="orbital-panel-create" aria-labelledby="orbital-tab-create" className="relative z-20 mx-auto max-w-2xl">
             <GlassCard gradientFrom="from-emerald-500" gradientTo="to-indigo-500">
               {/* Card header */}
               <div className="flex items-center justify-between border-b border-white/[0.04] p-5 sm:p-7">
@@ -687,6 +687,7 @@ export default function OrbitalAMMPage() {
         {networkConfig && (
           <div
             className={clsx(
+              'relative z-10',
               'mt-12 sm:mt-16 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 rounded-2xl px-5 py-5 sm:gap-x-10 sm:px-8 sm:py-6',
               'bg-[#0D0F14]/80 backdrop-blur-xl',
               'border border-white/[0.06]',

@@ -13,7 +13,7 @@ import type { AuthStorageMode } from '../authStorage';
 // Configuration
 // ---------------------------------------------------------------------------
 
-const DEFAULT_CLOUD_RUN_BACKEND_URL = 'https://fueki-backend-pojr5zp2oq-uc.a.run.app';
+const DEFAULT_CLOUD_RUN_BACKEND_URL = 'https://fueki-backend-114394197024.us-central1.run.app';
 
 function isLocalhost(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
@@ -22,6 +22,14 @@ function isLocalhost(hostname: string): boolean {
 function deriveApiUrlFromRuntimeHost(): string | null {
   if (typeof window === 'undefined') return null;
   const { origin, hostname } = window.location;
+
+  // Highest priority at runtime: explicit injected environment override.
+  const runtimeInjected = (window as Window & {
+    __FUEKI_RUNTIME_ENV__?: Record<string, string>;
+  }).__FUEKI_RUNTIME_ENV__?.VITE_API_URL;
+  if (runtimeInjected && runtimeInjected.trim()) {
+    return runtimeInjected.trim();
+  }
 
   // Local development defaults to the backend's documented dev port.
   if (isLocalhost(hostname)) {
