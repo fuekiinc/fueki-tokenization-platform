@@ -27,6 +27,7 @@ import {
   reportRpcEndpointSuccess,
   selectRpcEndpoint,
 } from '../rpc/endpoints';
+import { createReadOnlyRpcProvider } from '../rpc/providers';
 import {
   getCached,
   invalidateCacheForAsset as invalidateCacheForAssetGlobal,
@@ -39,6 +40,7 @@ import {
   sendTransactionWithRetry,
   waitForTransactionReceipt,
 } from './txExecution.ts';
+import { queryRecentLogsBestEffort } from './logQuery';
 import logger from '../logger';
 
 // ---------------------------------------------------------------------------
@@ -613,7 +615,7 @@ export function getReadOnlyProvider(chainId: number): ethers.JsonRpcProvider {
     _readOnlyProviderUrls.delete(chainId);
   }
 
-  const provider = new ethers.JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+  const provider = createReadOnlyRpcProvider(rpcUrl, chainId);
 
   // Keep the cache bounded.
   if (_readOnlyProviders.size >= 10) {
@@ -707,7 +709,7 @@ export class ContractService {
       }
     }
 
-    const provider = new ethers.JsonRpcProvider(endpoint, this.chainId);
+    const provider = createReadOnlyRpcProvider(endpoint, this.chainId);
     this.readProviders.set(endpoint, provider);
     return provider;
   }
@@ -1907,23 +1909,25 @@ export class ContractService {
         (provider) => this.getAssetBackedExchangeContract(provider),
         async (exchange) => {
           const filter = exchange.filters.OrderFilled(null, userAddress);
-
-          // Public RPCs limit eth_getLogs range. Query the latest ~50 000 blocks
-          // (roughly 1 week on mainnet) to stay within typical provider limits.
           const provider = exchange.runner && 'provider' in exchange.runner
             ? (exchange.runner as { provider: ethers.Provider }).provider
             : null;
-          let fromBlock: number | string = 0;
-          if (provider) {
-            try {
-              const latest = await provider.getBlockNumber();
-              fromBlock = Math.max(0, latest - 50_000);
-            } catch {
-              // Fall back to scanning all blocks if we can't get the block number
-            }
+          if (!provider) {
+            return exchange.queryFilter(filter, 0);
           }
 
-          return exchange.queryFilter(filter, fromBlock);
+          return queryRecentLogsBestEffort(
+            provider,
+            (fromBlock, toBlock) => exchange.queryFilter(filter, fromBlock, toBlock),
+            {
+              chainId: this.chainId,
+              label: 'exchange OrderFilled (filled order ids)',
+              maxLookbackBlocks: 200_000,
+              initialChunkSize: 50_000,
+              maxRequests: 8,
+              maxEvents: 200,
+            },
+          );
         },
       );
       // Deduplicate order IDs (a user can fill the same order multiple times via partial fills)

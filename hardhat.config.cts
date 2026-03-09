@@ -8,7 +8,7 @@ import "dotenv/config";
 const MAINNET_RPC_URL =
   process.env.MAINNET_RPC_URL || "https://ethereum-rpc.publicnode.com";
 const HOLESKY_RPC_URL =
-  process.env.HOLESKY_RPC_URL || "https://ethereum-holesky-rpc.publicnode.com";
+  process.env.HOLESKY_RPC_URL || "https://holesky.drpc.org";
 const ARBITRUM_RPC_URL =
   process.env.ARBITRUM_RPC_URL || "https://arb1.arbitrum.io/rpc";
 const ARBITRUM_SEPOLIA_RPC_URL =

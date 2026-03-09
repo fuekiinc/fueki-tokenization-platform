@@ -89,3 +89,6 @@ test-results/
 .env
 .env.local
 .env.*.local
+# Symphony local runtime
+tools/symphony/
+

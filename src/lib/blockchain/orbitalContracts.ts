@@ -29,6 +29,7 @@ import {
   reportRpcEndpointFailure,
   reportRpcEndpointSuccess,
 } from '../rpc/endpoints';
+import { createReadOnlyRpcProvider } from '../rpc/providers';
 import {
   getCached,
   invalidateChainCache,
@@ -116,7 +117,7 @@ export class OrbitalContractService {
       }
     }
 
-    const provider = new ethers.JsonRpcProvider(endpoint, this.chainId);
+    const provider = createReadOnlyRpcProvider(endpoint, this.chainId);
     this.readProviders.set(endpoint, provider);
     return provider;
   }

@@ -105,6 +105,27 @@ function isPlausibleJWT(token: string): boolean {
   return parts.length === 3 && parts.every((p) => p.length > 0);
 }
 
+const AUTH_REFRESH_EXCLUDED_PATHS = [
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/refresh',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+];
+
+export function shouldAttemptSilentRefresh(
+  status: number | undefined,
+  requestUrl: string | undefined,
+  hasStoredSession: boolean,
+): boolean {
+  if (status !== 401 || !hasStoredSession) {
+    return false;
+  }
+
+  const normalizedUrl = (requestUrl ?? '').toLowerCase();
+  return !AUTH_REFRESH_EXCLUDED_PATHS.some((path) => normalizedUrl.includes(path));
+}
+
 // ---------------------------------------------------------------------------
 // Request interceptor -- attach access token to every outgoing request
 // ---------------------------------------------------------------------------
@@ -156,8 +177,19 @@ apiClient.interceptors.response.use(
 
     const originalRequest = error.config as RetryableRequestConfig & InternalAxiosRequestConfig;
 
-    // Only attempt refresh on 401 and if this request has not already been retried.
-    if (error.response?.status !== 401 || originalRequest._retry) {
+    const hasStoredSession = Boolean(getStoredTokens()?.accessToken);
+
+    // Only attempt refresh when there is a real persisted auth session to
+    // recover. Public or logged-out 401s should fail fast without generating a
+    // second /auth/refresh request that is guaranteed to fail.
+    if (
+      originalRequest._retry ||
+      !shouldAttemptSilentRefresh(
+        error.response?.status,
+        originalRequest.url,
+        hasStoredSession,
+      )
+    ) {
       return Promise.reject(error);
     }
 
@@ -212,7 +244,9 @@ apiClient.interceptors.response.use(
 
       // Clear auth state and redirect to login.
       clearPersistedAuth();
-      window.location.href = '/login';
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
 
       return Promise.reject(refreshError);
     } finally {
