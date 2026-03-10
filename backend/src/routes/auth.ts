@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client';
 import { Response, Router } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
@@ -7,6 +6,7 @@ import { authenticate } from '../middleware/auth';
 import { config } from '../config';
 import { sendPasswordResetEmail } from '../services/email';
 import { prisma } from '../prisma';
+import { buildTokenLookupCandidates, hashToken } from '../services/tokenHash';
 
 const router = Router();
 
@@ -140,22 +140,6 @@ function isPrismaUniqueConstraintError(
   err: unknown,
   targetField?: string,
 ): boolean {
-  if (err instanceof Prisma.PrismaClientKnownRequestError) {
-    if (err.code !== 'P2002') return false;
-
-    if (!targetField) return true;
-
-    const target = err.meta?.target;
-    if (Array.isArray(target)) {
-      return target.includes(targetField);
-    }
-    if (typeof target === 'string') {
-      return target.includes(targetField);
-    }
-
-    return true;
-  }
-
   const maybeErr = err as {
     code?: unknown;
     meta?: { target?: unknown };
@@ -440,7 +424,7 @@ router.post('/forgot-password', async (req, res) => {
     await prisma.passwordResetToken.create({
       data: {
         userId: user.id,
-        token,
+        token: hashToken(token),
         expiresAt,
       },
     });
@@ -479,10 +463,15 @@ const resetPasswordSchema = z.object({
 router.post('/reset-password', async (req, res) => {
   try {
     const { token, newPassword } = resetPasswordSchema.parse(req.body);
+    const tokenCandidates = buildTokenLookupCandidates(token);
 
     // Find a valid, unexpired, unused token
-    const resetToken = await prisma.passwordResetToken.findUnique({
-      where: { token },
+    const resetToken = await prisma.passwordResetToken.findFirst({
+      where: {
+        OR: tokenCandidates.map((candidate) => ({
+          token: candidate,
+        })),
+      },
     });
 
     if (!resetToken || resetToken.used || resetToken.expiresAt < new Date()) {

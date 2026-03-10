@@ -53,11 +53,16 @@ export async function listMintApprovalRequests(
 
 export async function markMintApprovalRequestMinted(
   requestId: string,
-  txHash?: string,
+  txHash: string,
 ): Promise<MarkMintApprovalMintedResponse> {
+  const normalizedTxHash = txHash.trim();
+  if (!/^0x[a-fA-F0-9]{64}$/.test(normalizedTxHash)) {
+    throw new Error('Transaction hash must be a valid 0x-prefixed 32-byte hex string.');
+  }
+
   const response = await apiClient.post<MarkMintApprovalMintedResponse>(
     `/api/mint-requests/${requestId}/mark-minted`,
-    txHash ? { txHash } : {},
+    { txHash: normalizedTxHash },
   );
   return response.data;
 }

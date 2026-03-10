@@ -71,7 +71,7 @@ model Session {
   id           String   @id @default(uuid())
   userId       String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  refreshToken String   @unique
+  refreshToken String   @unique // SHA-256 hex digest of the refresh token
   rememberMe   Boolean  @default(false)
   expiresAt    DateTime
   createdAt    DateTime @default(now())
@@ -84,7 +84,7 @@ model PasswordResetToken {
   id        String   @id @default(uuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token     String   @unique
+  token     String   @unique // SHA-256 hex digest of the reset token
   expiresAt DateTime
   used      Boolean  @default(false)
   createdAt DateTime @default(now())
@@ -97,7 +97,7 @@ model AdminActionToken {
   id        String   @id @default(uuid())
   userId    String   // the KYC applicant
   action    String   // "approve" or "reject"
-  token     String   @unique
+  token     String   @unique // SHA-256 hex digest of the action token
   used      Boolean  @default(false)
   expiresAt DateTime
   createdAt DateTime @default(now())
@@ -141,7 +141,7 @@ model MintApprovalActionToken {
   requestId  String
   request    MintApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   action     String   // approve, reject
-  token      String   @unique
+  token      String   @unique // SHA-256 hex digest of the action token
   used       Boolean  @default(false)
   expiresAt  DateTime
   createdAt  DateTime @default(now())
@@ -189,7 +189,7 @@ model SecurityTokenApprovalActionToken {
   requestId  String
   request    SecurityTokenApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   action     String   // approve, reject
-  token      String   @unique
+  token      String   @unique // SHA-256 hex digest of the action token
   used       Boolean  @default(false)
   expiresAt  DateTime
   createdAt  DateTime @default(now())

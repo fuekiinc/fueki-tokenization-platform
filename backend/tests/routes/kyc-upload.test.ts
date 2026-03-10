@@ -1,15 +1,22 @@
-import express from 'express';
+import multer from 'multer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { dispatchExpressRouter } from '../helpers/expressDispatch';
+import { createMockReq, createMockRes, getRouteHandlers, invokeHandler } from '../helpers/routeHarness';
 
 const mocks = vi.hoisted(() => ({
   saveEncryptedDocument: vi.fn<() => Promise<string>>(),
+  uploadFields: vi.fn(),
 }));
 
 vi.mock('../../src/middleware/auth', () => ({
-  authenticate: (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  authenticate: (req: Record<string, unknown>, _res: Record<string, unknown>, next: (err?: unknown) => void) => {
     req.userId = 'test-user-id';
     next();
+  },
+}));
+
+vi.mock('../../src/middleware/upload', () => ({
+  documentUpload: {
+    fields: mocks.uploadFields,
   },
 }));
 
@@ -61,30 +68,31 @@ vi.mock('../../src/middleware/upload', async () => {
 
 import kycRoutes from '../../src/routes/kyc';
 
-function makeFile(
-  originalname: string,
-  mimetype: string,
-): {
+const uploadRouteHandlers = getRouteHandlers(kycRoutes, 'post', '/upload-document');
+const uploadMiddleware = uploadRouteHandlers[1];
+const uploadDocumentHandler = uploadRouteHandlers[2];
+
+function createFile(options: {
+  buffer?: Buffer;
+  contentType: string;
   fieldname: string;
-  originalname: string;
-  encoding: string;
-  mimetype: string;
-  size: number;
-  buffer: Buffer;
-} {
+  filename: string;
+}) {
   return {
-    fieldname: 'file',
-    originalname,
-    encoding: '7bit',
-    mimetype,
-    size: 16,
-    buffer: Buffer.from(`${originalname}:${mimetype}`),
+    buffer: options.buffer ?? Buffer.from(`${options.fieldname}-bytes`),
+    fieldname: options.fieldname,
+    mimetype: options.contentType,
+    originalname: options.filename,
+    size: (options.buffer ?? Buffer.from(`${options.fieldname}-bytes`)).length,
   };
 }
 
 describe('POST /api/kyc/upload-document', () => {
   beforeEach(() => {
     mocks.saveEncryptedDocument.mockReset();
+    mocks.uploadFields.mockReset().mockReturnValue(
+      (_req: Record<string, unknown>, _res: Record<string, unknown>, cb: (err?: unknown) => void) => cb(),
+    );
   });
 
   it('uploads front/back/video and accepts video mime parameters', async () => {
@@ -93,114 +101,117 @@ describe('POST /api/kyc/upload-document', () => {
       .mockResolvedValueOnce('back-document-id')
       .mockResolvedValueOnce('live-video-id');
 
-    const response = await dispatchExpressRouter(kycRoutes, {
-      method: 'POST',
-      url: '/upload-document',
-      body: {
-        documentType: 'drivers_license',
+    const req = createMockReq({
+      body: { documentType: 'drivers_license' },
+      files: {
+        documentFront: [createFile({
+          fieldname: 'documentFront',
+          filename: 'front.jpg',
+          contentType: 'image/jpeg',
+        })],
+        documentBack: [createFile({
+          fieldname: 'documentBack',
+          filename: 'back.png',
+          contentType: 'image/png',
+        })],
+        liveVideo: [createFile({
+          fieldname: 'liveVideo',
+          filename: 'live.webm',
+          contentType: 'video/webm;codecs=vp9',
+        })],
       },
-      extras: {
-        __uploadControl: {
-          files: {
-            documentFront: [makeFile('front.jpg', 'image/jpeg')],
-            documentBack: [makeFile('back.png', 'image/png')],
-            liveVideo: [makeFile('live.webm', 'video/webm;codecs=vp9')],
-          },
-        },
-      },
+      userId: 'test-user-id',
     });
+    const res = createMockRes();
 
-    expect(response.status).toBe(200);
-    const body = response.body as {
-      documentFront: { documentId: string };
-      documentBack: { documentId: string };
-      liveVideo: { documentId: string };
-    };
-    expect(body.documentFront.documentId).toBe('front-document-id');
-    expect(body.documentBack.documentId).toBe('back-document-id');
-    expect(body.liveVideo.documentId).toBe('live-video-id');
+    await invokeHandler(uploadDocumentHandler, req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect((res.body as any).documentFront.documentId).toBe('front-document-id');
+    expect((res.body as any).documentBack.documentId).toBe('back-document-id');
+    expect((res.body as any).liveVideo.documentId).toBe('live-video-id');
     expect(mocks.saveEncryptedDocument).toHaveBeenCalledTimes(3);
   });
 
   it('returns 400 when document type is invalid', async () => {
-    const response = await dispatchExpressRouter(kycRoutes, {
-      method: 'POST',
-      url: '/upload-document',
-      body: {
-        documentType: 'student_id',
+    const req = createMockReq({
+      body: { documentType: 'student_id' },
+      files: {
+        documentFront: [createFile({
+          fieldname: 'documentFront',
+          filename: 'front.jpg',
+          contentType: 'image/jpeg',
+        })],
+        liveVideo: [createFile({
+          fieldname: 'liveVideo',
+          filename: 'live.webm',
+          contentType: 'video/webm',
+        })],
       },
-      extras: {
-        __uploadControl: {
-          files: {
-            documentFront: [makeFile('front.jpg', 'image/jpeg')],
-            liveVideo: [makeFile('live.webm', 'video/webm')],
-          },
-        },
-      },
+      userId: 'test-user-id',
     });
+    const res = createMockRes();
 
-    expect(response.status).toBe(400);
-    expect((response.body as { error: { code: string } }).error.code).toBe('INVALID_TYPE');
+    await invokeHandler(uploadDocumentHandler, req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect((res.body as any).error.code).toBe('INVALID_TYPE');
   });
 
   it('returns upload-specific 400 errors for multer file-filter failures', async () => {
-    const response = await dispatchExpressRouter(kycRoutes, {
-      method: 'POST',
-      url: '/upload-document',
-      body: {
-        documentType: 'passport',
-      },
-      extras: {
-        __uploadControl: {
-          error: 'filter',
-        },
-      },
-    });
+    mocks.uploadFields.mockReturnValue(
+      (_req: Record<string, unknown>, _res: Record<string, unknown>, cb: (err?: unknown) => void) => (
+        cb(new Error('Only JPG, PNG, PDF, MP4, MOV, and WEBM files are allowed'))
+      ),
+    );
+    const req = createMockReq();
+    const res = createMockRes();
 
-    expect(response.status).toBe(400);
-    const body = response.body as { error: { code: string; message: string } };
-    expect(body.error.code).toBe('UPLOAD_ERROR');
-    expect(body.error.message).toContain('Only JPG, PNG, PDF, MP4, MOV, and WEBM files are allowed');
+    await invokeHandler(uploadMiddleware, req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect((res.body as any).error.code).toBe('UPLOAD_ERROR');
+    expect((res.body as any).error.message).toContain('Only JPG, PNG, PDF, MP4, MOV, and WEBM files are allowed');
   });
 
   it('rejects semantically invalid live video file types', async () => {
-    const response = await dispatchExpressRouter(kycRoutes, {
-      method: 'POST',
-      url: '/upload-document',
-      body: {
-        documentType: 'passport',
+    const req = createMockReq({
+      body: { documentType: 'passport' },
+      files: {
+        documentFront: [createFile({
+          fieldname: 'documentFront',
+          filename: 'front.jpg',
+          contentType: 'image/jpeg',
+        })],
+        liveVideo: [createFile({
+          fieldname: 'liveVideo',
+          filename: 'live.pdf',
+          contentType: 'application/pdf',
+        })],
       },
-      extras: {
-        __uploadControl: {
-          files: {
-            documentFront: [makeFile('front.jpg', 'image/jpeg')],
-            liveVideo: [makeFile('live.pdf', 'application/pdf')],
-          },
-        },
-      },
+      userId: 'test-user-id',
     });
+    const res = createMockRes();
 
-    expect(response.status).toBe(400);
-    expect((response.body as { error: { code: string } }).error.code).toBe('INVALID_LIVE_VIDEO_FORMAT');
+    await invokeHandler(uploadDocumentHandler, req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect((res.body as any).error.code).toBe('INVALID_LIVE_VIDEO_FORMAT');
   });
 
   it('returns a specific error when a KYC file exceeds the configured upload size', async () => {
-    const response = await dispatchExpressRouter(kycRoutes, {
-      method: 'POST',
-      url: '/upload-document',
-      body: {
-        documentType: 'passport',
-      },
-      extras: {
-        __uploadControl: {
-          error: 'limit',
-        },
-      },
-    });
+    mocks.uploadFields.mockReturnValue(
+      (_req: Record<string, unknown>, _res: Record<string, unknown>, cb: (err?: unknown) => void) => (
+        cb(new multer.MulterError('LIMIT_FILE_SIZE', 'liveVideo'))
+      ),
+    );
+    const req = createMockReq();
+    const res = createMockRes();
 
-    expect(response.status).toBe(400);
-    const body = response.body as { error: { code: string; message: string } };
-    expect(body.error.code).toBe('UPLOAD_FILE_TOO_LARGE');
-    expect(body.error.message).toContain('20 MB');
+    await invokeHandler(uploadMiddleware, req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect((res.body as any).error.code).toBe('UPLOAD_FILE_TOO_LARGE');
+    expect((res.body as any).error.message).toContain('20 MB');
   });
 });

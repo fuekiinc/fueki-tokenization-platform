@@ -1,10 +1,11 @@
-import type { AuthTokens, User } from '../types/auth';
+import type { User } from '../types/auth';
 
 export type AuthStorageMode = 'local' | 'session';
 
+export const AUTH_SESSION_KEY = 'fueki-auth-session';
 export const AUTH_TOKENS_KEY = 'fueki-auth-tokens';
 export const AUTH_USER_KEY = 'fueki-auth-user';
-const AUTH_STORAGE_MODE_KEY = 'fueki-auth-storage-mode';
+const LEGACY_AUTH_STORAGE_MODE_KEY = 'fueki-auth-storage-mode';
 
 function getStorage(mode: AuthStorageMode): Storage {
   return mode === 'session' ? sessionStorage : localStorage;
@@ -40,42 +41,27 @@ function isAuthStorageMode(value: string | null): value is AuthStorageMode {
   return value === 'local' || value === 'session';
 }
 
-function isPlausibleTokens(value: unknown): value is AuthTokens {
-  if (!value || typeof value !== 'object') return false;
-  const token = (value as Record<string, unknown>).accessToken;
-  if (typeof token !== 'string') return false;
-  const parts = token.split('.');
-  return parts.length === 3 && parts.every((part) => part.length > 0);
+function hasPersistedSession(mode: AuthStorageMode): boolean {
+  const session = readJson<{ active?: unknown }>(getStorage(mode), AUTH_SESSION_KEY);
+  return session?.active === true;
 }
 
-export function readStorageMode(): AuthStorageMode | null {
+function hasLegacyAuthData(mode: AuthStorageMode): boolean {
   try {
-    const raw = localStorage.getItem(AUTH_STORAGE_MODE_KEY);
+    const storage = getStorage(mode);
+    return storage.getItem(AUTH_TOKENS_KEY) !== null || storage.getItem(AUTH_USER_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+function readLegacyStorageMode(): AuthStorageMode | null {
+  try {
+    const raw = localStorage.getItem(LEGACY_AUTH_STORAGE_MODE_KEY);
     return isAuthStorageMode(raw) ? raw : null;
   } catch {
     return null;
   }
-}
-
-function writeStorageMode(mode: AuthStorageMode): void {
-  try {
-    localStorage.setItem(AUTH_STORAGE_MODE_KEY, mode);
-  } catch {
-    // Ignore.
-  }
-}
-
-function clearStorageMode(): void {
-  try {
-    localStorage.removeItem(AUTH_STORAGE_MODE_KEY);
-  } catch {
-    // Ignore.
-  }
-}
-
-export function readTokensByMode(mode: AuthStorageMode): AuthTokens | null {
-  const value = readJson<unknown>(getStorage(mode), AUTH_TOKENS_KEY);
-  return isPlausibleTokens(value) ? value : null;
 }
 
 export function readUserByMode(mode: AuthStorageMode): User | null {
@@ -83,63 +69,75 @@ export function readUserByMode(mode: AuthStorageMode): User | null {
 }
 
 export function resolveActiveStorageMode(): AuthStorageMode | null {
-  const preferred = readStorageMode();
-  if (preferred && readTokensByMode(preferred)) {
-    return preferred;
+  if (hasPersistedSession('local')) return 'local';
+  if (hasPersistedSession('session')) return 'session';
+
+  const legacyPreferred = readLegacyStorageMode();
+  if (legacyPreferred && hasLegacyAuthData(legacyPreferred)) {
+    return legacyPreferred;
   }
-  if (readTokensByMode('local')) return 'local';
-  if (readTokensByMode('session')) return 'session';
+  if (hasLegacyAuthData('local')) return 'local';
+  if (hasLegacyAuthData('session')) return 'session';
   return null;
 }
 
 export function readAuthSnapshot(): {
   mode: AuthStorageMode;
-  tokens: AuthTokens;
   user: User | null;
 } | null {
   const mode = resolveActiveStorageMode();
   if (!mode) return null;
-  const tokens = readTokensByMode(mode);
-  if (!tokens) return null;
   return {
     mode,
-    tokens,
     user: readUserByMode(mode),
   };
 }
 
 function clearModeStorage(mode: AuthStorageMode): void {
   const storage = getStorage(mode);
+  removeKey(storage, AUTH_SESSION_KEY);
   removeKey(storage, AUTH_TOKENS_KEY);
   removeKey(storage, AUTH_USER_KEY);
+}
+
+function clearLegacyStorageMode(): void {
+  try {
+    localStorage.removeItem(LEGACY_AUTH_STORAGE_MODE_KEY);
+  } catch {
+    // Ignore.
+  }
 }
 
 export function clearPersistedAuth(): void {
   clearModeStorage('local');
   clearModeStorage('session');
-  clearStorageMode();
+  clearLegacyStorageMode();
 }
 
-export function persistAuthSnapshot(
-  mode: AuthStorageMode,
-  tokens: AuthTokens,
-  user: User,
-): void {
-  clearModeStorage(mode === 'local' ? 'session' : 'local');
+function writeSessionMarker(mode: AuthStorageMode): void {
+  writeJson(getStorage(mode), AUTH_SESSION_KEY, { active: true });
+}
+
+export function persistAuthSession(mode: AuthStorageMode, user: User | null): void {
+  clearModeStorage('local');
+  clearModeStorage('session');
+  clearLegacyStorageMode();
+
   const storage = getStorage(mode);
-  writeJson(storage, AUTH_TOKENS_KEY, tokens);
-  writeJson(storage, AUTH_USER_KEY, user);
-  writeStorageMode(mode);
-}
-
-export function persistTokens(mode: AuthStorageMode, tokens: AuthTokens): void {
-  clearModeStorage(mode === 'local' ? 'session' : 'local');
-  writeJson(getStorage(mode), AUTH_TOKENS_KEY, tokens);
-  writeStorageMode(mode);
+  writeSessionMarker(mode);
+  if (user) {
+    writeJson(storage, AUTH_USER_KEY, user);
+    return;
+  }
+  removeKey(storage, AUTH_USER_KEY);
 }
 
 export function persistUser(mode: AuthStorageMode, user: User): void {
-  clearModeStorage(mode === 'local' ? 'session' : 'local');
-  writeJson(getStorage(mode), AUTH_USER_KEY, user);
-  writeStorageMode(mode);
+  const otherMode = mode === 'local' ? 'session' : 'local';
+  const storage = getStorage(mode);
+  clearModeStorage(otherMode);
+  clearLegacyStorageMode();
+  removeKey(storage, AUTH_TOKENS_KEY);
+  writeSessionMarker(mode);
+  writeJson(storage, AUTH_USER_KEY, user);
 }
