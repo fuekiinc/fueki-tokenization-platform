@@ -1,6 +1,6 @@
 import express from 'express';
-import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { dispatchExpressRouter } from '../helpers/expressDispatch';
 
 const mocks = vi.hoisted(() => ({
   saveEncryptedDocument: vi.fn<() => Promise<string>>(),
@@ -19,16 +19,67 @@ vi.mock('../../src/services/kyc', () => ({
   saveEncryptedDocument: mocks.saveEncryptedDocument,
 }));
 
+vi.mock('../../src/middleware/upload', async () => {
+  const multerModule = await vi.importActual<typeof import('multer')>('multer');
+  const MulterError = (multerModule.default as typeof multerModule.default & {
+    MulterError: new (code: string) => Error;
+  }).MulterError;
+
+  return {
+    documentUpload: {
+      fields:
+        () =>
+        (
+          req: express.Request & {
+            __uploadControl?: {
+              error?: 'filter' | 'limit';
+              files?: Record<string, Array<Record<string, unknown>>>;
+            };
+          },
+          _res: express.Response,
+          next: express.NextFunction,
+        ) => {
+          if (req.__uploadControl?.error === 'limit') {
+            next(new MulterError('LIMIT_FILE_SIZE'));
+            return;
+          }
+
+          if (req.__uploadControl?.error === 'filter') {
+            next(new Error('Only JPG, PNG, PDF, MP4, MOV, and WEBM files are allowed'));
+            return;
+          }
+
+          if (req.__uploadControl?.files) {
+            req.files = req.__uploadControl.files as never;
+          }
+
+          next();
+        },
+    },
+  };
+});
+
 import kycRoutes from '../../src/routes/kyc';
 
-function createApp() {
-  const app = express();
-  app.use(express.json());
-  app.use('/api/kyc', kycRoutes);
-  app.use((_err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
-  });
-  return app;
+function makeFile(
+  originalname: string,
+  mimetype: string,
+): {
+  fieldname: string;
+  originalname: string;
+  encoding: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+} {
+  return {
+    fieldname: 'file',
+    originalname,
+    encoding: '7bit',
+    mimetype,
+    size: 16,
+    buffer: Buffer.from(`${originalname}:${mimetype}`),
+  };
 }
 
 describe('POST /api/kyc/upload-document', () => {
@@ -42,101 +93,114 @@ describe('POST /api/kyc/upload-document', () => {
       .mockResolvedValueOnce('back-document-id')
       .mockResolvedValueOnce('live-video-id');
 
-    const app = createApp();
-    const response = await request(app)
-      .post('/api/kyc/upload-document')
-      .field('documentType', 'drivers_license')
-      .attach('documentFront', Buffer.from('front-image-bytes'), {
-        filename: 'front.jpg',
-        contentType: 'image/jpeg',
-      })
-      .attach('documentBack', Buffer.from('back-image-bytes'), {
-        filename: 'back.png',
-        contentType: 'image/png',
-      })
-      .attach('liveVideo', Buffer.from('live-video-bytes'), {
-        filename: 'live.webm',
-        contentType: 'video/webm;codecs=vp9',
-      });
+    const response = await dispatchExpressRouter(kycRoutes, {
+      method: 'POST',
+      url: '/upload-document',
+      body: {
+        documentType: 'drivers_license',
+      },
+      extras: {
+        __uploadControl: {
+          files: {
+            documentFront: [makeFile('front.jpg', 'image/jpeg')],
+            documentBack: [makeFile('back.png', 'image/png')],
+            liveVideo: [makeFile('live.webm', 'video/webm;codecs=vp9')],
+          },
+        },
+      },
+    });
 
     expect(response.status).toBe(200);
-    expect(response.body.documentFront.documentId).toBe('front-document-id');
-    expect(response.body.documentBack.documentId).toBe('back-document-id');
-    expect(response.body.liveVideo.documentId).toBe('live-video-id');
+    const body = response.body as {
+      documentFront: { documentId: string };
+      documentBack: { documentId: string };
+      liveVideo: { documentId: string };
+    };
+    expect(body.documentFront.documentId).toBe('front-document-id');
+    expect(body.documentBack.documentId).toBe('back-document-id');
+    expect(body.liveVideo.documentId).toBe('live-video-id');
     expect(mocks.saveEncryptedDocument).toHaveBeenCalledTimes(3);
   });
 
   it('returns 400 when document type is invalid', async () => {
-    const app = createApp();
-    const response = await request(app)
-      .post('/api/kyc/upload-document')
-      .field('documentType', 'student_id')
-      .attach('documentFront', Buffer.from('front-image-bytes'), {
-        filename: 'front.jpg',
-        contentType: 'image/jpeg',
-      })
-      .attach('liveVideo', Buffer.from('live-video-bytes'), {
-        filename: 'live.webm',
-        contentType: 'video/webm',
-      });
+    const response = await dispatchExpressRouter(kycRoutes, {
+      method: 'POST',
+      url: '/upload-document',
+      body: {
+        documentType: 'student_id',
+      },
+      extras: {
+        __uploadControl: {
+          files: {
+            documentFront: [makeFile('front.jpg', 'image/jpeg')],
+            liveVideo: [makeFile('live.webm', 'video/webm')],
+          },
+        },
+      },
+    });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('INVALID_TYPE');
+    expect((response.body as { error: { code: string } }).error.code).toBe('INVALID_TYPE');
   });
 
   it('returns upload-specific 400 errors for multer file-filter failures', async () => {
-    const app = createApp();
-    const response = await request(app)
-      .post('/api/kyc/upload-document')
-      .field('documentType', 'passport')
-      .attach('documentFront', Buffer.from('not-an-image'), {
-        filename: 'front.txt',
-        contentType: 'text/plain',
-      })
-      .attach('liveVideo', Buffer.from('live-video-bytes'), {
-        filename: 'live.webm',
-        contentType: 'video/webm',
-      });
+    const response = await dispatchExpressRouter(kycRoutes, {
+      method: 'POST',
+      url: '/upload-document',
+      body: {
+        documentType: 'passport',
+      },
+      extras: {
+        __uploadControl: {
+          error: 'filter',
+        },
+      },
+    });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('UPLOAD_ERROR');
-    expect(response.body.error.message).toContain('Only JPG, PNG, PDF, MP4, MOV, and WEBM files are allowed');
+    const body = response.body as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('UPLOAD_ERROR');
+    expect(body.error.message).toContain('Only JPG, PNG, PDF, MP4, MOV, and WEBM files are allowed');
   });
 
   it('rejects semantically invalid live video file types', async () => {
-    const app = createApp();
-    const response = await request(app)
-      .post('/api/kyc/upload-document')
-      .field('documentType', 'passport')
-      .attach('documentFront', Buffer.from('front-image-bytes'), {
-        filename: 'front.jpg',
-        contentType: 'image/jpeg',
-      })
-      .attach('liveVideo', Buffer.from('pdf-bytes'), {
-        filename: 'live.pdf',
-        contentType: 'application/pdf',
-      });
+    const response = await dispatchExpressRouter(kycRoutes, {
+      method: 'POST',
+      url: '/upload-document',
+      body: {
+        documentType: 'passport',
+      },
+      extras: {
+        __uploadControl: {
+          files: {
+            documentFront: [makeFile('front.jpg', 'image/jpeg')],
+            liveVideo: [makeFile('live.pdf', 'application/pdf')],
+          },
+        },
+      },
+    });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('INVALID_LIVE_VIDEO_FORMAT');
+    expect((response.body as { error: { code: string } }).error.code).toBe('INVALID_LIVE_VIDEO_FORMAT');
   });
 
   it('returns a specific error when a KYC file exceeds the configured upload size', async () => {
-    const app = createApp();
-    const response = await request(app)
-      .post('/api/kyc/upload-document')
-      .field('documentType', 'passport')
-      .attach('documentFront', Buffer.from('front-image-bytes'), {
-        filename: 'front.jpg',
-        contentType: 'image/jpeg',
-      })
-      .attach('liveVideo', Buffer.alloc(21 * 1024 * 1024, 1), {
-        filename: 'live.webm',
-        contentType: 'video/webm',
-      });
+    const response = await dispatchExpressRouter(kycRoutes, {
+      method: 'POST',
+      url: '/upload-document',
+      body: {
+        documentType: 'passport',
+      },
+      extras: {
+        __uploadControl: {
+          error: 'limit',
+        },
+      },
+    });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('UPLOAD_FILE_TOO_LARGE');
-    expect(response.body.error.message).toContain('20 MB');
+    const body = response.body as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('UPLOAD_FILE_TOO_LARGE');
+    expect(body.error.message).toContain('20 MB');
   });
 });

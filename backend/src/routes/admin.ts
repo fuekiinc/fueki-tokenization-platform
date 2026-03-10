@@ -2,6 +2,13 @@ import { Request, Response, Router } from 'express';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { requireRole } from '../middleware/rbac';
+import {
+  createConfirmationFormState,
+  parseApprovalAction,
+  sendActionConfirmationPage,
+  sendActionInfoPage,
+  verifyConfirmationFormState,
+} from '../services/approvalActionFlow';
 import { approveKYC, rejectKYC } from '../services/kyc';
 import { decrypt } from '../services/encryption';
 import { prisma } from '../prisma';
@@ -369,7 +376,7 @@ router.put('/kyc/:userId/reject', adminOnly, async (req: Request, res: Response)
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/admin/kyc/action/:token — One-click approve/reject from email
+// GET /api/admin/kyc/action/:token — Read-only confirmation page
 // ---------------------------------------------------------------------------
 
 router.get('/kyc/action/:token', async (req: Request, res: Response) => {
@@ -381,73 +388,273 @@ router.get('/kyc/action/:token', async (req: Request, res: Response) => {
     });
 
     if (!actionToken) {
-      res.status(404).send(renderActionPage('Invalid Link', 'This action link is invalid or has already been used.', false));
+      sendActionInfoPage(res, {
+        status: 404,
+        title: 'Invalid Link',
+        message: 'This action link is invalid or has already been used.',
+        accent: '#dc2626',
+      });
       return;
     }
 
     if (actionToken.used) {
-      res.status(400).send(renderActionPage('Already Used', 'This action has already been processed.', false));
+      sendActionInfoPage(res, {
+        status: 400,
+        title: 'Already Used',
+        message: 'This action has already been processed.',
+        accent: '#f59e0b',
+      });
       return;
     }
 
     if (actionToken.expiresAt < new Date()) {
-      res.status(400).send(renderActionPage('Link Expired', 'This action link has expired. Please review the KYC submission from the admin panel.', false));
+      sendActionInfoPage(res, {
+        status: 400,
+        title: 'Link Expired',
+        message: 'This action link has expired. Please review the KYC submission from the admin panel.',
+        accent: '#f59e0b',
+      });
       return;
     }
 
-    // Perform the action
-    if (actionToken.action === 'approve') {
-      await approveKYC(actionToken.userId, 'Approved via email');
-    } else {
-      await rejectKYC(actionToken.userId, 'Rejected via email');
+    const action = parseApprovalAction(actionToken.action);
+    if (!action) {
+      sendActionInfoPage(res, {
+        status: 400,
+        title: 'Invalid Link',
+        message: 'This action link is malformed and cannot be processed.',
+        accent: '#dc2626',
+      });
+      return;
     }
 
-    // Mark token as used
-    await prisma.adminActionToken.update({
-      where: { id: actionToken.id },
-      data: { used: true },
+    const user = await prisma.user.findUnique({
+      where: { id: actionToken.userId },
+      select: {
+        id: true,
+        email: true,
+        kycStatus: true,
+      },
     });
 
-    // Also mark the opposite token as used (so the other button can't be clicked)
+    if (!user) {
+      sendActionInfoPage(res, {
+        status: 404,
+        title: 'Applicant Not Found',
+        message: 'This KYC applicant no longer exists. No action was applied.',
+        accent: '#dc2626',
+      });
+      return;
+    }
+
+    if (user.kycStatus !== 'pending') {
+      sendActionInfoPage(res, {
+        title: 'KYC Already Reviewed',
+        message: `This KYC submission is already ${user.kycStatus} and cannot be changed from this link.`,
+        accent: '#4f46e5',
+        details: [
+          { label: 'Applicant Email', value: user.email },
+          { label: 'Applicant ID', value: user.id },
+          { label: 'Current Status', value: user.kycStatus },
+        ],
+      });
+      return;
+    }
+
+    const confirmation = createConfirmationFormState({
+      token,
+      action,
+      scope: 'kyc',
+      expiresAt: actionToken.expiresAt,
+    });
+
+    sendActionConfirmationPage(res, {
+      title: action === 'approve' ? 'Confirm KYC Approval' : 'Confirm KYC Rejection',
+      message:
+        'Review this pending KYC action below. Opening this page is safe; the request is only applied after explicit confirmation.',
+      action,
+      formAction: `/api/admin/kyc/action/${encodeURIComponent(token)}`,
+      payload: confirmation.payload,
+      signature: confirmation.signature,
+      details: [
+        { label: 'Applicant Email', value: user.email },
+        { label: 'Applicant ID', value: user.id },
+        { label: 'Current Status', value: user.kycStatus },
+        { label: 'Requested Action', value: action === 'approve' ? 'Approve' : 'Reject' },
+        { label: 'Action Link Expires', value: actionToken.expiresAt.toUTCString() },
+      ],
+    });
+  } catch (err) {
+    console.error('KYC action error:', err);
+    sendActionInfoPage(res, {
+      status: 500,
+      title: 'Error',
+      message: 'Something went wrong loading this action. Please try again or use the admin panel.',
+      accent: '#dc2626',
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/kyc/action/:token — Signed confirmation submit
+// ---------------------------------------------------------------------------
+
+router.post('/kyc/action/:token', async (req: Request, res: Response) => {
+  try {
+    const token = req.params.token as string;
+    const actionToken = await prisma.adminActionToken.findUnique({
+      where: { token },
+    });
+
+    if (!actionToken) {
+      sendActionInfoPage(res, {
+        status: 404,
+        title: 'Invalid Link',
+        message: 'This action link is invalid or has already been used.',
+        accent: '#dc2626',
+      });
+      return;
+    }
+
+    if (actionToken.used) {
+      sendActionInfoPage(res, {
+        status: 400,
+        title: 'Already Used',
+        message: 'This action has already been processed.',
+        accent: '#f59e0b',
+      });
+      return;
+    }
+
+    const action = parseApprovalAction(actionToken.action);
+    if (!action) {
+      sendActionInfoPage(res, {
+        status: 400,
+        title: 'Invalid Link',
+        message: 'This action link is malformed and cannot be processed.',
+        accent: '#dc2626',
+      });
+      return;
+    }
+
+    if (String(req.body?.confirm || '') !== action) {
+      sendActionInfoPage(res, {
+        status: 400,
+        title: 'Confirmation Required',
+        message: 'No action was applied because the confirmation button was not used.',
+        accent: '#f59e0b',
+      });
+      return;
+    }
+
+    const confirmation = verifyConfirmationFormState({
+      payload: String(req.body?.payload || ''),
+      signature: String(req.body?.signature || ''),
+      token,
+      action,
+      scope: 'kyc',
+    });
+
+    if (!confirmation.ok) {
+      sendActionInfoPage(res, {
+        status: 400,
+        title: confirmation.reason === 'expired' ? 'Confirmation Expired' : 'Invalid Confirmation',
+        message:
+          confirmation.reason === 'expired'
+            ? 'This confirmation page has expired. Re-open the original email link to review the action again.'
+            : 'This confirmation request is invalid or has been tampered with.',
+        accent: '#dc2626',
+      });
+      return;
+    }
+
+    if (actionToken.expiresAt < new Date()) {
+      sendActionInfoPage(res, {
+        status: 400,
+        title: 'Link Expired',
+        message: 'This action link has expired. Please review the KYC submission from the admin panel.',
+        accent: '#f59e0b',
+      });
+      return;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: actionToken.userId },
+      select: {
+        id: true,
+        email: true,
+        kycStatus: true,
+      },
+    });
+
+    if (!user) {
+      sendActionInfoPage(res, {
+        status: 404,
+        title: 'Applicant Not Found',
+        message: 'This KYC applicant no longer exists. No action was applied.',
+        accent: '#dc2626',
+      });
+      return;
+    }
+
+    if (user.kycStatus !== 'pending') {
+      await prisma.adminActionToken.updateMany({
+        where: {
+          userId: actionToken.userId,
+          used: false,
+        },
+        data: { used: true },
+      });
+
+      sendActionInfoPage(res, {
+        title: 'KYC Already Reviewed',
+        message: `This KYC submission is already ${user.kycStatus}. No additional action was applied.`,
+        accent: '#4f46e5',
+        details: [
+          { label: 'Applicant Email', value: user.email },
+          { label: 'Applicant ID', value: user.id },
+          { label: 'Current Status', value: user.kycStatus },
+        ],
+      });
+      return;
+    }
+
+    if (action === 'approve') {
+      await approveKYC(actionToken.userId, 'Approved via confirmation page.');
+    } else {
+      await rejectKYC(actionToken.userId, 'Rejected via confirmation page.');
+    }
+
     await prisma.adminActionToken.updateMany({
       where: {
         userId: actionToken.userId,
-        action: actionToken.action === 'approve' ? 'reject' : 'approve',
         used: false,
       },
       data: { used: true },
     });
 
-    const title = actionToken.action === 'approve' ? 'KYC Approved' : 'KYC Rejected';
-    const message = actionToken.action === 'approve'
-      ? 'The user has been approved and can now access the platform.'
-      : 'The user has been rejected. They will be notified to re-submit.';
-
-    res.send(renderActionPage(title, message, true));
+    sendActionInfoPage(res, {
+      title: action === 'approve' ? 'KYC Approved' : 'KYC Rejected',
+      message:
+        action === 'approve'
+          ? 'The user has been approved and can now access the platform.'
+          : 'The user has been rejected. They will be notified to re-submit.',
+      accent: action === 'approve' ? '#059669' : '#dc2626',
+      details: [
+        { label: 'Applicant Email', value: user.email },
+        { label: 'Applicant ID', value: user.id },
+        { label: 'Final Status', value: action === 'approve' ? 'approved' : 'rejected' },
+      ],
+    });
   } catch (err) {
-    console.error('KYC action error:', err);
-    res.status(500).send(renderActionPage('Error', 'Something went wrong processing this action. Please try again or use the admin panel.', false));
+    console.error('KYC action submit error:', err);
+    sendActionInfoPage(res, {
+      status: 500,
+      title: 'Action Failed',
+      message: 'Something went wrong processing this action. Please try again or use the admin panel.',
+      accent: '#dc2626',
+    });
   }
 });
-
-function renderActionPage(title: string, message: string, success: boolean): string {
-  const color = success ? '#059669' : '#dc2626';
-  const icon = success ? '&#10003;' : '&#10007;';
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} - Fueki</title>
-</head>
-<body style="margin:0;padding:0;background-color:#f4f4f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;">
-  <div style="background:#fff;border-radius:12px;padding:48px;max-width:480px;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,0.1);">
-    <div style="width:64px;height:64px;border-radius:50%;background:${color};color:#fff;font-size:32px;line-height:64px;margin:0 auto 24px;">${icon}</div>
-    <h1 style="margin:0 0 12px;color:#1a1a2e;font-size:24px;">${title}</h1>
-    <p style="margin:0;color:#51545e;font-size:16px;line-height:1.6;">${message}</p>
-  </div>
-</body>
-</html>`;
-}
 
 export default router;

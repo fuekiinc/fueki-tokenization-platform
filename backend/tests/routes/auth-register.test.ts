@@ -1,7 +1,5 @@
-import cookieParser from 'cookie-parser';
-import express from 'express';
-import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { dispatchExpressRouter } from '../helpers/expressDispatch';
 
 const mocks = vi.hoisted(() => ({
   prisma: {
@@ -41,14 +39,6 @@ vi.mock('../../src/services/auth', () => ({
 
 import authRoutes from '../../src/routes/auth';
 
-function createApp() {
-  const app = express();
-  app.use(express.json());
-  app.use(cookieParser());
-  app.use('/api/auth', authRoutes);
-  return app;
-}
-
 describe('POST /api/auth/register', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -74,18 +64,19 @@ describe('POST /api/auth/register', () => {
   });
 
   it('returns 201 for valid payload and sets refresh cookie', async () => {
-    const app = createApp();
-    const response = await request(app)
-      .post('/api/auth/register')
-      .send({
+    const response = await dispatchExpressRouter(authRoutes, {
+      method: 'POST',
+      url: '/register',
+      body: {
         email: 'NEW.USER@example.com',
         password: 'StrongPass1!',
         helpLevel: 'expert',
-      });
+      },
+    });
 
     expect(response.status).toBe(201);
-    expect(response.body.tokens.accessToken).toBe('access-token');
-    expect(response.headers['set-cookie']?.[0]).toContain('fueki_refresh_token=');
+    expect((response.body as { tokens: { accessToken: string } }).tokens.accessToken).toBe('access-token');
+    expect((response.headers['set-cookie'] as string[] | undefined)?.[0]).toContain('fueki_refresh_token=');
     expect(mocks.prisma.user.findUnique).toHaveBeenCalledWith({
       where: { email: 'new.user@example.com' },
     });
@@ -103,30 +94,32 @@ describe('POST /api/auth/register', () => {
       id: 'existing-user',
     });
 
-    const app = createApp();
-    const response = await request(app)
-      .post('/api/auth/register')
-      .send({
+    const response = await dispatchExpressRouter(authRoutes, {
+      method: 'POST',
+      url: '/register',
+      body: {
         email: 'existing.user@example.com',
         password: 'StrongPass1!',
-      });
+      },
+    });
 
     expect(response.status).toBe(409);
-    expect(response.body.error.code).toBe('EMAIL_EXISTS');
+    expect((response.body as { error: { code: string } }).error.code).toBe('EMAIL_EXISTS');
     expect(mocks.prisma.user.create).not.toHaveBeenCalled();
   });
 
   it('returns 400 for invalid payload', async () => {
-    const app = createApp();
-    const response = await request(app)
-      .post('/api/auth/register')
-      .send({
+    const response = await dispatchExpressRouter(authRoutes, {
+      method: 'POST',
+      url: '/register',
+      body: {
         email: 'invalid-email',
         password: 'weak',
-      });
+      },
+    });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect((response.body as { error: { code: string } }).error.code).toBe('VALIDATION_ERROR');
     expect(mocks.prisma.user.create).not.toHaveBeenCalled();
   });
 
@@ -137,15 +130,16 @@ describe('POST /api/auth/register', () => {
       meta: { target: ['email'] },
     });
 
-    const app = createApp();
-    const response = await request(app)
-      .post('/api/auth/register')
-      .send({
+    const response = await dispatchExpressRouter(authRoutes, {
+      method: 'POST',
+      url: '/register',
+      body: {
         email: 'racing.user@example.com',
         password: 'StrongPass1!',
-      });
+      },
+    });
 
     expect(response.status).toBe(409);
-    expect(response.body.error.code).toBe('EMAIL_EXISTS');
+    expect((response.body as { error: { code: string } }).error.code).toBe('EMAIL_EXISTS');
   });
 });
