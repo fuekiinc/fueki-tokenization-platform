@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type {
-  AuthTokens,
   DocumentUploadResponse,
   HelpLevel,
   KYCFormData,
@@ -15,7 +14,6 @@ import type {
 import * as authApi from '../lib/api/auth';
 import { normalizeKycStatus } from '../lib/auth/kycStatus';
 import { isJwtExpired } from '../lib/auth/jwt';
-import { clearAccessToken, setAccessToken } from '../lib/authSession';
 import {
   type AuthStorageMode,
   clearPersistedAuth,
@@ -23,7 +21,7 @@ import {
   persistUser,
   readAuthSnapshot,
 } from '../lib/authStorage';
-
+import { clearAccessToken, getAccessToken, setAccessToken, } from '../lib/authSession';
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // Store interface
@@ -32,7 +30,6 @@ import {
 interface AuthStore {
   // State
   user: User | null;
-  tokens: AuthTokens | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   isInitialized: boolean;
@@ -59,7 +56,6 @@ interface AuthStore {
 
 const initialState = {
   user: null as User | null,
-  tokens: null as AuthTokens | null,
   isAuthenticated: false,
   isLoading: false,
   isInitialized: false,
@@ -76,15 +72,6 @@ function normalizeUser(user: User | null | undefined): User {
     ...user,
     kycStatus: normalizeKycStatus((user as { kycStatus?: unknown }).kycStatus),
   };
-}
-
-function normalizeStoredUser(user: User | null): User | null {
-  if (!user) return null;
-  try {
-    return normalizeUser(user);
-  } catch {
-    return null;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -115,20 +102,17 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
   // ---- initialize ----------------------------------------------------------
   initialize: async () => {
-    // If an initialization is already in flight, piggyback on it.
     if (_initPromise) return _initPromise;
 
     _initPromise = (async () => {
       const snapshot = readAuthSnapshot();
 
       if (!snapshot) {
-        clearAccessToken();
         set({ isInitialized: true });
         return;
       }
 
       const { user: savedUser, mode: storageMode } = snapshot;
-      const normalizedSavedUser = normalizeStoredUser(savedUser);
 
       const refreshAndHydrate = async (): Promise<void> => {
         const newTokens = await withAuthBootstrapTimeout(
@@ -136,28 +120,26 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
           'token refresh',
         );
         setAccessToken(newTokens.accessToken);
-
-        let user: User | null = normalizedSavedUser;
+      
+        let user: User | null = savedUser ? normalizeUser(savedUser) : null;
         try {
           user = normalizeUser(
             await withAuthBootstrapTimeout(authApi.getProfile(), 'profile fetch after refresh'),
           );
+          persistUser(storageMode, user);
         } catch {
-          // If profile fetch fails, use the previously saved user data.
-          // This is a degraded state but better than logging the user out.
+          // Degraded state — use saved user data.
         }
-
-        persistAuthSession(storageMode, user);
-
+      
         set({
           user,
-          tokens: newTokens,
           isAuthenticated: true,
           isInitialized: true,
           storageMode,
         });
       };
-
+      
+      // No saved token to check — always attempt refresh via httpOnly cookie.
       try {
         await refreshAndHydrate();
       } catch {
@@ -184,7 +166,6 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       persistAuthSession(storageMode, normalizedUser);
       set({
         user: normalizedUser,
-        tokens: response.tokens,
         isAuthenticated: true,
         isLoading: false,
         storageMode,
@@ -205,7 +186,6 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       persistAuthSession('local', normalizedUser);
       set({
         user: normalizedUser,
-        tokens: response.tokens,
         isAuthenticated: true,
         isLoading: false,
         storageMode: 'local',
@@ -216,33 +196,21 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     }
   },
 
-  // ---- logout --------------------------------------------------------------
-  logout: async () => {
-    const currentTokens = get().tokens;
-    const shouldCallServerLogout = !!currentTokens?.accessToken;
+// ---- logout --------------------------------------------------------------
+logout: async () => {
+  const inMemoryToken = getAccessToken();
+  const shouldCallServerLogout =
+    !!inMemoryToken && !isJwtExpired(inMemoryToken, 0);
 
-    // If in demo mode, end it first so the backend marks demoUsed=true.
-    const user = get().user;
-    if (user?.demoActive) {
-      try { await authApi.endDemo(); } catch { /* best-effort */ }
-    }
-
-    const invalidateServerSession = async (): Promise<void> => {
-      if (currentTokens?.accessToken && !isJwtExpired(currentTokens.accessToken, 0)) {
-        await authApi.logout(currentTokens.accessToken);
-        return;
-      }
-
-      const refreshed = await authApi.refreshToken({ skipAuthRefresh: true });
-      await authApi.logout(refreshed.accessToken);
-    };
-
-    // Fire-and-forget -- don't block the UI on the server call.
-    if (shouldCallServerLogout) {
-      invalidateServerSession().catch(() => {});
-    }
-    get().clearAuth();
-  },
+  const user = get().user;
+  if (user?.demoActive) {
+    try { await authApi.endDemo(); } catch { /* best-effort */ }
+  }
+  if (shouldCallServerLogout) {
+    authApi.logout().catch(() => {});
+  }
+  get().clearAuth();
+},
 
   // ---- submitKYC -----------------------------------------------------------
   submitKYC: async (data) => {
@@ -331,11 +299,10 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
   // ---- clearAuth -----------------------------------------------------------
   clearAuth: () => {
-    clearAccessToken();
     clearPersistedAuth();
+    clearAccessToken();
     set({
       user: null,
-      tokens: null,
       isAuthenticated: false,
       storageMode: 'local',
     });
