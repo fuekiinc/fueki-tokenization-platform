@@ -4,11 +4,15 @@ import { MintRequestVerificationError } from '../../src/services/mintRequestVeri
 
 const mocks = vi.hoisted(() => ({
   prisma: {
+    $transaction: vi.fn(),
     mintApprovalRequest: {
       findFirst: vi.fn(),
       updateMany: vi.fn(),
       findUnique: vi.fn(),
     },
+  },
+  tx: {
+    $executeRaw: vi.fn(),
   },
   verifyMintRequestOnChain: vi.fn(),
 }));
@@ -117,10 +121,21 @@ function buildApprovedRequest(overrides: Partial<Record<string, unknown>> = {}) 
 describe('POST /api/mint-requests/:requestId/mark-minted', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.prisma.$transaction.mockImplementation(
+      async (callback: (tx: {
+        $executeRaw: typeof mocks.tx.$executeRaw;
+        mintApprovalRequest: typeof mocks.prisma.mintApprovalRequest;
+      }) => Promise<unknown>) =>
+        callback({
+          $executeRaw: mocks.tx.$executeRaw,
+          mintApprovalRequest: mocks.prisma.mintApprovalRequest,
+        }),
+    );
   });
 
   it('marks an approved request as minted only after on-chain verification succeeds', async () => {
     mocks.prisma.mintApprovalRequest.findFirst
+      .mockResolvedValueOnce(buildApprovedRequest())
       .mockResolvedValueOnce(buildApprovedRequest())
       .mockResolvedValueOnce(null);
     mocks.verifyMintRequestOnChain.mockResolvedValue({
@@ -150,6 +165,8 @@ describe('POST /api/mint-requests/:requestId/mark-minted', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toMatchObject({ alreadyMinted: false });
+    expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(mocks.tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(mocks.verifyMintRequestOnChain).toHaveBeenCalledWith({
       chainId: 17000,
       txHash,
@@ -205,6 +222,7 @@ describe('POST /api/mint-requests/:requestId/mark-minted', () => {
   it('returns an idempotent success when a concurrent update already finalized the same txHash', async () => {
     mocks.prisma.mintApprovalRequest.findFirst
       .mockResolvedValueOnce(buildApprovedRequest())
+      .mockResolvedValueOnce(buildApprovedRequest())
       .mockResolvedValueOnce(null);
     mocks.verifyMintRequestOnChain.mockResolvedValue({
       assetAddress,
@@ -233,6 +251,7 @@ describe('POST /api/mint-requests/:requestId/mark-minted', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toMatchObject({ alreadyMinted: true });
+    expect(mocks.tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(mocks.verifyMintRequestOnChain).toHaveBeenCalledTimes(1);
   });
 
@@ -303,7 +322,12 @@ describe('POST /api/mint-requests/:requestId/mark-minted', () => {
   it('rejects tx hashes that are already recorded on a different minted request', async () => {
     mocks.prisma.mintApprovalRequest.findFirst
       .mockResolvedValueOnce(buildApprovedRequest())
+      .mockResolvedValueOnce(buildApprovedRequest())
       .mockResolvedValueOnce({ id: '22222222-2222-4222-8222-222222222222' });
+    mocks.verifyMintRequestOnChain.mockResolvedValue({
+      assetAddress,
+      blockNumber: 4321,
+    });
 
     const handler = getMarkMintedHandler();
     const response = createMockResponse();
@@ -323,7 +347,8 @@ describe('POST /api/mint-requests/:requestId/mark-minted', () => {
         code: 'MINT_REQUEST_TX_ALREADY_USED',
       },
     });
-    expect(mocks.verifyMintRequestOnChain).not.toHaveBeenCalled();
+    expect(mocks.verifyMintRequestOnChain).toHaveBeenCalledTimes(1);
+    expect(mocks.tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.mintApprovalRequest.updateMany).not.toHaveBeenCalled();
   });
 });
