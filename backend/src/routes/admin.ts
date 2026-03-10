@@ -5,6 +5,7 @@ import { requireRole } from '../middleware/rbac';
 import { approveKYC, rejectKYC } from '../services/kyc';
 import { decrypt } from '../services/encryption';
 import { prisma } from '../prisma';
+import { buildTokenLookupCandidates } from '../services/tokenHash';
 
 const router = Router();
 
@@ -375,9 +376,14 @@ router.put('/kyc/:userId/reject', adminOnly, async (req: Request, res: Response)
 router.get('/kyc/action/:token', async (req: Request, res: Response) => {
   try {
     const token = req.params.token as string;
+    const tokenCandidates = buildTokenLookupCandidates(token);
 
-    const actionToken = await prisma.adminActionToken.findUnique({
-      where: { token },
+    const actionToken = await prisma.adminActionToken.findFirst({
+      where: {
+        OR: tokenCandidates.map((candidate) => ({
+          token: candidate,
+        })),
+      },
     });
 
     if (!actionToken) {

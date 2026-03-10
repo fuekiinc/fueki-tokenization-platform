@@ -8,6 +8,7 @@ import { mintApprovalUpload } from '../middleware/upload';
 import { config } from '../config';
 import { sendSecurityTokenApprovalRequestEmail } from '../services/email';
 import { prisma } from '../prisma';
+import { buildTokenLookupCandidates, hashToken } from '../services/tokenHash';
 
 const router = Router();
 
@@ -312,13 +313,15 @@ router.post(
       const expiresAt = new Date(
         Date.now() + config.securityTokenApproval.actionTokenTtlHours * 60 * 60 * 1000,
       );
+      const approveToken = crypto.randomUUID();
+      const rejectToken = crypto.randomUUID();
 
-      const [approveToken, rejectToken] = await prisma.$transaction([
+      await prisma.$transaction([
         prisma.securityTokenApprovalActionToken.create({
           data: {
             requestId: request.id,
             action: 'approve',
-            token: crypto.randomUUID(),
+            token: hashToken(approveToken),
             expiresAt,
           },
         }),
@@ -326,14 +329,14 @@ router.post(
           data: {
             requestId: request.id,
             action: 'reject',
-            token: crypto.randomUUID(),
+            token: hashToken(rejectToken),
             expiresAt,
           },
         }),
       ]);
 
-      const approveUrl = `${config.backendUrl}/api/security-token-requests/action/${approveToken.token}`;
-      const rejectUrl = `${config.backendUrl}/api/security-token-requests/action/${rejectToken.token}`;
+      const approveUrl = `${config.backendUrl}/api/security-token-requests/action/${approveToken}`;
+      const rejectUrl = `${config.backendUrl}/api/security-token-requests/action/${rejectToken}`;
 
       try {
         await sendSecurityTokenApprovalRequestEmail({
@@ -587,8 +590,13 @@ router.get('/action/:token', async (req, res) => {
       return;
     }
 
-    const actionToken = await prisma.securityTokenApprovalActionToken.findUnique({
-      where: { token },
+    const tokenCandidates = buildTokenLookupCandidates(token);
+    const actionToken = await prisma.securityTokenApprovalActionToken.findFirst({
+      where: {
+        OR: tokenCandidates.map((candidate) => ({
+          token: candidate,
+        })),
+      },
       include: { request: true },
     });
 

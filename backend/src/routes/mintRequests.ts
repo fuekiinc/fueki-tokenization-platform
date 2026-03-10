@@ -12,6 +12,7 @@ import {
   verifyMintRequestOnChain,
 } from '../services/mintRequestVerification';
 import { prisma } from '../prisma';
+import { buildTokenLookupCandidates, hashToken } from '../services/tokenHash';
 
 const router = Router();
 
@@ -306,13 +307,15 @@ router.post(
       const expiresAt = new Date(
         Date.now() + config.mintApproval.actionTokenTtlHours * 60 * 60 * 1000,
       );
+      const approveToken = crypto.randomUUID();
+      const rejectToken = crypto.randomUUID();
 
-      const [approveToken, rejectToken] = await prisma.$transaction([
+      await prisma.$transaction([
         prisma.mintApprovalActionToken.create({
           data: {
             requestId: request.id,
             action: 'approve',
-            token: crypto.randomUUID(),
+            token: hashToken(approveToken),
             expiresAt,
           },
         }),
@@ -320,14 +323,14 @@ router.post(
           data: {
             requestId: request.id,
             action: 'reject',
-            token: crypto.randomUUID(),
+            token: hashToken(rejectToken),
             expiresAt,
           },
         }),
       ]);
 
-      const approveUrl = `${config.backendUrl}/api/mint-requests/action/${approveToken.token}`;
-      const rejectUrl = `${config.backendUrl}/api/mint-requests/action/${rejectToken.token}`;
+      const approveUrl = `${config.backendUrl}/api/mint-requests/action/${approveToken}`;
+      const rejectUrl = `${config.backendUrl}/api/mint-requests/action/${rejectToken}`;
 
       try {
         await sendMintApprovalRequestEmail({
@@ -882,8 +885,13 @@ router.get('/action/:token', async (req, res) => {
       return;
     }
 
-    const actionToken = await prisma.mintApprovalActionToken.findUnique({
-      where: { token },
+    const tokenCandidates = buildTokenLookupCandidates(token);
+    const actionToken = await prisma.mintApprovalActionToken.findFirst({
+      where: {
+        OR: tokenCandidates.map((candidate) => ({
+          token: candidate,
+        })),
+      },
       include: { request: true },
     });
 

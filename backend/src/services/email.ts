@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 import crypto from 'node:crypto';
 import { config } from '../config';
 import { prisma } from '../prisma';
+import { hashToken } from './tokenHash';
 
 /**
  * Create a reusable SMTP transporter.
@@ -180,13 +181,15 @@ export async function sendKYCReviewEmail(data: KYCReviewEmailData): Promise<void
 
   // Generate one-time action tokens (7-day expiry)
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const approveToken = crypto.randomUUID();
+  const rejectToken = crypto.randomUUID();
 
-  const [approveToken, rejectToken] = await Promise.all([
+  await Promise.all([
     prisma.adminActionToken.create({
       data: {
         userId: data.userId,
         action: 'approve',
-        token: crypto.randomUUID(),
+        token: hashToken(approveToken),
         expiresAt,
       },
     }),
@@ -194,14 +197,14 @@ export async function sendKYCReviewEmail(data: KYCReviewEmailData): Promise<void
       data: {
         userId: data.userId,
         action: 'reject',
-        token: crypto.randomUUID(),
+        token: hashToken(rejectToken),
         expiresAt,
       },
     }),
   ]);
 
-  const approveUrl = `${config.backendUrl}/api/admin/kyc/action/${approveToken.token}`;
-  const rejectUrl = `${config.backendUrl}/api/admin/kyc/action/${rejectToken.token}`;
+  const approveUrl = `${config.backendUrl}/api/admin/kyc/action/${approveToken}`;
+  const rejectUrl = `${config.backendUrl}/api/admin/kyc/action/${rejectToken}`;
 
   const htmlBody = `
 <!DOCTYPE html>
