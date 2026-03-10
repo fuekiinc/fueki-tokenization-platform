@@ -3,7 +3,7 @@ import { JsonRpcProvider } from 'ethers';
 
 const CHAINS = [
   ['mainnet', process.env.MAINNET_RPC_URL || 'https://ethereum-rpc.publicnode.com', 1],
-  ['holesky', process.env.HOLESKY_RPC_URL || 'https://ethereum-holesky-rpc.publicnode.com', 17000],
+  ['holesky', process.env.HOLESKY_RPC_URL || 'https://holesky.drpc.org', 17000],
   ['sepolia', process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com', 11155111],
   ['arbitrum-one', process.env.ARBITRUM_RPC_URL || 'https://arb1.arbitrum.io/rpc', 42161],
   ['arbitrum-sepolia', process.env.ARBITRUM_SEPOLIA_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc', 421614],

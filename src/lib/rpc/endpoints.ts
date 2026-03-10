@@ -37,10 +37,9 @@ const RPC_ENV_BY_CHAIN: Record<number, string> = {
   11155111: 'VITE_RPC_11155111_URLS',
 };
 
-// Paid QuickNode endpoints are listed FIRST for each chain. Public free-tier
-// endpoints serve as fallbacks only. This ensures the platform uses reliable,
-// high-rate-limit RPC connections by default and only falls back to public
-// nodes when QuickNode is unreachable.
+// Operator-provided endpoints should be injected via env and always take
+// priority. Hardcoded defaults below are only safety nets, so prefer stable
+// public endpoints over broken or provider-specific URLs.
 const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
   1: [
     'https://billowing-rough-moon.quiknode.pro/a3cc003399fc8c72876d87c1f516c0897574e60c/',
@@ -54,10 +53,7 @@ const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
   ],
   31337: ['http://127.0.0.1:8545'],
   17000: [
-    // QuickNode paid endpoint — primary for Holesky
-    'https://flashy-crimson-borough.ethereum-holesky.quiknode.pro/f43097bbd32a1c3476c2f3f1ff1d4780361be827/',
     'https://holesky.drpc.org',
-    'https://ethereum-holesky-rpc.publicnode.com',
   ],
   42161: [
     'https://snowy-blue-frost.arbitrum-mainnet.quiknode.pro/a691b5e884e8df719f8ce8ec8ad5e22092d17cdb/',
@@ -176,6 +172,7 @@ function extractErrorMessage(error: unknown): string {
 const RETRYABLE_RPC_ERROR_PATTERNS = [
   /rpc endpoint returned too many errors/i,
   /too many requests|rate\s*limit|http\s*429/i,
+  /http\s*413|payload too large|request entity too large/i,
   /temporarily unavailable|service unavailable/i,
   /bad gateway|gateway timeout|http\s*50[234]/i,
   /timeout|timed out|etimedout/i,

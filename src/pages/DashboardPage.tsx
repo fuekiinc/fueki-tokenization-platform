@@ -18,6 +18,7 @@ import { useExchangeStore } from '../store/exchangeStore.ts';
 import { useAuthStore } from '../store/authStore';
 import { useWallet } from '../hooks/useWallet';
 import { ContractService, getReadOnlyProvider } from '../lib/blockchain/contracts';
+import { queryRecentLogsBestEffort } from '../lib/blockchain/logQuery';
 import { isRetryableRpcError } from '../lib/rpc/endpoints';
 import { retryAsync } from '../lib/utils/retry';
 import { mapInBatches } from '../lib/utils/asyncBatch';
@@ -416,86 +417,6 @@ export default function DashboardPage() {
 
     if (isStaleFetch()) return;
 
-    const queryFilterResilient = async (
-      contract: ethers.Contract,
-      runQuery: (fromBlock?: number) => Promise<Array<ethers.Log | ethers.EventLog>>,
-      lookbackBlocks: number,
-    ): Promise<Array<ethers.Log | ethers.EventLog>> => {
-      const provider = contract.runner && 'provider' in contract.runner
-        ? (contract.runner as { provider: ethers.Provider }).provider
-        : null;
-
-      const attemptedFromBlocks = new Set<number | undefined>();
-      const fromBlockCandidates: Array<number | undefined> = [];
-
-      if (provider) {
-        let latestBlock: number | null = null;
-        try {
-          latestBlock = await provider.getBlockNumber();
-        } catch {
-          latestBlock = null;
-        }
-
-        const candidateLookbacks = [
-          lookbackBlocks,
-          Math.floor(lookbackBlocks / 3),
-          Math.floor(lookbackBlocks / 8),
-          5_000_000,
-          2_000_000,
-          1_000_000,
-          50_000,
-          10_000,
-          2_000,
-        ];
-
-        for (const rawCandidate of candidateLookbacks) {
-          if (latestBlock === null) continue;
-          const candidate = Math.floor(rawCandidate);
-          if (!Number.isFinite(candidate) || candidate <= 0) continue;
-          fromBlockCandidates.push(Math.max(0, latestBlock - candidate));
-        }
-      }
-
-      // If we cannot compute a bounded range, fall back to provider default.
-      if (fromBlockCandidates.length === 0) {
-        fromBlockCandidates.push(undefined);
-      }
-
-      let lastError: unknown = null;
-
-      for (const fromBlock of fromBlockCandidates) {
-        if (attemptedFromBlocks.has(fromBlock)) continue;
-        attemptedFromBlocks.add(fromBlock);
-
-        try {
-          return await runQuery(fromBlock);
-        } catch (error) {
-          lastError = error;
-          logger.warn('Event log query attempt failed', {
-            fromBlock,
-            lookbackBlocks,
-            error,
-          });
-        }
-      }
-
-      throw lastError ?? new Error('Event log query failed');
-    };
-
-    const queryFilterBestEffort = async (
-      contract: ethers.Contract,
-      runQuery: (fromBlock?: number) => Promise<Array<ethers.Log | ethers.EventLog>>,
-      lookbackBlocks: number,
-      label: string,
-    ): Promise<Array<ethers.Log | ethers.EventLog>> => {
-      try {
-        return await queryFilterResilient(contract, runQuery, lookbackBlocks);
-      } catch (error) {
-        logger.warn(`Skipping ${label} events after repeated log query failures`, error);
-        return [];
-      }
-    };
-
     // Fetch trade history from on-chain events
     // We query on-chain event sources across minting, exchange, and Orbital AMM:
     //   1. AssetCreated events from the factory (mint history)
@@ -511,17 +432,52 @@ export default function DashboardPage() {
       // wallet provider. This avoids wallet RPC/proxy `eth_getLogs` limits and
       // keeps history reliable on mainnet/testnets.
       const readProvider = getReadOnlyProvider(chainId);
+      const queryFilterBestEffort = async (
+        runQuery: (fromBlock: number, toBlock: number) => Promise<Array<ethers.Log | ethers.EventLog>>,
+        lookbackBlocks: number,
+        label: string,
+        maxEvents = 16,
+      ): Promise<Array<ethers.Log | ethers.EventLog>> =>
+        queryRecentLogsBestEffort(readProvider, runQuery, {
+          chainId,
+          label,
+          maxLookbackBlocks: lookbackBlocks,
+          maxEvents,
+        });
+      const blockTimestampCache = new Map<number, number>();
+      const resolveEventTimestampMs = async (
+        log: ethers.Log | ethers.EventLog,
+      ): Promise<number> => {
+        if (!Number.isFinite(log.blockNumber)) {
+          return Date.now();
+        }
+
+        const blockNumber = Number(log.blockNumber);
+        const cached = blockTimestampCache.get(blockNumber);
+        if (cached !== undefined) {
+          return cached;
+        }
+
+        try {
+          const block = await readProvider.getBlock(blockNumber);
+          if (block) {
+            const timestampMs = block.timestamp * 1000;
+            blockTimestampCache.set(blockNumber, timestampMs);
+            return timestampMs;
+          }
+        } catch {
+          // Fall through to current time.
+        }
+
+        return Date.now();
+      };
 
       // 1. Mint history — query AssetCreated events from the factory
       try {
         const factory = service.getFactoryContract(readProvider);
         const mintFilter = factory.filters.AssetCreated(address);
         const mintEvents = await queryFilterBestEffort(
-          factory,
-          (fromBlock) =>
-            fromBlock === undefined
-              ? factory.queryFilter(mintFilter)
-              : factory.queryFilter(mintFilter, fromBlock),
+          (fromBlock, toBlock) => factory.queryFilter(mintFilter, fromBlock, toBlock),
           5_000_000,
           'factory AssetCreated',
         );
@@ -538,11 +494,7 @@ export default function DashboardPage() {
             (a) => a.address.toLowerCase() === assetAddr.toLowerCase(),
           );
 
-          let timestampMs = Date.now();
-          try {
-            const block = await log.getBlock();
-            if (block) timestampMs = block.timestamp * 1000;
-          } catch { /* use current time as fallback */ }
+          const timestampMs = await resolveEventTimestampMs(log);
 
           trades.push({
             id: txKey,
@@ -568,11 +520,7 @@ export default function DashboardPage() {
         const securityFactory = service.getSecurityTokenFactoryContract(readProvider);
         const securityMintFilter = securityFactory.filters.SecurityTokenCreated(address);
         const securityMintEvents = await queryFilterBestEffort(
-          securityFactory,
-          (fromBlock) =>
-            fromBlock === undefined
-              ? securityFactory.queryFilter(securityMintFilter)
-              : securityFactory.queryFilter(securityMintFilter, fromBlock),
+          (fromBlock, toBlock) => securityFactory.queryFilter(securityMintFilter, fromBlock, toBlock),
           5_000_000,
           'security factory SecurityTokenCreated',
         );
@@ -583,11 +531,7 @@ export default function DashboardPage() {
           if (seenTx.has(txKey)) continue;
           seenTx.add(txKey);
 
-          let timestampMs = Date.now();
-          try {
-            const block = await log.getBlock();
-            if (block) timestampMs = block.timestamp * 1000;
-          } catch { /* use current time as fallback */ }
+          const timestampMs = await resolveEventTimestampMs(log);
 
           const name = String(log.args[3] ?? 'Security Token');
           const symbol = String(log.args[4] ?? 'ST');
@@ -618,11 +562,7 @@ export default function DashboardPage() {
         const exchange = service.getAssetBackedExchangeContract(readProvider);
         const orderCreatedFilter = exchange.filters.OrderCreated(null, address);
         const orderCreatedEvents = await queryFilterBestEffort(
-          exchange,
-          (fromBlock) =>
-            fromBlock === undefined
-              ? exchange.queryFilter(orderCreatedFilter)
-              : exchange.queryFilter(orderCreatedFilter, fromBlock),
+          (fromBlock, toBlock) => exchange.queryFilter(orderCreatedFilter, fromBlock, toBlock),
           2_000_000,
           'exchange OrderCreated',
         );
@@ -638,11 +578,7 @@ export default function DashboardPage() {
           const tokenBuy = String(log.args[3] ?? '');
           const amountSell = log.args[4] as bigint;
 
-          let timestampMs = Date.now();
-          try {
-            const block = await log.getBlock();
-            if (block) timestampMs = block.timestamp * 1000;
-          } catch { /* use current time as fallback */ }
+          const timestampMs = await resolveEventTimestampMs(log);
 
           trades.push({
             id: txKey,
@@ -660,11 +596,7 @@ export default function DashboardPage() {
 
         const takerFilter = exchange.filters.OrderFilled(null, address);
         const takerFillEvents = await queryFilterBestEffort(
-          exchange,
-          (fromBlock) =>
-            fromBlock === undefined
-              ? exchange.queryFilter(takerFilter)
-              : exchange.queryFilter(takerFilter, fromBlock),
+          (fromBlock, toBlock) => exchange.queryFilter(takerFilter, fromBlock, toBlock),
           2_000_000,
           'exchange OrderFilled (taker)',
         );
@@ -674,11 +606,7 @@ export default function DashboardPage() {
           makerOrderIds.map((orderId) => {
             const filter = exchange.filters.OrderFilled(orderId);
             return queryFilterBestEffort(
-              exchange,
-              (fromBlock) =>
-                fromBlock === undefined
-                  ? exchange.queryFilter(filter)
-                  : exchange.queryFilter(filter, fromBlock),
+              (fromBlock, toBlock) => exchange.queryFilter(filter, fromBlock, toBlock),
               5_000_000,
               'exchange OrderFilled (maker)',
             );
@@ -698,11 +626,7 @@ export default function DashboardPage() {
           const fillBuy = log.args[3] as bigint;
           const isTaker = taker === addr;
 
-          let timestampMs = Date.now();
-          try {
-            const block = await log.getBlock();
-            if (block) timestampMs = block.timestamp * 1000;
-          } catch { /* use current time as fallback */ }
+          const timestampMs = await resolveEventTimestampMs(log);
 
           trades.push({
             id: `fill-${txKey}`,
@@ -738,11 +662,7 @@ export default function DashboardPage() {
 
           const liquidityAddedFilter = orbitalRouter.filters.LiquidityAdded(address);
           const liquidityAddedEvents = await queryFilterBestEffort(
-            orbitalRouter,
-            (fromBlock) =>
-              fromBlock === undefined
-                ? orbitalRouter.queryFilter(liquidityAddedFilter)
-                : orbitalRouter.queryFilter(liquidityAddedFilter, fromBlock),
+            (fromBlock, toBlock) => orbitalRouter.queryFilter(liquidityAddedFilter, fromBlock, toBlock),
             2_000_000,
             'orbital LiquidityAdded',
           );
@@ -756,11 +676,7 @@ export default function DashboardPage() {
             const pool = String(log.args[1] ?? '');
             const lpMinted = log.args[2] as bigint;
 
-            let timestampMs = Date.now();
-            try {
-              const block = await log.getBlock();
-              if (block) timestampMs = block.timestamp * 1000;
-            } catch { /* use current time as fallback */ }
+            const timestampMs = await resolveEventTimestampMs(log);
 
             trades.push({
               id: txKey,
@@ -778,11 +694,7 @@ export default function DashboardPage() {
 
           const liquidityRemovedFilter = orbitalRouter.filters.LiquidityRemoved(address);
           const liquidityRemovedEvents = await queryFilterBestEffort(
-            orbitalRouter,
-            (fromBlock) =>
-              fromBlock === undefined
-                ? orbitalRouter.queryFilter(liquidityRemovedFilter)
-                : orbitalRouter.queryFilter(liquidityRemovedFilter, fromBlock),
+            (fromBlock, toBlock) => orbitalRouter.queryFilter(liquidityRemovedFilter, fromBlock, toBlock),
             2_000_000,
             'orbital LiquidityRemoved',
           );
@@ -796,11 +708,7 @@ export default function DashboardPage() {
             const pool = String(log.args[1] ?? '');
             const lpBurned = log.args[2] as bigint;
 
-            let timestampMs = Date.now();
-            try {
-              const block = await log.getBlock();
-              if (block) timestampMs = block.timestamp * 1000;
-            } catch { /* use current time as fallback */ }
+            const timestampMs = await resolveEventTimestampMs(log);
 
             trades.push({
               id: txKey,
@@ -818,11 +726,7 @@ export default function DashboardPage() {
 
           const swapExecutedFilter = orbitalRouter.filters.SwapExecuted(address);
           const swapExecutedEvents = await queryFilterBestEffort(
-            orbitalRouter,
-            (fromBlock) =>
-              fromBlock === undefined
-                ? orbitalRouter.queryFilter(swapExecutedFilter)
-                : orbitalRouter.queryFilter(swapExecutedFilter, fromBlock),
+            (fromBlock, toBlock) => orbitalRouter.queryFilter(swapExecutedFilter, fromBlock, toBlock),
             2_000_000,
             'orbital SwapExecuted',
           );
@@ -844,11 +748,7 @@ export default function DashboardPage() {
               (a) => a.address.toLowerCase() === tokenOut.toLowerCase(),
             );
 
-            let timestampMs = Date.now();
-            try {
-              const block = await log.getBlock();
-              if (block) timestampMs = block.timestamp * 1000;
-            } catch { /* use current time as fallback */ }
+            const timestampMs = await resolveEventTimestampMs(log);
 
             trades.push({
               id: txKey,
@@ -866,11 +766,7 @@ export default function DashboardPage() {
 
           const multiHopSwapFilter = orbitalRouter.filters.MultiHopSwapExecuted(address);
           const multiHopSwapEvents = await queryFilterBestEffort(
-            orbitalRouter,
-            (fromBlock) =>
-              fromBlock === undefined
-                ? orbitalRouter.queryFilter(multiHopSwapFilter)
-                : orbitalRouter.queryFilter(multiHopSwapFilter, fromBlock),
+            (fromBlock, toBlock) => orbitalRouter.queryFilter(multiHopSwapFilter, fromBlock, toBlock),
             2_000_000,
             'orbital MultiHopSwapExecuted',
           );
@@ -892,11 +788,7 @@ export default function DashboardPage() {
               (a) => a.address.toLowerCase() === tokenOut.toLowerCase(),
             );
 
-            let timestampMs = Date.now();
-            try {
-              const block = await log.getBlock();
-              if (block) timestampMs = block.timestamp * 1000;
-            } catch { /* use current time as fallback */ }
+            const timestampMs = await resolveEventTimestampMs(log);
 
             trades.push({
               id: txKey,

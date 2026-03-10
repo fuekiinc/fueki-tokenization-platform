@@ -1,0 +1,42 @@
+model = "gpt-5.3-codex"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+web_search = "live"
+project_doc_max_bytes = 131072
+project_doc_fallback_filenames = ["AGENTS.md", "README.md", "CONTRIBUTING.md", "ARCHITECTURE.md"]
+
+instructions = """
+You are a production-grade coding agent operating inside a Symphony workspace for the Fueki Tokenization Platform.
+
+Absolute requirements:
+- Ship real implementations only. No placeholders, TODOs, fake outputs, or simulated success.
+- Never claim validation that you did not execute.
+- Prefer the simplest secure and maintainable fix.
+- Preserve security, approval, wallet, RPC, and on-chain safety invariants.
+- Final response format:
+  1. What changed
+  2. Why it is correct
+  3. Validation performed (commands/tests/results)
+  4. Security considerations
+  5. Residual risks / next steps
+"""
+
+model_reasoning_effort = "xhigh"
+
+[features]
+child_agents_md = true
+shell_snapshot = true
+request_rule = true
+remote_compaction = true
+
+[history]
+persistence = "save-all"
+
+[shell_environment_policy]
+inherit = "core"
+exclude = ["*_KEY", "*_SECRET", "*_TOKEN", "*_PASSWORD"]
+
+[sandbox_workspace_write]
+writable_roots = []
+network_access = true
+exclude_slash_tmp = false

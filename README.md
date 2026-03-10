@@ -17,6 +17,7 @@ The frontend is a React/TypeScript SPA. The backend is an Express API with Prism
 - [Environment Variables](#environment-variables)
 - [Deployment](#deployment)
 - [Testing](#testing)
+- [Symphony](#symphony)
 - [Project Structure](#project-structure)
 
 ---
@@ -305,7 +306,20 @@ BASE_SEPOLIA_RPC_URL=
 ETHERSCAN_API_KEY=                          # for contract verification
 ```
 
+
 ---
+
+## Symphony
+
+This repo includes a full local setup path for the OpenAI Symphony Elixir reference implementation.
+
+```bash
+npm run symphony:setup
+npm run symphony:doctor
+npm run symphony:run
+```
+
+See [`docs/symphony.md`](docs/symphony.md) for the required Linear states, GitHub auth requirements, workspace bootstrap behavior, and environment variables.
 
 ## Deployment
 

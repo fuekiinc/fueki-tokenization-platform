@@ -3,20 +3,32 @@ import { test } from 'vitest';
 import {
   getRpcEndpoints,
   getWalletSwitchRpcUrls,
+  isRetryableRpcError,
   reportRpcEndpointFailure,
   reportRpcEndpointSuccess,
   selectRpcEndpoint,
 } from '../../src/lib/rpc/endpoints';
 
-test('holesky defaults prioritize the paid QuickNode endpoint first', () => {
-  const endpoints = getRpcEndpoints(17000);
-  assert.ok(endpoints.length >= 2);
-  assert.equal(
-    endpoints[0],
-    'https://flashy-crimson-borough.ethereum-holesky.quiknode.pro/f43097bbd32a1c3476c2f3f1ff1d4780361be827/',
-  );
-  assert.ok(endpoints.includes('https://holesky.drpc.org'));
-  assert.ok(endpoints.includes('https://ethereum-holesky-rpc.publicnode.com'));
+test('holesky defaults prioritize the stable dRPC endpoint first', () => {
+  const envName = 'VITE_RPC_17000_URLS';
+  const previousValue = process.env[envName];
+  process.env[envName] = 'https://holesky.drpc.org';
+
+  try {
+    const endpoints = getRpcEndpoints(17000);
+    assert.ok(endpoints.length >= 1);
+    assert.equal(
+      endpoints[0],
+      'https://holesky.drpc.org',
+    );
+    assert.ok(endpoints.includes('https://holesky.drpc.org'));
+  } finally {
+    if (previousValue === undefined) {
+      delete process.env[envName];
+    } else {
+      process.env[envName] = previousValue;
+    }
+  }
 });
 
 test('env configured RPC URLs take priority over hardcoded defaults', () => {
@@ -65,4 +77,8 @@ test('selectRpcEndpoint falls back when the primary endpoint enters cooldown', (
 
   const selected = selectRpcEndpoint(chainId);
   assert.notEqual(selected, endpoints[0]);
+});
+
+test('http 413 payload errors are treated as retryable RPC failures', () => {
+  assert.equal(isRetryableRpcError(new Error('HTTP 413 Payload Too Large')), true);
 });

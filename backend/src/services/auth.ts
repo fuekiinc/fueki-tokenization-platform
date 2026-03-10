@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { prisma } from '../prisma';
+import { buildTokenLookupCandidates, hashToken } from './tokenHash';
 const SALT_ROUNDS = 12;
 
 export async function hashPassword(password: string): Promise<string> {
@@ -54,7 +55,7 @@ export async function createSession(
   await prisma.session.create({
     data: {
       userId,
-      refreshToken,
+      refreshToken: hashToken(refreshToken),
       rememberMe,
       expiresAt,
     },
@@ -66,10 +67,15 @@ export async function createSession(
 export async function refreshSession(oldRefreshToken: string): Promise<SessionTokens> {
   // Verify the token
   const payload = verifyRefreshToken(oldRefreshToken);
+  const refreshTokenCandidates = buildTokenLookupCandidates(oldRefreshToken);
 
   // Find and validate the session
-  const session = await prisma.session.findUnique({
-    where: { refreshToken: oldRefreshToken },
+  const session = await prisma.session.findFirst({
+    where: {
+      OR: refreshTokenCandidates.map((candidate) => ({
+        refreshToken: candidate,
+      })),
+    },
   });
 
   if (!session || session.expiresAt < new Date()) {
@@ -83,8 +89,13 @@ export async function refreshSession(oldRefreshToken: string): Promise<SessionTo
 }
 
 export async function invalidateSession(refreshToken: string): Promise<void> {
+  const refreshTokenCandidates = buildTokenLookupCandidates(refreshToken);
   await prisma.session.deleteMany({
-    where: { refreshToken },
+    where: {
+      OR: refreshTokenCandidates.map((candidate) => ({
+        refreshToken: candidate,
+      })),
+    },
   });
 }
 

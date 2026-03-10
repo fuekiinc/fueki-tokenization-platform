@@ -24,6 +24,7 @@ REGION="${REGION:-us-central1}"
 BACKEND_SERVICE="${BACKEND_SERVICE:-fueki-backend}"
 SOURCE_DIR="${SOURCE_DIR:-.}"
 ENV_FILE="${SOURCE_DIR%/}/vite.build.env"
+PROMOTE_TRAFFIC="${PROMOTE_TRAFFIC:-1}"
 
 if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "(unset)" ]; then
   echo "No active gcloud project configured."
@@ -180,3 +181,32 @@ gcloud run deploy "$SERVICE" \
   --source "$SOURCE_DIR" \
   --set-env-vars "^|^${RUNTIME_ENV_VARS}" \
   --quiet
+
+if [ "$PROMOTE_TRAFFIC" = "1" ]; then
+  LATEST_READY_REVISION="$(
+    gcloud run services describe "$SERVICE" \
+      --project "$PROJECT_ID" \
+      --region "$REGION" \
+      --format='value(status.latestReadyRevisionName)'
+  )"
+
+  if [ -z "$LATEST_READY_REVISION" ]; then
+    echo "Deploy completed, but no ready frontend revision was found to promote."
+    exit 1
+  fi
+
+  echo "Promoting revision $LATEST_READY_REVISION to 100% traffic."
+  gcloud run services update-traffic "$SERVICE" \
+    --project "$PROJECT_ID" \
+    --region "$REGION" \
+    --to-revisions "${LATEST_READY_REVISION}=100" \
+    --quiet
+
+  echo "Current traffic:"
+  gcloud run services describe "$SERVICE" \
+    --project "$PROJECT_ID" \
+    --region "$REGION" \
+    --format='table(status.traffic.revisionName,status.traffic.percent)'
+else
+  echo "PROMOTE_TRAFFIC=0 set; keeping the existing traffic split."
+fi

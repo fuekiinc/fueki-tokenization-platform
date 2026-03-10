@@ -38,7 +38,10 @@
     "backend:migrate": "cd backend && npx prisma migrate deploy",
     "backend:update": "cd backend && npm run build && cd .. && gcloud run deploy fueki-backend --source backend --region us-central1 --port 8080 --env-vars-file backend/cloudrun.env.yaml --add-cloudsql-instances extreme-lodge-463919-d9:us-central1:fueki-db",
     "contracts:build": "npx hardhat compile && npx tsx scripts/extract-template-artifacts.ts",
-    "proxy:connect": "cloud-sql-proxy extreme-lodge-463919-d9:us-central1:fueki-db --port 5459"
+    "proxy:connect": "cloud-sql-proxy extreme-lodge-463919-d9:us-central1:fueki-db --port 5459",
+    "symphony:setup": "bash scripts/symphony/setup.sh",
+    "symphony:doctor": "bash scripts/symphony/doctor.sh",
+    "symphony:run": "bash scripts/symphony/run.sh"
   },
   "dependencies": {
     "@datadog/browser-logs": "^6.27.1",

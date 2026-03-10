@@ -30,7 +30,7 @@ const CHAIN_FIXTURES = [
     symbol: 'ETH',
     rpcEnv: 'HOLESKY_RPC_URL',
     rpcEnvFallbacks: ['ETHEREUM_HOLESKY_RPC_URL', 'VITE_RPC_17000_URLS'],
-    defaultRpcUrls: ['https://ethereum-holesky-rpc.publicnode.com'],
+    defaultRpcUrls: ['https://holesky.drpc.org'],
   },
   {
     chainId: 11155111,
