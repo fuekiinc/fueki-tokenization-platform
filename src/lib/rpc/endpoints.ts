@@ -32,6 +32,8 @@ const RPC_ENV_BY_CHAIN: Record<number, string> = {
   42161: 'VITE_RPC_42161_URLS',
   421614: 'VITE_RPC_421614_URLS',
   43114: 'VITE_RPC_43114_URLS',
+  43113: 'VITE_RPC_43113_URLS',
+  80002: 'VITE_RPC_80002_URLS',
   8453: 'VITE_RPC_8453_URLS',
   84532: 'VITE_RPC_84532_URLS',
   11155111: 'VITE_RPC_11155111_URLS',
@@ -42,11 +44,12 @@ const RPC_ENV_BY_CHAIN: Record<number, string> = {
 // public endpoints over broken or provider-specific URLs.
 const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
   1: [
-    'https://billowing-rough-moon.quiknode.pro/a3cc003399fc8c72876d87c1f516c0897574e60c/',
+    'https://eth-mainnet.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://ethereum-rpc.publicnode.com',
     'https://eth.drpc.org',
   ],
   137: [
+    'https://polygon-mainnet.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://polygon-bor-rpc.publicnode.com',
     'https://polygon.drpc.org',
     'https://1rpc.io/matic',
@@ -56,29 +59,40 @@ const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
     'https://holesky.drpc.org',
   ],
   42161: [
-    'https://snowy-blue-frost.arbitrum-mainnet.quiknode.pro/a691b5e884e8df719f8ce8ec8ad5e22092d17cdb/',
+    'https://arb-mainnet.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://arb1.arbitrum.io/rpc',
   ],
   421614: [
-    'https://ancient-holy-tent.arbitrum-sepolia.quiknode.pro/53623a401aa412366b43ddea31aa6538ef24d7fd/',
+    'https://arb-sepolia.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://arbitrum-sepolia-rpc.publicnode.com',
     'https://arbitrum-sepolia.drpc.org',
     'https://sepolia-rollup.arbitrum.io/rpc',
   ],
   43114: [
+    'https://avax-mainnet.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://avalanche-c-chain-rpc.publicnode.com',
     'https://avalanche.drpc.org',
   ],
+  43113: [
+    'https://avax-fuji.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
+    'https://avalanche-fuji-c-chain-rpc.publicnode.com',
+    'https://avalanche-fuji.drpc.org',
+  ],
+  80002: [
+    'https://polygon-amoy.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
+    'https://polygon-amoy-bor-rpc.publicnode.com',
+    'https://polygon-amoy.drpc.org',
+  ],
   8453: [
-    'https://delicate-red-cloud.base-mainnet.quiknode.pro/3ae2b0cd08e640c9c6a3e4c0ca89351dc879e5c8/',
+    'https://base-mainnet.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://mainnet.base.org',
   ],
   84532: [
-    'https://billowing-wandering-yard.base-sepolia.quiknode.pro/70e0d692e7ba902f935ff17774c1aed59a21e0d0/',
+    'https://base-sepolia.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://sepolia.base.org',
   ],
   11155111: [
-    'https://1rpc.io/sepolia',
+    'https://eth-sepolia.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://sepolia.drpc.org',
     'https://ethereum-sepolia-rpc.publicnode.com',
     'https://rpc2.sepolia.org',
@@ -153,6 +167,38 @@ function dedupeStable(values: string[]): string[] {
   return result;
 }
 
+function getReadEndpointPenalty(chainId: number, url: string): number {
+  const normalized = toEndpointIdentity(url);
+  if (!normalized) return 0;
+
+  // Arbitrum Sepolia QuickNode is currently fine for light JSON-RPC reads,
+  // but it rejects some browser-side eth_getLogs scans with HTTP 413. Demote
+  // it for read-only contract/event queries while keeping wallet-switch RPCs
+  // and the raw env/default registry unchanged.
+  if (chainId === 421614 && normalized.includes('quiknode.pro')) {
+    return 100;
+  }
+
+  return 0;
+}
+
+export function getReadRpcEndpoints(chainId: number): string[] {
+  const endpoints = getRpcEndpoints(chainId);
+  return endpoints
+    .map((url, index) => ({
+      url,
+      index,
+      penalty: getReadEndpointPenalty(chainId, url),
+    }))
+    .sort((left, right) => {
+      if (left.penalty !== right.penalty) {
+        return left.penalty - right.penalty;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.url);
+}
+
 function extractErrorMessage(error: unknown): string {
   if (typeof error === 'string') return error;
   if (error instanceof Error) return error.message;
@@ -215,7 +261,7 @@ export function getWalletSwitchRpcUrls(chainId: number): string[] {
  * Return the preferred endpoint for a chain, excluding endpoints in cooldown.
  */
 export function selectRpcEndpoint(chainId: number): string {
-  const endpoints = getRpcEndpoints(chainId);
+  const endpoints = getReadRpcEndpoints(chainId);
   if (endpoints.length === 0) {
     throw new Error(`No RPC endpoints configured for chain ${chainId}`);
   }
@@ -257,7 +303,7 @@ export function selectRpcEndpoint(chainId: number): string {
 }
 
 export function getOrderedRpcEndpoints(chainId: number): string[] {
-  const endpoints = getRpcEndpoints(chainId);
+  const endpoints = getReadRpcEndpoints(chainId);
   if (endpoints.length <= 1) return endpoints;
   const preferred = selectRpcEndpoint(chainId);
   return [preferred, ...endpoints.filter((endpoint) => endpoint !== preferred)];

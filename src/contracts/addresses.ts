@@ -240,6 +240,63 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
     nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
   },
 
+  // ---- Avalanche C-Chain ---------------------------------------------------
+  43114: {
+    chainId: 43114,
+    name: 'Avalanche',
+    rpcUrl: getPrimaryRpcUrl(43114),
+    blockExplorer: 'https://snowtrace.io',
+    blockExplorerApi: 'https://api.snowtrace.io/api',
+    factoryAddress: '',
+    exchangeAddress: '',
+    securityTokenFactoryAddress: '',
+    assetBackedExchangeAddress: '',
+    wethAddress: '0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB', // WETH.e
+    wbtcAddress: '0x50b7545627a5162F82A992c33b87aDc75187B218', // WBTC.e
+    ammAddress: '',
+    orbitalFactoryAddress: '',
+    orbitalRouterAddress: '',
+    nativeCurrency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
+  },
+
+  // ---- Avalanche Fuji Testnet ---------------------------------------------
+  43113: {
+    chainId: 43113,
+    name: 'Avalanche Fuji',
+    rpcUrl: getPrimaryRpcUrl(43113),
+    blockExplorer: 'https://testnet.snowtrace.io',
+    blockExplorerApi: 'https://api-testnet.snowtrace.io/api',
+    factoryAddress: '',
+    exchangeAddress: '',
+    securityTokenFactoryAddress: '',
+    assetBackedExchangeAddress: '',
+    wethAddress: '',
+    wbtcAddress: '',
+    ammAddress: '',
+    orbitalFactoryAddress: '',
+    orbitalRouterAddress: '',
+    nativeCurrency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
+  },
+
+  // ---- Polygon Amoy Testnet -----------------------------------------------
+  80002: {
+    chainId: 80002,
+    name: 'Polygon Amoy',
+    rpcUrl: getPrimaryRpcUrl(80002),
+    blockExplorer: 'https://amoy.polygonscan.com',
+    blockExplorerApi: 'https://api-amoy.polygonscan.com/api',
+    factoryAddress: '',
+    exchangeAddress: '',
+    securityTokenFactoryAddress: '',
+    assetBackedExchangeAddress: '',
+    wethAddress: '',
+    wbtcAddress: '',
+    ammAddress: '',
+    orbitalFactoryAddress: '',
+    orbitalRouterAddress: '',
+    nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
+  },
+
   // ---- Base ---------------------------------------------------------------
   8453: {
     chainId: 8453,
