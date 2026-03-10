@@ -7,6 +7,10 @@ import { authenticate } from '../middleware/auth';
 import { mintApprovalUpload } from '../middleware/upload';
 import { config } from '../config';
 import { sendMintApprovalRequestEmail } from '../services/email';
+import {
+  MintRequestVerificationError,
+  verifyMintRequestOnChain,
+} from '../services/mintRequestVerification';
 import { prisma } from '../prisma';
 
 const router = Router();
@@ -57,8 +61,7 @@ const markMintedSchema = z.object({
   txHash: z
     .string()
     .trim()
-    .regex(/^0x[a-fA-F0-9]{64}$/, 'Transaction hash must be a valid 0x-prefixed 32-byte hex string')
-    .optional(),
+    .regex(/^0x[a-fA-F0-9]{64}$/, 'Transaction hash must be a valid 0x-prefixed 32-byte hex string'),
 });
 
 function mintRateLimitKey(req: Request): string {
@@ -140,6 +143,35 @@ function buildRequestFingerprint(input: {
     documentHash: input.documentHash.toLowerCase(),
   });
   return crypto.createHash('sha256').update(canonical).digest('hex');
+}
+
+function buildMintVerificationNote(input: {
+  txHash: string;
+  assetAddress: string;
+  blockNumber: number;
+}): string {
+  return `Mint verified on-chain. Tx: ${input.txHash} Asset: ${input.assetAddress} Block: ${input.blockNumber}.`;
+}
+
+function appendMintVerificationNote(existing: string | null, note: string): string {
+  if (!existing) return note;
+  if (existing.includes(note)) return existing;
+  return `${existing}\n${note}`;
+}
+
+function extractRecordedMintTxHash(reviewNotes: string | null): string | null {
+  if (!reviewNotes) return null;
+  const patterns = [
+    /Mint verified on-chain\. Tx: (0x[a-fA-F0-9]{64})\b/,
+    /Minted on-chain\. Tx: (0x[a-fA-F0-9]{64})\b/,
+  ];
+  for (const pattern of patterns) {
+    const match = reviewNotes.match(pattern);
+    if (match?.[1]) {
+      return match[1].toLowerCase();
+    }
+  }
+  return null;
 }
 
 function sendActionHtml(
@@ -517,6 +549,7 @@ router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (r
   try {
     const requestId = requestIdSchema.parse(String(req.params.requestId ?? ''));
     const parsedBody = markMintedSchema.parse(req.body ?? {});
+    const normalizedTxHash = parsedBody.txHash.toLowerCase();
 
     const request = await prisma.mintApprovalRequest.findFirst({
       where: {
@@ -528,6 +561,19 @@ router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (r
         status: true,
         reviewNotes: true,
         reviewedAt: true,
+        chainId: true,
+        tokenName: true,
+        tokenSymbol: true,
+        mintAmount: true,
+        recipient: true,
+        documentHash: true,
+        documentType: true,
+        originalValue: true,
+        user: {
+          select: {
+            walletAddress: true,
+          },
+        },
       },
     });
 
@@ -541,7 +587,9 @@ router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (r
       return;
     }
 
-    if (request.status === 'minted') {
+    const recordedTxHash = extractRecordedMintTxHash(request.reviewNotes);
+
+    if (request.status === 'minted' && recordedTxHash === normalizedTxHash) {
       res.json({
         success: true,
         requestId: request.id,
@@ -554,7 +602,21 @@ router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (r
       return;
     }
 
-    if (request.status !== 'approved') {
+    if (
+      request.status === 'minted' &&
+      recordedTxHash &&
+      recordedTxHash !== normalizedTxHash
+    ) {
+      res.status(409).json({
+        error: {
+          message: 'This mint request was already finalized with a different verified transaction hash.',
+          code: 'MINT_REQUEST_TX_MISMATCH',
+        },
+      });
+      return;
+    }
+
+    if (request.status !== 'approved' && request.status !== 'minted') {
       res.status(409).json({
         error: {
           message: `Only approved requests can be marked minted (current status: ${request.status}).`,
@@ -564,19 +626,125 @@ router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (r
       return;
     }
 
-    const mintedNote = parsedBody.txHash
-      ? `Minted on-chain. Tx: ${parsedBody.txHash}`
-      : 'Minted on-chain.';
-    const reviewNotes = request.reviewNotes
-      ? `${request.reviewNotes}\n${mintedNote}`
-      : mintedNote;
-
-    const updated = await prisma.mintApprovalRequest.update({
-      where: { id: request.id },
-      data: {
+    const duplicateMint = await prisma.mintApprovalRequest.findFirst({
+      where: {
+        id: { not: request.id },
         status: 'minted',
-        reviewNotes,
+        reviewNotes: {
+          contains: normalizedTxHash,
+        },
       },
+      select: {
+        id: true,
+      },
+    });
+
+    if (duplicateMint) {
+      res.status(409).json({
+        error: {
+          message: 'This verified mint transaction hash is already linked to another mint request.',
+          code: 'MINT_REQUEST_TX_ALREADY_USED',
+        },
+      });
+      return;
+    }
+
+    const verification = await verifyMintRequestOnChain({
+      chainId: request.chainId,
+      txHash: normalizedTxHash,
+      tokenName: request.tokenName,
+      tokenSymbol: request.tokenSymbol,
+      mintAmount: request.mintAmount,
+      recipient: request.recipient,
+      documentHash: request.documentHash,
+      documentType: request.documentType,
+      originalValue: request.originalValue,
+      expectedCreatorAddress: request.user.walletAddress,
+    });
+
+    const reviewNotes = appendMintVerificationNote(
+      request.reviewNotes,
+      buildMintVerificationNote({
+        txHash: normalizedTxHash,
+        assetAddress: verification.assetAddress,
+        blockNumber: verification.blockNumber,
+      }),
+    );
+
+    try {
+      const updateResult = await prisma.mintApprovalRequest.updateMany({
+        where: {
+          id: request.id,
+          ...(request.status === 'approved'
+            ? { status: 'approved' }
+            : { status: 'minted', reviewNotes: request.reviewNotes }),
+        },
+        data: {
+          status: 'minted',
+          reviewNotes,
+        },
+      });
+
+      if (updateResult.count === 0) {
+        const latest = await prisma.mintApprovalRequest.findUnique({
+          where: { id: request.id },
+          select: {
+            id: true,
+            status: true,
+            reviewNotes: true,
+            reviewedAt: true,
+          },
+        });
+
+        if (!latest) {
+          res.status(404).json({
+            error: {
+              message: 'Mint approval request not found',
+              code: 'MINT_REQUEST_NOT_FOUND',
+            },
+          });
+          return;
+        }
+
+        const latestRecordedTxHash = extractRecordedMintTxHash(latest.reviewNotes);
+
+        if (latest.status === 'minted' && latestRecordedTxHash === normalizedTxHash) {
+          res.json({
+            success: true,
+            requestId: latest.id,
+            status: latest.status,
+            reviewNotes: latest.reviewNotes,
+            reviewedAt: latest.reviewedAt?.toISOString() ?? null,
+            canMint: false,
+            alreadyMinted: true,
+          });
+          return;
+        }
+
+        if (latest.status === 'minted' && latestRecordedTxHash && latestRecordedTxHash !== normalizedTxHash) {
+          res.status(409).json({
+            error: {
+              message: 'This mint request was already finalized with a different verified transaction hash.',
+              code: 'MINT_REQUEST_TX_MISMATCH',
+            },
+          });
+          return;
+        }
+
+        res.status(409).json({
+          error: {
+            message: `Only approved requests can be marked minted (current status: ${latest.status}).`,
+            code: 'MINT_REQUEST_STATUS_INVALID',
+          },
+        });
+        return;
+      }
+    } catch (err) {
+      throw err;
+    }
+
+    const updated = await prisma.mintApprovalRequest.findUnique({
+      where: { id: request.id },
       select: {
         id: true,
         status: true,
@@ -585,6 +753,16 @@ router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (r
       },
     });
 
+    if (!updated) {
+      res.status(404).json({
+        error: {
+          message: 'Mint approval request not found',
+          code: 'MINT_REQUEST_NOT_FOUND',
+        },
+      });
+      return;
+    }
+
     res.json({
       success: true,
       requestId: updated.id,
@@ -592,7 +770,7 @@ router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (r
       reviewNotes: updated.reviewNotes,
       reviewedAt: updated.reviewedAt?.toISOString() ?? null,
       canMint: false,
-      alreadyMinted: false,
+      alreadyMinted: request.status === 'minted',
     });
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -600,6 +778,15 @@ router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (r
         error: {
           message: err.errors[0]?.message ?? 'Invalid request payload',
           code: 'VALIDATION_ERROR',
+        },
+      });
+      return;
+    }
+    if (err instanceof MintRequestVerificationError) {
+      res.status(409).json({
+        error: {
+          message: err.message,
+          code: 'MINT_REQUEST_TX_UNVERIFIED',
         },
       });
       return;
