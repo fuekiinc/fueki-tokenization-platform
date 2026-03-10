@@ -65,7 +65,6 @@ describe('useAuth', () => {
       user: userFixture,
       tokens: {
         accessToken: 'header.payload.signature',
-        refreshToken: 'refresh-token',
       },
     });
 
