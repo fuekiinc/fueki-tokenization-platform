@@ -277,12 +277,12 @@ export async function sendKYCReviewEmail(data: KYCReviewEmailData): Promise<void
                 <tr>
                   <td align="center" style="padding:0 8px 0 0;">
                     <a href="${approveUrl}" target="_blank" style="display:inline-block;padding:14px 40px;background-color:#059669;color:#ffffff;font-size:16px;font-weight:600;text-decoration:none;border-radius:6px;">
-                      Approve
+                      Review Approval
                     </a>
                   </td>
                   <td align="center" style="padding:0 0 0 8px;">
                     <a href="${rejectUrl}" target="_blank" style="display:inline-block;padding:14px 40px;background-color:#dc2626;color:#ffffff;font-size:16px;font-weight:600;text-decoration:none;border-radius:6px;">
-                      Deny
+                      Review Rejection
                     </a>
                   </td>
                 </tr>
@@ -290,7 +290,7 @@ export async function sendKYCReviewEmail(data: KYCReviewEmailData): Promise<void
 
               <hr style="border:none;border-top:1px solid #eaeaec;margin:32px 0 16px;" />
               <p style="margin:0;color:#9b9ba5;font-size:12px;line-height:1.5;">
-                These action links expire in 7 days and can only be used once.
+                These links open a confirmation page. No action is applied until you explicitly confirm it.
               </p>
             </td>
           </tr>
@@ -319,10 +319,10 @@ Document: ${data.documentType === 'drivers_license' ? "Driver's License" : 'Pass
 Subscription Plan: ${formatSubscriptionPlanForEmail(data.subscriptionPlan)}
 Submitted: ${data.submittedAt}
 
-Approve: ${approveUrl}
-Deny: ${rejectUrl}
+Review approval: ${approveUrl}
+Review rejection: ${rejectUrl}
 
-These links expire in 7 days and can only be used once.
+These links open a confirmation page. No action is applied until you explicitly confirm it.
 
 -- Fueki`;
 
@@ -438,19 +438,19 @@ export async function sendMintApprovalRequestEmail(
                 <tr>
                   <td align="center" style="padding-right:8px;">
                     <a href="${data.approveUrl}" target="_blank" style="display:inline-block;padding:12px 32px;background:#059669;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">
-                      Approve Mint
+                      Review Approval
                     </a>
                   </td>
                   <td align="center" style="padding-left:8px;">
                     <a href="${data.rejectUrl}" target="_blank" style="display:inline-block;padding:12px 32px;background:#dc2626;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">
-                      Reject Mint
+                      Review Rejection
                     </a>
                   </td>
                 </tr>
               </table>
 
               <p style="margin:20px 0 0;color:#6b7280;font-size:12px;">
-                Action links are one-time use and expire automatically.
+                These links open a confirmation page. No action is applied until you explicitly confirm it.
               </p>
             </td>
           </tr>
@@ -478,8 +478,8 @@ Document Type: ${data.documentType}
 Document Hash: ${data.documentHash}
 Attachment: ${data.attachmentFileName}
 
-Approve: ${data.approveUrl}
-Reject: ${data.rejectUrl}
+Review approval: ${data.approveUrl}
+Review rejection: ${data.rejectUrl}
 `;
 
   const info = await transporter.sendMail({
@@ -602,19 +602,19 @@ export async function sendSecurityTokenApprovalRequestEmail(
                 <tr>
                   <td align="center" style="padding-right:8px;">
                     <a href="${data.approveUrl}" target="_blank" style="display:inline-block;padding:12px 32px;background:#059669;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">
-                      Approve Deployment
+                      Review Approval
                     </a>
                   </td>
                   <td align="center" style="padding-left:8px;">
                     <a href="${data.rejectUrl}" target="_blank" style="display:inline-block;padding:12px 32px;background:#dc2626;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">
-                      Reject Deployment
+                      Review Rejection
                     </a>
                   </td>
                 </tr>
               </table>
 
               <p style="margin:20px 0 0;color:#6b7280;font-size:12px;">
-                Action links are one-time use and expire automatically.
+                These links open a confirmation page. No action is applied until you explicitly confirm it.
               </p>
             </td>
           </tr>
@@ -645,8 +645,8 @@ Hash Source: ${data.hashSource}
 Document Hash: ${data.documentHash}
 Attachment: ${data.attachmentFileName || 'No attachment provided'}
 
-Approve: ${data.approveUrl}
-Reject: ${data.rejectUrl}
+Review approval: ${data.approveUrl}
+Review rejection: ${data.rejectUrl}
 `;
 
   const attachments =

@@ -26,6 +26,46 @@ vi.mock('../../src/services/kyc', () => ({
   saveEncryptedDocument: mocks.saveEncryptedDocument,
 }));
 
+vi.mock('../../src/middleware/upload', async () => {
+  const multerModule = await vi.importActual<typeof import('multer')>('multer');
+  const MulterError = (multerModule.default as typeof multerModule.default & {
+    MulterError: new (code: string) => Error;
+  }).MulterError;
+
+  return {
+    documentUpload: {
+      fields:
+        () =>
+        (
+          req: express.Request & {
+            __uploadControl?: {
+              error?: 'filter' | 'limit';
+              files?: Record<string, Array<Record<string, unknown>>>;
+            };
+          },
+          _res: express.Response,
+          next: express.NextFunction,
+        ) => {
+          if (req.__uploadControl?.error === 'limit') {
+            next(new MulterError('LIMIT_FILE_SIZE'));
+            return;
+          }
+
+          if (req.__uploadControl?.error === 'filter') {
+            next(new Error('Only JPG, PNG, PDF, MP4, MOV, and WEBM files are allowed'));
+            return;
+          }
+
+          if (req.__uploadControl?.files) {
+            req.files = req.__uploadControl.files as never;
+          }
+
+          next();
+        },
+    },
+  };
+});
+
 import kycRoutes from '../../src/routes/kyc';
 
 const uploadRouteHandlers = getRouteHandlers(kycRoutes, 'post', '/upload-document');

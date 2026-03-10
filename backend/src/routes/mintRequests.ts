@@ -1,4 +1,4 @@
-import { type Request, type Response, Router } from 'express';
+import { type Request, Router } from 'express';
 import crypto from 'node:crypto';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
@@ -6,6 +6,13 @@ import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
 import { mintApprovalUpload } from '../middleware/upload';
 import { config } from '../config';
+import {
+  createConfirmationFormState,
+  parseApprovalAction,
+  sendActionConfirmationPage,
+  sendActionInfoPage,
+  verifyConfirmationFormState,
+} from '../services/approvalActionFlow';
 import { sendMintApprovalRequestEmail } from '../services/email';
 import {
   MintRequestVerificationError,
@@ -178,36 +185,6 @@ function extractRecordedMintTxHash(reviewNotes: string | null): string | null {
 function advisoryLockKeyForMintTxHash(txHash: string): [number, number] {
   const digest = crypto.createHash('sha256').update(txHash).digest();
   return [digest.readInt32BE(0), digest.readInt32BE(4)];
-}
-
-function sendActionHtml(
-  res: Response,
-  {
-    title,
-    message,
-    accent = '#4f46e5',
-  }: { title: string; message: string; accent?: string },
-): void {
-  res
-    .status(200)
-    .type('html')
-    .send(`<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${title}</title>
-  </head>
-  <body style="margin:0;background:#0b1220;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
-      <div style="max-width:560px;width:100%;background:#111827;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:28px;box-shadow:0 10px 40px rgba(0,0,0,0.4);">
-        <div style="width:48px;height:48px;border-radius:999px;background:${accent}22;border:1px solid ${accent}66;display:flex;align-items:center;justify-content:center;font-weight:700;color:${accent};margin-bottom:16px;">F</div>
-        <h1 style="margin:0 0 8px;font-size:22px;color:#ffffff;">${title}</h1>
-        <p style="margin:0;color:#9ca3af;line-height:1.6;">${message}</p>
-      </div>
-    </div>
-  </body>
-</html>`);
 }
 
 // POST /api/mint-requests/submit
@@ -877,7 +854,8 @@ router.get('/action/:token', async (req, res) => {
   try {
     const token = String(req.params.token || '').trim();
     if (!token) {
-      sendActionHtml(res, {
+      sendActionInfoPage(res, {
+        status: 400,
         title: 'Invalid Action Link',
         message: 'This approval link is missing a token.',
         accent: '#dc2626',
@@ -896,7 +874,8 @@ router.get('/action/:token', async (req, res) => {
     });
 
     if (!actionToken) {
-      sendActionHtml(res, {
+      sendActionInfoPage(res, {
+        status: 404,
         title: 'Link Not Found',
         message:
           'This mint action link is invalid or has already been removed.',
@@ -906,7 +885,8 @@ router.get('/action/:token', async (req, res) => {
     }
 
     if (actionToken.used) {
-      sendActionHtml(res, {
+      sendActionInfoPage(res, {
+        status: 400,
         title: 'Action Already Used',
         message:
           'This mint action link has already been used and cannot be reused.',
@@ -916,12 +896,8 @@ router.get('/action/:token', async (req, res) => {
     }
 
     if (actionToken.expiresAt.getTime() < Date.now()) {
-      await prisma.mintApprovalActionToken.update({
-        where: { id: actionToken.id },
-        data: { used: true },
-      });
-
-      sendActionHtml(res, {
+      sendActionInfoPage(res, {
+        status: 400,
         title: 'Action Link Expired',
         message:
           'This mint action link has expired. Ask the requester to submit a new mint request.',
@@ -930,32 +906,190 @@ router.get('/action/:token', async (req, res) => {
       return;
     }
 
-    const desiredStatus: MintRequestStatus =
-      actionToken.action === 'approve' ? 'approved' : 'rejected';
-
-    if (actionToken.request.status !== 'pending') {
-      await prisma.mintApprovalActionToken.update({
-        where: { id: actionToken.id },
-        data: { used: true },
-      });
-
-      sendActionHtml(res, {
-        title: 'Request Already Reviewed',
-        message: `This mint request is already ${actionToken.request.status}. No additional action was applied.`,
-        accent: '#4f46e5',
+    const action = parseApprovalAction(actionToken.action);
+    if (!action) {
+      sendActionInfoPage(res, {
+        status: 400,
+        title: 'Invalid Action Link',
+        message: 'This mint action link is malformed and cannot be processed.',
+        accent: '#dc2626',
       });
       return;
     }
 
-    await prisma.$transaction([
-      prisma.mintApprovalActionToken.update({
-        where: { id: actionToken.id },
+    if (actionToken.request.status !== 'pending') {
+      sendActionInfoPage(res, {
+        title: 'Request Already Reviewed',
+        message: `This mint request is already ${actionToken.request.status}. No additional action was applied.`,
+        accent: '#4f46e5',
+        details: [
+          { label: 'Request ID', value: actionToken.request.id },
+          { label: 'Requester Email', value: actionToken.request.requesterEmail },
+          { label: 'Current Status', value: actionToken.request.status },
+        ],
+      });
+      return;
+    }
+
+    const confirmation = createConfirmationFormState({
+      token,
+      action,
+      scope: 'mint',
+      expiresAt: actionToken.expiresAt,
+    });
+
+    sendActionConfirmationPage(res, {
+      title: action === 'approve' ? 'Confirm Mint Approval' : 'Confirm Mint Rejection',
+      message:
+        'Review this mint approval request below. Opening this page is safe; the request changes only after explicit confirmation.',
+      action,
+      formAction: `/api/mint-requests/action/${encodeURIComponent(token)}`,
+      payload: confirmation.payload,
+      signature: confirmation.signature,
+      details: [
+        { label: 'Request ID', value: actionToken.request.id },
+        { label: 'Requester Email', value: actionToken.request.requesterEmail },
+        { label: 'Token', value: `${actionToken.request.tokenName} (${actionToken.request.tokenSymbol})` },
+        { label: 'Chain ID', value: String(actionToken.request.chainId) },
+        { label: 'Mint Amount', value: `${actionToken.request.mintAmount} ${actionToken.request.currency}` },
+        { label: 'Current Status', value: actionToken.request.status },
+        { label: 'Requested Action', value: action === 'approve' ? 'Approve' : 'Reject' },
+        { label: 'Action Link Expires', value: actionToken.expiresAt.toUTCString() },
+      ],
+    });
+  } catch (err) {
+    console.error('Mint request action error:', err);
+    sendActionInfoPage(res, {
+      status: 500,
+      title: 'Action Failed',
+      message:
+        'An unexpected error occurred while loading this mint action link.',
+      accent: '#dc2626',
+    });
+  }
+});
+
+router.post('/action/:token', async (req, res) => {
+  try {
+    const token = String(req.params.token || '').trim();
+    if (!token) {
+      sendActionInfoPage(res, {
+        status: 400,
+        title: 'Invalid Action Link',
+        message: 'This approval link is missing a token.',
+        accent: '#dc2626',
+      });
+      return;
+    }
+
+    const actionToken = await prisma.mintApprovalActionToken.findUnique({
+      where: { token },
+      include: { request: true },
+    });
+
+    if (!actionToken) {
+      sendActionInfoPage(res, {
+        status: 404,
+        title: 'Link Not Found',
+        message:
+          'This mint action link is invalid or has already been removed.',
+        accent: '#dc2626',
+      });
+      return;
+    }
+
+    if (actionToken.used) {
+      sendActionInfoPage(res, {
+        status: 400,
+        title: 'Action Already Used',
+        message:
+          'This mint action link has already been used and cannot be reused.',
+        accent: '#f59e0b',
+      });
+      return;
+    }
+
+    const action = parseApprovalAction(actionToken.action);
+    if (!action) {
+      sendActionInfoPage(res, {
+        status: 400,
+        title: 'Invalid Action Link',
+        message: 'This mint action link is malformed and cannot be processed.',
+        accent: '#dc2626',
+      });
+      return;
+    }
+
+    if (String(req.body?.confirm || '') !== action) {
+      sendActionInfoPage(res, {
+        status: 400,
+        title: 'Confirmation Required',
+        message: 'No action was applied because the confirmation button was not used.',
+        accent: '#f59e0b',
+      });
+      return;
+    }
+
+    const confirmation = verifyConfirmationFormState({
+      payload: String(req.body?.payload || ''),
+      signature: String(req.body?.signature || ''),
+      token,
+      action,
+      scope: 'mint',
+    });
+
+    if (!confirmation.ok) {
+      sendActionInfoPage(res, {
+        status: 400,
+        title: confirmation.reason === 'expired' ? 'Confirmation Expired' : 'Invalid Confirmation',
+        message:
+          confirmation.reason === 'expired'
+            ? 'This confirmation page has expired. Re-open the original email link to review the action again.'
+            : 'This confirmation request is invalid or has been tampered with.',
+        accent: '#dc2626',
+      });
+      return;
+    }
+
+    if (actionToken.expiresAt.getTime() < Date.now()) {
+      sendActionInfoPage(res, {
+        status: 400,
+        title: 'Action Link Expired',
+        message:
+          'This mint action link has expired. Ask the requester to submit a new mint request.',
+        accent: '#f59e0b',
+      });
+      return;
+    }
+
+    if (actionToken.request.status !== 'pending') {
+      await prisma.mintApprovalActionToken.updateMany({
+        where: {
+          requestId: actionToken.requestId,
+          used: false,
+        },
         data: { used: true },
-      }),
+      });
+
+      sendActionInfoPage(res, {
+        title: 'Request Already Reviewed',
+        message: `This mint request is already ${actionToken.request.status}. No additional action was applied.`,
+        accent: '#4f46e5',
+        details: [
+          { label: 'Request ID', value: actionToken.request.id },
+          { label: 'Requester Email', value: actionToken.request.requesterEmail },
+          { label: 'Current Status', value: actionToken.request.status },
+        ],
+      });
+      return;
+    }
+
+    const desiredStatus: MintRequestStatus = action === 'approve' ? 'approved' : 'rejected';
+
+    await prisma.$transaction([
       prisma.mintApprovalActionToken.updateMany({
         where: {
           requestId: actionToken.requestId,
-          id: { not: actionToken.id },
           used: false,
         },
         data: { used: true },
@@ -967,14 +1101,14 @@ router.get('/action/:token', async (req, res) => {
           reviewedAt: new Date(),
           reviewNotes:
             desiredStatus === 'approved'
-              ? 'Approved via banker email link.'
-              : 'Rejected via banker email link.',
+              ? 'Approved via banker confirmation page.'
+              : 'Rejected via banker confirmation page.',
           approvedBy: config.mintApproval.requestRecipient,
         },
       }),
     ]);
 
-    sendActionHtml(res, {
+    sendActionInfoPage(res, {
       title:
         desiredStatus === 'approved'
           ? 'Mint Request Approved'
@@ -984,10 +1118,16 @@ router.get('/action/:token', async (req, res) => {
           ? 'The user can now proceed with minting this token configuration in the app.'
           : 'The mint request was rejected. The user must update details and resubmit.',
       accent: desiredStatus === 'approved' ? '#059669' : '#dc2626',
+      details: [
+        { label: 'Request ID', value: actionToken.request.id },
+        { label: 'Requester Email', value: actionToken.request.requesterEmail },
+        { label: 'Final Status', value: desiredStatus },
+      ],
     });
   } catch (err) {
-    console.error('Mint request action error:', err);
-    sendActionHtml(res, {
+    console.error('Mint request action submit error:', err);
+    sendActionInfoPage(res, {
+      status: 500,
       title: 'Action Failed',
       message:
         'An unexpected error occurred while processing this mint action link.',
