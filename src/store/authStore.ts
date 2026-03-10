@@ -15,11 +15,11 @@ import type {
 import * as authApi from '../lib/api/auth';
 import { normalizeKycStatus } from '../lib/auth/kycStatus';
 import { isJwtExpired } from '../lib/auth/jwt';
+import { clearAccessToken, setAccessToken } from '../lib/authSession';
 import {
   type AuthStorageMode,
   clearPersistedAuth,
-  persistAuthSnapshot,
-  persistTokens,
+  persistAuthSession,
   persistUser,
   readAuthSnapshot,
 } from '../lib/authStorage';
@@ -78,6 +78,15 @@ function normalizeUser(user: User | null | undefined): User {
   };
 }
 
+function normalizeStoredUser(user: User | null): User | null {
+  if (!user) return null;
+  try {
+    return normalizeUser(user);
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Double-init guard: ensures concurrent calls to initialize() share a single
 // in-flight promise rather than racing against each other.
@@ -113,33 +122,32 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       const snapshot = readAuthSnapshot();
 
       if (!snapshot) {
+        clearAccessToken();
         set({ isInitialized: true });
         return;
       }
 
-      const { tokens: savedTokens, user: savedUser, mode: storageMode } =
-        snapshot;
+      const { user: savedUser, mode: storageMode } = snapshot;
+      const normalizedSavedUser = normalizeStoredUser(savedUser);
 
       const refreshAndHydrate = async (): Promise<void> => {
-        // Access token may have expired -- attempt a refresh.
-        // The refresh token is sent automatically via httpOnly cookie.
         const newTokens = await withAuthBootstrapTimeout(
           authApi.refreshToken(),
           'token refresh',
         );
-        persistTokens(storageMode, newTokens);
+        setAccessToken(newTokens.accessToken);
 
-        // Fetch the user profile with the new access token.
-        let user: User | null = savedUser ? normalizeUser(savedUser) : null;
+        let user: User | null = normalizedSavedUser;
         try {
           user = normalizeUser(
             await withAuthBootstrapTimeout(authApi.getProfile(), 'profile fetch after refresh'),
           );
-          persistUser(storageMode, user);
         } catch {
           // If profile fetch fails, use the previously saved user data.
           // This is a degraded state but better than logging the user out.
         }
+
+        persistAuthSession(storageMode, user);
 
         set({
           user,
@@ -150,39 +158,11 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         });
       };
 
-      // If the access token is already expired, skip /auth/me and refresh first
-      // to avoid an expected 401 during app bootstrap.
-      if (isJwtExpired(savedTokens.accessToken)) {
-        try {
-          await refreshAndHydrate();
-        } catch {
-          get().clearAuth();
-          set({ isInitialized: true });
-        }
-        return;
-      }
-
-      // Tokens found in storage -- validate by fetching the profile.
       try {
-        const user = normalizeUser(
-          await withAuthBootstrapTimeout(authApi.getProfile(), 'profile fetch'),
-        );
-        persistUser(storageMode, user);
-        set({
-          user,
-          tokens: savedTokens,
-          isAuthenticated: true,
-          isInitialized: true,
-          storageMode,
-        });
+        await refreshAndHydrate();
       } catch {
-        try {
-          await refreshAndHydrate();
-        } catch {
-          // Refresh also failed -- clear everything.
-          get().clearAuth();
-          set({ isInitialized: true });
-        }
+        get().clearAuth();
+        set({ isInitialized: true });
       }
     })();
 
@@ -200,7 +180,8 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       const response = await authApi.login(data);
       const storageMode: AuthStorageMode = data.rememberMe ? 'local' : 'session';
       const normalizedUser = normalizeUser(response.user);
-      persistAuthSnapshot(storageMode, response.tokens, normalizedUser);
+      setAccessToken(response.tokens.accessToken);
+      persistAuthSession(storageMode, normalizedUser);
       set({
         user: normalizedUser,
         tokens: response.tokens,
@@ -220,7 +201,8 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     try {
       const response = await authApi.register(data);
       const normalizedUser = normalizeUser(response.user);
-      persistAuthSnapshot('local', response.tokens, normalizedUser);
+      setAccessToken(response.tokens.accessToken);
+      persistAuthSession('local', normalizedUser);
       set({
         user: normalizedUser,
         tokens: response.tokens,
@@ -237,18 +219,27 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
   // ---- logout --------------------------------------------------------------
   logout: async () => {
     const currentTokens = get().tokens;
-    const shouldCallServerLogout =
-      !!currentTokens?.accessToken && !isJwtExpired(currentTokens.accessToken, 0);
+    const shouldCallServerLogout = !!currentTokens?.accessToken;
 
     // If in demo mode, end it first so the backend marks demoUsed=true.
     const user = get().user;
     if (user?.demoActive) {
       try { await authApi.endDemo(); } catch { /* best-effort */ }
     }
+
+    const invalidateServerSession = async (): Promise<void> => {
+      if (currentTokens?.accessToken && !isJwtExpired(currentTokens.accessToken, 0)) {
+        await authApi.logout(currentTokens.accessToken);
+        return;
+      }
+
+      const refreshed = await authApi.refreshToken({ skipAuthRefresh: true });
+      await authApi.logout(refreshed.accessToken);
+    };
+
     // Fire-and-forget -- don't block the UI on the server call.
-    // Skip server logout when the token is already invalid to avoid noisy 401s.
     if (shouldCallServerLogout) {
-      authApi.logout().catch(() => {});
+      invalidateServerSession().catch(() => {});
     }
     get().clearAuth();
   },
@@ -340,6 +331,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
   // ---- clearAuth -----------------------------------------------------------
   clearAuth: () => {
+    clearAccessToken();
     clearPersistedAuth();
     set({
       user: null,

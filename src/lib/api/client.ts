@@ -1,13 +1,7 @@
 import axios from 'axios';
 import type { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
-import type { AuthTokens } from '../../types/auth';
-import {
-  clearPersistedAuth,
-  persistTokens,
-  readAuthSnapshot,
-  resolveActiveStorageMode,
-} from '../authStorage';
-import type { AuthStorageMode } from '../authStorage';
+import { clearPersistedAuth } from '../authStorage';
+import { clearAccessToken, getAccessToken, setAccessToken } from '../authSession';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -83,18 +77,6 @@ apiClient.interceptors.request.use((config) => {
 // ---------------------------------------------------------------------------
 
 /**
- * Reads auth tokens from localStorage with validation.
- * Returns null if tokens are missing or malformed.
- */
-function getStoredTokens(): AuthTokens | null {
-  return readAuthSnapshot()?.tokens ?? null;
-}
-
-function getActiveStorageMode(): AuthStorageMode {
-  return resolveActiveStorageMode() ?? 'local';
-}
-
-/**
  * Minimal check that a JWT string has the expected three-part structure.
  * This does NOT verify the signature -- it only rejects obviously invalid
  * strings (empty, truncated, non-JWT) before attaching them to requests.
@@ -111,9 +93,9 @@ function isPlausibleJWT(token: string): boolean {
 
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const tokens = getStoredTokens();
-    if (tokens?.accessToken && isPlausibleJWT(tokens.accessToken)) {
-      config.headers.Authorization = `Bearer ${tokens.accessToken}`;
+    const accessToken = getAccessToken();
+    if (accessToken && isPlausibleJWT(accessToken)) {
+      config.headers.Authorization = `Bearer ${accessToken}`;
     }
     return config;
   },
@@ -144,6 +126,7 @@ function processQueue(error: unknown, token: string | null): void {
 // Extend AxiosRequestConfig to track retry state without using `any`.
 interface RetryableRequestConfig extends AxiosRequestConfig {
   _retry?: boolean;
+  skipAuthRefresh?: boolean;
 }
 
 apiClient.interceptors.response.use(
@@ -157,7 +140,11 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config as RetryableRequestConfig & InternalAxiosRequestConfig;
 
     // Only attempt refresh on 401 and if this request has not already been retried.
-    if (error.response?.status !== 401 || originalRequest._retry) {
+    if (
+      error.response?.status !== 401
+      || originalRequest._retry
+      || originalRequest.skipAuthRefresh
+    ) {
       return Promise.reject(error);
     }
 
@@ -199,8 +186,7 @@ apiClient.interceptors.response.use(
         throw new Error('Invalid refresh response shape');
       }
 
-      // Persist the new access token (refresh token stays in httpOnly cookie).
-      persistTokens(getActiveStorageMode(), { accessToken: data.accessToken });
+      setAccessToken(data.accessToken);
 
       // Retry the original request and flush the queue.
       originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
@@ -211,6 +197,7 @@ apiClient.interceptors.response.use(
       processQueue(refreshError, null);
 
       // Clear auth state and redirect to login.
+      clearAccessToken();
       clearPersistedAuth();
       window.location.href = '/login';
 
