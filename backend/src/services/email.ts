@@ -240,20 +240,13 @@ export async function sendKYCReviewEmail(data: KYCReviewEmailData): Promise<void
                   <td style="padding:20px;">
                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                       <tr>
-                        <td style="padding:6px 0;color:#6b7280;font-size:13px;width:120px;">Email</td>
-                        <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;">${data.userEmail}</td>
+                        <td style="padding:6px 0;color:#6b7280;font-size:13px;width:120px;">User ID</td>
+                        <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;">${data.userId}</td>
                       </tr>
                       <tr>
-                        <td style="padding:6px 0;color:#6b7280;font-size:13px;">Name</td>
-                        <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;">${data.firstName} ${data.lastName}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding:6px 0;color:#6b7280;font-size:13px;">Date of Birth</td>
-                        <td style="padding:6px 0;color:#1a1a2e;font-size:14px;">${data.dateOfBirth}</td>
-                      </tr>
-                      <tr>
-                        <td style="padding:6px 0;color:#6b7280;font-size:13px;">Address</td>
-                        <td style="padding:6px 0;color:#1a1a2e;font-size:14px;">${data.addressLine1}, ${data.city}, ${data.state} ${data.zipCode}, ${data.country}</td>
+                        <td style="padding:6px 0;color:#6b7280;font-size:13px;" colspan="2">
+                          <a href="${config.frontendUrl}/admin/users/${data.userId}" style="color:#4f46e5;text-decoration:underline;">View full applicant details in admin panel</a>
+                        </td>
                       </tr>
                       <tr>
                         <td style="padding:6px 0;color:#6b7280;font-size:13px;">Document</td>
@@ -311,13 +304,12 @@ export async function sendKYCReviewEmail(data: KYCReviewEmailData): Promise<void
 
   const textBody = `New KYC Submission - Review Required
 
-Applicant: ${data.firstName} ${data.lastName}
-Email: ${data.userEmail}
-DOB: ${data.dateOfBirth}
-Address: ${data.addressLine1}, ${data.city}, ${data.state} ${data.zipCode}, ${data.country}
+User ID: ${data.userId}
 Document: ${data.documentType === 'drivers_license' ? "Driver's License" : 'Passport'}
 Subscription Plan: ${formatSubscriptionPlanForEmail(data.subscriptionPlan)}
 Submitted: ${data.submittedAt}
+
+View full applicant details: ${config.frontendUrl}/admin/users/${data.userId}
 
 Review approval: ${approveUrl}
 Review rejection: ${rejectUrl}
@@ -329,7 +321,7 @@ These links open a confirmation page. No action is applied until you explicitly 
   const info = await transporter.sendMail({
     from: config.smtp.from,
     to: config.adminEmails.join(', '),
-    subject: `KYC Review: ${data.firstName} ${data.lastName} (${data.userEmail})`,
+    subject: `KYC Review Required — User ${data.userId}`,
     text: textBody,
     html: htmlBody,
   });

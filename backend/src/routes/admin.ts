@@ -166,12 +166,18 @@ router.get('/users/:id', adminOnly, async (req: Request, res: Response) => {
     let kycDetails: Record<string, unknown> | null = null;
 
     if (kycData) {
+      // C-07: Mask SSN — only expose last 4 digits to reduce PII exposure.
+      const rawSsn = decrypt(kycData.encryptedSSN);
+      const maskedSsn = rawSsn.length >= 4
+        ? `***-**-${rawSsn.slice(-4)}`
+        : '***-**-****';
+
       kycDetails = {
         id: kycData.id,
         firstName: decrypt(kycData.encryptedFirstName),
         lastName: decrypt(kycData.encryptedLastName),
         dateOfBirth: decrypt(kycData.encryptedDOB),
-        ssn: decrypt(kycData.encryptedSSN),
+        ssn: maskedSsn,
         addressLine1: decrypt(kycData.encryptedAddress1),
         addressLine2: kycData.encryptedAddress2 ? decrypt(kycData.encryptedAddress2) : null,
         city: decrypt(kycData.encryptedCity),
@@ -186,6 +192,16 @@ router.get('/users/:id', adminOnly, async (req: Request, res: Response) => {
         reviewedAt: kycData.reviewedAt?.toISOString() ?? null,
         reviewNotes: kycData.reviewNotes,
       };
+
+      // C-07: Audit log — record every admin PII access for compliance.
+      console.info(JSON.stringify({
+        audit: 'ADMIN_PII_ACCESS',
+        adminUserId: (req as unknown as { userId?: string }).userId ?? 'unknown',
+        targetUserId: userId,
+        kycDataId: kycData.id,
+        fieldsAccessed: ['firstName', 'lastName', 'dateOfBirth', 'ssn(masked)', 'address', 'city', 'state', 'zipCode', 'country'],
+        timestamp: new Date().toISOString(),
+      }));
     }
 
     res.json({
@@ -508,8 +524,15 @@ router.get('/kyc/action/:token', async (req: Request, res: Response) => {
 router.post('/kyc/action/:token', async (req: Request, res: Response) => {
   try {
     const token = req.params.token as string;
-    const actionToken = await prisma.adminActionToken.findUnique({
-      where: { token },
+    // H-02: Use hashed token lookup (matching the GET handler pattern).
+    // The DB stores hashed tokens; findUnique with raw token always misses.
+    const tokenCandidates = buildTokenLookupCandidates(token);
+    const actionToken = await prisma.adminActionToken.findFirst({
+      where: {
+        OR: tokenCandidates.map((candidate) => ({
+          token: candidate,
+        })),
+      },
     });
 
     if (!actionToken) {

@@ -42,14 +42,15 @@ const RPC_ENV_BY_CHAIN: Record<number, string> = {
 // Operator-provided endpoints should be injected via env and always take
 // priority. Hardcoded defaults below are only safety nets, so prefer stable
 // public endpoints over broken or provider-specific URLs.
+// SECURITY: Only truly public, keyless endpoints belong here.
+// Operator-provided endpoints (Alchemy, Infura, QuickNode) MUST be
+// injected via VITE_RPC_{chainId}_URLS env vars — never hardcode API keys.
 const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
   1: [
-    'https://eth-mainnet.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://ethereum-rpc.publicnode.com',
     'https://eth.drpc.org',
   ],
   137: [
-    'https://polygon-mainnet.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://polygon-bor-rpc.publicnode.com',
     'https://polygon.drpc.org',
     'https://1rpc.io/matic',
@@ -59,40 +60,35 @@ const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
     'https://holesky.drpc.org',
   ],
   42161: [
-    'https://arb-mainnet.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://arb1.arbitrum.io/rpc',
+    'https://arbitrum-one-rpc.publicnode.com',
   ],
   421614: [
-    'https://arb-sepolia.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://arbitrum-sepolia-rpc.publicnode.com',
     'https://arbitrum-sepolia.drpc.org',
     'https://sepolia-rollup.arbitrum.io/rpc',
   ],
   43114: [
-    'https://avax-mainnet.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://avalanche-c-chain-rpc.publicnode.com',
     'https://avalanche.drpc.org',
   ],
   43113: [
-    'https://avax-fuji.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://avalanche-fuji-c-chain-rpc.publicnode.com',
     'https://avalanche-fuji.drpc.org',
   ],
   80002: [
-    'https://polygon-amoy.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://polygon-amoy-bor-rpc.publicnode.com',
     'https://polygon-amoy.drpc.org',
   ],
   8453: [
-    'https://base-mainnet.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://mainnet.base.org',
+    'https://base-rpc.publicnode.com',
   ],
   84532: [
-    'https://base-sepolia.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://sepolia.base.org',
+    'https://base-sepolia-rpc.publicnode.com',
   ],
   11155111: [
-    'https://eth-sepolia.g.alchemy.com/v2/zLQgWD7IWFOpSpegWuGje',
     'https://sepolia.drpc.org',
     'https://ethereum-sepolia-rpc.publicnode.com',
     'https://rpc2.sepolia.org',

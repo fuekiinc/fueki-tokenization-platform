@@ -282,6 +282,7 @@ export const useWalletStore = create<WalletStore>()((set, get) => ({
   resetWallet: () => {
     _provider = null;
     _signer = null;
+    _switchInProgress = false;
     // Invalidate all cached RPC data on disconnect.
     invalidateCache();
     // Clear persisted connection.

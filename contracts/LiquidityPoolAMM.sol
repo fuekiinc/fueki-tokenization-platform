@@ -303,8 +303,7 @@ contract LiquidityPoolAMM {
             (bool sent,) = payable(req.recipient).call{value: req.amount}("");
             if (!sent) revert TransferFailed();
         } else {
-            bool ok = IERC20(req.token).transfer(req.recipient, req.amount);
-            if (!ok) revert TransferFailed();
+            _safeTransfer(req.token, req.recipient, req.amount);
         }
 
         emit EmergencyWithdrawExecuted(requestId);
@@ -505,11 +504,11 @@ contract LiquidityPoolAMM {
         if (token0 == ETH_ADDRESS) {
             amount0 = amountETH;
             amount1 = amountToken;
-            _transferTokenIn(token1, msg.sender, amount1);
+            amount1 = _safeTransferIn(token1, msg.sender, amount1);
         } else {
             amount0 = amountToken;
             amount1 = amountETH;
-            _transferTokenIn(token0, msg.sender, amount0);
+            amount0 = _safeTransferIn(token0, msg.sender, amount0);
         }
 
         liquidity = _mintLiquidity(poolId, pool, amount0, amount1);
@@ -980,13 +979,37 @@ contract LiquidityPoolAMM {
     //  Internal: Token transfers
     // ---------------------------------------------------------------
 
+    // ---------------------------------------------------------------
+    //  Internal: SafeERC20 helpers (handles tokens like USDT that
+    //  don't return bool from transfer/transferFrom)
+    // ---------------------------------------------------------------
+
+    function _safeTransfer(address token, address to, uint256 amount) private {
+        (bool success, bytes memory returndata) = token.call(
+            abi.encodeWithSelector(IERC20(token).transfer.selector, to, amount)
+        );
+        if (!success || (returndata.length > 0 && !abi.decode(returndata, (bool)))) {
+            revert TransferFailed();
+        }
+    }
+
+    function _safeTransferFrom(address token, address from, address to, uint256 amount) private {
+        (bool success, bytes memory returndata) = token.call(
+            abi.encodeWithSelector(IERC20(token).transferFrom.selector, from, to, amount)
+        );
+        if (!success || (returndata.length > 0 && !abi.decode(returndata, (bool)))) {
+            revert TransferFailed();
+        }
+    }
+
+    // ---------------------------------------------------------------
+
     function _transferTokenIn(address token, address from, uint256 amount) private {
         if (token == ETH_ADDRESS) {
             // ETH already received via msg.value -- no-op
             return;
         }
-        bool ok = IERC20(token).transferFrom(from, address(this), amount);
-        if (!ok) revert TransferFailed();
+        _safeTransferFrom(token, from, address(this), amount);
     }
 
     /**
@@ -995,8 +1018,7 @@ contract LiquidityPoolAMM {
      */
     function _safeTransferIn(address token, address from, uint256 amount) private returns (uint256 received) {
         uint256 balBefore = IERC20(token).balanceOf(address(this));
-        bool ok = IERC20(token).transferFrom(from, address(this), amount);
-        if (!ok) revert TransferFailed();
+        _safeTransferFrom(token, from, address(this), amount);
         received = IERC20(token).balanceOf(address(this)) - balBefore;
         if (received == 0) revert ZeroAmount();
     }
@@ -1007,8 +1029,7 @@ contract LiquidityPoolAMM {
             if (!sent) revert TransferFailed();
             return;
         }
-        bool ok = IERC20(token).transfer(to, amount);
-        if (!ok) revert TransferFailed();
+        _safeTransfer(token, to, amount);
     }
 
     /**
@@ -1020,8 +1041,7 @@ contract LiquidityPoolAMM {
             ethBalances[to] += amount;
             return;
         }
-        bool ok = IERC20(token).transfer(to, amount);
-        if (!ok) revert TransferFailed();
+        _safeTransfer(token, to, amount);
     }
 
     // ---------------------------------------------------------------
@@ -1056,5 +1076,9 @@ contract LiquidityPoolAMM {
     //  Receive ETH
     // ---------------------------------------------------------------
 
-    receive() external payable {}
+    /// @dev Only accept ETH from payable functions (addLiquidityETH, swap).
+    /// Direct ETH sends are rejected to prevent fund lockup.
+    receive() external payable {
+        revert("Direct ETH not accepted");
+    }
 }

@@ -19,12 +19,22 @@ export function normalizeKycStatus(raw: unknown): KYCStatus {
   if (VALID_KYC_STATUS_SET.has(value as KYCStatus)) {
     return value as KYCStatus;
   }
-  if (value.includes('approve')) return 'approved';
-  if (value.includes('verif')) return 'approved';
-  if (value.includes('complete')) return 'approved';
-  if (value.includes('active')) return 'approved';
-  if (value.includes('reject')) return 'rejected';
-  if (value.includes('pend')) return 'pending';
-  if (value.includes('submit')) return 'not_submitted';
-  return 'not_submitted';
+  // Use exact-match aliases only — substring matching caused privilege
+  // escalation (e.g. "unverified" matched "verif" → "approved").
+  const ALIAS_MAP: Record<string, KYCStatus> = {
+    verified: 'approved',
+    completed: 'approved',
+    active: 'approved',
+    denied: 'rejected',
+    declined: 'rejected',
+    failed: 'rejected',
+    in_review: 'pending',
+    under_review: 'pending',
+    processing: 'pending',
+    submitted: 'pending',
+    unverified: 'not_submitted',
+    incomplete: 'not_submitted',
+    not_started: 'not_submitted',
+  };
+  return ALIAS_MAP[value] ?? 'not_submitted';
 }

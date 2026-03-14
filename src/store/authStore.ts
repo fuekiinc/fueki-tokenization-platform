@@ -80,7 +80,7 @@ function normalizeUser(user: User | null | undefined): User {
 // ---------------------------------------------------------------------------
 
 let _initPromise: Promise<void> | null = null;
-const AUTH_BOOTSTRAP_TIMEOUT_MS = 3500;
+const AUTH_BOOTSTRAP_TIMEOUT_MS = 10_000;
 
 async function withAuthBootstrapTimeout<T>(promise: Promise<T>, operation: string): Promise<T> {
   return Promise.race([

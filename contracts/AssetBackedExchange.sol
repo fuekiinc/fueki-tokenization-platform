@@ -298,8 +298,7 @@ contract AssetBackedExchange {
             (bool sent,) = payable(req.recipient).call{value: req.amount}("");
             if (!sent) revert TransferFailed();
         } else {
-            bool ok = IERC20(req.token).transfer(req.recipient, req.amount);
-            if (!ok) revert TransferFailed();
+            _safeTransfer(IERC20(req.token), req.recipient, req.amount);
         }
 
         emit EmergencyWithdrawExecuted(requestId);
@@ -346,8 +345,7 @@ contract AssetBackedExchange {
         if (deadline != 0 && deadline <= block.timestamp) revert OrderExpired();
 
         // Transfer sell tokens to this contract
-        bool ok = IERC20(tokenSell).transferFrom(msg.sender, address(this), amountSell);
-        if (!ok) revert TransferFailed();
+        _safeTransferFrom(IERC20(tokenSell), msg.sender, address(this), amountSell);
 
         orderId = _createOrder(msg.sender, tokenSell, tokenBuy, amountSell, amountBuy, deadline);
     }
@@ -434,13 +432,11 @@ contract AssetBackedExchange {
 
         // --- External calls (after all state updates) ---
         // Taker sends buy tokens to maker
-        bool ok = IERC20(order.tokenBuy).transferFrom(msg.sender, order.maker, fillAmountBuy);
-        if (!ok) revert TransferFailed();
+        _safeTransferFrom(IERC20(order.tokenBuy), msg.sender, order.maker, fillAmountBuy);
 
         // Taker receives sell tokens from escrow (ERC-20 only; ETH credited above)
         if (order.tokenSell != ETH_ADDRESS) {
-            ok = IERC20(order.tokenSell).transfer(msg.sender, fillAmountSell);
-            if (!ok) revert TransferFailed();
+            _safeTransfer(IERC20(order.tokenSell), msg.sender, fillAmountSell);
         }
 
         emit OrderFilled(orderId, msg.sender, fillAmountSell, fillAmountBuy);
@@ -478,8 +474,7 @@ contract AssetBackedExchange {
 
         // --- External calls (after all state updates) ---
         // Send sell tokens to taker
-        bool ok = IERC20(order.tokenSell).transfer(msg.sender, fillAmountSell);
-        if (!ok) revert TransferFailed();
+        _safeTransfer(IERC20(order.tokenSell), msg.sender, fillAmountSell);
 
         emit OrderFilled(orderId, msg.sender, fillAmountSell, fillAmountBuy);
     }
@@ -509,8 +504,7 @@ contract AssetBackedExchange {
                 // Credit ETH balance for pull-based withdrawal
                 ethBalances[order.maker] += remaining;
             } else {
-                bool ok = IERC20(order.tokenSell).transfer(order.maker, remaining);
-                if (!ok) revert TransferFailed();
+                _safeTransfer(IERC20(order.tokenSell), order.maker, remaining);
             }
         }
 
@@ -634,6 +628,36 @@ contract AssetBackedExchange {
         if (order.cancelled) revert OrderNotActive();
         if (order.filledSell >= order.amountSell) revert OrderNotActive();
         if (order.deadline != 0 && block.timestamp > order.deadline) revert OrderExpired();
+    }
+
+    // ---------------------------------------------------------------
+    //  SafeERC20 helpers (inline — no OpenZeppelin dependency)
+    // ---------------------------------------------------------------
+
+    /**
+     * @dev Safe wrapper around ERC20 `transfer`. Handles tokens that do not
+     *      return a boolean (e.g. USDT, BNB) by checking returndata length.
+     */
+    function _safeTransfer(IERC20 token, address to, uint256 amount) private {
+        (bool success, bytes memory returndata) = address(token).call(
+            abi.encodeWithSelector(token.transfer.selector, to, amount)
+        );
+        if (!success || (returndata.length > 0 && !abi.decode(returndata, (bool)))) {
+            revert TransferFailed();
+        }
+    }
+
+    /**
+     * @dev Safe wrapper around ERC20 `transferFrom`. Handles tokens that do
+     *      not return a boolean by checking returndata length.
+     */
+    function _safeTransferFrom(IERC20 token, address from, address to, uint256 amount) private {
+        (bool success, bytes memory returndata) = address(token).call(
+            abi.encodeWithSelector(token.transferFrom.selector, from, to, amount)
+        );
+        if (!success || (returndata.length > 0 && !abi.decode(returndata, (bool)))) {
+            revert TransferFailed();
+        }
     }
 
     // ---------------------------------------------------------------
