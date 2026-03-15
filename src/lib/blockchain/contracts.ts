@@ -2597,6 +2597,28 @@ export class ContractService {
       }
     }
 
+    // Pre-populate EIP-1559 fee data from our own direct RPC endpoints
+    // (Alchemy/QuickNode) instead of letting ethers fetch it through the
+    // wallet's thirdweb proxy which may be rate-limited or return stale
+    // values. Add a 25% buffer to maxFeePerGas to absorb base-fee
+    // fluctuations between estimation and inclusion.
+    if (mergedOverrides.maxFeePerGas == null && mergedOverrides.gasPrice == null) {
+      try {
+        const feeData = await this.withReadProvider((p) => p.getFeeData());
+        if (feeData.maxFeePerGas != null) {
+          // 25% buffer prevents "maxFeePerGas less than block base fee"
+          // when base fee rises slightly between estimation and submission.
+          mergedOverrides.maxFeePerGas =
+            (feeData.maxFeePerGas * 125n) / 100n;
+          mergedOverrides.maxPriorityFeePerGas =
+            feeData.maxPriorityFeePerGas ?? 1_500_000_000n;
+        }
+      } catch (feeErr) {
+        // Non-fatal: the wallet will handle fee estimation as fallback.
+        logger.warn(`[executeWrite] ${method}: fee data fetch failed, deferring to wallet`, feeErr);
+      }
+    }
+
     let activeContract = contract;
 
     try {
