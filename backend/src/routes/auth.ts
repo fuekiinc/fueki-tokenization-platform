@@ -5,6 +5,7 @@ import { createSession, hashPassword, invalidateAllSessions, invalidateSession, 
 import { authenticate } from '../middleware/auth';
 import { config } from '../config';
 import { sendPasswordResetEmail } from '../services/email';
+import { decrypt } from '../services/encryption';
 import { prisma } from '../prisma';
 import { buildTokenLookupCandidates, hashToken } from '../services/tokenHash';
 
@@ -97,10 +98,21 @@ function mapUserResponse(
     demoActive: boolean;
     createdAt: Date;
     updatedAt: Date;
-    kycData?: { subscriptionPlan: string | null } | null;
+    kycData?: { subscriptionPlan: string | null; encryptedFirstName?: string } | null;
   },
 ) {
   const normalizedKycStatus = normalizeKycStatus(user.kycStatus);
+
+  // Decrypt first name from KYC data if available (only for approved users)
+  let firstName: string | undefined;
+  if (user.kycData?.encryptedFirstName) {
+    try {
+      firstName = decrypt(user.kycData.encryptedFirstName);
+    } catch {
+      // Decryption failed — omit rather than crash
+    }
+  }
+
   return {
     id: user.id,
     email: user.email,
@@ -109,6 +121,7 @@ function mapUserResponse(
     kycStatus: normalizedKycStatus,
     helpLevel: user.helpLevel,
     subscriptionPlan: user.kycData?.subscriptionPlan ?? null,
+    firstName,
     demoUsed: user.demoUsed,
     demoActive: user.demoActive,
     createdAt: user.createdAt.toISOString(),
@@ -228,6 +241,7 @@ router.post('/login', async (req, res) => {
         kycData: {
           select: {
             subscriptionPlan: true,
+            encryptedFirstName: true,
           },
         },
       },
@@ -309,6 +323,7 @@ router.get('/me', authenticate, async (req, res) => {
         kycData: {
           select: {
             subscriptionPlan: true,
+            encryptedFirstName: true,
           },
         },
       },
@@ -341,6 +356,7 @@ router.put('/preferences', authenticate, async (req, res) => {
         kycData: {
           select: {
             subscriptionPlan: true,
+            encryptedFirstName: true,
           },
         },
       },

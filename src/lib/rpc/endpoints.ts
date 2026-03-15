@@ -234,6 +234,7 @@ const RETRYABLE_RPC_ERROR_PATTERNS = [
   /failed to fetch|networkerror|network request failed/i,
   /econnreset|econnrefused|ehostunreach|enotfound/i,
   /socket hang up|fetch failed|upstream/i,
+  /max fee per gas less than block base fee/i,
 ];
 
 export function isRetryableRpcError(error: unknown): boolean {

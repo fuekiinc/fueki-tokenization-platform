@@ -159,12 +159,9 @@ describe('POST /api/kyc/upload-document', () => {
   });
 
   it('returns upload-specific 400 errors for multer file-filter failures', async () => {
-    mocks.uploadFields.mockReturnValue(
-      (_req: Record<string, unknown>, _res: Record<string, unknown>, cb: (err?: unknown) => void) => (
-        cb(new Error('Only JPG, PNG, PDF, MP4, MOV, and WEBM files are allowed'))
-      ),
-    );
-    const req = createMockReq();
+    const req = createMockReq({
+      __uploadControl: { error: 'filter' as const },
+    });
     const res = createMockRes();
 
     await invokeHandler(uploadMiddleware, req, res);
@@ -200,12 +197,9 @@ describe('POST /api/kyc/upload-document', () => {
   });
 
   it('returns a specific error when a KYC file exceeds the configured upload size', async () => {
-    mocks.uploadFields.mockReturnValue(
-      (_req: Record<string, unknown>, _res: Record<string, unknown>, cb: (err?: unknown) => void) => (
-        cb(new multer.MulterError('LIMIT_FILE_SIZE', 'liveVideo'))
-      ),
-    );
-    const req = createMockReq();
+    const req = createMockReq({
+      __uploadControl: { error: 'limit' as const },
+    });
     const res = createMockRes();
 
     await invokeHandler(uploadMiddleware, req, res);

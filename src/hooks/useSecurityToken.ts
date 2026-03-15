@@ -134,33 +134,60 @@ async function executeWrite(
   // Pre-estimate gas via a healthy read RPC to avoid depending on the
   // wallet's potentially broken/rate-limited thirdweb RPC.
   const mergedOverrides: ethers.Overrides = { ...(overrides ?? {}) };
-  if (mergedOverrides.gasLimit == null) {
-    const chainId = useWalletStore.getState().wallet.chainId;
-    if (chainId) {
-      try {
-        const healthyRpc = await findHealthyEndpoint(chainId, 3000);
-        if (healthyRpc) {
-          const signer = contract.runner as ethers.Signer | null;
-          const signerAddress = signer ? await signer.getAddress() : undefined;
-          const populated = await methodFn.populateTransaction(...args, overrides ?? {});
-          const readProvider = new ethers.JsonRpcProvider(healthyRpc, chainId);
-          try {
-            const gasEst = await readProvider.estimateGas({
-              from: signerAddress,
-              to: typeof populated.to === 'string' ? populated.to : undefined,
-              data: populated.data,
-              value: populated.value,
-            });
-            mergedOverrides.gasLimit = (gasEst * 125n) / 100n;
-          } finally {
-            readProvider.destroy();
-          }
+  const chainId = useWalletStore.getState().wallet.chainId;
+
+  if (mergedOverrides.gasLimit == null && chainId) {
+    try {
+      const healthyRpc = await findHealthyEndpoint(chainId, 3000);
+      if (healthyRpc) {
+        const signer = contract.runner as ethers.Signer | null;
+        const signerAddress = signer ? await signer.getAddress() : undefined;
+        const populated = await methodFn.populateTransaction(...args, overrides ?? {});
+        const readProvider = new ethers.JsonRpcProvider(healthyRpc, chainId);
+        try {
+          const gasEst = await readProvider.estimateGas({
+            from: signerAddress,
+            to: typeof populated.to === 'string' ? populated.to : undefined,
+            data: populated.data,
+            value: populated.value,
+          });
+          mergedOverrides.gasLimit = (gasEst * 125n) / 100n;
+        } finally {
+          readProvider.destroy();
         }
-      } catch {
-        // Non-fatal — wallet will estimate gas itself.
       }
+    } catch {
+      // Non-fatal — wallet will estimate gas itself.
     }
   }
+
+  // Pre-populate EIP-1559 fee data from our own healthy RPC endpoints
+  // instead of relying on the wallet's potentially stale thirdweb proxy.
+  // 50% buffer prevents "maxFeePerGas less than block base fee" on L2s.
+  const populateFeeOverrides = async () => {
+    if (mergedOverrides.gasPrice != null || !chainId) return;
+    try {
+      const healthyRpc = await findHealthyEndpoint(chainId, 3000);
+      if (healthyRpc) {
+        const readProvider = new ethers.JsonRpcProvider(healthyRpc, chainId);
+        try {
+          const feeData = await readProvider.getFeeData();
+          if (feeData.maxFeePerGas != null) {
+            mergedOverrides.maxFeePerGas =
+              (feeData.maxFeePerGas * 150n) / 100n;
+            mergedOverrides.maxPriorityFeePerGas =
+              feeData.maxPriorityFeePerGas ?? 1_500_000_000n;
+          }
+        } finally {
+          readProvider.destroy();
+        }
+      }
+    } catch {
+      // Non-fatal: the wallet will handle fee estimation as fallback.
+    }
+  };
+
+  await populateFeeOverrides();
 
   let activeContract = contract;
   return sendTransactionWithRetry(
@@ -171,7 +198,13 @@ async function executeWrite(
       ) as Promise<ethers.ContractTransactionResponse>,
     {
       label: `useSecurityToken.${method}`,
-      onRetry: async () => {
+      onRetry: async (_attempt, error) => {
+        // Re-fetch fee data on base-fee errors so the retry uses fresh pricing.
+        const errMsg = error instanceof Error ? error.message : String(error);
+        if (/max fee per gas less than block base fee/i.test(errMsg)) {
+          await populateFeeOverrides();
+        }
+
         const provider = getProvider();
         if (!provider) return;
         try {

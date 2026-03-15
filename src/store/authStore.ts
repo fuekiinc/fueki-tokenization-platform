@@ -198,16 +198,28 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
 // ---- logout --------------------------------------------------------------
 logout: async () => {
-  const inMemoryToken = getAccessToken();
-  const shouldCallServerLogout =
-    !!inMemoryToken && !isJwtExpired(inMemoryToken, 0);
+  // Check both the in-memory session and the store state for the token.
+  const state = get() as unknown as Record<string, unknown>;
+  let activeToken = getAccessToken()
+    ?? (state.tokens as { accessToken?: string } | undefined)?.accessToken
+    ?? null;
 
   const user = get().user;
   if (user?.demoActive) {
     try { await authApi.endDemo(); } catch { /* best-effort */ }
   }
-  if (shouldCallServerLogout) {
-    authApi.logout().catch(() => {});
+
+  // If the token is expired, attempt a single refresh so the server-side
+  // session can be properly invalidated with a valid bearer.
+  if (activeToken && isJwtExpired(activeToken, 0)) {
+    try {
+      const refreshed = await authApi.refreshToken({ skipAuthRefresh: true });
+      activeToken = refreshed.accessToken;
+    } catch { /* best-effort — proceed with logout anyway */ }
+  }
+
+  if (activeToken) {
+    authApi.logout(activeToken).catch(() => {});
   }
   get().clearAuth();
 },

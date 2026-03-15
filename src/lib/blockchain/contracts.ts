@@ -2600,16 +2600,18 @@ export class ContractService {
     // Pre-populate EIP-1559 fee data from our own direct RPC endpoints
     // (Alchemy/QuickNode) instead of letting ethers fetch it through the
     // wallet's thirdweb proxy which may be rate-limited or return stale
-    // values. Add a 25% buffer to maxFeePerGas to absorb base-fee
-    // fluctuations between estimation and inclusion.
-    if (mergedOverrides.maxFeePerGas == null && mergedOverrides.gasPrice == null) {
+    // values. Add a 50% buffer to maxFeePerGas to absorb base-fee
+    // fluctuations between estimation and inclusion — especially on L2s
+    // like Arbitrum where base fees can spike between blocks.
+    const populateFeeOverrides = async () => {
+      if (mergedOverrides.gasPrice != null) return;
       try {
         const feeData = await this.withReadProvider((p) => p.getFeeData());
         if (feeData.maxFeePerGas != null) {
-          // 25% buffer prevents "maxFeePerGas less than block base fee"
-          // when base fee rises slightly between estimation and submission.
+          // 50% buffer prevents "maxFeePerGas less than block base fee"
+          // when base fee rises between estimation and submission.
           mergedOverrides.maxFeePerGas =
-            (feeData.maxFeePerGas * 125n) / 100n;
+            (feeData.maxFeePerGas * 150n) / 100n;
           mergedOverrides.maxPriorityFeePerGas =
             feeData.maxPriorityFeePerGas ?? 1_500_000_000n;
         }
@@ -2617,7 +2619,9 @@ export class ContractService {
         // Non-fatal: the wallet will handle fee estimation as fallback.
         logger.warn(`[executeWrite] ${method}: fee data fetch failed, deferring to wallet`, feeErr);
       }
-    }
+    };
+
+    await populateFeeOverrides();
 
     let activeContract = contract;
 
@@ -2633,6 +2637,12 @@ export class ContractService {
           onRetry: async (_attempt, error) => {
             const errMsg = error instanceof Error ? error.message : String(error);
             const isRateLimit = /429|too many requests|rate.?limit/i.test(errMsg);
+            const isBaseFeeError = /max fee per gas less than block base fee/i.test(errMsg);
+
+            // Re-fetch fee data on base-fee errors so the retry uses fresh pricing.
+            if (isBaseFeeError) {
+              await populateFeeOverrides();
+            }
 
             // For transport corruption/stale wallet RPC configs, try repairing
             // chain RPC metadata. Skip this on pure rate-limit errors.
