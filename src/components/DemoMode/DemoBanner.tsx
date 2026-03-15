@@ -74,10 +74,10 @@ export default function DemoBanner() {
         <div className="flex items-center gap-2 text-sm font-medium">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span className="hidden sm:inline">
-            You are in Demo Mode on Holesky Testnet. This is a one-time preview session.
+            You are in Demo Mode on Arbitrum Sepolia Testnet. This is a one-time preview session.
           </span>
           <span className="sm:hidden">
-            Demo Mode &mdash; Holesky Testnet
+            Demo Mode &mdash; Arbitrum Sepolia Testnet
           </span>
         </div>
 

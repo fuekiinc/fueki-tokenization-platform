@@ -1,7 +1,7 @@
 /**
  * DemoWalletProvider tests.
  *
- * Verifies demo mode automatically wires the designated Holesky demo wallet
+ * Verifies demo mode automatically wires the designated Arbitrum Sepolia demo wallet
  * without requiring a manual wallet connect flow.
  */
 import React from 'react';
@@ -23,7 +23,7 @@ const walletActions = {
 };
 
 const findHealthyEndpointMock = vi.fn();
-const getOrderedRpcEndpointsMock = vi.fn(() => ['https://fallback.holesky.test']);
+const getOrderedRpcEndpointsMock = vi.fn(() => ['https://fallback.arb-sepolia.test']);
 
 vi.mock('../../../src/store/authStore', () => ({
   useAuthStore: (selector: (state: typeof mockAuthState) => unknown) =>
@@ -79,7 +79,7 @@ describe('DemoWalletProvider', () => {
     vi.clearAllMocks();
     useDemoWalletStore.getState().reset();
     mockAuthState.user = { demoActive: true };
-    findHealthyEndpointMock.mockResolvedValue('https://healthy.holesky.test');
+    findHealthyEndpointMock.mockResolvedValue('https://healthy.arb-sepolia.test');
     (window as Window & { __FUEKI_RUNTIME_ENV__?: Record<string, string> }).__FUEKI_RUNTIME_ENV__ = {
       VITE_DEMO_WALLET_KEY: '0x' + '11'.repeat(32),
     };
@@ -90,14 +90,14 @@ describe('DemoWalletProvider', () => {
     (window as Window & { __FUEKI_RUNTIME_ENV__?: Record<string, string> }).__FUEKI_RUNTIME_ENV__ = {};
   });
 
-  it('auto-activates the configured demo wallet on Holesky when demo mode is active', async () => {
+  it('auto-activates the configured demo wallet on Arbitrum Sepolia when demo mode is active', async () => {
     render(<DemoWalletProvider />);
 
     await waitFor(() => {
       expect(walletActions.setWallet).toHaveBeenCalledWith(
         expect.objectContaining({
           address: '0x00000000000000000000000000000000000000D1',
-          chainId: 17000,
+          chainId: 421614,
           isConnected: true,
           providerReady: true,
           signerReady: true,

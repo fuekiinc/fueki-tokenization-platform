@@ -399,7 +399,7 @@ async function attemptRawProviderChainSwitch(
     rpcUrls: rpcUrlsForChainParams,
     ...(network?.blockExplorer ? { blockExplorerUrls: [network.blockExplorer] } : {}),
   };
-  const shouldRefreshChainConfig = targetChainId === 17000;
+  const shouldRefreshChainConfig = targetChainId === 421614;
 
   let lastError: unknown = null;
 

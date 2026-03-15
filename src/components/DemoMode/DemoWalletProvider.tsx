@@ -7,9 +7,9 @@ import logger from '../../lib/logger';
 import { findHealthyEndpoint, getOrderedRpcEndpoints } from '../../lib/rpc/endpoints';
 
 /**
- * HOLESKY_CHAIN_ID is the chain ID for the Holesky testnet.
+ * DEMO_CHAIN_ID is the chain ID for the demo testnet (Arbitrum Sepolia).
  */
-const HOLESKY_CHAIN_ID = 17000;
+const DEMO_CHAIN_ID = 421614;
 
 type RuntimeEnvWindow = Window & {
   __FUEKI_RUNTIME_ENV__?: Record<string, string>;
@@ -71,11 +71,11 @@ export const useDemoWalletStore = create<DemoWalletState & DemoWalletActions>()(
  * DemoWalletProvider
  *
  * When the user is in demo mode, this component:
- * 1. Reads the VITE_DEMO_WALLET_KEY env var (a Holesky private key)
- * 2. Creates an ethers.Wallet + JsonRpcProvider for Holesky
+ * 1. Reads the VITE_DEMO_WALLET_KEY env var (a Arbitrum Sepolia private key)
+ * 2. Creates an ethers.Wallet + JsonRpcProvider for Arbitrum Sepolia
  * 3. Injects the wallet address and chain ID into the wallet store
  *
- * The demo wallet is a shared platform-owned Holesky wallet pre-funded
+ * The demo wallet is a shared platform-owned Arbitrum Sepolia wallet pre-funded
  * with testnet ETH. Since it only holds testnet assets, exposing the
  * private key as a Vite env var (client-side) is acceptable.
  *
@@ -137,15 +137,15 @@ export default function DemoWalletProvider() {
         if (cancelled) return;
 
         const healthyRpc =
-          (await findHealthyEndpoint(HOLESKY_CHAIN_ID)) ??
-          getOrderedRpcEndpoints(HOLESKY_CHAIN_ID)[0];
+          (await findHealthyEndpoint(DEMO_CHAIN_ID)) ??
+          getOrderedRpcEndpoints(DEMO_CHAIN_ID)[0];
         if (!healthyRpc) {
-          throw new Error('No healthy Holesky RPC endpoint is available for demo mode.');
+          throw new Error('No healthy Arbitrum Sepolia RPC endpoint is available for demo mode.');
         }
 
         if (cancelled) return;
 
-        const provider = new JsonRpcProvider(healthyRpc, HOLESKY_CHAIN_ID);
+        const provider = new JsonRpcProvider(healthyRpc, DEMO_CHAIN_ID);
         const wallet = new Wallet(demoKey, provider);
         const address = await wallet.getAddress();
 
@@ -162,14 +162,14 @@ export default function DemoWalletProvider() {
 
         if (cancelled) return;
 
-        // Store the demo wallet address/signer and lock chain to Holesky.
+        // Store the demo wallet address/signer and lock chain to Arbitrum Sepolia.
         // Casts are intentional: the global wallet store expects browser-wallet
         // types but demo mode uses a direct JsonRpcProvider + Wallet signer.
         setProvider(provider as unknown as BrowserProvider);
         setSigner(wallet as unknown as JsonRpcSigner);
         setWallet({
           address,
-          chainId: HOLESKY_CHAIN_ID,
+          chainId: DEMO_CHAIN_ID,
           isConnected: true,
           isConnecting: false,
           connectionStatus: 'connected',
