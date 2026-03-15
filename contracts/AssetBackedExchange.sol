@@ -667,5 +667,7 @@ contract AssetBackedExchange {
     /// @dev Only accept ETH from explicit function calls (createOrderSellETH,
     ///      fillOrderWithETH, withdrawEth). Direct sends are rejected unless
     ///      they come during an active reentrancy-guarded call.
-    receive() external payable {}
+    receive() external payable {
+        revert("Direct ETH not accepted");
+    }
 }

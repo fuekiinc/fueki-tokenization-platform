@@ -109,6 +109,19 @@ function getEnvValue(name: string): string {
     }
   }
 
+  // Cloud Run injects VITE_* env vars at container startup into
+  // window.__FUEKI_RUNTIME_ENV__ (see Dockerfile CMD). Check this before
+  // the Vite build-time fallback so operator-configured endpoints always win.
+  if (typeof window !== 'undefined') {
+    const runtimeEnv = (window as Window & {
+      __FUEKI_RUNTIME_ENV__?: Record<string, string>;
+    }).__FUEKI_RUNTIME_ENV__;
+    const runtimeRaw = runtimeEnv?.[name];
+    if (typeof runtimeRaw === 'string' && runtimeRaw.trim().length > 0) {
+      return runtimeRaw.trim();
+    }
+  }
+
   const env = (import.meta as ImportMeta & {
     env?: Record<string, unknown>;
   }).env;
