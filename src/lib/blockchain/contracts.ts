@@ -2623,6 +2623,23 @@ export class ContractService {
 
     await populateFeeOverrides();
 
+    // Pre-populate the nonce from our healthy read RPC so ethers doesn't
+    // need to call eth_getTransactionCount through the wallet's potentially
+    // rate-limited thirdweb proxy. Combined with gasLimit and fee overrides,
+    // this minimises the number of wallet-proxy RPC calls to just
+    // eth_sendTransaction itself.
+    if (mergedOverrides.nonce == null) {
+      try {
+        const signerAddress = await (await this.getSigner()).getAddress();
+        const nonce = await this.withReadProvider((p) =>
+          p.getTransactionCount(signerAddress, 'pending'),
+        );
+        mergedOverrides.nonce = nonce;
+      } catch {
+        // Non-fatal: ethers will fetch nonce via the wallet provider.
+      }
+    }
+
     let activeContract = contract;
 
     try {
@@ -2636,7 +2653,6 @@ export class ContractService {
           label: `ContractService.${method}`,
           onRetry: async (_attempt, error) => {
             const errMsg = error instanceof Error ? error.message : String(error);
-            const isRateLimit = /429|too many requests|rate.?limit/i.test(errMsg);
             const isBaseFeeError = /max fee per gas less than block base fee/i.test(errMsg);
 
             // Re-fetch fee data on base-fee errors so the retry uses fresh pricing.
@@ -2644,10 +2660,20 @@ export class ContractService {
               await populateFeeOverrides();
             }
 
-            // For transport corruption/stale wallet RPC configs, try repairing
-            // chain RPC metadata. Skip this on pure rate-limit errors.
-            if (!isRateLimit) {
-              await this.tryRecoverWalletRpcTransport().catch(() => {});
+            // On rate-limit errors, reconfigure the wallet's chain RPC to
+            // use our paid Alchemy endpoints instead of the rate-limited
+            // thirdweb proxy. Also recover on non-rate-limit transport errors.
+            await this.tryRecoverWalletRpcTransport().catch(() => {});
+
+            // Re-fetch nonce via our healthy read RPC for the retry.
+            try {
+              const signerAddress = await (await this.getSigner()).getAddress();
+              const freshNonce = await this.withReadProvider((p) =>
+                p.getTransactionCount(signerAddress, 'pending'),
+              );
+              mergedOverrides.nonce = freshNonce;
+            } catch {
+              // Non-fatal.
             }
 
             const freshSigner = await this.getSigner();

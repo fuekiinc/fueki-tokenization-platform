@@ -982,8 +982,13 @@ router.post('/action/:token', async (req, res) => {
       return;
     }
 
-    const actionToken = await prisma.mintApprovalActionToken.findUnique({
-      where: { token },
+    const tokenCandidates = buildTokenLookupCandidates(token);
+    const actionToken = await prisma.mintApprovalActionToken.findFirst({
+      where: {
+        OR: tokenCandidates.map((candidate) => ({
+          token: candidate,
+        })),
+      },
       include: { request: true },
     });
 

@@ -32,6 +32,7 @@ import { useContractDeployerStore } from '../../store/contractDeployerStore';
 import { validateConstructorParams } from '../../lib/contractDeployer/validation';
 import { deployTemplate, waitForDeployment } from '../../lib/contractDeployer/deploy';
 import { estimateDeployGas } from '../../lib/contractDeployer/gasEstimate';
+import { saveDeploymentToBackend } from '../../lib/api/deployments';
 import ConstructorForm from './ConstructorForm';
 import DeployReview from './DeployReview';
 import { DeploySuccess } from './DeploySuccess';
@@ -304,8 +305,11 @@ export function DeployWizard({ template }: DeployWizardProps) {
         deployedAt: new Date().toISOString(),
       };
 
-      // Save to history
+      // Save to localStorage history
       addDeployment(record);
+
+      // Persist to backend (fire-and-forget — localStorage is the immediate store)
+      saveDeploymentToBackend(record);
 
       // Update store with result
       setDeploymentResult({

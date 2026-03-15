@@ -189,6 +189,32 @@ async function executeWrite(
 
   await populateFeeOverrides();
 
+  // Pre-populate nonce from our healthy read RPC so ethers doesn't
+  // need to call eth_getTransactionCount through the wallet's
+  // potentially rate-limited thirdweb proxy.
+  if (mergedOverrides.nonce == null && chainId) {
+    try {
+      const signer = contract.runner as ethers.Signer | null;
+      const signerAddress = signer ? await signer.getAddress() : undefined;
+      if (signerAddress) {
+        const healthyRpc = await findHealthyEndpoint(chainId, 3000);
+        if (healthyRpc) {
+          const readProvider = new ethers.JsonRpcProvider(healthyRpc, chainId);
+          try {
+            mergedOverrides.nonce = await readProvider.getTransactionCount(
+              signerAddress,
+              'pending',
+            );
+          } finally {
+            readProvider.destroy();
+          }
+        }
+      }
+    } catch {
+      // Non-fatal: ethers will fetch nonce via the wallet provider.
+    }
+  }
+
   let activeContract = contract;
   return sendTransactionWithRetry(
     () =>
@@ -203,6 +229,25 @@ async function executeWrite(
         const errMsg = error instanceof Error ? error.message : String(error);
         if (/max fee per gas less than block base fee/i.test(errMsg)) {
           await populateFeeOverrides();
+        }
+
+        // Re-fetch nonce for the retry attempt.
+        if (chainId) {
+          try {
+            const signer = activeContract.runner as ethers.Signer | null;
+            const addr = signer ? await signer.getAddress() : undefined;
+            if (addr) {
+              const healthyRpc = await findHealthyEndpoint(chainId, 3000);
+              if (healthyRpc) {
+                const rp = new ethers.JsonRpcProvider(healthyRpc, chainId);
+                try {
+                  mergedOverrides.nonce = await rp.getTransactionCount(addr, 'pending');
+                } finally {
+                  rp.destroy();
+                }
+              }
+            }
+          } catch { /* non-fatal */ }
         }
 
         const provider = getProvider();

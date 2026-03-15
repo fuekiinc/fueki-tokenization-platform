@@ -9,10 +9,12 @@ const mocks = vi.hoisted(() => ({
     },
     adminActionToken: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       updateMany: vi.fn(),
     },
     mintApprovalActionToken: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       updateMany: vi.fn(),
     },
     mintApprovalRequest: {
@@ -20,6 +22,7 @@ const mocks = vi.hoisted(() => ({
     },
     securityTokenApprovalActionToken: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       updateMany: vi.fn(),
     },
     securityTokenApprovalRequest: {
@@ -211,7 +214,7 @@ describe('scanner-safe approval links', () => {
       kycStatus: 'pending',
     };
 
-    mocks.prisma.adminActionToken.findUnique
+    mocks.prisma.adminActionToken.findFirst
       .mockResolvedValueOnce(actionToken)
       .mockResolvedValueOnce(actionToken);
     mocks.prisma.user.findUnique
@@ -268,7 +271,7 @@ describe('scanner-safe approval links', () => {
       kycStatus: 'pending',
     };
 
-    mocks.prisma.adminActionToken.findUnique
+    mocks.prisma.adminActionToken.findFirst
       .mockResolvedValueOnce(actionToken)
       .mockResolvedValueOnce(actionToken);
     mocks.prisma.user.findUnique.mockResolvedValueOnce(user);
@@ -320,7 +323,7 @@ describe('scanner-safe approval links', () => {
       },
     };
 
-    mocks.prisma.mintApprovalActionToken.findUnique
+    mocks.prisma.mintApprovalActionToken.findFirst
       .mockResolvedValueOnce(actionToken)
       .mockResolvedValueOnce(actionToken);
 
@@ -386,7 +389,7 @@ describe('scanner-safe approval links', () => {
       },
     };
 
-    mocks.prisma.securityTokenApprovalActionToken.findUnique
+    mocks.prisma.securityTokenApprovalActionToken.findFirst
       .mockResolvedValueOnce(actionToken)
       .mockResolvedValueOnce(actionToken);
 

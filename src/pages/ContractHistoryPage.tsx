@@ -1,9 +1,10 @@
 /**
  * ContractHistoryPage -- page for `/contracts/history`.
  *
- * Displays all previously deployed smart contracts from localStorage.
- * Provides a page header with count badge, subtitle, a CTA link to
- * deploy more contracts, and the filterable DeploymentHistoryList.
+ * Displays all previously deployed smart contracts. The page merges records
+ * from localStorage (instant, offline-capable) with backend-persisted records
+ * (durable, survives browser data clears). Backend records that are missing
+ * from localStorage are back-filled so the two stores stay in sync.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -13,9 +14,51 @@ import { Plus, ScrollText } from 'lucide-react';
 import {
   loadDeployments,
   removeDeployment,
+  saveDeployment,
 } from '../lib/contractDeployer/deploymentHistory';
+import {
+  deleteDeploymentFromBackend,
+  fetchDeploymentsFromBackend,
+} from '../lib/api/deployments';
 import { DeploymentHistoryList } from '../components/ContractDeployer/DeploymentHistoryList';
 import type { DeploymentRecord } from '../types/contractDeployer';
+import logger from '../lib/logger';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Merge localStorage records with backend records. Backend records whose
+ * contractAddress+chainId combo is missing from localStorage are appended.
+ * The merged list is sorted newest-first by `deployedAt`.
+ */
+function mergeDeployments(
+  local: DeploymentRecord[],
+  remote: DeploymentRecord[],
+): DeploymentRecord[] {
+  const seenKeys = new Set(
+    local.map((d) => `${d.chainId}:${d.contractAddress.toLowerCase()}`),
+  );
+
+  const merged = [...local];
+  for (const r of remote) {
+    const key = `${r.chainId}:${r.contractAddress.toLowerCase()}`;
+    if (!seenKeys.has(key)) {
+      merged.push(r);
+      seenKeys.add(key);
+      // Back-fill into localStorage so future loads are instant
+      saveDeployment(r);
+    }
+  }
+
+  // Sort newest first
+  return merged.sort((a, b) => {
+    const da = new Date(a.deployedAt).getTime();
+    const db = new Date(b.deployedAt).getTime();
+    return db - da;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -24,14 +67,46 @@ import type { DeploymentRecord } from '../types/contractDeployer';
 export default function ContractHistoryPage() {
   const [deployments, setDeployments] = useState<DeploymentRecord[]>([]);
 
-  // Load deployment history from localStorage on mount
+  // Load deployment history from localStorage immediately, then merge with
+  // backend records (which may contain deployments from other devices or
+  // sessions where localStorage was cleared).
   useEffect(() => {
-    setDeployments(loadDeployments());
+    const localRecords = loadDeployments();
+    setDeployments(localRecords);
+
+    // Async fetch from backend and merge
+    fetchDeploymentsFromBackend({ limit: 100 })
+      .then((response) => {
+        const backendRecords: DeploymentRecord[] = response.deployments.map((d) => ({
+          id: d.id,
+          templateId: d.templateId,
+          templateName: d.templateName,
+          contractAddress: d.contractAddress,
+          deployerAddress: d.deployerAddress,
+          chainId: d.chainId,
+          txHash: d.txHash,
+          constructorArgs: d.constructorArgs,
+          abi: [],
+          blockNumber: d.blockNumber ?? undefined,
+          gasUsed: d.gasUsed ?? undefined,
+          deployedAt: d.deployedAt,
+        }));
+
+        // Re-read localStorage (may have changed since initial load)
+        const freshLocal = loadDeployments();
+        const merged = mergeDeployments(freshLocal, backendRecords);
+        setDeployments(merged);
+      })
+      .catch((err) => {
+        // Non-fatal: localStorage records are still displayed.
+        logger.warn('[ContractHistoryPage] Failed to fetch backend deployments:', err);
+      });
   }, []);
 
   // Delete a deployment record and update local state
   const handleDelete = useCallback((id: string) => {
     removeDeployment(id);
+    deleteDeploymentFromBackend(id);
     setDeployments((prev) => prev.filter((d) => d.id !== id));
   }, []);
 
