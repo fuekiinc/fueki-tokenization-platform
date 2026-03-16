@@ -1,57 +1,90 @@
 {
   "headers": [
     {
+      "source": "**",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+      ]
+    },
+    {
       "source": "**/index.html",
       "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
         {
-          "key": "Cache-Control",
-          "value": "no-cache, no-store, must-revalidate"
+          "key": "Link",
+          "value": "</assets/>; rel=preconnect, <https://fonts.googleapis.com>; rel=preconnect; crossorigin, <https://fonts.gstatic.com>; rel=preconnect; crossorigin"
         }
+      ]
+    },
+    {
+      "source": "**/runtime-env.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    },
+    {
+      "source": "**/assets/**/*.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" },
+        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" }
+      ]
+    },
+    {
+      "source": "**/assets/**/*.css",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" },
+        { "key": "Content-Type", "value": "text/css; charset=utf-8" }
       ]
     },
     {
       "source": "**/assets/**",
       "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        }
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]
     },
     {
       "source": "**/*.avif",
       "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        }
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "**/*.webp",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "**/*.png",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=604800" }
       ]
     },
     {
       "source": "**/*.jpg",
       "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=604800"
-        }
+        { "key": "Cache-Control", "value": "public, max-age=604800" }
       ]
     },
     {
       "source": "**/*.svg",
       "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        }
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]
     },
     {
       "source": "**/*.woff2",
       "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        }
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "**/*.ico",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=604800" }
       ]
     }
   ]

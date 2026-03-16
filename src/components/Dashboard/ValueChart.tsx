@@ -81,7 +81,7 @@ function buildDataPoints(
     const rawAmount = parseFloat(trade.amount);
     const amount = Number.isNaN(rawAmount) ? 0 : Math.abs(rawAmount);
 
-    if (trade.type === 'mint' || trade.type === 'exchange' || trade.type === 'swap-eth' || trade.type === 'swap-erc20') {
+    if (trade.type === 'mint' || trade.type === 'security-mint' || trade.type === 'exchange' || trade.type === 'swap-eth' || trade.type === 'swap-erc20') {
       runningValue += amount;
     } else if (trade.type === 'burn') {
       runningValue = Math.max(0, runningValue - amount);
@@ -183,13 +183,17 @@ export default function ValueChart({ tradeHistory, currentPortfolioValue = 0 }: 
     return buildHoldingsFallback(range, currentPortfolioValue);
   }, [tradeHistory, range, currentPortfolioValue]);
 
-  // Calculate change for the period
+  // Calculate change for the period — capped to ±9999% to avoid absurd
+  // display when the first data point is near-zero (e.g. a tiny swap
+  // followed by a large mint).
   const periodChange = useMemo(() => {
     if (dataPoints.length < 2) return null;
     const first = dataPoints[0]!.value;
     const last = dataPoints[dataPoints.length - 1]!.value;
     if (first === 0) return null;
-    return ((last - first) / first) * 100;
+    const raw = ((last - first) / first) * 100;
+    if (!Number.isFinite(raw)) return null;
+    return Math.max(-9999, Math.min(9999, raw));
   }, [dataPoints]);
 
   return (

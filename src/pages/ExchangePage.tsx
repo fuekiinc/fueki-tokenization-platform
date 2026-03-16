@@ -808,11 +808,13 @@ export default function ExchangePage() {
             gradientTo="to-indigo-500"
           >
             <div className="p-4">
-              <TradingViewChart
-                tokenSell={selectedSellToken ?? ''}
-                tokenBuy={selectedBuyToken ?? ''}
-                height={400}
-              />
+              <ComponentErrorBoundary fallback={<ErrorState message="Unable to render the trading chart." />}>
+                <TradingViewChart
+                  tokenSell={selectedSellToken ?? ''}
+                  tokenBuy={selectedBuyToken ?? ''}
+                  height={400}
+                />
+              </ComponentErrorBoundary>
             </div>
           </GlassCard>
         </div>

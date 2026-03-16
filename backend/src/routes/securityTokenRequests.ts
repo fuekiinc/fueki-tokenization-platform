@@ -7,9 +7,7 @@ import { authenticate } from '../middleware/auth';
 import { mintApprovalUpload } from '../middleware/upload';
 import { config } from '../config';
 import {
-  createConfirmationFormState,
   parseApprovalAction,
-  sendActionConfirmationPage,
   sendActionInfoPage,
   verifyConfirmationFormState,
 } from '../services/approvalActionFlow';
@@ -636,30 +634,49 @@ router.get('/action/:token', async (req, res) => {
       return;
     }
 
-    const confirmation = createConfirmationFormState({
-      token,
-      action,
-      scope: 'security-token',
-      expiresAt: actionToken.expiresAt,
-    });
+    // Apply action immediately on email link click — no intermediate confirmation page.
+    const desiredStatus: SecurityTokenRequestStatus =
+      action === 'approve' ? 'approved' : 'rejected';
 
-    sendActionConfirmationPage(res, {
-      title: action === 'approve' ? 'Confirm Deployment Approval' : 'Confirm Deployment Rejection',
+    await prisma.$transaction([
+      prisma.securityTokenApprovalActionToken.updateMany({
+        where: {
+          requestId: actionToken.requestId,
+          used: false,
+        },
+        data: { used: true },
+      }),
+      prisma.securityTokenApprovalRequest.update({
+        where: { id: actionToken.requestId },
+        data: {
+          status: desiredStatus,
+          reviewedAt: new Date(),
+          reviewNotes:
+            desiredStatus === 'approved'
+              ? 'Approved via banker email link.'
+              : 'Rejected via banker email link.',
+          approvedBy: config.securityTokenApproval.requestRecipient,
+        },
+      }),
+    ]);
+
+    sendActionInfoPage(res, {
+      title:
+        desiredStatus === 'approved'
+          ? 'Deployment Request Approved'
+          : 'Deployment Request Rejected',
       message:
-        'Review this security token deployment request below. Opening this page is safe; the request changes only after explicit confirmation.',
-      action,
-      formAction: `/api/security-token-requests/action/${encodeURIComponent(token)}`,
-      payload: confirmation.payload,
-      signature: confirmation.signature,
+        desiredStatus === 'approved'
+          ? 'The user can now proceed with security token deployment in the app.'
+          : 'The deployment request was rejected. The user must update details and resubmit.',
+      accent: desiredStatus === 'approved' ? '#059669' : '#dc2626',
       details: [
         { label: 'Request ID', value: actionToken.request.id },
         { label: 'Requester Email', value: actionToken.request.requesterEmail },
         { label: 'Token', value: `${actionToken.request.tokenName} (${actionToken.request.tokenSymbol})` },
         { label: 'Chain ID', value: String(actionToken.request.chainId) },
         { label: 'Initial Supply', value: actionToken.request.totalSupply },
-        { label: 'Current Status', value: actionToken.request.status },
-        { label: 'Requested Action', value: action === 'approve' ? 'Approve' : 'Reject' },
-        { label: 'Action Link Expires', value: actionToken.expiresAt.toUTCString() },
+        { label: 'Final Status', value: desiredStatus },
       ],
     });
   } catch (err) {
@@ -668,7 +685,7 @@ router.get('/action/:token', async (req, res) => {
       status: 500,
       title: 'Action Failed',
       message:
-        'An unexpected error occurred while loading this deployment action link.',
+        'An unexpected error occurred while processing this deployment action link.',
       accent: '#dc2626',
     });
   }

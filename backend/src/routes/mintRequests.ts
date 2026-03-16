@@ -7,9 +7,7 @@ import { authenticate } from '../middleware/auth';
 import { mintApprovalUpload } from '../middleware/upload';
 import { config } from '../config';
 import {
-  createConfirmationFormState,
   parseApprovalAction,
-  sendActionConfirmationPage,
   sendActionInfoPage,
   verifyConfirmationFormState,
 } from '../services/approvalActionFlow';
@@ -628,7 +626,7 @@ router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (r
       advisoryLockKeyForMintTxHash(normalizedTxHash);
     const finalized = await prisma.$transaction(async (tx) => {
       // Serialize finalize attempts for the same transaction hash across requests.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${advisoryLockKeyHigh}, ${advisoryLockKeyLow})`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${advisoryLockKeyHigh}::int, ${advisoryLockKeyLow}::int)`;
 
       const lockedRequest = await tx.mintApprovalRequest.findFirst({
         where: {
@@ -931,30 +929,49 @@ router.get('/action/:token', async (req, res) => {
       return;
     }
 
-    const confirmation = createConfirmationFormState({
-      token,
-      action,
-      scope: 'mint',
-      expiresAt: actionToken.expiresAt,
-    });
+    // Apply action immediately on email link click — no intermediate confirmation page.
+    const desiredStatus: MintRequestStatus =
+      action === 'approve' ? 'approved' : 'rejected';
 
-    sendActionConfirmationPage(res, {
-      title: action === 'approve' ? 'Confirm Mint Approval' : 'Confirm Mint Rejection',
+    await prisma.$transaction([
+      prisma.mintApprovalActionToken.updateMany({
+        where: {
+          requestId: actionToken.requestId,
+          used: false,
+        },
+        data: { used: true },
+      }),
+      prisma.mintApprovalRequest.update({
+        where: { id: actionToken.requestId },
+        data: {
+          status: desiredStatus,
+          reviewedAt: new Date(),
+          reviewNotes:
+            desiredStatus === 'approved'
+              ? 'Approved via banker email link.'
+              : 'Rejected via banker email link.',
+          approvedBy: config.mintApproval.requestRecipient,
+        },
+      }),
+    ]);
+
+    sendActionInfoPage(res, {
+      title:
+        desiredStatus === 'approved'
+          ? 'Mint Request Approved'
+          : 'Mint Request Rejected',
       message:
-        'Review this mint approval request below. Opening this page is safe; the request changes only after explicit confirmation.',
-      action,
-      formAction: `/api/mint-requests/action/${encodeURIComponent(token)}`,
-      payload: confirmation.payload,
-      signature: confirmation.signature,
+        desiredStatus === 'approved'
+          ? 'The user can now proceed with minting in the app.'
+          : 'The mint request was rejected. The user must update details and resubmit.',
+      accent: desiredStatus === 'approved' ? '#059669' : '#dc2626',
       details: [
         { label: 'Request ID', value: actionToken.request.id },
         { label: 'Requester Email', value: actionToken.request.requesterEmail },
         { label: 'Token', value: `${actionToken.request.tokenName} (${actionToken.request.tokenSymbol})` },
         { label: 'Chain ID', value: String(actionToken.request.chainId) },
         { label: 'Mint Amount', value: `${actionToken.request.mintAmount} ${actionToken.request.currency}` },
-        { label: 'Current Status', value: actionToken.request.status },
-        { label: 'Requested Action', value: action === 'approve' ? 'Approve' : 'Reject' },
-        { label: 'Action Link Expires', value: actionToken.expiresAt.toUTCString() },
+        { label: 'Final Status', value: desiredStatus },
       ],
     });
   } catch (err) {
@@ -963,7 +980,7 @@ router.get('/action/:token', async (req, res) => {
       status: 500,
       title: 'Action Failed',
       message:
-        'An unexpected error occurred while loading this mint action link.',
+        'An unexpected error occurred while processing this mint action link.',
       accent: '#dc2626',
     });
   }

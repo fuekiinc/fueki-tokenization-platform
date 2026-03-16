@@ -29,7 +29,7 @@ import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 // Dashboard sub-components
 import StatsGrid from '../components/Dashboard/StatsGrid';
 import RecentActivity from '../components/Dashboard/RecentActivity';
-import PortfolioChart from '../components/Dashboard/PortfolioChart';
+import PnLTracker from '../components/Dashboard/PnLTracker';
 import ValueChart from '../components/Dashboard/ValueChart';
 import DashboardSkeleton from '../components/Dashboard/DashboardSkeleton';
 import { ErrorState } from '../components/Common/StateDisplays';
@@ -1148,8 +1148,14 @@ export default function DashboardPage() {
       {/* Charts Row -- two columns side by side                            */}
       {/* ================================================================== */}
       <div className="mt-8 grid grid-cols-1 gap-6 sm:mt-10 sm:gap-8 lg:grid-cols-2">
-        <ComponentErrorBoundary name="PortfolioChart">
-          <PortfolioChart assets={wrappedAssets} />
+        <ComponentErrorBoundary name="PnLTracker">
+          <PnLTracker
+            tradeHistory={tradeHistory}
+            currentPortfolioValue={wrappedAssets.reduce(
+              (sum, asset) => sum + parseTokenAmount(asset.originalValue || '0'),
+              0,
+            )}
+          />
         </ComponentErrorBoundary>
         <ComponentErrorBoundary name="ValueChart">
           <ValueChart

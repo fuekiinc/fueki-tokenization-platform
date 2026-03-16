@@ -674,6 +674,11 @@ export class ContractService {
    * transient disconnect).
    */
   async getSigner(): Promise<ethers.Signer> {
+    // Return cached signer to avoid repeated eth_requestAccounts RPC calls
+    // through the wallet's thirdweb proxy. Each getSigner() call otherwise
+    // triggers a round-trip that counts towards rate limits.
+    if (this.signer) return this.signer;
+
     try {
       this.signer = await this.provider.getSigner();
       return this.signer;
@@ -2639,6 +2644,13 @@ export class ContractService {
         // Non-fatal: ethers will fetch nonce via the wallet provider.
       }
     }
+
+    // Pre-emptively switch the wallet's chain RPC to our paid Alchemy
+    // endpoints BEFORE the first attempt. Without this, the very first
+    // eth_sendTransaction goes through the thirdweb free-tier proxy which
+    // rate-limits aggressively. This is the single most important step to
+    // avoid "Network is busy (rate limited)" errors.
+    await this.tryRecoverWalletRpcTransport().catch(() => {});
 
     let activeContract = contract;
 

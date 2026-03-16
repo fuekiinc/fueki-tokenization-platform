@@ -303,7 +303,7 @@ describe('scanner-safe approval links', () => {
     expect(mocks.prisma.adminActionToken.updateMany).not.toHaveBeenCalled();
   });
 
-  it('keeps mint approval GET requests read-only until explicit POST confirmation', async () => {
+  it('applies mint approval directly on GET request (one-click from email)', async () => {
     const actionToken = {
       id: 'mint-token-1',
       token: 'mint-token',
@@ -324,7 +324,6 @@ describe('scanner-safe approval links', () => {
     };
 
     mocks.prisma.mintApprovalActionToken.findFirst
-      .mockResolvedValueOnce(actionToken)
       .mockResolvedValueOnce(actionToken);
 
     const getResponse = await dispatch(mintRequestRoutes, {
@@ -333,31 +332,13 @@ describe('scanner-safe approval links', () => {
     });
 
     expect(getResponse.status).toBe(200);
-    expect(getResponse.text).toContain('Confirm Mint Approval');
-    expect(mocks.prisma.mintApprovalRequest.update).not.toHaveBeenCalled();
-    expect(mocks.prisma.mintApprovalActionToken.updateMany).not.toHaveBeenCalled();
-
-    const payload = extractHiddenValue(getResponse.text, 'payload');
-    const signature = extractHiddenValue(getResponse.text, 'signature');
-
-    const postResponse = await dispatch(mintRequestRoutes, {
-      method: 'POST',
-      url: '/action/mint-token',
-      body: {
-        payload,
-        signature,
-        confirm: 'approve',
-      },
-    });
-
-    expect(postResponse.status).toBe(200);
-    expect(postResponse.text).toContain('Mint Request Approved');
+    expect(getResponse.text).toContain('Mint Request Approved');
     expect(mocks.prisma.mintApprovalRequest.update).toHaveBeenCalledWith({
       where: { id: 'mint-request-1' },
       data: {
         status: 'approved',
         reviewedAt: expect.any(Date),
-        reviewNotes: 'Approved via banker confirmation page.',
+        reviewNotes: 'Approved via banker email link.',
         approvedBy: 'mark@fueki-tech.com',
       },
     });
@@ -370,7 +351,7 @@ describe('scanner-safe approval links', () => {
     });
   });
 
-  it('keeps security token approval GET requests read-only until explicit POST confirmation', async () => {
+  it('applies security token rejection directly on GET request (one-click from email)', async () => {
     const actionToken = {
       id: 'security-token-1',
       token: 'security-token',
@@ -390,7 +371,6 @@ describe('scanner-safe approval links', () => {
     };
 
     mocks.prisma.securityTokenApprovalActionToken.findFirst
-      .mockResolvedValueOnce(actionToken)
       .mockResolvedValueOnce(actionToken);
 
     const getResponse = await dispatch(securityTokenRequestRoutes, {
@@ -399,31 +379,13 @@ describe('scanner-safe approval links', () => {
     });
 
     expect(getResponse.status).toBe(200);
-    expect(getResponse.text).toContain('Confirm Deployment Rejection');
-    expect(mocks.prisma.securityTokenApprovalRequest.update).not.toHaveBeenCalled();
-    expect(mocks.prisma.securityTokenApprovalActionToken.updateMany).not.toHaveBeenCalled();
-
-    const payload = extractHiddenValue(getResponse.text, 'payload');
-    const signature = extractHiddenValue(getResponse.text, 'signature');
-
-    const postResponse = await dispatch(securityTokenRequestRoutes, {
-      method: 'POST',
-      url: '/action/security-token',
-      body: {
-        payload,
-        signature,
-        confirm: 'reject',
-      },
-    });
-
-    expect(postResponse.status).toBe(200);
-    expect(postResponse.text).toContain('Deployment Request Rejected');
+    expect(getResponse.text).toContain('Deployment Request Rejected');
     expect(mocks.prisma.securityTokenApprovalRequest.update).toHaveBeenCalledWith({
       where: { id: 'security-request-1' },
       data: {
         status: 'rejected',
         reviewedAt: expect.any(Date),
-        reviewNotes: 'Rejected via banker confirmation page.',
+        reviewNotes: 'Rejected via banker email link.',
         approvedBy: 'mark@fueki-tech.com',
       },
     });

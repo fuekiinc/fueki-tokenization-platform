@@ -5,8 +5,9 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 
-# Install only the deps needed to build the frontend (skip hardhat/solc)
-RUN npm ci --ignore-scripts
+# Install only the deps needed to build the frontend (skip hardhat/solc).
+# Retry once on transient network failures (ECONNRESET in Cloud Build).
+RUN npm ci --ignore-scripts || npm ci --ignore-scripts
 
 COPY . .
 
