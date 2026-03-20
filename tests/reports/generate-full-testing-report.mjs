@@ -15,8 +15,27 @@ function readJson(filePath) {
   }
 }
 
-function formatPct(value) {
-  return typeof value === 'number' ? `${value.toFixed(2)}%` : 'n/a';
+function formatPct(metric) {
+  return typeof metric?.pct === 'number' ? `${metric.pct.toFixed(2)}%` : 'n/a';
+}
+
+function formatFraction(metric) {
+  return metric ? `${metric.covered ?? 0}/${metric.total ?? 0}` : 'n/a';
+}
+
+function formatScore(value) {
+  return typeof value === 'number' ? value.toFixed(2) : 'n/a';
+}
+
+function formatCount(value) {
+  return typeof value === 'number' ? String(value) : 'n/a';
+}
+
+function makeTable(headers, rows) {
+  const headerLine = `| ${headers.join(' | ')} |`;
+  const dividerLine = `| ${headers.map(() => '---').join(' | ')} |`;
+  const body = rows.map((row) => `| ${row.join(' | ')} |`).join('\n');
+  return `${headerLine}\n${dividerLine}\n${body}`;
 }
 
 const results = readJson(testResultsPath);
@@ -28,9 +47,9 @@ if (!results) {
 const readiness = results.summary?.productionReadiness ?? {};
 const vitest = results.summary?.vitest ?? {};
 const coverage = results.summary?.coverage ?? {};
-const gas = readJson(path.join(reportsDir, 'gas-report.json'));
-const performance = readJson(path.join(reportsDir, 'performance-report.json'));
 const security = readJson(path.join(reportsDir, 'security-findings.json'));
+const performance = readJson(path.join(reportsDir, 'performance-report.json'));
+const gas = readJson(path.join(reportsDir, 'gas-report.json'));
 const walletSimulation = readJson(path.join(reportsDir, 'wallet-simulation.json'));
 const apiLoad = readJson(path.join(reportsDir, 'api-load-report.json'));
 const newman = readJson(path.join(reportsDir, 'newman-report.json'));
@@ -38,99 +57,221 @@ const newman = readJson(path.join(reportsDir, 'newman-report.json'));
 const walletChains = Array.isArray(walletSimulation?.chains) ? walletSimulation.chains : [];
 const walletSummary = {
   total: walletChains.length,
-  ok: walletChains.filter((c) => c.skipped !== true && !(c.walletBalances ?? []).some((b) => b.error)).length,
-  skipped: walletChains.filter((c) => c.skipped === true).length,
-  error: walletChains.filter((c) => c.skipped !== true && (c.walletBalances ?? []).some((b) => b.error)).length,
+  ok: walletChains.filter((chain) =>
+    chain.skipped !== true &&
+    !(chain.walletBalances ?? []).some((balance) => balance.error),
+  ).length,
+  skipped: walletChains.filter((chain) => chain.skipped === true).length,
+  error: walletChains.filter((chain) =>
+    chain.skipped !== true &&
+    (chain.walletBalances ?? []).some((balance) => balance.error),
+  ).length,
 };
 
-const markdown = `# Full Testing Suite Results (Consolidated)
+const stageTable = makeTable(
+  ['Stage', 'Result'],
+  [
+    [
+      'Workspace tests',
+      `${vitest.workspace?.success ? 'PASS' : 'FAIL'} (${vitest.workspace?.numPassedTests ?? 0}/${vitest.workspace?.numTotalTests ?? 0} tests)`,
+    ],
+    [
+      'API tests',
+      `${vitest.api?.success ? 'PASS' : 'FAIL'} (${vitest.api?.numPassedTests ?? 0}/${vitest.api?.numTotalTests ?? 0} tests)`,
+    ],
+    [
+      'Security smoke',
+      `${vitest.security?.success ? 'PASS' : 'FAIL'} (${vitest.security?.numPassedTests ?? 0}/${vitest.security?.numTotalTests ?? 0} tests)`,
+    ],
+    [
+      'Backend tests',
+      `${vitest.backend?.success ? 'PASS' : 'FAIL'} (${vitest.backend?.numPassedTests ?? 0}/${vitest.backend?.numTotalTests ?? 0} tests)`,
+    ],
+    [
+      'API contract checks',
+      `${newman?.run?.stats?.assertions?.failed ? 'FAIL' : 'PASS'} (${newman?.run?.stats?.assertions?.total ?? 0} assertions)`,
+    ],
+    [
+      'API load',
+      `${apiLoad?.ok === true ? 'PASS' : 'FAIL'} (${apiLoad?.runner ?? 'unknown'})`,
+    ],
+    [
+      'Performance gate',
+      readiness.gates?.performance?.pass ? 'PASS' : 'FAIL',
+    ],
+    [
+      'Gas gate',
+      readiness.gates?.gas?.pass ? 'PASS' : 'FAIL',
+    ],
+    [
+      'Wallet simulation',
+      walletSummary.error === 0 ? `PASS (${walletSummary.ok}/${walletSummary.total} chains)` : `FAIL (${walletSummary.error} chains errored)`,
+    ],
+  ],
+);
 
-Generated at: \`${new Date().toISOString()}\`  
-Data source: \`tests/reports\`.
+const globalCoverage = coverage.global ?? {};
+const criticalCoverage = coverage.criticalPaths ?? {};
+const coverageDebt = coverage.debtReport ?? {};
+const securityGate = readiness.gates?.security ?? {};
+const performancePages = Array.isArray(readiness.gates?.performance?.pages)
+  ? readiness.gates.performance.pages
+  : [];
 
-## 1) Executive Summary
+const blockers = Array.isArray(readiness.blockers) ? readiness.blockers : [];
+
+const markdown = `# Full Testing Suite Results
+
+Generated at: \`${results.generatedAt}\`  
+Report root: \`tests/reports\`
+
+## Executive Summary
 
 - Production readiness: **${readiness.ready ? 'READY' : 'NOT READY'}**
-- Blockers: ${
-  Array.isArray(readiness.blockers) && readiness.blockers.length
-    ? readiness.blockers.map((item) => `\`${item}\``).join(', ')
+- Blocking issues: ${blockers.length ? blockers.map((item) => `\`${item}\``).join(', ') : 'None'}
+- Artifact completeness: ${Object.values(results.reports ?? {}).every((value) => value === 'present') ? '**Complete**' : '**Partial**'}
+
+${stageTable}
+
+## Coverage
+
+### Critical Path Gate
+
+${makeTable(
+  ['Metric', 'Measured', 'Threshold', 'Pass'],
+  [
+    ['Lines', `${formatFraction(criticalCoverage.measured?.lines)} (${formatPct(criticalCoverage.measured?.lines)})`, `${criticalCoverage.thresholds?.lines ?? 'n/a'}%`, criticalCoverage.pass ? 'YES' : 'NO'],
+    ['Statements', `${formatFraction(criticalCoverage.measured?.statements)} (${formatPct(criticalCoverage.measured?.statements)})`, `${criticalCoverage.thresholds?.statements ?? 'n/a'}%`, criticalCoverage.pass ? 'YES' : 'NO'],
+    ['Branches', `${formatFraction(criticalCoverage.measured?.branches)} (${formatPct(criticalCoverage.measured?.branches)})`, `${criticalCoverage.thresholds?.branches ?? 'n/a'}%`, criticalCoverage.pass ? 'YES' : 'NO'],
+    ['Functions', `${formatFraction(criticalCoverage.measured?.functions)} (${formatPct(criticalCoverage.measured?.functions)})`, `${criticalCoverage.thresholds?.functions ?? 'n/a'}%`, criticalCoverage.pass ? 'YES' : 'NO'],
+  ],
+)}
+
+- Critical files matched: \`${criticalCoverage.matchedFiles ?? 0}\`
+- Missing critical files: ${
+  Array.isArray(criticalCoverage.missingFiles) && criticalCoverage.missingFiles.length
+    ? criticalCoverage.missingFiles.map((file) => `\`${file}\``).join(', ')
     : 'None'
 }
-- Artifact completeness: ${
-  Object.values(results.reports ?? {}).every((value) => value === 'present')
-    ? '**Complete**'
-    : '**Partial**'
+
+### Global Coverage Debt
+
+${makeTable(
+  ['Metric', 'Measured', 'Legacy target'],
+  [
+    ['Lines', `${formatFraction(globalCoverage.lines)} (${formatPct(globalCoverage.lines)})`, `${readiness.gates?.coverage?.globalCoverageDebt?.thresholds?.lines ?? 'n/a'}%`],
+    ['Statements', `${formatFraction(globalCoverage.statements)} (${formatPct(globalCoverage.statements)})`, `${readiness.gates?.coverage?.globalCoverageDebt?.thresholds?.statements ?? 'n/a'}%`],
+    ['Branches', `${formatFraction(globalCoverage.branches)} (${formatPct(globalCoverage.branches)})`, `${readiness.gates?.coverage?.globalCoverageDebt?.thresholds?.branches ?? 'n/a'}%`],
+    ['Functions', `${formatFraction(globalCoverage.functions)} (${formatPct(globalCoverage.functions)})`, `${readiness.gates?.coverage?.globalCoverageDebt?.thresholds?.functions ?? 'n/a'}%`],
+  ],
+)}
+
+- Global coverage debt status: **${readiness.gates?.coverage?.globalCoverageDebt?.pass ? 'Within legacy target' : 'Tracked advisory backlog'}**
+- Production readiness uses the critical-path gate above. Repo-wide debt remains visible here and in \`tests/reports/coverage-debt-report.json\`.
+- Highest-need files: ${
+  Array.isArray(coverageDebt.topDebtFiles) && coverageDebt.topDebtFiles.length
+    ? coverageDebt.topDebtFiles
+        .slice(0, 10)
+        .map((entry) => `\`${entry.file}\` (${entry.statements.pct}% statements)`)
+        .join(', ')
+    : 'n/a'
 }
 
-## 2) Vitest & Backend Tests
+## Security
 
-- Workspace suites: \`${vitest.workspace?.numPassedTestSuites ?? 0}/${vitest.workspace?.numTotalTestSuites ?? 0}\` passed
-- Workspace tests: \`${vitest.workspace?.numPassedTests ?? 0}/${vitest.workspace?.numTotalTests ?? 0}\` passed
-- API suites: \`${vitest.api?.numPassedTestSuites ?? 0}/${vitest.api?.numTotalTestSuites ?? 0}\` passed
-- Security suites: \`${vitest.security?.numPassedTestSuites ?? 0}/${vitest.security?.numTotalTestSuites ?? 0}\` passed
-- Backend suites: \`${vitest.backend?.numPassedTestSuites ?? 0}/${vitest.backend?.numTotalTestSuites ?? 0}\` passed
+### Dependency Audits
 
-## 3) Coverage (Frontend + Backend Merged)
+${makeTable(
+  ['Scope', 'High', 'Critical', 'Other', 'Blocks readiness'],
+  [
+    [
+      'Frontend/runtime',
+      formatCount(security?.summaries?.npmAuditRuntime?.totals?.high),
+      formatCount(security?.summaries?.npmAuditRuntime?.totals?.critical),
+      formatCount((security?.summaries?.npmAuditRuntime?.totals?.total ?? 0) - (security?.summaries?.npmAuditRuntime?.totals?.high ?? 0) - (security?.summaries?.npmAuditRuntime?.totals?.critical ?? 0)),
+      securityGate.runtimeDependencyBlocker ? 'Potentially' : 'No',
+    ],
+    [
+      'Backend/runtime',
+      formatCount(security?.summaries?.backendNpmAuditRuntime?.totals?.high),
+      formatCount(security?.summaries?.backendNpmAuditRuntime?.totals?.critical),
+      formatCount((security?.summaries?.backendNpmAuditRuntime?.totals?.total ?? 0) - (security?.summaries?.backendNpmAuditRuntime?.totals?.high ?? 0) - (security?.summaries?.backendNpmAuditRuntime?.totals?.critical ?? 0)),
+      securityGate.runtimeDependencyBlocker ? 'Potentially' : 'No',
+    ],
+    [
+      'Full repo (informational)',
+      formatCount(security?.summaries?.npmAudit?.totals?.high),
+      formatCount(security?.summaries?.npmAudit?.totals?.critical),
+      formatCount((security?.summaries?.npmAudit?.totals?.total ?? 0) - (security?.summaries?.npmAudit?.totals?.high ?? 0) - (security?.summaries?.npmAudit?.totals?.critical ?? 0)),
+      'Informational',
+    ],
+  ],
+)}
 
-- Lines: \`${coverage.lines?.covered ?? 0}/${coverage.lines?.total ?? 0}\` (${formatPct(coverage.lines?.pct)})
-- Statements: \`${coverage.statements?.covered ?? 0}/${coverage.statements?.total ?? 0}\` (${formatPct(coverage.statements?.pct)})
-- Branches: \`${coverage.branches?.covered ?? 0}/${coverage.branches?.total ?? 0}\` (${formatPct(coverage.branches?.pct)})
-- Functions: \`${coverage.functions?.covered ?? 0}/${coverage.functions?.total ?? 0}\` (${formatPct(coverage.functions?.pct)})
-- Threshold gate: **${readiness.gates?.coverage?.pass ? 'Pass' : 'Fail'}**
+### Static Analysis
 
-## 4) Security
-
-- Security smoke: \`${security?.securitySmokeStatus ?? 'unknown'}\`
-- npm audit status: \`${security?.npmAuditStatus ?? 'unknown'}\`
-- Slither status: \`${security?.slitherStatus ?? 'unknown'}\`
-- Mythril status: \`${security?.mythrilStatus ?? 'unknown'}\`
-- npm audit totals: \`high=${security?.summaries?.npmAudit?.totals?.high ?? 'n/a'}\`, \`critical=${security?.summaries?.npmAudit?.totals?.critical ?? 'n/a'}\`
-- Slither findings: \`${security?.summaries?.slither?.totalFindings ?? 'n/a'}\`
+- Slither total findings: \`${security?.summaries?.slither?.totalFindings ?? 'n/a'}\`
+- Reviewed production findings: \`${securityGate.reviewedProductionStaticFindings?.length ?? 0}\`
+- Unresolved production high findings: \`${securityGate.unresolvedProductionStaticHighFindings?.length ?? 0}\`
 - Mythril completed contracts: \`${security?.summaries?.mythril?.completedContracts ?? 'n/a'} / ${security?.summaries?.mythril?.totalContracts ?? 'n/a'}\`
+- Reviewed Mythril findings: \`${security?.summaries?.mythril?.reviewedFindings?.length ?? 0}\`
+- Unresolved Mythril findings: \`${security?.summaries?.mythril?.unresolvedFindings?.length ?? 0}\`
 
-## 5) Gas Benchmarks
+${securityGate.unresolvedProductionStaticHighFindings?.length
+  ? `${makeTable(
+      ['Check', 'File', 'Line'],
+      securityGate.unresolvedProductionStaticHighFindings.map((finding) => [
+        finding.check ?? 'unknown',
+        finding.file ?? 'unknown',
+        formatCount(finding.line),
+      ]),
+    )}\n`
+  : '- No unresolved high-severity static-analysis findings remain in the reviewed production-contract set.\n'}
 
-- Completeness: **${gas?.completeness?.isComplete ? 'Complete' : 'Incomplete'}**
-- Missing benchmarks: ${
-  Array.isArray(gas?.completeness?.missingBenchmarks) && gas.completeness.missingBenchmarks.length
-    ? gas.completeness.missingBenchmarks.map((item) => `\`${item}\``).join(', ')
-    : 'None'
-}
-- Target evaluation: \`${Object.entries(gas?.evaluation ?? {})
-  .map(([name, entry]) => `${name}:${entry?.status ?? 'n/a'}`)
-  .join(', ')}\`
+## Performance
 
-## 6) Performance / Lighthouse
+${makeTable(
+  ['Page', 'Perf', 'A11y', 'Best', 'SEO', 'LCP ms', 'CLS', 'TBT ms', 'Pass'],
+  performancePages.map((page) => [
+    page.url ?? 'unknown',
+    formatScore(page.performance),
+    formatScore(page.accessibility),
+    formatScore(page.bestPractices),
+    formatScore(page.seo),
+    typeof page.webVitals?.lcpMs === 'number'
+      ? formatCount(Math.round(page.webVitals.lcpMs))
+      : 'n/a',
+    typeof page.webVitals?.cls === 'number' ? page.webVitals.cls.toFixed(3) : 'n/a',
+    typeof page.webVitals?.tbtMs === 'number'
+      ? formatCount(Math.round(page.webVitals.tbtMs))
+      : 'n/a',
+    page.pass ? 'YES' : 'NO',
+  ]),
+)}
 
-- Parsed pages: \`${performance?.summary?.parsedPages ?? 0}\`
-- Passing pages: \`${performance?.summary?.passingPages ?? 0}\`
-- Failing pages: \`${performance?.summary?.failingPages ?? 0}\`
-- Performance gate: **${readiness.gates?.performance?.pass ? 'Pass' : 'Fail'}**
+- Overall performance gate: **${readiness.gates?.performance?.pass ? 'PASS' : 'FAIL'}**
 
-## 7) API Contract & Load
+## Load, Gas, and Wallet Checks
 
-- Newman executions: \`${newman?.run?.executions?.length ?? 0}\`
-- Newman assertions: \`${newman?.run?.stats?.assertions?.total ?? 0}\` (failed: \`${newman?.run?.stats?.assertions?.failed ?? 0}\`)
-- Load runner: \`${apiLoad?.runner ?? 'unknown'}\`
-- Load success: \`${apiLoad?.ok ?? 'unknown'}\`
+${makeTable(
+  ['Check', 'Result'],
+  [
+    ['API load success', apiLoad?.ok === true ? 'PASS' : 'FAIL'],
+    ['API load runner', apiLoad?.runner ?? 'unknown'],
+    ['Gas benchmark completeness', gas?.completeness?.isComplete ? 'Complete' : 'Incomplete'],
+    ['Gas targets', readiness.gates?.gas?.targetsPass ? 'All pass' : 'At least one failed'],
+    ['Wallet chains OK', `${walletSummary.ok}/${walletSummary.total}`],
+  ],
+)}
 
-## 8) Wallet Simulation
+## Interpretation
 
-- Chains tested: \`${walletSummary.total}\`
-- OK: \`${walletSummary.ok}\`
-- Error: \`${walletSummary.error}\`
-- Skipped: \`${walletSummary.skipped}\`
-
-## 9) Overall Production Readiness Interpretation
-
-Current snapshot indicates:
-- Infrastructure for comprehensive reporting is in place.
-- Core automated checks are running consistently.
-- Production readiness is **${readiness.ready ? 'complete' : 'not yet complete'}**${
-  Array.isArray(readiness.blockers) && readiness.blockers.length
-    ? ` due to:\n${readiness.blockers.map((item) => `  - ${item}`).join('\n')}`
-    : '.'
-}
+- The critical-path production gate is **${readiness.ready ? 'green' : 'still blocked'}**.
+- The report now separates production blockers from background debt:
+  - Critical-path coverage decides readiness.
+  - Runtime dependency high/critical findings decide dependency readiness.
+  - Full-repo dependency findings remain visible for backlog management.
+  - Reviewed Slither false positives are recorded explicitly instead of being silently ignored.
 `;
 
 fs.writeFileSync(outPath, markdown);

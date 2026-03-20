@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import {
-  getRpcEndpoints,
   getReadRpcEndpoints,
+  getRpcEndpoints,
   getWalletSwitchRpcUrls,
   isRetryableRpcError,
   reportRpcEndpointFailure,

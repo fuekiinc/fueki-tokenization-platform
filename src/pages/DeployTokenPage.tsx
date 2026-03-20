@@ -580,7 +580,7 @@ export default function DeployTokenPage() {
   const isOnCorrectChain = wallet.chainId === targetChainId;
 
   const approvalQuery = useMemo<SecurityTokenApprovalStatusQuery | null>(() => {
-    if (!targetChainId) return null;
+    if (!targetChainId || !wallet.address) return null;
     if (
       !form.name.trim() ||
       !form.symbol.trim() ||
@@ -606,11 +606,12 @@ export default function DeployTokenPage() {
         documentHash: form.documentHash.trim(),
         documentType: form.documentType.trim(),
         chainId: targetChainId,
+        requesterWalletAddress: wallet.address,
       };
     } catch {
       return null;
     }
-  }, [form, targetChainId]);
+  }, [form, targetChainId, wallet.address]);
 
   const applyApprovalStatus = useCallback(
     (
@@ -630,6 +631,29 @@ export default function DeployTokenPage() {
     },
     [],
   );
+
+  useEffect(() => {
+    if (!selectedApprovalRequest) {
+      return;
+    }
+
+    const requestWallet = selectedApprovalRequest.requesterWalletAddress?.toLowerCase();
+    const activeWallet = wallet.address?.toLowerCase();
+
+    if (requestWallet && activeWallet && requestWallet === activeWallet) {
+      return;
+    }
+
+    setSelectedApprovalRequest(null);
+    setSelectedDocumentFile(null);
+    setErrors({});
+    setGasEstimate(null);
+    setDeployResult(null);
+    setApprovalError(null);
+    setForm({ ...initialFormState });
+    applyApprovalStatus('none');
+    setStep(1);
+  }, [applyApprovalStatus, selectedApprovalRequest, wallet.address]);
 
   // -----------------------------------------------------------------------
   // Form updater
@@ -692,7 +716,7 @@ export default function DeployTokenPage() {
   // -----------------------------------------------------------------------
 
   useEffect(() => {
-    if (!wallet.isConnected || !approvalQuery) {
+    if (!wallet.isConnected || !wallet.address || !approvalQuery) {
       if (approvalStatus !== 'none') {
         applyApprovalStatus('none');
       }
@@ -736,7 +760,7 @@ export default function DeployTokenPage() {
       cancelled = true;
       if (pollTimer) clearInterval(pollTimer);
     };
-  }, [wallet.isConnected, approvalQuery, approvalStatus, applyApprovalStatus]);
+  }, [wallet.address, wallet.isConnected, approvalQuery, approvalStatus, applyApprovalStatus]);
 
   const handleSelectApprovalRequest = useCallback(
     (request: SecurityTokenApprovalRequestItem) => {
@@ -787,7 +811,7 @@ export default function DeployTokenPage() {
       return;
     }
 
-    if (!wallet.isConnected || !targetChainId) {
+    if (!wallet.isConnected || !wallet.address || !targetChainId) {
       toast.error('Please connect your wallet before submitting a deployment request.');
       return;
     }
@@ -851,6 +875,7 @@ export default function DeployTokenPage() {
     isSubmittingApproval,
     selectedDocumentFile,
     targetChainId,
+    wallet.address,
     wallet.isConnected,
   ]);
 
@@ -963,6 +988,18 @@ export default function DeployTokenPage() {
 
     if (!wallet.isConnected) {
       toast.error('Please connect your wallet first');
+      return;
+    }
+
+    if (
+      selectedApprovalRequest &&
+      (
+        !selectedApprovalRequest.requesterWalletAddress
+        || !wallet.address
+        || selectedApprovalRequest.requesterWalletAddress.toLowerCase() !== wallet.address.toLowerCase()
+      )
+    ) {
+      toast.error('Switch back to the wallet that submitted this deployment request.');
       return;
     }
 
@@ -1125,6 +1162,7 @@ export default function DeployTokenPage() {
     form,
     isOnCorrectChain,
     isSwitchingNetwork,
+    selectedApprovalRequest,
     targetChainId,
     targetNetwork,
     wallet,

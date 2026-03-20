@@ -24,6 +24,7 @@ export async function submitSecurityTokenApprovalRequest(
   formData.append('documentType', payload.documentType);
   formData.append('hashSource', payload.hashSource);
   formData.append('chainId', String(payload.chainId));
+  formData.append('requesterWalletAddress', payload.requesterWalletAddress);
 
   if (payload.file) {
     formData.append('document', payload.file);
@@ -47,7 +48,7 @@ export async function getSecurityTokenApprovalStatus(
 }
 
 export async function listSecurityTokenApprovalRequests(
-  params: ListSecurityTokenApprovalRequestsQuery = {},
+  params: ListSecurityTokenApprovalRequestsQuery,
 ): Promise<ListSecurityTokenApprovalRequestsResponse> {
   const response =
     await apiClient.get<ListSecurityTokenApprovalRequestsResponse>(

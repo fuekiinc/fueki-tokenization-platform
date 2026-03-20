@@ -26,6 +26,7 @@ export interface MintApprovalStatusQuery {
   recipient: string;
   documentHash: string;
   chainId: number;
+  requesterWalletAddress: string;
 }
 
 export interface SubmitMintApprovalPayload extends MintApprovalStatusQuery {
@@ -40,6 +41,7 @@ export interface MintApprovalRequestItem {
   chainId: number;
   tokenName: string;
   tokenSymbol: string;
+  requesterWalletAddress: string | null;
   mintAmount: string;
   recipient: string;
   documentHash: string;
@@ -59,6 +61,7 @@ export interface ListMintApprovalRequestsQuery {
   chainId?: number;
   status?: Exclude<MintApprovalStatus, 'none'>;
   limit?: number;
+  walletAddress: string;
 }
 
 export interface ListMintApprovalRequestsResponse {

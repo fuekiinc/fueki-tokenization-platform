@@ -1,10 +1,10 @@
 /**
  * Price history hook for chart rendering.
  *
- * Derives OHLCV candlestick data from the trade history stored in the
- * tradeStore. When insufficient real trade data is available (fewer than
- * 2 candles), a deterministic seed-based series is generated so that
- * charts always render consistently for a given token pair.
+ * Derives OHLCV candlestick data from recent on-chain pair trades. When
+ * insufficient real trade data is available (fewer than 2 candles), a
+ * deterministic seed-based series is generated so that charts always render
+ * consistently for a given token pair.
  *
  * The seed series is reproducible: the same pair always yields the same
  * chart regardless of when or how often the component mounts.
@@ -12,10 +12,10 @@
  * Output is formatted for direct consumption by lightweight-charts or
  * any other charting library that expects UTCTimestamp + OHLCV tuples.
  */
-
-import { useMemo } from 'react';
-import { useTradeStore } from '../store/tradeStore';
-import type { TradeHistory } from '../types';
+import { useEffect, useMemo, useState } from 'react';
+import apiClient from '../lib/api/client';
+import { fetchPairTradePoints, type PairTradePoint } from '../lib/blockchain/marketData';
+import { useWalletStore } from '../store/walletStore';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -38,6 +38,11 @@ export interface PriceHistoryResult {
   isLoading: boolean;
   /** True when the data is derived from real trades, false when seed-generated. */
   isRealData: boolean;
+}
+
+interface BackendCandleResponse {
+  candles: CandlestickDataPoint[];
+  source: 'cache' | 'rpc';
 }
 
 // ---------------------------------------------------------------------------
@@ -150,29 +155,6 @@ function normalizeTimestampToSeconds(rawTimestamp: number): number | null {
   return timestamp > 0 ? timestamp : null;
 }
 
-function parseTradeAmount(rawAmount: string): number | null {
-  const normalized = rawAmount.replaceAll(',', '').trim();
-  if (!normalized) return null;
-  const value = Number(normalized);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return value;
-}
-
-function matchesPair(trade: TradeHistory, tokenSell: string, tokenBuy: string): boolean {
-  const sellLower = tokenSell.toLowerCase();
-  const buyLower = tokenBuy.toLowerCase();
-  const assetLower = trade.asset.toLowerCase();
-  const fromLower = trade.from.toLowerCase();
-  const toLower = trade.to.toLowerCase();
-
-  const byAsset = assetLower === sellLower || assetLower === buyLower;
-  const byFromTo =
-    (fromLower === sellLower && toLower === buyLower) ||
-    (fromLower === buyLower && toLower === sellLower);
-
-  return byAsset || byFromTo;
-}
-
 function hasValidCandleShape(candle: CandlestickDataPoint): boolean {
   if (!Number.isFinite(candle.time) || candle.time <= 0) return false;
   if (!Number.isFinite(candle.open) || candle.open <= 0) return false;
@@ -193,39 +175,25 @@ function hasStrictlyIncreasingTime(candles: CandlestickDataPoint[]): boolean {
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Group actual trades into OHLCV candles
-// ---------------------------------------------------------------------------
-
-function tradesToCandles(
-  trades: TradeHistory[],
-  tokenSell: string,
-  tokenBuy: string,
+function pairTradesToCandles(
+  trades: PairTradePoint[],
   interval: TimeInterval,
 ): CandlestickDataPoint[] {
-  // Filter trades relevant to this pair.
-  const relevantTrades = trades.filter((t) => {
-    if (t.status !== 'confirmed') return false;
-    const isExchangeType =
-      t.type === 'exchange' || t.type === 'swap-eth' || t.type === 'swap-erc20';
-    if (!isExchangeType) return false;
-    return matchesPair(t, tokenSell, tokenBuy);
-  });
-
-  if (relevantTrades.length === 0) return [];
+  if (trades.length === 0) return [];
 
   const intervalSec = INTERVAL_SECONDS[interval];
 
   // Sort by timestamp ascending.
-  const sorted = [...relevantTrades].sort((a, b) => a.timestamp - b.timestamp);
+  const sorted = [...trades].sort((a, b) => a.timestampMs - b.timestampMs);
 
   // Group by interval bucket.
   const buckets = new Map<number, { prices: number[]; volumes: number[] }>();
 
   for (const trade of sorted) {
-    const price = parseTradeAmount(trade.amount);
-    if (price === null) continue;
-    const timestampSec = normalizeTimestampToSeconds(trade.timestamp);
+    if (!Number.isFinite(trade.price) || trade.price <= 0) continue;
+    if (!Number.isFinite(trade.volume) || trade.volume < 0) continue;
+
+    const timestampSec = normalizeTimestampToSeconds(trade.timestampMs);
     if (timestampSec === null) continue;
 
     const bucket = Math.floor(timestampSec / intervalSec) * intervalSec;
@@ -234,8 +202,8 @@ function tradesToCandles(
       entry = { prices: [], volumes: [] };
       buckets.set(bucket, entry);
     }
-    entry.prices.push(price);
-    entry.volumes.push(price);
+    entry.prices.push(trade.price);
+    entry.volumes.push(trade.volume);
   }
 
   // Convert buckets to candle data.
@@ -264,11 +232,59 @@ function tradesToCandles(
   return candles;
 }
 
+function sanitizeCandles(candles: CandlestickDataPoint[]): CandlestickDataPoint[] {
+  const sortedCandles = [...candles].sort((a, b) => a.time - b.time);
+  const deduped: CandlestickDataPoint[] = [];
+
+  for (const candle of sortedCandles) {
+    if (!hasValidCandleShape(candle)) {
+      continue;
+    }
+
+    const previous = deduped[deduped.length - 1];
+    if (previous?.time === candle.time) {
+      deduped[deduped.length - 1] = candle;
+      continue;
+    }
+
+    deduped.push(candle);
+  }
+
+  return hasStrictlyIncreasingTime(deduped) ? deduped : [];
+}
+
+async function fetchBackendCandles(
+  chainId: number,
+  tokenSell: string,
+  tokenBuy: string,
+  interval: TimeInterval,
+): Promise<CandlestickDataPoint[]> {
+  const response = await apiClient.get<BackendCandleResponse>('/api/market-data/candles', {
+    params: { chainId, tokenSell, tokenBuy, interval },
+  });
+
+  return sanitizeCandles(response.data.candles ?? []);
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
 const DEFAULT_CANDLE_COUNT = 100;
+const MIN_REAL_CANDLE_COUNT = 2;
+
+function getChartRefreshIntervalMs(interval: TimeInterval): number {
+  switch (interval) {
+    case '1m':
+      return 15_000;
+    case '5m':
+      return 30_000;
+    case '15m':
+      return 45_000;
+    default:
+      return 60_000;
+  }
+}
 
 /**
  * Derive candlestick chart data for a trading pair.
@@ -283,16 +299,74 @@ export function usePriceHistory(
   tokenBuy: string,
   interval: TimeInterval,
 ): PriceHistoryResult {
-  const tradeHistory = useTradeStore((s) => s.tradeHistory);
-  const isLoadingTrades = useTradeStore((s) => s.isLoadingTrades);
+  const chainId = useWalletStore((s) => s.wallet.chainId);
+  const [marketCandles, setMarketCandles] = useState<CandlestickDataPoint[]>([]);
+  const [isLoadingMarketTrades, setIsLoadingMarketTrades] = useState(false);
+
+  useEffect(() => {
+    if (!tokenSell || !tokenBuy || !chainId) {
+      setMarketCandles([]);
+      setIsLoadingMarketTrades(false);
+      return;
+    }
+
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const load = async () => {
+      if (!cancelled) {
+        setIsLoadingMarketTrades(true);
+      }
+
+      try {
+        let backendCandles: CandlestickDataPoint[] = [];
+
+        try {
+          backendCandles = await fetchBackendCandles(chainId, tokenSell, tokenBuy, interval);
+          if (!cancelled) {
+            setMarketCandles(backendCandles);
+          }
+        } catch {
+          backendCandles = [];
+        }
+
+        if (backendCandles.length >= MIN_REAL_CANDLE_COUNT) {
+          return;
+        }
+
+        const trades = await fetchPairTradePoints(chainId, tokenSell, tokenBuy);
+        const rpcCandles = pairTradesToCandles(trades, interval);
+
+        if (!cancelled) {
+          setMarketCandles(rpcCandles);
+        }
+      } catch {
+        if (!cancelled) {
+          setMarketCandles([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingMarketTrades(false);
+          refreshTimer = setTimeout(load, getChartRefreshIntervalMs(interval));
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
+    };
+  }, [chainId, interval, tokenBuy, tokenSell]);
 
   const result = useMemo<{ data: CandlestickDataPoint[]; isRealData: boolean }>(() => {
     if (!tokenSell || !tokenBuy) return { data: [], isRealData: false };
+    const realCandles = sanitizeCandles(marketCandles);
 
-    // Attempt to derive candles from real trade history.
-    const realCandles = tradesToCandles(tradeHistory, tokenSell, tokenBuy, interval);
-
-    if (realCandles.length >= 2) {
+    if (realCandles.length >= MIN_REAL_CANDLE_COUNT) {
       return { data: realCandles, isRealData: true };
     }
 
@@ -301,7 +375,11 @@ export function usePriceHistory(
       data: generateSeedSeries(tokenSell, tokenBuy, interval, DEFAULT_CANDLE_COUNT),
       isRealData: false,
     };
-  }, [tradeHistory, tokenSell, tokenBuy, interval]);
+  }, [interval, marketCandles, tokenBuy, tokenSell]);
 
-  return { data: result.data, isLoading: isLoadingTrades, isRealData: result.isRealData };
+  return {
+    data: result.data,
+    isLoading: isLoadingMarketTrades,
+    isRealData: result.isRealData,
+  };
 }

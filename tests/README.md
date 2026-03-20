@@ -4,7 +4,7 @@ This directory contains the production test system for the Fueki tokenization pl
 
 ## Prerequisites
 
-- Node.js `>=22.12.0` (recommended `22.13.0+`)
+- Node.js `>=22.11.0` (the test/build wrappers will automatically use `22.12.0+` for Vite and `22.13.0+` for Artillery when needed)
 - npm
 - Optional: `forge`, `anvil`, `slither`, `myth`, `k6`
 - Optional local Postgres test DB for DB integration tests
@@ -29,14 +29,14 @@ npm run test:vitest:coverage:strict
 `test:vitest:coverage` always generates coverage artifacts.  
 `test:vitest:coverage:strict` enforces the global thresholds (80/75/80/80).
 
-### API Contract Tests (Vitest + Supertest)
+### API Contract Tests (Vitest + HTTP contract runner)
 
 ```bash
 npm run test:api
 bash tests/api/run-newman-contract.sh
 ```
 
-Newman environment overrides:
+Contract-runner environment overrides:
 - `FUEKI_API_URL` (default `https://fueki-backend-pojr5zp2oq-uc.a.run.app`)
 - `FUEKI_API_PREFIX` (default `/api`)
 - `FUEKI_EXPECT_UNAUTHORIZED_STATUS` (default `401`)
@@ -129,6 +129,8 @@ bash tests/run-all-tests.sh
 ```
 
 Includes frontend lint/typecheck, Vitest suites, API contract checks, backend tests/build, smart-contract tests, e2e smoke, security, performance, and report generation.
+Each full run also regenerates the human-readable Markdown summary at
+`tests/reports/full-testing-suite-results.md`.
 
 Quick smoke (<5 min target on local setup):
 
@@ -146,6 +148,8 @@ npm run test:reports
 
 Generated files:
 - `tests/reports/test-results.json`
+- `tests/reports/full-testing-suite-results.md`
+- `tests/reports/coverage-debt-report.json`
 - `tests/reports/vitest-workspace-results.json`
 - `tests/reports/vitest-api-results.json`
 - `tests/reports/vitest-security-results.json`

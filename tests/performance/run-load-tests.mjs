@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 
 fs.mkdirSync('tests/reports', { recursive: true });
 
@@ -45,9 +46,16 @@ if (hasCommand('k6')) {
 const artilleryBin = './node_modules/.bin/artillery';
 if (fs.existsSync(artilleryBin)) {
   const output = 'tests/reports/artillery-raw.json';
+  const artilleryEntrypoint = path.resolve('node_modules/artillery/bin/run');
+  const artilleryCommand = process.versions.node.localeCompare('22.13.0', undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  }) >= 0
+    ? { command: process.execPath, args: [artilleryEntrypoint] }
+    : { command: 'npx', args: ['-y', 'node@22.13.0', artilleryEntrypoint] };
   const result = spawnSync(
-    artilleryBin,
-    ['run', 'tests/api/load-artillery.yml', '--output', output],
+    artilleryCommand.command,
+    [...artilleryCommand.args, 'run', 'tests/api/load-artillery.yml', '--output', output],
     {
       env: { ...process.env, FUEKI_API_URL: baseUrl },
       stdio: 'inherit',

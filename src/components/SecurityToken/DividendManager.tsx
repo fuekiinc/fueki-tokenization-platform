@@ -33,6 +33,7 @@ import {
 } from '../../contracts/abis/SecurityToken';
 import { getProvider, useWalletStore } from '../../store/walletStore';
 import { getReadOnlyProvider, parseContractError } from '../../lib/blockchain/contracts';
+import { buildBufferedTransactionOverrides } from '../../lib/blockchain/transactionOverrides';
 import {
   sendTransactionWithRetry,
   waitForTransactionReceipt,
@@ -305,11 +306,13 @@ export default function DividendManager({
 
     try {
       toast.loading('Creating snapshot...', { id: 'create-snapshot' });
+      const provider = getProvider();
+      if (!provider) throw new Error('Wallet not connected');
       const contract = await getContract(true);
       const gasEstimate = await contract.snapshot.estimateGas();
-      const gasLimit = (gasEstimate * 120n) / 100n;
+      const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
       const tx = await sendTransactionWithRetry(
-        () => contract.snapshot({ gasLimit }),
+        () => contract.snapshot(txOverrides),
         { label: 'DividendManager.createSnapshot' },
       );
       await waitForTransactionReceipt(tx, { label: 'DividendManager.createSnapshot' });
@@ -416,9 +419,9 @@ export default function DividendManager({
         tokenAddress,
         amount,
       );
-      const gasLimit = (gasEstimate * 120n) / 100n;
+      const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
       const tx = await sendTransactionWithRetry(
-        () => erc20.approve(tokenAddress, amount, { gasLimit }),
+        () => erc20.approve(tokenAddress, amount, txOverrides),
         { label: 'DividendManager.approvePaymentToken' },
       );
       await waitForTransactionReceipt(tx, { label: 'DividendManager.approvePaymentToken' });
@@ -464,18 +467,18 @@ export default function DividendManager({
 
       toast.loading('Funding dividend...', { id: 'fund-dividend' });
 
+      const provider = getProvider();
+      if (!provider) throw new Error('Wallet not connected');
       const contract = await getContract(true);
       const gasEstimate = await contract.fundDividend.estimateGas(
         fundPaymentToken,
         amount,
         snapshotId,
       );
-      const gasLimit = (gasEstimate * 120n) / 100n;
+      const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
       const tx = await sendTransactionWithRetry(
         () =>
-          contract.fundDividend(fundPaymentToken, amount, snapshotId, {
-            gasLimit,
-          }),
+          contract.fundDividend(fundPaymentToken, amount, snapshotId, txOverrides),
         { label: 'DividendManager.fundDividend' },
       );
       await waitForTransactionReceipt(tx, { label: 'DividendManager.fundDividend' });
@@ -715,15 +718,17 @@ export default function DividendManager({
           id: 'claim-dividend',
         });
 
+        const provider = getProvider();
+        if (!provider) throw new Error('Wallet not connected');
         const contract = await getContract(true);
         const gasEstimate =
           await contract.claimDividend.estimateGas(
             paymentToken,
             snapshotId,
           );
-        const gasLimit = (gasEstimate * 120n) / 100n;
+        const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
         const tx = await sendTransactionWithRetry(
-          () => contract.claimDividend(paymentToken, snapshotId, { gasLimit }),
+          () => contract.claimDividend(paymentToken, snapshotId, txOverrides),
           { label: 'DividendManager.claimDividend' },
         );
         await waitForTransactionReceipt(tx, { label: 'DividendManager.claimDividend' });
@@ -757,6 +762,8 @@ export default function DividendManager({
         id: 'withdraw-remains',
       });
 
+      const provider = getProvider();
+      if (!provider) throw new Error('Wallet not connected');
       const contract = await getContract(true);
       const snapshotId = BigInt(withdrawSnapshotId);
       const gasEstimate =
@@ -764,9 +771,9 @@ export default function DividendManager({
           withdrawToken,
           snapshotId,
         );
-      const gasLimit = (gasEstimate * 120n) / 100n;
+      const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
       const tx = await sendTransactionWithRetry(
-        () => contract.withdrawalRemains(withdrawToken, snapshotId, { gasLimit }),
+        () => contract.withdrawalRemains(withdrawToken, snapshotId, txOverrides),
         { label: 'DividendManager.withdrawRemains' },
       );
       await waitForTransactionReceipt(tx, { label: 'DividendManager.withdrawRemains' });

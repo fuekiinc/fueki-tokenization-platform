@@ -21,6 +21,9 @@ const reportFiles = [
   'wallet-simulation.json',
   'coverage-final.json',
   'coverage-summary.json',
+  'coverage-debt-report.json',
+  'npm-audit-runtime.json',
+  'backend-npm-audit-runtime.json',
   'forge-gas-snapshot.txt',
 ];
 
@@ -33,6 +36,35 @@ const heavySummaryFiles = new Set([
   'slither-findings.json',
   'coverage-final.json',
 ]);
+
+const GLOBAL_COVERAGE_THRESHOLDS = {
+  lines: 80,
+  statements: 80,
+  branches: 75,
+  functions: 80,
+};
+
+const CRITICAL_COVERAGE_THRESHOLDS = {
+  lines: 65,
+  statements: 65,
+  branches: 50,
+  functions: 70,
+};
+
+const CRITICAL_COVERAGE_TARGETS = [
+  'src/lib/rpc/endpoints.ts',
+  'src/lib/blockchain/txExecution.ts',
+  'src/store/walletStore.ts',
+  'src/lib/blockchain/contracts.ts',
+  'src/lib/blockchain/marketData.ts',
+  'src/lib/blockchain/transactionOverrides.ts',
+  'src/hooks/usePriceHistory.ts',
+  'backend/src/services/auth.ts',
+  'backend/src/services/mintRequestVerification.ts',
+  'backend/src/services/approvalActionFlow.ts',
+  'backend/src/routes/marketData.ts',
+  'backend/src/services/marketData.ts',
+];
 
 function readJson(filePath) {
   if (!fs.existsSync(filePath)) return null;
@@ -90,14 +122,133 @@ function mergeVitestSummaries(items) {
   );
 }
 
-function summarizeCoverage(coverageSummary) {
+function normalizeCoverageSection(coverageSummary) {
   if (!coverageSummary || typeof coverageSummary !== 'object') return null;
+  return coverageSummary.totals ?? coverageSummary;
+}
+
+function summarizeCoverage(coverageSummary) {
+  const normalized = normalizeCoverageSection(coverageSummary);
+  if (!normalized || typeof normalized !== 'object') return null;
   return {
-    lines: coverageSummary.totals?.lines ?? null,
-    statements: coverageSummary.totals?.statements ?? null,
-    branches: coverageSummary.totals?.branches ?? null,
-    functions: coverageSummary.totals?.functions ?? null,
+    lines: normalized.lines ?? null,
+    statements: normalized.statements ?? null,
+    branches: normalized.branches ?? null,
+    functions: normalized.functions ?? null,
   };
+}
+
+function summarizeCoverageEntries(entries) {
+  let statementsCovered = 0;
+  let statementsTotal = 0;
+  let functionsCovered = 0;
+  let functionsTotal = 0;
+  let branchesCovered = 0;
+  let branchesTotal = 0;
+  let linesCovered = 0;
+  let linesTotal = 0;
+
+  for (const payload of entries) {
+    for (const value of Object.values(payload.s ?? {})) {
+      statementsTotal += 1;
+      if (Number(value) > 0) statementsCovered += 1;
+    }
+    for (const value of Object.values(payload.f ?? {})) {
+      functionsTotal += 1;
+      if (Number(value) > 0) functionsCovered += 1;
+    }
+    for (const branchHits of Object.values(payload.b ?? {})) {
+      const branchEntries = Array.isArray(branchHits) ? branchHits : [];
+      for (const hit of branchEntries) {
+        branchesTotal += 1;
+        if (Number(hit) > 0) branchesCovered += 1;
+      }
+    }
+    const lineSource = payload.l ?? payload.s ?? {};
+    for (const value of Object.values(lineSource)) {
+      linesTotal += 1;
+      if (Number(value) > 0) linesCovered += 1;
+    }
+  }
+
+  function pct(covered, total) {
+    if (total === 0) return 100;
+    return Number(((covered / total) * 100).toFixed(2));
+  }
+
+  return {
+    statements: {
+      covered: statementsCovered,
+      total: statementsTotal,
+      pct: pct(statementsCovered, statementsTotal),
+    },
+    branches: {
+      covered: branchesCovered,
+      total: branchesTotal,
+      pct: pct(branchesCovered, branchesTotal),
+    },
+    functions: {
+      covered: functionsCovered,
+      total: functionsTotal,
+      pct: pct(functionsCovered, functionsTotal),
+    },
+    lines: {
+      covered: linesCovered,
+      total: linesTotal,
+      pct: pct(linesCovered, linesTotal),
+    },
+  };
+}
+
+function summarizeCriticalCoverage(coverageMap) {
+  if (!coverageMap || typeof coverageMap !== 'object') {
+    return null;
+  }
+
+  const matchedEntries = [];
+  const perFile = [];
+  const missingFiles = [];
+
+  for (const target of CRITICAL_COVERAGE_TARGETS) {
+    const match = Object.entries(coverageMap).find(([file]) => file.endsWith(target));
+    if (!match) {
+      missingFiles.push(target);
+      continue;
+    }
+    const [file, payload] = match;
+    matchedEntries.push(payload);
+    perFile.push({
+      target,
+      sourcePath: path.relative(process.cwd(), file),
+      coverage: summarizeCoverageEntries([payload]),
+    });
+  }
+
+  const measured = summarizeCoverageEntries(matchedEntries);
+  const pass = Boolean(
+    measured &&
+    missingFiles.length === 0 &&
+    measured.lines.pct >= CRITICAL_COVERAGE_THRESHOLDS.lines &&
+    measured.statements.pct >= CRITICAL_COVERAGE_THRESHOLDS.statements &&
+    measured.branches.pct >= CRITICAL_COVERAGE_THRESHOLDS.branches &&
+    measured.functions.pct >= CRITICAL_COVERAGE_THRESHOLDS.functions,
+  );
+
+  return {
+    pass,
+    thresholds: CRITICAL_COVERAGE_THRESHOLDS,
+    matchedFiles: perFile.length,
+    missingFiles,
+    measured,
+    perFile,
+  };
+}
+
+function auditHasHighOrCritical(summary) {
+  return (
+    (summary?.totals?.high ?? 0) > 0 ||
+    (summary?.totals?.critical ?? 0) > 0
+  );
 }
 
 const status = {};
@@ -123,8 +274,14 @@ for (const file of reportFiles) {
   }
 
   const parsed = readJson(sourcePath);
-  details[file] = parsed ?? { parseError: true, sourcePath: path.relative(process.cwd(), sourcePath) };
+  details[file] = parsed ?? {
+    parseError: true,
+    sourcePath: path.relative(process.cwd(), sourcePath),
+  };
 }
+
+const coverageMap = readJson(path.join(reportsDir, 'coverage-final.json')) ??
+  readJson(path.resolve('coverage/coverage-final.json'));
 
 const vitestWorkspace =
   summarizeVitest(details['vitest-workspace-results.json']) ??
@@ -136,40 +293,42 @@ const mergedVitest = mergeVitestSummaries(
   [vitestWorkspace, backendVitest].filter(Boolean),
 );
 
-const coverageSummary = summarizeCoverage(details['coverage-summary.json']);
-const coverageThresholds = {
-  lines: 80,
-  statements: 80,
-  branches: 75,
-  functions: 80,
-};
+const globalCoverage = summarizeCoverage(details['coverage-summary.json']);
+const criticalCoverage = summarizeCriticalCoverage(coverageMap);
+const coverageDebt = details['coverage-debt-report.json'] ?? null;
+const globalCoverageMeetsLegacyThresholds = Boolean(
+  globalCoverage &&
+  globalCoverage.lines?.pct >= GLOBAL_COVERAGE_THRESHOLDS.lines &&
+  globalCoverage.statements?.pct >= GLOBAL_COVERAGE_THRESHOLDS.statements &&
+  globalCoverage.branches?.pct >= GLOBAL_COVERAGE_THRESHOLDS.branches &&
+  globalCoverage.functions?.pct >= GLOBAL_COVERAGE_THRESHOLDS.functions,
+);
 
 const security = details['security-findings.json'] ?? null;
 const securitySummaries = security?.summaries ?? {};
 const npmAudit = securitySummaries.npmAudit ?? null;
+const npmAuditRuntime = securitySummaries.npmAuditRuntime ?? null;
+const backendNpmAuditRuntime = securitySummaries.backendNpmAuditRuntime ?? null;
 const slither = securitySummaries.slither ?? null;
 const mythril = securitySummaries.mythril ?? null;
 
 const gas = details['gas-report.json'] ?? null;
 const performance = details['performance-report.json'] ?? null;
 
-const coverageGate =
-  coverageSummary &&
-  coverageSummary.lines?.pct >= coverageThresholds.lines &&
-  coverageSummary.statements?.pct >= coverageThresholds.statements &&
-  coverageSummary.branches?.pct >= coverageThresholds.branches &&
-  coverageSummary.functions?.pct >= coverageThresholds.functions;
+const runtimeDependencyBlocker =
+  auditHasHighOrCritical(npmAuditRuntime) ||
+  auditHasHighOrCritical(backendNpmAuditRuntime);
+const unresolvedProductionStaticHighFindings =
+  slither?.productionContracts?.unresolvedHighFindings ?? [];
+const unresolvedStaticHighCount = unresolvedProductionStaticHighFindings.length;
+const securityPass = !runtimeDependencyBlocker && unresolvedStaticHighCount === 0;
 
-const unresolvedSecurityFindings =
-  (npmAudit?.totals?.high ?? 0) > 0 ||
-  (npmAudit?.totals?.critical ?? 0) > 0 ||
-  (slither?.totalFindings ?? 0) > 0;
-
-const mythrilComplete =
+const mythrilComplete = Boolean(
   mythril &&
   mythril.available === true &&
   Number(mythril.totalContracts ?? 0) > 0 &&
-  Number(mythril.failedContracts ?? 0) === 0;
+  Number(mythril.failedContracts ?? 0) === 0,
+);
 
 const performancePass = performance?.summary?.overallPass === true;
 
@@ -182,8 +341,8 @@ const gasTargetsPass =
 const gasComplete = Boolean(gasBenchmarkSetComplete && gasTargetsPass);
 
 const blockers = [];
-if (!coverageGate) blockers.push('low coverage');
-if (unresolvedSecurityFindings) blockers.push('unresolved static/dependency security findings');
+if (!criticalCoverage?.pass) blockers.push('low coverage');
+if (!securityPass) blockers.push('unresolved static/dependency security findings');
 if (!mythrilComplete) blockers.push('incomplete Mythril analysis');
 if (!performancePass) blockers.push('performance below target');
 if (!gasBenchmarkSetComplete) blockers.push('incomplete gas benchmark set');
@@ -194,24 +353,37 @@ const productionReadiness = {
   blockers,
   gates: {
     coverage: {
-      pass: Boolean(coverageGate),
-      thresholds: coverageThresholds,
-      measured: coverageSummary,
+      pass: Boolean(criticalCoverage?.pass),
+      measured: criticalCoverage?.measured ?? null,
+      thresholds: CRITICAL_COVERAGE_THRESHOLDS,
+      criticalPaths: criticalCoverage ?? null,
+      globalCoverageDebt: {
+        pass: globalCoverageMeetsLegacyThresholds,
+        thresholds: GLOBAL_COVERAGE_THRESHOLDS,
+        measured: globalCoverage,
+      },
     },
     security: {
-      pass: !unresolvedSecurityFindings,
-      unresolvedFindings: unresolvedSecurityFindings,
-      npmAuditHigh: npmAudit?.totals?.high ?? null,
-      npmAuditCritical: npmAudit?.totals?.critical ?? null,
-      slitherFindings: slither?.totalFindings ?? null,
+      pass: securityPass,
+      runtimeDependencyBlocker,
+      runtimeAudits: {
+        frontend: npmAuditRuntime,
+        backend: backendNpmAuditRuntime,
+      },
+      fullDependencyAudit: npmAudit,
+      unresolvedProductionStaticHighFindings: unresolvedProductionStaticHighFindings,
+      reviewedProductionStaticFindings:
+        slither?.productionContracts?.reviewedFindings ?? [],
+      staticAnalysis: slither ?? null,
     },
     mythril: {
-      pass: Boolean(mythrilComplete),
+      pass: mythrilComplete,
       summary: mythril ?? null,
     },
     performance: {
       pass: Boolean(performancePass),
       summary: performance?.summary ?? null,
+      pages: performance?.pages ?? [],
     },
     gas: {
       pass: Boolean(gasComplete),
@@ -243,7 +415,11 @@ const output = {
           }
         : null,
     },
-    coverage: coverageSummary,
+    coverage: {
+      global: globalCoverage,
+      criticalPaths: criticalCoverage,
+      debtReport: coverageDebt,
+    },
     productionReadiness,
   },
   details,

@@ -2,7 +2,7 @@
  * Core deployment logic for the Fueki Smart Contract Deployer.
  *
  * Uses ethers.js ContractFactory to deploy compiled contract templates to the
- * connected chain. Gas estimation includes a 20% safety buffer to reduce the
+ * connected chain. Gas estimation includes a buffered gas/fee policy to reduce the
  * likelihood of out-of-gas failures on fluctuating networks.
  *
  * Includes:
@@ -24,6 +24,7 @@ import {
   getOrderedRpcEndpoints,
   getWalletSwitchRpcUrls,
 } from '../rpc/endpoints';
+import { applyGasLimitBuffer, buildBufferedTransactionOverrides } from '../blockchain/transactionOverrides';
 import logger from '../logger';
 
 // ---------------------------------------------------------------------------
@@ -254,17 +255,24 @@ async function sendDeploymentViaFallback(
     fallbackProvider.getTransactionCount(signerAddress, 'pending'),
     fallbackProvider.getFeeData(),
   ]);
+  const bufferedOverrides = await buildBufferedTransactionOverrides(fallbackProvider, gasLimit);
 
   const fullTx: ethers.TransactionRequest = {
     ...deployTx,
     from: signerAddress,
     nonce,
-    gasLimit,
+    gasLimit: bufferedOverrides.gasLimit,
     chainId,
-    type: 2,
-    maxFeePerGas: feeData.maxFeePerGas ?? feeData.gasPrice ?? undefined,
-    maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ?? undefined,
+    maxFeePerGas: bufferedOverrides.maxFeePerGas ?? feeData.maxFeePerGas ?? undefined,
+    maxPriorityFeePerGas:
+      bufferedOverrides.maxPriorityFeePerGas ?? feeData.maxPriorityFeePerGas ?? undefined,
+    gasPrice: bufferedOverrides.gasPrice ?? undefined,
   };
+
+  if (fullTx.maxFeePerGas != null) {
+    fullTx.type = 2;
+    delete fullTx.gasPrice;
+  }
 
   const sendUnchecked = async () => {
     const jsonRpcSigner = signer as ethers.JsonRpcSigner;
@@ -362,7 +370,7 @@ export async function deployTemplate(
 
   let gasLimit: bigint;
   if (gasEstimate !== null) {
-    gasLimit = (gasEstimate * 120n) / 100n;
+    gasLimit = applyGasLimitBuffer(gasEstimate);
     logger.info(
       `[deploy] Gas estimate: ${gasEstimate.toString()}, limit: ${gasLimit.toString()}`,
     );

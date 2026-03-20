@@ -40,7 +40,7 @@ export default function PendingTokensPanel({
   selectedRequestId = null,
   onSelectRequest,
 }: PendingTokensPanelProps) {
-  const { isConnected, chainId, switchNetwork } = useWallet();
+  const { isConnected, address, chainId, switchNetwork } = useWallet();
   const [requests, setRequests] = useState<MintApprovalRequestItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -48,7 +48,7 @@ export default function PendingTokensPanel({
 
   const fetchRequests = useCallback(
     async (refresh = false) => {
-      if (!isConnected) {
+      if (!isConnected || !address) {
         setRequests([]);
         setError(null);
         return;
@@ -61,7 +61,10 @@ export default function PendingTokensPanel({
       }
 
       try {
-        const response = await listMintApprovalRequests({ limit: 30 });
+        const response = await listMintApprovalRequests({
+          limit: 30,
+          walletAddress: address,
+        });
         setRequests(response.requests);
         setError(null);
       } catch (err) {
@@ -73,7 +76,7 @@ export default function PendingTokensPanel({
         setIsRefreshing(false);
       }
     },
-    [isConnected],
+    [address, isConnected],
   );
 
   useEffect(() => {
@@ -81,14 +84,14 @@ export default function PendingTokensPanel({
   }, [fetchRequests]);
 
   useEffect(() => {
-    if (!isConnected) return undefined;
+    if (!isConnected || !address) return undefined;
     const timer = setInterval(() => {
       void fetchRequests(true);
     }, 20_000);
     return () => clearInterval(timer);
-  }, [fetchRequests, isConnected]);
+  }, [address, fetchRequests, isConnected]);
 
-  if (!isConnected) {
+  if (!isConnected || !address) {
     return (
       <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 sm:p-5">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -160,6 +163,9 @@ export default function PendingTokensPanel({
             const chainLabel = network?.name ?? `Chain ${request.chainId}`;
             const onCurrentChain = chainId === request.chainId;
             const isSelected = selectedRequestId === request.id;
+            const walletMatches =
+              typeof request.requesterWalletAddress === 'string' &&
+              request.requesterWalletAddress.toLowerCase() === address.toLowerCase();
 
             return (
               <article
@@ -217,7 +223,7 @@ export default function PendingTokensPanel({
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {isApproved ? (
-                    onCurrentChain ? (
+                    onCurrentChain && walletMatches ? (
                       <button
                         type="button"
                         onClick={() => onSelectRequest(request)}
@@ -230,11 +236,14 @@ export default function PendingTokensPanel({
                       <button
                         type="button"
                         onClick={() => {
-                          void switchNetwork(request.chainId);
+                          if (walletMatches) {
+                            void switchNetwork(request.chainId);
+                          }
                         }}
+                        disabled={!walletMatches}
                         className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/[0.12] px-4 py-2 text-xs font-semibold text-cyan-200 transition-all hover:bg-cyan-500/[0.18]"
                       >
-                        Switch to {chainLabel}
+                        {walletMatches ? `Switch to ${chainLabel}` : 'Wallet ownership mismatch'}
                       </button>
                     )
                   ) : isMinted ? (

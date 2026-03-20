@@ -41,6 +41,10 @@ const submitSchema = z.object({
   originalValue: z.string().trim().min(1, 'Original value is required').max(100),
   currency: z.string().trim().min(1, 'Currency is required').max(16),
   chainId: z.coerce.number().int().positive(),
+  requesterWalletAddress: z
+    .string()
+    .trim()
+    .regex(/^0x[a-fA-F0-9]{40}$/, 'Requester wallet must be a valid EVM address'),
 });
 
 const statusSchema = z.object({
@@ -53,12 +57,20 @@ const statusSchema = z.object({
     .regex(/^0x[a-fA-F0-9]{40}$/),
   documentHash: z.string().trim().min(1).max(256),
   chainId: z.coerce.number().int().positive(),
+  requesterWalletAddress: z
+    .string()
+    .trim()
+    .regex(/^0x[a-fA-F0-9]{40}$/, 'Requester wallet must be a valid EVM address'),
 });
 
 const listSchema = z.object({
   chainId: z.coerce.number().int().positive().optional(),
   status: z.enum(['pending', 'approved', 'rejected', 'minted']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
+  walletAddress: z
+    .string()
+    .trim()
+    .regex(/^0x[a-fA-F0-9]{40}$/, 'Wallet address must be a valid EVM address'),
 });
 
 const requestIdSchema = z.string().trim().uuid('Invalid mint request id');
@@ -68,6 +80,10 @@ const markMintedSchema = z.object({
     .string()
     .trim()
     .regex(/^0x[a-fA-F0-9]{64}$/, 'Transaction hash must be a valid 0x-prefixed 32-byte hex string'),
+  walletAddress: z
+    .string()
+    .trim()
+    .regex(/^0x[a-fA-F0-9]{40}$/, 'Wallet address must be a valid EVM address'),
 });
 
 function mintRateLimitKey(req: Request): string {
@@ -132,6 +148,14 @@ function normalizeAmount(input: string): string {
     : normalizedWhole;
 }
 
+function normalizeWalletAddress(input: string): string {
+  const sanitized = input.trim().toLowerCase();
+  if (!/^0x[a-f0-9]{40}$/.test(sanitized)) {
+    throw new Error('Wallet address must be a valid EVM address');
+  }
+  return sanitized;
+}
+
 function buildRequestFingerprint(input: {
   chainId: number;
   tokenName: string;
@@ -139,6 +163,7 @@ function buildRequestFingerprint(input: {
   mintAmount: string;
   recipient: string;
   documentHash: string;
+  requesterWalletAddress: string;
 }): string {
   const canonical = JSON.stringify({
     chainId: input.chainId,
@@ -147,6 +172,7 @@ function buildRequestFingerprint(input: {
     mintAmount: input.mintAmount,
     recipient: input.recipient.toLowerCase(),
     documentHash: input.documentHash.toLowerCase(),
+    requesterWalletAddress: input.requesterWalletAddress.toLowerCase(),
   });
   return crypto.createHash('sha256').update(canonical).digest('hex');
 }
@@ -205,6 +231,9 @@ router.post(
 
       const normalizedMintAmount = normalizeAmount(parsed.mintAmount);
       const normalizedOriginalValue = normalizeAmount(parsed.originalValue);
+      const requesterWalletAddress = normalizeWalletAddress(
+        parsed.requesterWalletAddress,
+      );
 
       if (Number(normalizedMintAmount) > Number(normalizedOriginalValue)) {
         res.status(400).json({
@@ -235,11 +264,13 @@ router.post(
         mintAmount: normalizedMintAmount,
         recipient: parsed.recipient,
         documentHash: parsed.documentHash,
+        requesterWalletAddress,
       });
 
       const existing = await prisma.mintApprovalRequest.findFirst({
         where: {
           userId: user.id,
+          requesterWalletAddress,
           requestFingerprint: fingerprint,
           status: { in: ['pending', 'approved'] },
         },
@@ -263,6 +294,7 @@ router.post(
         data: {
           userId: user.id,
           requesterEmail: user.email,
+          requesterWalletAddress,
           chainId: parsed.chainId,
           tokenName: parsed.tokenName.trim(),
           tokenSymbol: parsed.tokenSymbol.trim().toUpperCase(),
@@ -390,6 +422,9 @@ router.get('/status', authenticate, mintStatusLimiter, async (req, res) => {
   try {
     const parsed = statusSchema.parse(req.query);
     const normalizedMintAmount = normalizeAmount(parsed.mintAmount);
+    const requesterWalletAddress = normalizeWalletAddress(
+      parsed.requesterWalletAddress,
+    );
     const fingerprint = buildRequestFingerprint({
       chainId: parsed.chainId,
       tokenName: parsed.tokenName,
@@ -397,11 +432,13 @@ router.get('/status', authenticate, mintStatusLimiter, async (req, res) => {
       mintAmount: normalizedMintAmount,
       recipient: parsed.recipient,
       documentHash: parsed.documentHash,
+      requesterWalletAddress,
     });
 
     const request = await prisma.mintApprovalRequest.findFirst({
       where: {
         userId: req.userId!,
+        requesterWalletAddress,
         requestFingerprint: fingerprint,
       },
       orderBy: { submittedAt: 'desc' },
@@ -457,10 +494,12 @@ router.get('/status', authenticate, mintStatusLimiter, async (req, res) => {
 router.get('/list', authenticate, mintListLimiter, async (req, res) => {
   try {
     const parsed = listSchema.parse(req.query);
+    const walletAddress = normalizeWalletAddress(parsed.walletAddress);
 
     const requests = await prisma.mintApprovalRequest.findMany({
       where: {
         userId: req.userId!,
+        requesterWalletAddress: walletAddress,
         ...(parsed.chainId ? { chainId: parsed.chainId } : {}),
         ...(parsed.status ? { status: parsed.status } : {}),
       },
@@ -471,6 +510,7 @@ router.get('/list', authenticate, mintListLimiter, async (req, res) => {
         chainId: true,
         tokenName: true,
         tokenSymbol: true,
+        requesterWalletAddress: true,
         mintAmount: true,
         recipient: true,
         documentHash: true,
@@ -492,6 +532,7 @@ router.get('/list', authenticate, mintListLimiter, async (req, res) => {
         chainId: request.chainId,
         tokenName: request.tokenName,
         tokenSymbol: request.tokenSymbol,
+        requesterWalletAddress: request.requesterWalletAddress,
         mintAmount: request.mintAmount,
         recipient: request.recipient,
         documentHash: request.documentHash,
@@ -533,11 +574,13 @@ router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (r
     const requestId = requestIdSchema.parse(String(req.params.requestId ?? ''));
     const parsedBody = markMintedSchema.parse(req.body ?? {});
     const normalizedTxHash = parsedBody.txHash.toLowerCase();
+    const walletAddress = normalizeWalletAddress(parsedBody.walletAddress);
 
     const request = await prisma.mintApprovalRequest.findFirst({
       where: {
         id: requestId,
         userId: req.userId!,
+        requesterWalletAddress: walletAddress,
       },
       select: {
         id: true,
@@ -547,16 +590,12 @@ router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (r
         chainId: true,
         tokenName: true,
         tokenSymbol: true,
+        requesterWalletAddress: true,
         mintAmount: true,
         recipient: true,
         documentHash: true,
         documentType: true,
         originalValue: true,
-        user: {
-          select: {
-            walletAddress: true,
-          },
-        },
       },
     });
 
@@ -619,7 +658,7 @@ router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (r
       documentHash: request.documentHash,
       documentType: request.documentType,
       originalValue: request.originalValue,
-      expectedCreatorAddress: request.user.walletAddress,
+      expectedCreatorAddress: request.requesterWalletAddress ?? undefined,
     });
 
     const [advisoryLockKeyHigh, advisoryLockKeyLow] =
@@ -632,6 +671,7 @@ router.post('/:requestId/mark-minted', authenticate, mintStatusLimiter, async (r
         where: {
           id: requestId,
           userId: req.userId!,
+          requesterWalletAddress: walletAddress,
         },
         select: {
           id: true,

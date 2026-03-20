@@ -1,42 +1,37 @@
 /**
  * usePriceHistory hook tests.
  *
- * Verifies deterministic seed generation fallback and conversion of confirmed
- * trade history to OHLCV candles.
+ * Verifies deterministic seed generation fallback and conversion of recent
+ * on-chain pair trades to OHLCV candles.
  */
-import { renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { renderHook, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePriceHistory } from '../../../src/hooks/usePriceHistory';
-import { useTradeStore } from '../../../src/store/tradeStore';
-import type { TradeHistory } from '../../../src/types';
+import type { PairTradePoint } from '../../../src/lib/blockchain/marketData';
 
-function buildTrade(overrides: Partial<TradeHistory>): TradeHistory {
-  return {
-    id: 'trade-id',
-    type: 'exchange',
-    asset: '0xTokenA',
-    assetSymbol: 'TOKA',
-    amount: '100',
-    txHash: '0xtxhash',
-    timestamp: Math.floor(Date.now() / 1000),
-    from: '0xfrom',
-    to: '0xto',
-    status: 'confirmed',
-    ...overrides,
-  };
-}
+const apiClientGetMock = vi.fn();
+const fetchPairTradePointsMock = vi.fn<(chainId: number, tokenSell: string, tokenBuy: string) => Promise<PairTradePoint[]>>();
+
+vi.mock('../../../src/lib/api/client', () => ({
+  default: {
+    get: (...args: unknown[]) => apiClientGetMock(...args),
+  },
+}));
+
+vi.mock('../../../src/lib/blockchain/marketData', () => ({
+  fetchPairTradePoints: (...args: [number, string, string]) => fetchPairTradePointsMock(...args),
+}));
+
+vi.mock('../../../src/store/walletStore', () => ({
+  useWalletStore: (selector: (state: { wallet: { chainId: number | null } }) => unknown) =>
+    selector({ wallet: { chainId: 421614 } }),
+}));
 
 describe('usePriceHistory', () => {
   beforeEach(() => {
-    localStorage.clear();
-    useTradeStore.setState({
-      activeScopeKey: null,
-      tradeHistory: [],
-      isLoadingTrades: false,
-      tradesError: null,
-      slippageBps: 50,
-      pendingTransactions: [],
-    });
+    vi.clearAllMocks();
+    apiClientGetMock.mockResolvedValue({ data: { candles: [], source: 'rpc' } });
+    fetchPairTradePointsMock.mockResolvedValue([]);
   });
 
   it('returns deterministic seeded candles when no trade data exists', () => {
@@ -66,85 +61,75 @@ describe('usePriceHistory', () => {
     expect(firstSnapshot).toEqual(secondSnapshot);
   });
 
-  it('returns real candles when confirmed exchange trades are available', () => {
-    const now = Math.floor(Date.now() / 1000);
-    useTradeStore.setState({
-      tradeHistory: [
-        buildTrade({ id: 't1', amount: '100', timestamp: now - 180 }),
-        buildTrade({ id: 't2', amount: '130', timestamp: now - 120 }),
-        buildTrade({ id: 't3', amount: '90', timestamp: now - 60 }),
-      ],
+  it('prefers backend candle data when enough history is available', async () => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    apiClientGetMock.mockResolvedValue({
+      data: {
+        candles: [
+          { time: nowSeconds - 120, open: 1, high: 1.2, low: 0.95, close: 1.1, volume: 10 },
+          { time: nowSeconds - 60, open: 1.1, high: 1.3, low: 1.05, close: 1.25, volume: 12 },
+        ],
+        source: 'cache',
+      },
     });
 
     const { result } = renderHook(() =>
       usePriceHistory('0xTokenA', '0xTokenB', '1m'),
     );
 
-    expect(result.current.isRealData).toBe(true);
-    expect(result.current.data.length).toBeGreaterThanOrEqual(2);
+    await waitFor(() => {
+      expect(result.current.isRealData).toBe(true);
+      expect(result.current.data.length).toBeGreaterThanOrEqual(2);
+    });
 
-    const lastCandle = result.current.data[result.current.data.length - 1];
-    expect(lastCandle.high).toBeGreaterThanOrEqual(lastCandle.low);
-    expect(lastCandle.volume).toBeGreaterThan(0);
+    expect(fetchPairTradePointsMock).not.toHaveBeenCalled();
+    expect(result.current.data.at(-1)?.close).toBe(1.25);
   });
 
-  it('normalizes millisecond timestamps from trade history to second buckets', () => {
+  it('falls back to direct RPC trades when backend candles are unavailable', async () => {
     const nowMs = Date.now();
-    useTradeStore.setState({
-      tradeHistory: [
-        buildTrade({
-          id: 'ms1',
-          amount: '120.5',
-          timestamp: nowMs - 120_000,
-          from: '0xTokenA',
-          to: '0xTokenB',
-        }),
-        buildTrade({
-          id: 'ms2',
-          amount: '125.25',
-          timestamp: nowMs - 60_000,
-          from: '0xTokenA',
-          to: '0xTokenB',
-        }),
-      ],
-    });
+    apiClientGetMock.mockRejectedValue(new Error('backend unavailable'));
+    fetchPairTradePointsMock.mockResolvedValue([
+      { id: 'ms1', timestampMs: nowMs - 120_000, price: 120.5, volume: 4, source: 'amm' },
+      { id: 'ms2', timestampMs: nowMs - 60_000, price: 125.25, volume: 5, source: 'orderbook' },
+    ]);
 
     const { result } = renderHook(() =>
       usePriceHistory('0xTokenA', '0xTokenB', '1m'),
     );
 
-    expect(result.current.isRealData).toBe(true);
-    expect(result.current.data.length).toBeGreaterThanOrEqual(2);
+    await waitFor(() => {
+      expect(result.current.isRealData).toBe(true);
+      expect(result.current.data.length).toBeGreaterThanOrEqual(2);
+    });
+
+    expect(fetchPairTradePointsMock).toHaveBeenCalledWith(421614, '0xTokenA', '0xTokenB');
     for (const candle of result.current.data) {
       expect(candle.time).toBeLessThan(10_000_000_000);
     }
   });
 
-  it('falls back to deterministic seed data when real trades are invalid', () => {
-    useTradeStore.setState({
-      tradeHistory: [
-        buildTrade({
-          id: 'bad1',
-          amount: 'not-a-number',
-          timestamp: Date.now(),
-          from: '0xTokenA',
-          to: '0xTokenB',
-        }),
-        buildTrade({
-          id: 'bad2',
-          amount: '-12',
-          timestamp: Date.now() - 10_000,
-          from: '0xTokenA',
-          to: '0xTokenB',
-        }),
-      ],
+  it('falls back to deterministic seed data when backend and RPC data are insufficient', async () => {
+    apiClientGetMock.mockResolvedValue({
+      data: {
+        candles: [
+          { time: Math.floor(Date.now() / 1000), open: 1, high: 1.1, low: 0.9, close: 1.05, volume: 3 },
+        ],
+        source: 'rpc',
+      },
     });
+    fetchPairTradePointsMock.mockResolvedValue([
+      { id: 'bad1', timestampMs: Date.now(), price: Number.NaN, volume: 10, source: 'amm' },
+      { id: 'bad2', timestampMs: Date.now() - 10_000, price: -12, volume: 8, source: 'orderbook' },
+    ]);
 
     const { result } = renderHook(() =>
       usePriceHistory('0xTokenA', '0xTokenB', '5m'),
     );
 
-    expect(result.current.isRealData).toBe(false);
-    expect(result.current.data.length).toBe(100);
+    await waitFor(() => {
+      expect(result.current.isRealData).toBe(false);
+      expect(result.current.data.length).toBe(100);
+    });
   });
 });

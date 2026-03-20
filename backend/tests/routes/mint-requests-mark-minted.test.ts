@@ -106,14 +106,12 @@ function buildApprovedRequest(overrides: Partial<Record<string, unknown>> = {}) 
     chainId: 17000,
     tokenName: 'Invoice Asset',
     tokenSymbol: 'INV',
+    requesterWalletAddress: walletAddress,
     mintAmount: '10.5',
     recipient,
     documentHash: `0x${'11'.repeat(32)}`,
     documentType: 'invoice',
     originalValue: '100.25',
-    user: {
-      walletAddress,
-    },
     ...overrides,
   };
 }
@@ -156,7 +154,7 @@ describe('POST /api/mint-requests/:requestId/mark-minted', () => {
     await handler(
       {
         params: { requestId },
-        body: { txHash },
+        body: { txHash, walletAddress },
         userId: 'user-1',
       } as express.Request,
       response as unknown as express.Response,
@@ -206,7 +204,7 @@ describe('POST /api/mint-requests/:requestId/mark-minted', () => {
     await handler(
       {
         params: { requestId },
-        body: { txHash },
+        body: { txHash, walletAddress },
         userId: 'user-1',
       } as express.Request,
       response as unknown as express.Response,
@@ -242,7 +240,7 @@ describe('POST /api/mint-requests/:requestId/mark-minted', () => {
     await handler(
       {
         params: { requestId },
-        body: { txHash },
+        body: { txHash, walletAddress },
         userId: 'user-1',
       } as express.Request,
       response as unknown as express.Response,
@@ -270,7 +268,7 @@ describe('POST /api/mint-requests/:requestId/mark-minted', () => {
     await handler(
       {
         params: { requestId },
-        body: { txHash },
+        body: { txHash, walletAddress },
         userId: 'user-1',
       } as express.Request,
       response as unknown as express.Response,
@@ -303,7 +301,7 @@ describe('POST /api/mint-requests/:requestId/mark-minted', () => {
     await handler(
       {
         params: { requestId },
-        body: { txHash },
+        body: { txHash, walletAddress },
         userId: 'user-1',
       } as express.Request,
       response as unknown as express.Response,
@@ -334,7 +332,7 @@ describe('POST /api/mint-requests/:requestId/mark-minted', () => {
     await handler(
       {
         params: { requestId },
-        body: { txHash },
+        body: { txHash, walletAddress },
         userId: 'user-1',
       } as express.Request,
       response as unknown as express.Response,
@@ -349,6 +347,29 @@ describe('POST /api/mint-requests/:requestId/mark-minted', () => {
     });
     expect(mocks.verifyMintRequestOnChain).toHaveBeenCalledTimes(1);
     expect(mocks.tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.mintApprovalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('treats a wallet ownership mismatch as not found', async () => {
+    mocks.prisma.mintApprovalRequest.findFirst.mockResolvedValue(null);
+
+    const handler = getMarkMintedHandler();
+    const response = createMockResponse();
+    await handler(
+      {
+        params: { requestId },
+        body: {
+          txHash,
+          walletAddress: '0x4444444444444444444444444444444444444444',
+        },
+        userId: 'user-1',
+      } as express.Request,
+      response as unknown as express.Response,
+      vi.fn(),
+    );
+
+    expect(response.statusCode).toBe(404);
+    expect(mocks.verifyMintRequestOnChain).not.toHaveBeenCalled();
     expect(mocks.prisma.mintApprovalRequest.updateMany).not.toHaveBeenCalled();
   });
 });

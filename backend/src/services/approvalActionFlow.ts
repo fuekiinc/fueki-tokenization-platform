@@ -36,8 +36,13 @@ const confirmationPayloadSchema = z.object({
 const CONFIRMATION_PAGE_TTL_MS = 15 * 60 * 1000;
 const HMAC_SIGNATURE_HEX_LENGTH = 64;
 
-function escapeHtml(value: string): string {
-  return value
+function escapeHtml(value: unknown): string {
+  const normalized =
+    value === null || value === undefined || value === ''
+      ? 'Not available'
+      : String(value);
+
+  return normalized
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')

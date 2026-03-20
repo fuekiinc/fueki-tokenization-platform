@@ -110,6 +110,7 @@ model MintApprovalRequest {
   userId           String
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   requesterEmail   String
+  requesterWalletAddress String?
   chainId          Int
   tokenName        String
   tokenSymbol      String
@@ -132,8 +133,10 @@ model MintApprovalRequest {
   actionTokens     MintApprovalActionToken[]
 
   @@index([userId, requestFingerprint])
+  @@index([userId, requesterWalletAddress, requestFingerprint])
   @@index([status])
   @@index([documentHash])
+  @@index([requesterWalletAddress])
 }
 
 model MintApprovalActionToken {
@@ -155,6 +158,7 @@ model SecurityTokenApprovalRequest {
   userId             String
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   requesterEmail     String
+  requesterWalletAddress String?
   chainId            Int
   tokenName          String
   tokenSymbol        String
@@ -180,8 +184,10 @@ model SecurityTokenApprovalRequest {
   actionTokens       SecurityTokenApprovalActionToken[]
 
   @@index([userId, requestFingerprint])
+  @@index([userId, requesterWalletAddress, requestFingerprint])
   @@index([status])
   @@index([documentHash])
+  @@index([requesterWalletAddress])
 }
 
 model SecurityTokenApprovalActionToken {

@@ -64,6 +64,13 @@ function formatDate(dateStr: string): string {
   });
 }
 
+function formatSnakeCaseLabel(value: string | null | undefined, fallback = 'Unknown'): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return fallback;
+  }
+  return value.replace(/_/g, ' ');
+}
+
 // ---------------------------------------------------------------------------
 // Confirmation dialog
 // ---------------------------------------------------------------------------
@@ -257,7 +264,7 @@ function KYCExpandedDetail({ userId }: { userId: string }) {
           Document Type
         </p>
         <p className="mt-1 text-sm text-white">
-          {kycData.documentType.replace('_', ' ')}
+          {formatSnakeCaseLabel(kycData.documentType)}
         </p>
       </div>
       <div>
@@ -367,9 +374,11 @@ export default function AdminKYCQueue() {
     }
   };
 
+  const users = Array.isArray(data?.users) ? data.users : [];
+
   // ---- Batch actions --------------------------------------------------------
 
-  const pendingUsers = data?.users.filter((u) => u.kycStatus === 'pending') ?? [];
+  const pendingUsers = users.filter((u) => u.kycStatus === 'pending');
   const allPendingSelected =
     pendingUsers.length > 0 && pendingUsers.every((u) => selectedIds.has(u.id));
 
@@ -525,7 +534,7 @@ export default function AdminKYCQueue() {
               Retry
             </button>
           </div>
-        ) : !data || data.users.length === 0 ? (
+        ) : !data || users.length === 0 ? (
           <div className="p-8">
             <EmptyState
               icon={<FileCheck />}
@@ -576,7 +585,7 @@ export default function AdminKYCQueue() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.04]">
-                  {data.users.map((user: AdminUser) => {
+                  {users.map((user: AdminUser) => {
                     const isExpanded = expandedRows.has(user.id);
                     const isSelected = selectedIds.has(user.id);
                     const isPending = user.kycStatus === 'pending';
@@ -776,7 +785,7 @@ function KYCRow({
         </td>
         <td className="whitespace-nowrap px-6 py-4">
           <Badge variant={kycBadgeVariant(user.kycStatus)} size="sm" dot>
-            {user.kycStatus.replace('_', ' ')}
+            {formatSnakeCaseLabel(user.kycStatus)}
           </Badge>
         </td>
         <td className="whitespace-nowrap px-6 py-4">

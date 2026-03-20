@@ -45,6 +45,10 @@ const submitSchema = z.object({
   documentType: z.string().trim().min(1, 'Document type is required').max(64),
   hashSource: z.enum(['file', 'manual']),
   chainId: z.coerce.number().int().positive(),
+  requesterWalletAddress: z
+    .string()
+    .trim()
+    .regex(/^0x[a-fA-F0-9]{40}$/, 'Requester wallet address must be a valid EVM address'),
 });
 
 const statusSchema = z.object({
@@ -67,12 +71,20 @@ const statusSchema = z.object({
     .regex(/^0x[a-fA-F0-9]{1,64}$/),
   documentType: z.string().trim().min(1).max(64),
   chainId: z.coerce.number().int().positive(),
+  requesterWalletAddress: z
+    .string()
+    .trim()
+    .regex(/^0x[a-fA-F0-9]{40}$/, 'Requester wallet address must be a valid EVM address'),
 });
 
 const listSchema = z.object({
   chainId: z.coerce.number().int().positive().optional(),
   status: z.enum(['pending', 'approved', 'rejected']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
+  walletAddress: z
+    .string()
+    .trim()
+    .regex(/^0x[a-fA-F0-9]{40}$/, 'Wallet address must be a valid EVM address'),
 });
 
 function requestRateLimitKey(req: Request): string {
@@ -137,6 +149,10 @@ function normalizeDecimalAmount(input: string): string {
     : normalizedWhole;
 }
 
+function normalizeWalletAddress(input: string): string {
+  return input.trim().toLowerCase();
+}
+
 function buildRequestFingerprint(input: {
   chainId: number;
   tokenName: string;
@@ -149,6 +165,7 @@ function buildRequestFingerprint(input: {
   originalValue: string;
   documentHash: string;
   documentType: string;
+  requesterWalletAddress: string;
 }): string {
   const canonical = JSON.stringify({
     chainId: input.chainId,
@@ -162,6 +179,7 @@ function buildRequestFingerprint(input: {
     originalValue: input.originalValue,
     documentHash: input.documentHash.toLowerCase(),
     documentType: input.documentType.trim(),
+    requesterWalletAddress: input.requesterWalletAddress.toLowerCase(),
   });
   return crypto.createHash('sha256').update(canonical).digest('hex');
 }
@@ -176,6 +194,9 @@ router.post(
     try {
       const parsed = submitSchema.parse(req.body);
       const file = req.file;
+      const requesterWalletAddress = normalizeWalletAddress(
+        parsed.requesterWalletAddress,
+      );
 
       if (parsed.hashSource === 'file' && !file) {
         res.status(400).json({
@@ -238,11 +259,13 @@ router.post(
         originalValue: parsed.originalValue.trim(),
         documentHash: parsed.documentHash,
         documentType: parsed.documentType,
+        requesterWalletAddress,
       });
 
       const existing = await prisma.securityTokenApprovalRequest.findFirst({
         where: {
           userId: user.id,
+          requesterWalletAddress,
           requestFingerprint: fingerprint,
           status: { in: ['pending', 'approved'] },
         },
@@ -266,6 +289,7 @@ router.post(
         data: {
           userId: user.id,
           requesterEmail: user.email,
+          requesterWalletAddress,
           chainId: parsed.chainId,
           tokenName: parsed.tokenName.trim(),
           tokenSymbol: parsed.tokenSymbol.trim().toUpperCase(),
@@ -398,6 +422,9 @@ router.post(
 router.get('/status', authenticate, statusLimiter, async (req, res) => {
   try {
     const parsed = statusSchema.parse(req.query);
+    const requesterWalletAddress = normalizeWalletAddress(
+      parsed.requesterWalletAddress,
+    );
     const normalizedTotalSupply = normalizeDecimalAmount(parsed.totalSupply);
     const normalizedMaxTotalSupply = normalizeDecimalAmount(parsed.maxTotalSupply);
     const normalizedMinTimelockAmount = normalizeDecimalAmount(
@@ -416,11 +443,13 @@ router.get('/status', authenticate, statusLimiter, async (req, res) => {
       originalValue: parsed.originalValue.trim(),
       documentHash: parsed.documentHash,
       documentType: parsed.documentType,
+      requesterWalletAddress,
     });
 
     const request = await prisma.securityTokenApprovalRequest.findFirst({
       where: {
         userId: req.userId!,
+        requesterWalletAddress,
         requestFingerprint: fingerprint,
       },
       orderBy: { submittedAt: 'desc' },
@@ -476,10 +505,12 @@ router.get('/status', authenticate, statusLimiter, async (req, res) => {
 router.get('/list', authenticate, listLimiter, async (req, res) => {
   try {
     const parsed = listSchema.parse(req.query);
+    const walletAddress = normalizeWalletAddress(parsed.walletAddress);
 
     const requests = await prisma.securityTokenApprovalRequest.findMany({
       where: {
         userId: req.userId!,
+        requesterWalletAddress: walletAddress,
         ...(parsed.chainId ? { chainId: parsed.chainId } : {}),
         ...(parsed.status ? { status: parsed.status } : {}),
       },
@@ -491,6 +522,7 @@ router.get('/list', authenticate, listLimiter, async (req, res) => {
         tokenName: true,
         tokenSymbol: true,
         decimals: true,
+        requesterWalletAddress: true,
         totalSupply: true,
         maxTotalSupply: true,
         minTimelockAmount: true,
@@ -515,6 +547,7 @@ router.get('/list', authenticate, listLimiter, async (req, res) => {
         tokenName: request.tokenName,
         tokenSymbol: request.tokenSymbol,
         decimals: request.decimals,
+        requesterWalletAddress: request.requesterWalletAddress,
         totalSupply: request.totalSupply,
         maxTotalSupply: request.maxTotalSupply,
         minTimelockAmount: request.minTimelockAmount,

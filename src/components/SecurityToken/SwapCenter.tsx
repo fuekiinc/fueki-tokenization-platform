@@ -34,6 +34,7 @@ import {
 } from '../../contracts/abis/SecurityToken';
 import { getProvider, useWalletStore } from '../../store/walletStore';
 import { getReadOnlyProvider, parseContractError } from '../../lib/blockchain/contracts';
+import { buildBufferedTransactionOverrides } from '../../lib/blockchain/transactionOverrides';
 import {
   sendTransactionWithRetry,
   waitForTransactionReceipt,
@@ -477,6 +478,8 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
 
       toast.loading('Configuring sell...', { id: 'configure-sell' });
 
+      const provider = getProvider();
+      if (!provider) throw new Error('Wallet not connected');
       const contract = await getContract(true);
       const gasEstimate = await contract.configureSell.estimateGas(
         restrictedAmount,
@@ -484,7 +487,7 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
         sellQuoteTokenSender,
         quoteAmount,
       );
-      const gasLimit = (gasEstimate * 120n) / 100n;
+      const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
       const tx = await sendTransactionWithRetry(
         () =>
           contract.configureSell(
@@ -492,7 +495,7 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
             sellQuoteToken,
             sellQuoteTokenSender,
             quoteAmount,
-            { gasLimit },
+            txOverrides,
           ),
         { label: 'SwapCenter.configureSell' },
       );
@@ -554,9 +557,9 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
         tokenAddress,
         amount,
       );
-      const gasLimit = (gasEstimate * 120n) / 100n;
+      const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
       const tx = await sendTransactionWithRetry(
-        () => erc20.approve(tokenAddress, amount, { gasLimit }),
+        () => erc20.approve(tokenAddress, amount, txOverrides),
         { label: 'SwapCenter.approveBuyQuoteToken' },
       );
       await waitForTransactionReceipt(tx, { label: 'SwapCenter.approveBuyQuoteToken' });
@@ -611,6 +614,8 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
 
       toast.loading('Configuring buy...', { id: 'configure-buy' });
 
+      const provider = getProvider();
+      if (!provider) throw new Error('Wallet not connected');
       const contract = await getContract(true);
       const gasEstimate = await contract.configureBuy.estimateGas(
         restrictedAmount,
@@ -618,7 +623,7 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
         buyQuoteToken,
         quoteAmount,
       );
-      const gasLimit = (gasEstimate * 120n) / 100n;
+      const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
       const tx = await sendTransactionWithRetry(
         () =>
           contract.configureBuy(
@@ -626,7 +631,7 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
             buyRestrictedTokenSender,
             buyQuoteToken,
             quoteAmount,
-            { gasLimit },
+            txOverrides,
           ),
         { label: 'SwapCenter.configureBuy' },
       );
@@ -690,12 +695,10 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
             tokenAddress,
             swap.quoteTokenAmount,
           );
-          const approveLimit = (approveGas * 120n) / 100n;
+          const approveOverrides = await buildBufferedTransactionOverrides(provider, approveGas);
           const approveTx = await sendTransactionWithRetry(
             () =>
-              erc20.approve(tokenAddress, swap.quoteTokenAmount, {
-                gasLimit: approveLimit,
-              }),
+              erc20.approve(tokenAddress, swap.quoteTokenAmount, approveOverrides),
             { label: 'SwapCenter.approveSwapPayment' },
           );
           await waitForTransactionReceipt(approveTx, { label: 'SwapCenter.approveSwapPayment' });
@@ -714,9 +717,9 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
           await contract.completeSwapWithPaymentToken.estimateGas(
             swap.id,
           );
-        const gasLimit = (gasEstimate * 120n) / 100n;
+        const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
         const tx = await sendTransactionWithRetry(
-          () => contract.completeSwapWithPaymentToken(swap.id, { gasLimit }),
+          () => contract.completeSwapWithPaymentToken(swap.id, txOverrides),
           { label: 'SwapCenter.completeSwapWithPayment' },
         );
         await waitForTransactionReceipt(tx, { label: 'SwapCenter.completeSwapWithPayment' });
@@ -753,14 +756,16 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
           id: 'complete-swap-restricted',
         });
 
+        const provider = getProvider();
+        if (!provider) throw new Error('Wallet not connected');
         const contract = await getContract(true);
         const gasEstimate =
           await contract.completeSwapWithRestrictedToken.estimateGas(
             swap.id,
           );
-        const gasLimit = (gasEstimate * 120n) / 100n;
+        const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
         const tx = await sendTransactionWithRetry(
-          () => contract.completeSwapWithRestrictedToken(swap.id, { gasLimit }),
+          () => contract.completeSwapWithRestrictedToken(swap.id, txOverrides),
           { label: 'SwapCenter.completeSwapWithRestricted' },
         );
         await waitForTransactionReceipt(tx, { label: 'SwapCenter.completeSwapWithRestricted' });
@@ -790,13 +795,15 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
       try {
         toast.loading('Canceling swap...', { id: 'cancel-swap' });
 
+        const provider = getProvider();
+        if (!provider) throw new Error('Wallet not connected');
         const contract = await getContract(true);
         const gasEstimate = await contract.cancelSell.estimateGas(
           swapId,
         );
-        const gasLimit = (gasEstimate * 120n) / 100n;
+        const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
         const tx = await sendTransactionWithRetry(
-          () => contract.cancelSell(swapId, { gasLimit }),
+          () => contract.cancelSell(swapId, txOverrides),
           { label: 'SwapCenter.cancelSwap' },
         );
         await waitForTransactionReceipt(tx, { label: 'SwapCenter.cancelSwap' });

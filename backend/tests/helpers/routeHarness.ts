@@ -17,6 +17,10 @@ export interface MockResponse {
   getHeader: (name: string) => string | string[] | undefined;
   json: (payload: unknown) => MockResponse;
   send: (payload: unknown) => MockResponse;
+  set: (
+    nameOrHeaders: string | Record<string, string | string[]>,
+    value?: string | string[],
+  ) => MockResponse;
   setHeader: (name: string, value: string | string[]) => MockResponse;
   status: (code: number) => MockResponse;
   type: (value: string) => MockResponse;
@@ -95,6 +99,19 @@ export function createMockRes(): MockResponse {
     send(payload: unknown) {
       res.body = payload;
       res.sentType = 'send';
+      return res;
+    },
+    set(nameOrHeaders: string | Record<string, string | string[]>, value?: string | string[]) {
+      if (typeof nameOrHeaders === 'string') {
+        if (value !== undefined) {
+          headers[nameOrHeaders.toLowerCase()] = value;
+        }
+        return res;
+      }
+
+      for (const [name, headerValue] of Object.entries(nameOrHeaders)) {
+        headers[name.toLowerCase()] = headerValue;
+      }
       return res;
     },
     setHeader(name: string, value: string | string[]) {

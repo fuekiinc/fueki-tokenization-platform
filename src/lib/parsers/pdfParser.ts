@@ -5,13 +5,13 @@ import { extractValueFromText } from './textValueExtraction';
 // pdf.js setup -- lazy-loaded to avoid blocking initial page load
 // ---------------------------------------------------------------------------
 
-let pdfJsLoaded: typeof import('pdfjs-dist') | null = null;
+let pdfJsLoaded: typeof import('pdfjs-dist/legacy/build/pdf.mjs') | null = null;
 
 async function getPdfJs() {
   if (pdfJsLoaded) return pdfJsLoaded;
-  const pdfjs = await import('pdfjs-dist');
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-    'pdfjs-dist/build/pdf.worker.min.mjs',
+    'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
     import.meta.url,
   ).href;
   pdfJsLoaded = pdfjs;

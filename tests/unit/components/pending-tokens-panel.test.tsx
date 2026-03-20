@@ -17,6 +17,7 @@ const listMintApprovalRequestsMock = vi.fn();
 vi.mock('../../../src/hooks/useWallet', () => ({
   useWallet: () => ({
     isConnected: true,
+    address: '0x9999999999999999999999999999999999999999',
     chainId: 1,
     switchNetwork: switchNetworkMock,
   }),
@@ -38,11 +39,13 @@ function request(overrides: Partial<MintApprovalRequestItem>): MintApprovalReque
     originalValue: '1000',
     currency: 'USD',
     chainId: 1,
+    requesterWalletAddress: '0x9999999999999999999999999999999999999999',
     status: 'pending',
+    approvedBy: null,
     submittedAt: new Date().toISOString(),
     reviewedAt: null,
     reviewNotes: null,
-    txHash: null,
+    canMint: false,
     ...overrides,
   };
 }
@@ -58,6 +61,7 @@ describe('PendingTokensPanel', () => {
           tokenSymbol: 'MNA',
           status: 'approved',
           chainId: 1,
+          canMint: true,
         }),
         request({
           id: 'approved-arb',
@@ -65,6 +69,7 @@ describe('PendingTokensPanel', () => {
           tokenSymbol: 'ARB',
           status: 'approved',
           chainId: 42161,
+          canMint: true,
         }),
         request({
           id: 'already-minted',
@@ -72,7 +77,6 @@ describe('PendingTokensPanel', () => {
           tokenSymbol: 'MNT',
           status: 'minted',
           chainId: 1,
-          txHash: '0x' + '22'.repeat(32),
         }),
       ],
     });
@@ -86,6 +90,10 @@ describe('PendingTokensPanel', () => {
 
     await waitFor(() => {
       expect(listMintApprovalRequestsMock).toHaveBeenCalledTimes(1);
+    });
+    expect(listMintApprovalRequestsMock).toHaveBeenCalledWith({
+      limit: 30,
+      walletAddress: '0x9999999999999999999999999999999999999999',
     });
 
     const approvedMainnetCard = screen

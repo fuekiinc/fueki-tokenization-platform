@@ -38,6 +38,7 @@ import {
   getNetworkMetadata,
 } from '../../contracts/addresses';
 import { getNetworkCapabilities } from '../../contracts/networkCapabilities';
+import { DEMO_CHAIN_LABEL } from '../../lib/demoMode';
 import { sanitizePastedAddress, validatePositiveAmount, validateTokenSymbol } from '../../lib/utils/validation';
 import { INPUT_CLASSES } from '../../lib/designTokens';
 import {
@@ -309,7 +310,7 @@ export default function MintForm({
   ]);
 
   const approvalQuery = useMemo<MintApprovalStatusQuery | null>(() => {
-    if (!hasMintContext || !chainId) return null;
+    if (!hasMintContext || !chainId || !address) return null;
     const sanitizedMintAmount = sanitizeAmountInput(mintAmount);
     if (
       !tokenName.trim() ||
@@ -329,8 +330,10 @@ export default function MintForm({
       recipient,
       documentHash: contextDocumentHash,
       chainId,
+      requesterWalletAddress: address,
     };
   }, [
+    address,
     hasMintContext,
     chainId,
     tokenName,
@@ -488,7 +491,7 @@ export default function MintForm({
       return;
     }
 
-    if (!isConnected || !chainId) {
+    if (!isConnected || !chainId || !address) {
       toast.error('Please connect your wallet before submitting a mint request.');
       return;
     }
@@ -518,6 +521,7 @@ export default function MintForm({
         documentType: contextDocumentType,
         originalValue: sanitizedOriginalValue,
         currency: contextCurrency,
+        requesterWalletAddress: address,
         file: currentDocumentFile,
       });
 
@@ -555,6 +559,7 @@ export default function MintForm({
   }, [
     isSubmitting,
     validate,
+    address,
     isConnected,
     chainId,
     currentDocumentFile,
@@ -572,13 +577,22 @@ export default function MintForm({
 
   // ---- Mint handler -------------------------------------------------------
 
-  const handleMint = async () => {
+  const handleMint = useCallback(async () => {
     if (isSubmitting) return;
 
     if (approvalsRequired && approvalStatus !== 'approved') {
       toast.error(
         'Minting is locked until banker approval. Submit a mint request first.',
       );
+      return;
+    }
+
+    if (
+      selectedRequest?.requesterWalletAddress &&
+      address &&
+      selectedRequest.requesterWalletAddress.toLowerCase() !== address.toLowerCase()
+    ) {
+      toast.error('Switch back to the wallet that submitted this mint request.');
       return;
     }
 
@@ -617,7 +631,7 @@ export default function MintForm({
     }
 
     const provider = getProvider();
-    if (!provider || !chainId) {
+    if (!provider || !chainId || !address) {
       toast.error('Please connect your wallet before minting.');
       return;
     }
@@ -827,6 +841,7 @@ export default function MintForm({
           const markResult = await markMintApprovalRequestMinted(
             approvalRequestId,
             receipt.hash,
+            address ?? recipient,
           );
           applyApprovalStatus(markResult.status, {
             requestId: markResult.requestId,
@@ -876,7 +891,31 @@ export default function MintForm({
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [
+    address,
+    addAsset,
+    addTrade,
+    approvalQuery,
+    approvalRequestId,
+    approvalStatus,
+    approvalSubmittedAt,
+    approvalsRequired,
+    applyApprovalStatus,
+    capabilities?.mintAsset,
+    chainId,
+    contextDocumentHash,
+    contextDocumentType,
+    contextOriginalValue,
+    isSubmitting,
+    mintAmount,
+    networkName,
+    recipient,
+    selectedRequest,
+    setTouched,
+    tokenName,
+    tokenSymbol,
+    validate,
+  ]);
 
   const handlePrimaryAction = useCallback(async () => {
     if (!approvalsRequired) {
@@ -939,7 +978,7 @@ export default function MintForm({
               Activating Demo Wallet
             </h3>
             <p className="mt-3 max-w-xs text-sm text-gray-500 leading-relaxed">
-              Connecting the pre-funded Holesky demo wallet for this session.
+              Connecting the pre-funded {DEMO_CHAIN_LABEL} demo wallet for this session.
             </p>
           </section>
         );

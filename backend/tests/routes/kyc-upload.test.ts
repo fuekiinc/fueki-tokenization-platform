@@ -1,4 +1,3 @@
-import multer from 'multer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockReq, createMockRes, getRouteHandlers, invokeHandler } from '../helpers/routeHarness';
 

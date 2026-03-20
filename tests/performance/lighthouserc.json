@@ -2,14 +2,14 @@
   "ci": {
     "collect": {
       "numberOfRuns": 1,
-      "startServerCommand": "npm run dev",
+      "startServerCommand": "npm run build && npm run preview -- --host 127.0.0.1 --port 4173",
       "startServerReadyPattern": "Local:",
       "startServerReadyTimeout": 120000,
       "url": [
-        "http://localhost:5173/",
-        "http://localhost:5173/signup",
-        "http://localhost:5173/deploy",
-        "http://localhost:5173/dashboard"
+        "http://127.0.0.1:4173/",
+        "http://127.0.0.1:4173/signup",
+        "http://127.0.0.1:4173/deploy",
+        "http://127.0.0.1:4173/dashboard"
       ]
     },
     "assert": {

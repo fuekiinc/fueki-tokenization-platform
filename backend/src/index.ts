@@ -13,6 +13,7 @@ import supportRoutes from './routes/support';
 import mintRequestRoutes from './routes/mintRequests';
 import securityTokenRequestRoutes from './routes/securityTokenRequests';
 import deploymentRoutes from './routes/deployments';
+import marketDataRoutes from './routes/marketData';
 
 const app = express();
 
@@ -79,6 +80,7 @@ app.use('/api/support', supportLimiter, supportRoutes);
 app.use('/api/mint-requests', mintRequestRoutes);
 app.use('/api/security-token-requests', securityTokenRequestRoutes);
 app.use('/api/deployments', limiter, deploymentRoutes);
+app.use('/api/market-data', marketDataRoutes);
 
 // Global error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

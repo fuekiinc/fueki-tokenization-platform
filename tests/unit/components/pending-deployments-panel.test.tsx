@@ -1,8 +1,8 @@
 /**
  * PendingDeploymentsPanel behavior tests.
  *
- * Verifies approved deployment requests expose the right action by network and
- * non-approved requests only expose the review action.
+ * Verifies requests are scoped to the connected wallet and approved requests
+ * expose the right action by network.
  */
 import React from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -16,6 +16,7 @@ const listSecurityTokenApprovalRequestsMock = vi.fn();
 
 vi.mock('../../../src/hooks/useWallet', () => ({
   useWallet: () => ({
+    address: '0x1111111111111111111111111111111111111111',
     isConnected: true,
     chainId: 1,
     switchNetwork: switchNetworkMock,
@@ -32,20 +33,26 @@ function request(
 ): SecurityTokenApprovalRequestItem {
   return {
     id: 'req-default',
+    chainId: 1,
     tokenName: 'Default Security Token',
     tokenSymbol: 'DST',
     decimals: 18,
+    requesterWalletAddress: '0x1111111111111111111111111111111111111111',
     totalSupply: '1000000',
     maxTotalSupply: '2000000',
-    lockupSeconds: 0,
-    transferRestrictionsEnabled: true,
+    minTimelockAmount: '1',
+    maxReleaseDelayDays: 365,
+    originalValue: '100',
     documentHash: '0x' + '33'.repeat(32),
-    chainId: 1,
+    documentType: 'Prospectus',
+    hashSource: 'file',
+    fileName: 'prospectus.pdf',
     status: 'pending',
+    reviewNotes: null,
+    approvedBy: null,
     submittedAt: new Date().toISOString(),
     reviewedAt: null,
-    reviewNotes: null,
-    txHash: null,
+    canDeploy: false,
     ...overrides,
   };
 }
@@ -59,12 +66,14 @@ describe('PendingDeploymentsPanel', () => {
           id: 'approved-mainnet',
           tokenName: 'Mainnet Deploy',
           status: 'approved',
+          canDeploy: true,
           chainId: 1,
         }),
         request({
           id: 'approved-arb',
           tokenName: 'Arbitrum Deploy',
           status: 'approved',
+          canDeploy: true,
           chainId: 42161,
         }),
         request({
@@ -76,7 +85,7 @@ describe('PendingDeploymentsPanel', () => {
     });
   });
 
-  it('renders deployment actions by status/network and triggers callbacks', async () => {
+  it('requests only the connected wallet approvals and renders deployment actions by status/network', async () => {
     const onSelectRequest = vi.fn();
     const user = userEvent.setup();
 
@@ -86,21 +95,35 @@ describe('PendingDeploymentsPanel', () => {
       expect(listSecurityTokenApprovalRequestsMock).toHaveBeenCalledTimes(1);
     });
 
+    expect(listSecurityTokenApprovalRequestsMock).toHaveBeenCalledWith({
+      limit: 30,
+      walletAddress: '0x1111111111111111111111111111111111111111',
+    });
+
     const mainnetCard = screen.getByText('Mainnet Deploy').closest('article') as HTMLElement;
     const arbCard = screen.getByText('Arbitrum Deploy').closest('article') as HTMLElement;
     const pendingCard = screen.getByText('Pending Review').closest('article') as HTMLElement;
 
-    expect(within(mainnetCard).getByRole('button', { name: /Deploy Approved Token/i })).toBeInTheDocument();
-    expect(within(arbCard).getByRole('button', { name: /Switch to Arbitrum One/i })).toBeInTheDocument();
-    expect(within(pendingCard).getByRole('button', { name: /Use in Review/i })).toBeInTheDocument();
-    expect(within(pendingCard).queryByRole('button', { name: /Deploy Approved Token/i })).not.toBeInTheDocument();
+    expect(
+      within(mainnetCard).getByRole('button', { name: /Deploy Approved Token/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(arbCard).getByRole('button', { name: /Switch to Arbitrum One/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(pendingCard).getByRole('button', { name: /Use in Review/i }),
+    ).toBeInTheDocument();
 
-    await user.click(within(mainnetCard).getByRole('button', { name: /Deploy Approved Token/i }));
+    await user.click(
+      within(mainnetCard).getByRole('button', { name: /Deploy Approved Token/i }),
+    );
     expect(onSelectRequest).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'approved-mainnet', status: 'approved' }),
     );
 
-    await user.click(within(arbCard).getByRole('button', { name: /Switch to Arbitrum One/i }));
+    await user.click(
+      within(arbCard).getByRole('button', { name: /Switch to Arbitrum One/i }),
+    );
     expect(switchNetworkMock).toHaveBeenCalledWith(42161);
   });
 });

@@ -23,6 +23,7 @@ export async function submitMintApprovalRequest(
   formData.append('originalValue', payload.originalValue);
   formData.append('currency', payload.currency);
   formData.append('chainId', String(payload.chainId));
+  formData.append('requesterWalletAddress', payload.requesterWalletAddress);
 
   const response = await apiClient.post<SubmitMintApprovalResponse>(
     '/api/mint-requests/submit',
@@ -42,7 +43,7 @@ export async function getMintApprovalStatus(
 }
 
 export async function listMintApprovalRequests(
-  params: ListMintApprovalRequestsQuery = {},
+  params: ListMintApprovalRequestsQuery,
 ): Promise<ListMintApprovalRequestsResponse> {
   const response = await apiClient.get<ListMintApprovalRequestsResponse>(
     '/api/mint-requests/list',
@@ -54,6 +55,7 @@ export async function listMintApprovalRequests(
 export async function markMintApprovalRequestMinted(
   requestId: string,
   txHash: string,
+  walletAddress: string,
 ): Promise<MarkMintApprovalMintedResponse> {
   const normalizedTxHash = txHash.trim();
   if (!/^0x[a-fA-F0-9]{64}$/.test(normalizedTxHash)) {
@@ -62,7 +64,7 @@ export async function markMintApprovalRequestMinted(
 
   const response = await apiClient.post<MarkMintApprovalMintedResponse>(
     `/api/mint-requests/${requestId}/mark-minted`,
-    { txHash: normalizedTxHash },
+    { txHash: normalizedTxHash, walletAddress },
   );
   return response.data;
 }

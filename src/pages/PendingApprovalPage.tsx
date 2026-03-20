@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useAuthStore } from '../store/authStore';
 import FuekiBrand from '../components/Brand/FuekiBrand';
+import { DEMO_CHAIN_DESCRIPTION } from '../lib/demoMode';
 import { isContractDeploymentOnlyPlan } from '../lib/subscriptionPlans';
 import type { KYCStatus } from '../types/auth';
 
@@ -153,7 +154,7 @@ export default function PendingApprovalPage() {
     setIsStartingDemo(true);
     try {
       await startDemo();
-      toast.success('Demo mode activated! Explore the platform on Holesky testnet.');
+      toast.success(`Demo mode activated! Explore the platform on ${DEMO_CHAIN_DESCRIPTION}.`);
       navigate('/dashboard');
     } catch (err: unknown) {
       const message =
@@ -562,7 +563,7 @@ export default function PendingApprovalPage() {
                 >
                   <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
                     Want to explore the platform while you wait? Try a one-time demo
-                    session on the Holesky testnet with a pre-funded wallet.
+                    session on the {DEMO_CHAIN_DESCRIPTION} with a pre-funded wallet.
                   </p>
                 </div>
                 <button

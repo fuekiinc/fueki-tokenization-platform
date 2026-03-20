@@ -34,7 +34,7 @@ jobs:
       - name: Run API tests
         run: npm run test:api
 
-      - name: Run Newman contract checks
+      - name: Run API contract checks
         run: bash tests/api/run-newman-contract.sh
 
       - name: Upload API reports

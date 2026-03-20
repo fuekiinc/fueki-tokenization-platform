@@ -105,8 +105,14 @@ describe('DemoWalletProvider', () => {
       );
     });
 
+    const provider = walletActions.setProvider.mock.calls[0]?.[0] as {
+      getSigner?: () => Promise<unknown>;
+    };
+    const signer = walletActions.setSigner.mock.calls[0]?.[0];
+
     expect(walletActions.setProvider).toHaveBeenCalledTimes(1);
     expect(walletActions.setSigner).toHaveBeenCalledTimes(1);
+    await expect(provider.getSigner?.()).resolves.toBe(signer);
     expect(useDemoWalletStore.getState().isReady).toBe(true);
     expect(useDemoWalletStore.getState().setupError).toBeNull();
   });

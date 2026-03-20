@@ -4,11 +4,12 @@ import { AlertTriangle, X } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuthStore } from '../../store/authStore';
 import { normalizeKycStatus } from '../../lib/auth/kycStatus';
+import { DEMO_CHAIN_LABEL } from '../../lib/demoMode';
 
 /**
  * Persistent top-of-page banner shown to users in demo mode.
  *
- * - Clearly communicates they're in a temporary preview on Holesky testnet.
+ * - Clearly communicates they're in a temporary preview on Arbitrum Sepolia.
  * - Allows ending the demo early via "Exit Demo".
  * - Auto-detects when KYC has been approved mid-demo and shows a celebratory
  *   message with a CTA to reload for full access.
@@ -74,10 +75,10 @@ export default function DemoBanner() {
         <div className="flex items-center gap-2 text-sm font-medium">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span className="hidden sm:inline">
-            You are in Demo Mode on Arbitrum Sepolia Testnet. This is a one-time preview session.
+            You are in Demo Mode on {DEMO_CHAIN_LABEL}. This is a one-time preview session.
           </span>
           <span className="sm:hidden">
-            Demo Mode &mdash; Arbitrum Sepolia Testnet
+            Demo Mode &mdash; {DEMO_CHAIN_LABEL}
           </span>
         </div>
 

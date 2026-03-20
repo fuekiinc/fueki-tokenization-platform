@@ -5,15 +5,38 @@ import { useAuthStore } from '../../store/authStore';
 import { useWalletStore } from '../../store/walletStore';
 import logger from '../../lib/logger';
 import { findHealthyEndpoint, getOrderedRpcEndpoints } from '../../lib/rpc/endpoints';
+import {
+  DEMO_CHAIN_DESCRIPTION,
+  DEMO_CHAIN_ID,
+  DEMO_CHAIN_NAME,
+} from '../../lib/demoMode';
 
 /**
- * DEMO_CHAIN_ID is the chain ID for the demo testnet (Arbitrum Sepolia).
+ * DEMO_CHAIN_ID is the chain ID for the demo testnet.
  */
-const DEMO_CHAIN_ID = 421614;
-
 type RuntimeEnvWindow = Window & {
   __FUEKI_RUNTIME_ENV__?: Record<string, string>;
 };
+
+function createDemoModeProviderClass(
+  JsonRpcProviderCtor: typeof import('ethers').JsonRpcProvider,
+) {
+  return class DemoModeProvider extends JsonRpcProviderCtor {
+    #demoSigner: JsonRpcSigner | null = null;
+
+    attachDemoSigner(signer: JsonRpcSigner) {
+      this.#demoSigner = signer;
+      return this;
+    }
+
+    override async getSigner(_address?: number | string): Promise<JsonRpcSigner> {
+      if (!this.#demoSigner) {
+        throw new Error(`Demo signer is not ready for ${DEMO_CHAIN_DESCRIPTION}.`);
+      }
+      return this.#demoSigner;
+    }
+  };
+}
 
 function resolveDemoWalletKey(): string {
   if (typeof window !== 'undefined') {
@@ -140,13 +163,15 @@ export default function DemoWalletProvider() {
           (await findHealthyEndpoint(DEMO_CHAIN_ID)) ??
           getOrderedRpcEndpoints(DEMO_CHAIN_ID)[0];
         if (!healthyRpc) {
-          throw new Error('No healthy Arbitrum Sepolia RPC endpoint is available for demo mode.');
+          throw new Error(`No healthy ${DEMO_CHAIN_NAME} RPC endpoint is available for demo mode.`);
         }
 
         if (cancelled) return;
 
-        const provider = new JsonRpcProvider(healthyRpc, DEMO_CHAIN_ID);
+        const DemoModeProvider = createDemoModeProviderClass(JsonRpcProvider);
+        const provider = new DemoModeProvider(healthyRpc, DEMO_CHAIN_ID);
         const wallet = new Wallet(demoKey, provider);
+        provider.attachDemoSigner(wallet as unknown as JsonRpcSigner);
         const address = await wallet.getAddress();
 
         if (cancelled) return;

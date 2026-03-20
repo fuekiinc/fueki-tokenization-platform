@@ -38,7 +38,7 @@ export default function PendingDeploymentsPanel({
   selectedRequestId = null,
   onSelectRequest,
 }: PendingDeploymentsPanelProps) {
-  const { isConnected, chainId, switchNetwork } = useWallet();
+  const { address, isConnected, chainId, switchNetwork } = useWallet();
   const [requests, setRequests] = useState<SecurityTokenApprovalRequestItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -46,7 +46,7 @@ export default function PendingDeploymentsPanel({
 
   const fetchRequests = useCallback(
     async (refresh = false) => {
-      if (!isConnected) {
+      if (!isConnected || !address) {
         setRequests([]);
         setError(null);
         return;
@@ -59,7 +59,10 @@ export default function PendingDeploymentsPanel({
       }
 
       try {
-        const response = await listSecurityTokenApprovalRequests({ limit: 30 });
+        const response = await listSecurityTokenApprovalRequests({
+          limit: 30,
+          walletAddress: address,
+        });
         setRequests(response.requests);
         setError(null);
       } catch (err) {
@@ -74,7 +77,7 @@ export default function PendingDeploymentsPanel({
         setIsRefreshing(false);
       }
     },
-    [isConnected],
+    [address, isConnected],
   );
 
   useEffect(() => {
@@ -89,7 +92,7 @@ export default function PendingDeploymentsPanel({
     return () => clearInterval(timer);
   }, [fetchRequests, isConnected]);
 
-  if (!isConnected) {
+  if (!isConnected || !address) {
     return (
       <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 sm:p-5">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -159,6 +162,9 @@ export default function PendingDeploymentsPanel({
             const chainLabel = network?.name ?? `Chain ${request.chainId}`;
             const onCurrentChain = chainId === request.chainId;
             const isSelected = selectedRequestId === request.id;
+            const walletMatchesRequest =
+              typeof request.requesterWalletAddress === 'string' &&
+              request.requesterWalletAddress.toLowerCase() === address.toLowerCase();
 
             return (
               <article
@@ -207,7 +213,16 @@ export default function PendingDeploymentsPanel({
                 )}
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {isApproved ? (
+                  {!walletMatchesRequest ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-red-500/25 bg-red-500/[0.08] px-4 py-2 text-xs font-semibold text-red-200 opacity-80"
+                    >
+                      <Wallet className="h-3.5 w-3.5" />
+                      Wallet ownership mismatch
+                    </button>
+                  ) : isApproved ? (
                     onCurrentChain ? (
                       <button
                         type="button"

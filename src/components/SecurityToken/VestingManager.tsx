@@ -35,6 +35,7 @@ import {
 } from '../../contracts/abis/SecurityToken';
 import { getProvider, useWalletStore } from '../../store/walletStore';
 import { parseContractError } from '../../lib/blockchain/contracts';
+import { buildBufferedTransactionOverrides } from '../../lib/blockchain/transactionOverrides';
 import {
   sendTransactionWithRetry,
   waitForTransactionReceipt,
@@ -484,6 +485,8 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
         id: 'create-schedule',
       });
 
+      const provider = getProvider();
+      if (!provider) throw new Error('Wallet not connected');
       const gasEstimate =
         await contract.createReleaseSchedule.estimateGas(
           releaseCount,
@@ -491,7 +494,7 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
           initialBips,
           period,
         );
-      const gasLimit = (gasEstimate * 120n) / 100n;
+      const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
       const tx = await sendTransactionWithRetry(
         () =>
           contract.createReleaseSchedule(
@@ -499,7 +502,7 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
             delay,
             initialBips,
             period,
-            { gasLimit },
+            txOverrides,
           ),
         { label: 'VestingManager.createReleaseSchedule' },
       );
@@ -568,6 +571,8 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
       toast.loading('Funding release schedule...', { id: 'fund-schedule' });
 
       const contract = await getContract(true);
+      const provider = getProvider();
+      if (!provider) throw new Error('Wallet not connected');
       const gasEstimate =
         await contract.fundReleaseSchedule.estimateGas(
           fundRecipient,
@@ -576,7 +581,7 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
           scheduleId,
           cancelableAddresses,
         );
-      const gasLimit = (gasEstimate * 120n) / 100n;
+      const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
       const tx = await sendTransactionWithRetry(
         () =>
           contract.fundReleaseSchedule(
@@ -585,7 +590,7 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
             commencement,
             scheduleId,
             cancelableAddresses,
-            { gasLimit },
+            txOverrides,
           ),
         { label: 'VestingManager.fundReleaseSchedule' },
       );
@@ -670,6 +675,8 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
       );
 
       const contract = await getContract(true);
+      const provider = getProvider();
+      if (!provider) throw new Error('Wallet not connected');
       const gasEstimate =
         await contract.batchFundReleaseSchedule.estimateGas(
           recipients,
@@ -678,7 +685,7 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
           scheduleIds,
           cancelableAddresses,
         );
-      const gasLimit = (gasEstimate * 120n) / 100n;
+      const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
       const tx = await sendTransactionWithRetry(
         () =>
           contract.batchFundReleaseSchedule(
@@ -687,7 +694,7 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
             commencementTimestamps,
             scheduleIds,
             cancelableAddresses,
-            { gasLimit },
+            txOverrides,
           ),
         { label: 'VestingManager.batchFundReleaseSchedule' },
       );
@@ -786,6 +793,8 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
       toast.loading('Canceling timelock...', { id: 'cancel-timelock' });
 
       const contract = await getContract(true);
+      const provider = getProvider();
+      if (!provider) throw new Error('Wallet not connected');
       const gasEstimate = await contract.cancelTimelock.estimateGas(
         lookupAddress,
         idx,
@@ -794,7 +803,7 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
         tl.totalAmount,
         reclaimAddress,
       );
-      const gasLimit = (gasEstimate * 120n) / 100n;
+      const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
       const tx = await sendTransactionWithRetry(
         () =>
           contract.cancelTimelock(
@@ -804,7 +813,7 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
             tl.commencementTimestamp,
             tl.totalAmount,
             reclaimAddress,
-            { gasLimit },
+            txOverrides,
           ),
         { label: 'VestingManager.cancelTimelock' },
       );
@@ -849,18 +858,18 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
         });
 
         const contract = await getContract(true);
+        const provider = getProvider();
+        if (!provider) throw new Error('Wallet not connected');
         const gasEstimate =
           await contract.transferTimelock.estimateGas(
             transferTo,
             value,
             timelockId,
           );
-        const gasLimit = (gasEstimate * 120n) / 100n;
+        const txOverrides = await buildBufferedTransactionOverrides(provider, gasEstimate);
         const tx = await sendTransactionWithRetry(
           () =>
-            contract.transferTimelock(transferTo, value, timelockId, {
-              gasLimit,
-            }),
+            contract.transferTimelock(transferTo, value, timelockId, txOverrides),
           { label: 'VestingManager.transferTimelock' },
         );
         await waitForTransactionReceipt(tx, { label: 'VestingManager.transferTimelock' });

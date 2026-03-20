@@ -864,6 +864,32 @@ export class OrbitalContractService {
       }
     }
 
+    if (
+      mergedOverrides.gasPrice == null &&
+      mergedOverrides.maxFeePerGas == null &&
+      mergedOverrides.maxPriorityFeePerGas == null
+    ) {
+      try {
+        const feeData = await this.withReadProvider(
+          `${method}:getFeeData`,
+          async (readProvider) => readProvider.getFeeData(),
+        );
+
+        if (feeData.maxFeePerGas != null) {
+          mergedOverrides.maxFeePerGas = (feeData.maxFeePerGas * 150n) / 100n;
+          mergedOverrides.maxPriorityFeePerGas =
+            feeData.maxPriorityFeePerGas ?? 1_500_000_000n;
+        } else if (feeData.gasPrice != null) {
+          mergedOverrides.gasPrice = (feeData.gasPrice * 125n) / 100n;
+        }
+      } catch (feeErr) {
+        logger.warn(
+          `[OrbitalContractService] ${method}: fee data fetch failed, deferring to wallet`,
+          feeErr,
+        );
+      }
+    }
+
     let activeContract = contract;
 
     try {

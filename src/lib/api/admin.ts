@@ -50,6 +50,26 @@ export interface UserDetail extends AdminUser {
   } | null;
 }
 
+interface AdminUserDetailResponse {
+  user: AdminUser;
+  kyc: UserDetail['kycData'];
+}
+
+interface AdminKycSubmissionResponse {
+  submissions: Array<{
+    userId: string;
+    email: string;
+    kycStatus: string;
+    userCreatedAt: string;
+    submittedAt: string | null;
+    reviewedAt: string | null;
+  }>;
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 // ---------------------------------------------------------------------------
 // API Functions
 // ---------------------------------------------------------------------------
@@ -73,8 +93,13 @@ export async function getUsers(params: {
 }
 
 export async function getUserDetail(id: string): Promise<UserDetail> {
-  const response = await apiClient.get<UserDetail>(`/api/admin/users/${id}`);
-  return response.data;
+  const response = await apiClient.get<AdminUserDetailResponse>(
+    `/api/admin/users/${id}`,
+  );
+  return {
+    ...response.data.user,
+    kycData: response.data.kyc,
+  };
 }
 
 export async function updateUserRole(id: string, role: string): Promise<void> {
@@ -85,11 +110,29 @@ export async function getKYCSubmissions(params: {
   page?: number;
   status?: string;
 }): Promise<UserListResponse> {
-  const response = await apiClient.get<UserListResponse>(
+  const response = await apiClient.get<AdminKycSubmissionResponse>(
     '/api/admin/kyc/submissions',
     { params },
   );
-  return response.data;
+  const submissions = Array.isArray(response.data.submissions)
+    ? response.data.submissions
+    : [];
+  return {
+    users: submissions.map((submission) => ({
+      id: submission.userId,
+      email: submission.email,
+      role: 'user',
+      kycStatus: submission.kycStatus,
+      walletAddress: null,
+      createdAt: submission.submittedAt ?? submission.userCreatedAt,
+      updatedAt: submission.reviewedAt ?? submission.submittedAt ?? submission.userCreatedAt,
+    })),
+    total: typeof response.data.total === 'number' ? response.data.total : submissions.length,
+    page: typeof response.data.page === 'number' ? response.data.page : params.page ?? 1,
+    limit: typeof response.data.limit === 'number' ? response.data.limit : 20,
+    totalPages:
+      typeof response.data.totalPages === 'number' ? response.data.totalPages : 1,
+  };
 }
 
 export async function approveKYC(

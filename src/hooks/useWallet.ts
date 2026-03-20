@@ -32,6 +32,7 @@ import {
 } from '../lib/thirdweb';
 import { clearWalletBoundStores } from '../wallet/walletBoundStores';
 import { useAuthStore } from '../store/authStore';
+import { DEMO_CHAIN_LABEL } from '../lib/demoMode';
 
 const SWITCH_PRECHECK_TIMEOUT_MS = 3_500;
 
@@ -596,7 +597,7 @@ export function useWallet() {
         const isDemoActive = useAuthStore.getState().user?.demoActive === true;
         if (isDemoActive) {
           const msg =
-            'Demo mode is pinned to Holesky. Exit demo mode to connect your own wallet and switch networks.';
+            `Demo mode is pinned to ${DEMO_CHAIN_LABEL}. Exit demo mode to connect your own wallet and switch networks.`;
           setLastError(msg);
           toast.error(msg);
           return;
@@ -637,7 +638,10 @@ export function useWallet() {
 
           // Tier 2: Raw injected-provider fallback (MetaMask, Rabby, etc.).
           // Skip entirely for WalletConnect / non-injected wallets.
-          const candidates = getInjectedProviderCandidates(activeWallet?.id);
+          const candidates = getInjectedProviderCandidates(
+            activeWallet?.id,
+            activeAccount?.address,
+          );
           if (candidates.length > 0) {
             try {
               await withTimeout(

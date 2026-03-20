@@ -1,0 +1,60 @@
+{
+  "reviewedFindings": [
+    {
+      "contract": "OrbitalPool",
+      "title": "Integer Arithmetic Bugs",
+      "severity": "Low",
+      "function": "swapFeeBps()",
+      "reason": "Reviewed on 2026-03-17. Mythril is reporting compiler-generated accessor arithmetic under Solidity 0.8 checked math, not an unchecked user-controlled overflow path."
+    },
+    {
+      "contract": "OrbitalPool",
+      "title": "Integer Arithmetic Bugs",
+      "severity": "Low",
+      "function": "concentration()",
+      "reason": "Reviewed on 2026-03-17. Mythril is reporting compiler-generated accessor arithmetic under Solidity 0.8 checked math, not an unchecked user-controlled overflow path."
+    },
+    {
+      "contract": "OrbitalPool",
+      "title": "Integer Arithmetic Bugs",
+      "severity": "Low",
+      "function": "MIN_TOKENS()",
+      "reason": "Reviewed on 2026-03-17. Mythril is reporting compiler-generated accessor arithmetic under Solidity 0.8 checked math, not an unchecked user-controlled overflow path."
+    },
+    {
+      "contract": "OrbitalPool",
+      "title": "Integer Arithmetic Bugs",
+      "severity": "Low",
+      "function": "totalSupply()",
+      "reason": "Reviewed on 2026-03-17. Mythril is reporting compiler-generated accessor arithmetic under Solidity 0.8 checked math, not an unchecked user-controlled overflow path."
+    },
+    {
+      "contract": "OrbitalPool",
+      "title": "Integer Arithmetic Bugs",
+      "severity": "Low",
+      "function": "initialized()",
+      "reason": "Reviewed on 2026-03-17. Mythril is reporting compiler-generated accessor arithmetic under Solidity 0.8 checked math, not an unchecked user-controlled overflow path."
+    },
+    {
+      "contract": "OrbitalPool",
+      "title": "Integer Arithmetic Bugs",
+      "severity": "Low",
+      "function": "approve(address,uint256)",
+      "reason": "Reviewed on 2026-03-17. The issue points at compiler-generated arithmetic in ERC20 allowance plumbing under Solidity 0.8 overflow checks, not a bespoke unchecked arithmetic block."
+    },
+    {
+      "contract": "OrbitalPool",
+      "title": "Integer Arithmetic Bugs",
+      "severity": "Low",
+      "function": "getReserves()",
+      "reason": "Reviewed on 2026-03-17. Mythril is reporting compiler-generated accessor arithmetic under Solidity 0.8 checked math, not an unchecked user-controlled overflow path."
+    },
+    {
+      "contract": "OrbitalPool",
+      "title": "Integer Arithmetic Bugs",
+      "severity": "Low",
+      "function": "name()",
+      "reason": "Reviewed on 2026-03-17. Mythril is reporting compiler-generated accessor arithmetic under Solidity 0.8 checked math, not an unchecked user-controlled overflow path."
+    }
+  ]
+}

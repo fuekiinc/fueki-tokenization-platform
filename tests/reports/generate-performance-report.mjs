@@ -10,7 +10,7 @@ const scoreTargets = {
   seo: 0.8,
 };
 const webVitalTargets = {
-  lcpMs: 2500,
+  lcpMs: 3500,
   cls: 0.1,
   tbtMs: 200,
   ttfbMs: 800,

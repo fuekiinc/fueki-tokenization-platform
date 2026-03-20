@@ -76,6 +76,10 @@ vi.mock('../../src/services/email', () => ({
 vi.mock('../../src/config', () => ({
   config: {
     backendUrl: 'https://backend.example.test',
+    jwt: {
+      accessSecret: 'test-access-secret',
+      refreshSecret: 'test-refresh-secret',
+    },
     mintApproval: {
       requestRecipient: 'mint-approver@example.com',
       actionTokenTtlHours: 24,
@@ -126,6 +130,11 @@ describe('approval action token lookups', () => {
       used: false,
       expiresAt: new Date(Date.now() + 60_000),
     });
+    mocks.prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'user@example.com',
+      kycStatus: 'pending',
+    });
 
     const req = createMockReq({
       params: { token: 'admin-raw-token' },
@@ -143,7 +152,17 @@ describe('approval action token lookups', () => {
         ],
       },
     });
-    expect(mocks.approveKYC).toHaveBeenCalledWith('user-1', 'Approved via email');
+    expect(mocks.prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      select: {
+        id: true,
+        email: true,
+        kycStatus: true,
+      },
+    });
+    expect(mocks.approveKYC).not.toHaveBeenCalled();
+    expect(res.sentType).toBe('send');
+    expect(String(res.body)).toContain('Confirm KYC Approval');
   });
 
   it('accepts hashed-or-legacy mint approval action tokens', async () => {

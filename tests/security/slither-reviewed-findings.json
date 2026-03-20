@@ -1,0 +1,38 @@
+{
+  "productionContracts": [
+    "contracts/AssetExchange.sol",
+    "contracts/LiquidityPoolAMM.sol",
+    "contracts/orbital/OrbitalFactory.sol",
+    "contracts/orbital/OrbitalMath.sol",
+    "contracts/orbital/OrbitalPool.sol",
+    "contracts/security-token/Dividends.sol",
+    "contracts/security-token/RestrictedLockupToken.sol",
+    "contracts/security-token/RestrictedSwap.sol"
+  ],
+  "reviewedFindings": [
+    {
+      "check": "reentrancy-balance",
+      "file": "contracts/LiquidityPoolAMM.sol",
+      "line": 377,
+      "reason": "Reviewed on 2026-03-17. addLiquidity is protected by the contract-wide nonReentrant guard and the detector is flagging guarded fee-on-transfer accounting, not an exploitable state reentrancy path."
+    },
+    {
+      "check": "reentrancy-balance",
+      "file": "contracts/LiquidityPoolAMM.sol",
+      "line": 996,
+      "reason": "Reviewed on 2026-03-17. _safeTransferIn is an internal helper reachable only from nonReentrant write paths, and its balance delta check is intentional fee-on-transfer handling."
+    },
+    {
+      "check": "reentrancy-balance",
+      "file": "contracts/security-token/RestrictedSwap.sol",
+      "line": 196,
+      "reason": "Reviewed on 2026-03-17. completeSwapWithPaymentToken is nonReentrant and the reported stale-balance pattern is an escrow settlement validation check rather than an exploitable reentrancy sink."
+    },
+    {
+      "check": "reentrancy-balance",
+      "file": "contracts/security-token/RestrictedSwap.sol",
+      "line": 237,
+      "reason": "Reviewed on 2026-03-17. completeSwapWithRestrictedToken is nonReentrant and the detector is flagging the post-transfer balance validation pattern, not a reentrancy that can bypass swap state transitions."
+    }
+  ]
+}

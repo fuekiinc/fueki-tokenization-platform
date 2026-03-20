@@ -35,6 +35,7 @@ export interface SecurityTokenApprovalStatusQuery {
   documentHash: string;
   documentType: string;
   chainId: number;
+  requesterWalletAddress: string;
 }
 
 export interface SubmitSecurityTokenApprovalPayload
@@ -49,6 +50,7 @@ export interface SecurityTokenApprovalRequestItem {
   tokenName: string;
   tokenSymbol: string;
   decimals: number;
+  requesterWalletAddress: string | null;
   totalSupply: string;
   maxTotalSupply: string;
   minTimelockAmount: string;
@@ -70,6 +72,7 @@ export interface ListSecurityTokenApprovalRequestsQuery {
   chainId?: number;
   status?: Exclude<SecurityTokenApprovalStatus, 'none'>;
   limit?: number;
+  walletAddress: string;
 }
 
 export interface ListSecurityTokenApprovalRequestsResponse {
