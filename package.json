@@ -54,7 +54,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "ethers": "^6.16.0",
-    "fast-xml-parser": "^5.4.2",
+    "fast-xml-parser": "^5.5.8",
     "lightweight-charts": "^5.1.0",
     "lucide-react": "^0.563.0",
     "papaparse": "^5.5.3",
@@ -67,7 +67,7 @@
     "react-router-dom": "^6.30.3",
     "recharts": "^3.7.0",
     "tesseract.js": "^7.0.0",
-    "thirdweb": "^5.118.2",
+    "thirdweb": "^5.119.1",
     "use-places-autocomplete": "^4.0.1",
     "zod": "^4.3.6",
     "zustand": "^5.0.11"
@@ -112,11 +112,17 @@
     "hardhat": {
       "undici": "6.24.1"
     },
+    "h3": "^1.15.9",
     "hono": "^4.12.7",
     "immutable": "^4.3.8",
+    "lodash": "^4.17.23",
     "mocha": {
       "serialize-javascript": "7.0.4"
     },
+    "bn.js": "^5.2.3",
+    "fast-xml-parser": "^5.5.8",
+    "socket.io-parser": "^4.2.6",
+    "@aws-sdk/xml-builder": "^3.972.15",
     "rollup": "^4.59.0"
     ,
     "test-exclude": {

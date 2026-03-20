@@ -29,7 +29,7 @@ export default defineConfig({
     exclude: ['tests/e2e/**', 'tests/contracts/**', 'node_modules/**', 'dist/**', 'backend/**'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html', 'lcov'],
+      reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/**/*.d.ts', 'src/types/**', 'src/**/*.test.*'],
       thresholds: {
