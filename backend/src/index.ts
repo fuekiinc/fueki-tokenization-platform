@@ -5,6 +5,8 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { config } from './config';
+import { apiEnvelope } from './lib/apiResponse';
+import { errorHandler } from './middleware/errorHandler';
 import { prisma } from './prisma';
 import authRoutes from './routes/auth';
 import kycRoutes from './routes/kyc';
@@ -32,6 +34,9 @@ app.use(cors({
 // Cookie parsing (for httpOnly refresh token cookies)
 app.use(cookieParser());
 
+// Standardize JSON API envelopes while preserving legacy top-level fields.
+app.use(apiEnvelope);
+
 // ---------------------------------------------------------------------------
 // Rate limiting
 //
@@ -43,12 +48,11 @@ app.use(cookieParser());
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500,                  // was 100 -- too low for a Cloud Run instance handling many users
+  max: (req) => req.headers.authorization?.startsWith('Bearer ') ? 200 : 50,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: { message: 'Too many requests, please try again later', code: 'RATE_LIMIT' } },
 });
-app.use(limiter);
 
 // Stricter rate limit for auth endpoints
 const authLimiter = rateLimit({
@@ -64,8 +68,8 @@ const supportLimiter = rateLimit({
 });
 
 // Body parsing
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use(express.json({ limit: process.env.API_JSON_LIMIT || '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: process.env.API_URLENCODED_LIMIT || '1mb' }));
 
 // Health check (exempt from rate limiting -- Cloud Run sends frequent probes)
 app.get('/health', (_req, res) => {
@@ -74,19 +78,18 @@ app.get('/health', (_req, res) => {
 
 // Routes
 app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api', limiter);
 app.use('/api/kyc', kycRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/support', supportLimiter, supportRoutes);
 app.use('/api/mint-requests', mintRequestRoutes);
 app.use('/api/security-token-requests', securityTokenRequestRoutes);
-app.use('/api/deployments', limiter, deploymentRoutes);
+app.use('/api/deployments', deploymentRoutes);
+app.use('/api/v1/contracts/deployments', deploymentRoutes);
 app.use('/api/market-data', marketDataRoutes);
 
 // Global error handler
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
-});
+app.use(errorHandler);
 
 // ---------------------------------------------------------------------------
 // Graceful shutdown -- close PrismaClient pool so connections are not leaked

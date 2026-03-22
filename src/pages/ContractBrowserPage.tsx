@@ -21,6 +21,7 @@ import type { TemplateCategory } from '../types/contractDeployer';
 import { createAdaptivePollingLoop } from '../lib/rpc/polling';
 import { subscribeToRpcRefetch } from '../lib/rpc/refetchEvents';
 import Spinner from '../components/Common/Spinner';
+import { useWalletStore } from '../store/walletStore';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -35,9 +36,10 @@ export default function ContractBrowserPage() {
   const setSearchQuery = useContractDeployerStore((s) => s.setSearchQuery);
   const setCategory = useContractDeployerStore((s) => s.setCategory);
   const loadHistory = useContractDeployerStore((s) => s.loadHistory);
-  const deploymentHistory = useContractDeployerStore((s) => s.deploymentHistory);
+  const deploymentHistoryTotal = useContractDeployerStore((s) => s.deploymentHistoryTotal);
   const isLoading = useContractDeployerStore((s) => s.isLoading);
   const error = useContractDeployerStore((s) => s.error);
+  const walletAddress = useWalletStore((s) => s.wallet.address);
 
   // Load deployment history on mount so the history count is accurate.
   useEffect(() => {
@@ -54,7 +56,7 @@ export default function ContractBrowserPage() {
       unsubscribeRefetch();
       poller.cancel();
     };
-  }, [loadHistory]);
+  }, [loadHistory, walletAddress]);
 
   // Handlers
   const handleSearchChange = useCallback(
@@ -131,9 +133,9 @@ export default function ContractBrowserPage() {
                   className="text-indigo-400"
                 />
               )}
-              {deploymentHistory.length > 0 && (
+              {deploymentHistoryTotal > 0 && (
                 <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-500/15 px-1.5 text-[10px] font-semibold tabular-nums text-indigo-400 border border-indigo-500/20">
-                  {deploymentHistory.length}
+                  {deploymentHistoryTotal}
                 </span>
               )}
               <ArrowRight

@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+import { supportedChainIdSchema } from '../lib/validation';
 import { authenticate } from '../middleware/auth';
 import { mintApprovalUpload } from '../middleware/upload';
 import { config } from '../config';
@@ -44,7 +45,7 @@ const submitSchema = z.object({
     .regex(/^0x[a-fA-F0-9]{1,64}$/, 'Document hash must be a hex string starting with 0x'),
   documentType: z.string().trim().min(1, 'Document type is required').max(64),
   hashSource: z.enum(['file', 'manual']),
-  chainId: z.coerce.number().int().positive(),
+  chainId: supportedChainIdSchema,
   requesterWalletAddress: z
     .string()
     .trim()
@@ -70,7 +71,7 @@ const statusSchema = z.object({
     .trim()
     .regex(/^0x[a-fA-F0-9]{1,64}$/),
   documentType: z.string().trim().min(1).max(64),
-  chainId: z.coerce.number().int().positive(),
+  chainId: supportedChainIdSchema,
   requesterWalletAddress: z
     .string()
     .trim()
@@ -78,7 +79,7 @@ const statusSchema = z.object({
 });
 
 const listSchema = z.object({
-  chainId: z.coerce.number().int().positive().optional(),
+  chainId: supportedChainIdSchema.optional(),
   status: z.enum(['pending', 'approved', 'rejected']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
   walletAddress: z

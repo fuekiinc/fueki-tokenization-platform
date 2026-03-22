@@ -8,6 +8,7 @@ import Spinner from '../components/Common/Spinner';
 import { createAdaptivePollingLoop } from '../lib/rpc/polling';
 import { emitRpcRefetch, subscribeToRpcRefetch } from '../lib/rpc/refetchEvents';
 import { useContractDeployerStore } from '../store/contractDeployerStore';
+import { useWalletStore } from '../store/walletStore';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -15,14 +16,18 @@ import { useContractDeployerStore } from '../store/contractDeployerStore';
 
 export default function ContractHistoryPage() {
   const deployments = useContractDeployerStore((s) => s.deploymentHistory);
+  const totalDeployments = useContractDeployerStore((s) => s.deploymentHistoryTotal);
+  const hasMore = useContractDeployerStore((s) => s.deploymentHistoryNextCursor !== null);
+  const isLoadingMore = useContractDeployerStore((s) => s.isLoadingMoreHistory);
   const isLoading = useContractDeployerStore((s) => s.isLoading);
   const error = useContractDeployerStore((s) => s.error);
   const loadHistory = useContractDeployerStore((s) => s.loadHistory);
+  const loadMoreHistory = useContractDeployerStore((s) => s.loadMoreHistory);
   const removeDeployment = useContractDeployerStore((s) => s.removeDeployment);
+  const walletAddress = useWalletStore((s) => s.wallet.address);
 
-  // Load deployment history from localStorage immediately, then merge with
-  // backend records (which may contain deployments from other devices or
-  // sessions where localStorage was cleared).
+  // Load deployment history from the backend and keep a cached local fallback
+  // for offline/error recovery.
   useEffect(() => {
     void loadHistory();
 
@@ -39,14 +44,14 @@ export default function ContractHistoryPage() {
       unsubscribeRefetch();
       poller.cancel();
     };
-  }, [loadHistory]);
+  }, [loadHistory, walletAddress]);
 
   // Delete a deployment record and update local state
   const handleDelete = useCallback((id: string) => {
     removeDeployment(id);
-    void deleteDeploymentFromBackend(id);
+    void deleteDeploymentFromBackend(id, walletAddress ?? undefined);
     emitRpcRefetch(['history']);
-  }, [removeDeployment]);
+  }, [removeDeployment, walletAddress]);
 
   return (
     <div className="w-full">
@@ -60,7 +65,7 @@ export default function ContractHistoryPage() {
               <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
                 Deployed Contracts
               </h1>
-              {deployments.length > 0 && (
+              {totalDeployments > 0 && (
                 <span
                   className={clsx(
                     'inline-flex items-center justify-center rounded-full',
@@ -69,7 +74,7 @@ export default function ContractHistoryPage() {
                     'bg-indigo-500/15 text-indigo-400 border border-indigo-500/20',
                   )}
                 >
-                  {deployments.length}
+                  {totalDeployments}
                 </span>
               )}
             </div>
@@ -141,7 +146,7 @@ export default function ContractHistoryPage() {
             <p className="text-xs text-gray-500 mt-1">
               {deployments.length === 0
                 ? 'No deployments recorded'
-                : `${deployments.length} contract${deployments.length === 1 ? '' : 's'} deployed`}
+                : `${totalDeployments} contract${totalDeployments === 1 ? '' : 's'} deployed`}
             </p>
           </div>
         </div>
@@ -163,6 +168,23 @@ export default function ContractHistoryPage() {
             deployments={deployments}
             onDelete={handleDelete}
           />
+        )}
+        {!isLoading && hasMore && (
+          <div className="mt-8 flex justify-center">
+            <button
+              type="button"
+              onClick={() => void loadMoreHistory()}
+              disabled={isLoadingMore}
+              className={clsx(
+                'inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-medium',
+                'border border-white/[0.08] bg-white/[0.03] text-white transition-all duration-200',
+                'hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-60',
+              )}
+            >
+              {isLoadingMore ? <Spinner size="xs" label="Loading more deployments" /> : null}
+              {isLoadingMore ? 'Loading more' : 'Load more deployments'}
+            </button>
+          </div>
         )}
       </div>
     </div>

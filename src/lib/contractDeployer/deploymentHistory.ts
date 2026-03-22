@@ -21,6 +21,12 @@ function deploymentIdentity(record: Pick<DeploymentRecord, 'chainId' | 'contract
   return `${record.chainId}:${record.contractAddress.toLowerCase()}`;
 }
 
+function normalizeDeployerAddress(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim().toLowerCase();
+  return /^0x[a-f0-9]{40}$/.test(trimmed) ? trimmed : null;
+}
+
 // ---------------------------------------------------------------------------
 // Read operations
 // ---------------------------------------------------------------------------
@@ -78,6 +84,16 @@ export function getDeploymentById(id: string): DeploymentRecord | undefined {
  */
 export function getDeploymentsByChain(chainId: number): DeploymentRecord[] {
   return loadDeployments().filter((r) => r.chainId === chainId);
+}
+
+export function getDeploymentsByDeployerAddress(address: string | null | undefined): DeploymentRecord[] {
+  const normalizedAddress = normalizeDeployerAddress(address);
+  if (!normalizedAddress) {
+    return loadDeployments();
+  }
+  return loadDeployments().filter(
+    (record) => normalizeDeployerAddress(record.deployerAddress) === normalizedAddress,
+  );
 }
 
 /**

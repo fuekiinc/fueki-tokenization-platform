@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { act, renderHook } from '@testing-library/react';
-import { describe, afterEach, beforeEach, it } from 'vitest';
+import { afterEach, beforeEach, describe, it } from 'vitest';
 import { ContractService } from '../../../src/lib/blockchain/contracts';
 import { useContractService } from '../../../src/hooks/useContractService';
 import { useWalletStore } from '../../../src/store/walletStore';

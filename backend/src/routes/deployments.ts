@@ -1,207 +1,228 @@
+import type { ContractTemplateType } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
+import { HttpError } from '../lib/httpErrors';
+import {
+  abiArraySchema,
+  evmAddressSchema,
+  supportedChainIdSchema,
+  txHashSchema,
+} from '../lib/validation';
 import { authenticate } from '../middleware/auth';
+import { asyncHandler } from '../middleware/asyncHandler';
 import {
   createDeployment,
   deleteDeployment,
   getDeployment,
+  getDeploymentByAddress,
   listDeployments,
+  toApiDeployment,
 } from '../services/deployments';
 
 const router = Router();
 
+const templateTypeSchema = z.enum([
+  'ERC20',
+  'ERC721',
+  'ERC1155',
+  'ERC1404',
+  'STAKING',
+  'AUCTION',
+  'ESCROW',
+  'SPLITTER',
+  'LOTTERY',
+  'CUSTOM',
+]);
+
 const createSchema = z.object({
   templateId: z.string().trim().min(1).max(100),
   templateName: z.string().trim().min(1).max(200),
-  contractAddress: z
-    .string()
-    .trim()
-    .regex(/^0x[a-fA-F0-9]{40}$/, 'Must be a valid EVM address'),
-  deployerAddress: z
-    .string()
-    .trim()
-    .regex(/^0x[a-fA-F0-9]{40}$/, 'Must be a valid EVM address'),
-  chainId: z.coerce.number().int().positive(),
-  txHash: z
-    .string()
-    .trim()
-    .regex(/^0x[a-fA-F0-9]{64}$/, 'Must be a valid transaction hash'),
-  constructorArgs: z.record(z.unknown()).default({}),
-  abi: z.array(z.unknown()).default([]),
+  contractName: z.string().trim().min(1).max(200).optional(),
+  templateType: templateTypeSchema.default('CUSTOM'),
+  contractAddress: evmAddressSchema.transform((value) => value.toLowerCase()),
+  deployerAddress: evmAddressSchema.transform((value) => value.toLowerCase()).optional(),
+  walletAddress: evmAddressSchema.transform((value) => value.toLowerCase()).optional(),
+  chainId: supportedChainIdSchema,
+  txHash: txHashSchema.transform((value) => value.toLowerCase()),
+  constructorArgs: z.record(z.unknown()).nullable().optional(),
+  abi: abiArraySchema.default([]),
+  sourceCode: z.string().max(1_000_000).nullable().optional(),
+  compilationWarnings: z.array(z.string().trim().max(2_000)).nullable().optional(),
   blockNumber: z.coerce.number().int().nonnegative().optional(),
-  gasUsed: z.string().trim().max(100).optional(),
+  gasUsed: z.string().trim().max(100).nullable().optional(),
   deployedAt: z.string().datetime().optional(),
+}).superRefine((value, ctx) => {
+  if (!value.walletAddress && !value.deployerAddress) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'walletAddress or deployerAddress is required',
+      path: ['walletAddress'],
+    });
+  }
+}).transform((value) => {
+  const walletAddress = value.walletAddress ?? value.deployerAddress!;
+  return {
+    ...value,
+    walletAddress,
+    deployerAddress: value.deployerAddress ?? walletAddress,
+    contractName: value.contractName ?? value.templateName,
+  };
 });
 
 const listSchema = z.object({
-  chainId: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  offset: z.coerce.number().int().min(0).default(0),
+  chainId: supportedChainIdSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: z.coerce.number().int().min(1).default(1),
+  cursor: z.string().trim().min(1).max(512).optional(),
+  walletAddress: evmAddressSchema.transform((value) => value.toLowerCase()).optional(),
+  deployerAddress: evmAddressSchema.transform((value) => value.toLowerCase()).optional(),
+  templateType: templateTypeSchema.optional(),
 });
 
+const accessSchema = z.object({
+  walletAddress: evmAddressSchema.transform((value) => value.toLowerCase()).optional(),
+  deployerAddress: evmAddressSchema.transform((value) => value.toLowerCase()).optional(),
+  chainId: supportedChainIdSchema.optional(),
+});
+
+const idParamSchema = z.object({
+  id: z.string().trim().uuid('Deployment id must be a valid UUID'),
+});
+
+const contractAddressParamSchema = z.object({
+  contractAddress: evmAddressSchema.transform((value) => value.toLowerCase()),
+});
+
+function resolveWalletFilter(
+  access: { walletAddress?: string; deployerAddress?: string },
+): string | undefined {
+  return access.walletAddress ?? access.deployerAddress;
+}
+
+function getKnownRequestError(error: unknown): HttpError | null {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === 'P2002'
+  ) {
+    const target = Array.isArray((error as { meta?: { target?: unknown } }).meta?.target)
+      ? ((error as { meta?: { target?: string[] } }).meta?.target ?? []).join(',')
+      : String((error as { meta?: { target?: unknown } }).meta?.target ?? '');
+    if (target.includes('txHash')) {
+      return new HttpError(409, 'DUPLICATE_TX_HASH', 'A deployment for this transaction hash already exists');
+    }
+    return new HttpError(409, 'DUPLICATE_DEPLOYMENT', 'This contract deployment is already registered');
+  }
+
+  return null;
+}
+
 // POST /api/deployments
-router.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, asyncHandler(async (req, res) => {
   try {
     const parsed = createSchema.parse(req.body);
-    const deployment = await createDeployment(req.userId!, parsed);
+    const deployment = await createDeployment(req.userId!, {
+      ...parsed,
+      templateType: parsed.templateType as ContractTemplateType,
+    });
+    const payload = toApiDeployment(deployment);
 
     res.status(201).json({
       success: true,
-      deployment: {
-        id: deployment.id,
-        templateId: deployment.templateId,
-        templateName: deployment.templateName,
-        contractAddress: deployment.contractAddress,
-        deployerAddress: deployment.deployerAddress,
-        chainId: deployment.chainId,
-        txHash: deployment.txHash,
-        constructorArgs: deployment.constructorArgs,
-        blockNumber: deployment.blockNumber,
-        gasUsed: deployment.gasUsed,
-        deployedAt: deployment.deployedAt.toISOString(),
-        createdAt: deployment.createdAt.toISOString(),
-      },
+      data: { deployment: payload },
+      deployment: payload,
     });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      res.status(400).json({
+  } catch (error) {
+    const knownError = getKnownRequestError(error);
+    if (knownError) {
+      res.status(knownError.statusCode).json({
+        success: false,
         error: {
-          message: err.errors[0]?.message ?? 'Invalid request payload',
-          code: 'VALIDATION_ERROR',
+          code: knownError.code,
+          message: knownError.message,
         },
       });
       return;
     }
-    // Handle unique constraint violation (duplicate chainId+contractAddress)
-    if (
-      err instanceof Error &&
-      'code' in err &&
-      (err as { code: string }).code === 'P2002'
-    ) {
-      res.status(409).json({
-        error: {
-          message: 'This contract is already registered',
-          code: 'DUPLICATE_DEPLOYMENT',
-        },
-      });
-      return;
-    }
-    console.error('Deployment create error:', err);
-    res.status(500).json({
-      error: {
-        message: 'Unable to save deployment',
-        code: 'DEPLOYMENT_CREATE_FAILED',
-      },
-    });
+    throw error;
   }
-});
+}));
 
 // GET /api/deployments
-router.get('/', authenticate, async (req, res) => {
-  try {
-    const parsed = listSchema.parse(req.query);
-    const { deployments, total } = await listDeployments(req.userId!, parsed);
+router.get('/', authenticate, asyncHandler(async (req, res) => {
+  const parsed = listSchema.parse(req.query);
+  const walletAddress = resolveWalletFilter(parsed);
+  const { deployments, total, nextCursor, page, limit } = await listDeployments(req.userId!, {
+    chainId: parsed.chainId,
+    limit: parsed.limit,
+    page: parsed.page,
+    cursor: parsed.cursor,
+    walletAddress,
+    templateType: parsed.templateType as ContractTemplateType | undefined,
+  });
 
-    res.json({
-      deployments: deployments.map((d) => ({
-        id: d.id,
-        templateId: d.templateId,
-        templateName: d.templateName,
-        contractAddress: d.contractAddress,
-        deployerAddress: d.deployerAddress,
-        chainId: d.chainId,
-        txHash: d.txHash,
-        constructorArgs: d.constructorArgs,
-        blockNumber: d.blockNumber,
-        gasUsed: d.gasUsed,
-        deployedAt: d.deployedAt.toISOString(),
-        createdAt: d.createdAt.toISOString(),
-      })),
-      total,
-    });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      res.status(400).json({
-        error: {
-          message: err.errors[0]?.message ?? 'Invalid query parameters',
-          code: 'VALIDATION_ERROR',
-        },
-      });
-      return;
-    }
-    console.error('Deployment list error:', err);
-    res.status(500).json({
-      error: {
-        message: 'Unable to fetch deployments',
-        code: 'DEPLOYMENT_LIST_FAILED',
-      },
-    });
+  res.json({
+    deployments: deployments.map(toApiDeployment),
+    total,
+    nextCursor,
+    page,
+    limit,
+  });
+}));
+
+// GET /api/deployments/by-address/:contractAddress
+router.get('/by-address/:contractAddress', authenticate, asyncHandler(async (req, res) => {
+  const { contractAddress } = contractAddressParamSchema.parse(req.params);
+  const access = accessSchema.parse(req.query);
+  const deployment = await getDeploymentByAddress(req.userId!, contractAddress, {
+    walletAddress: resolveWalletFilter(access),
+    chainId: access.chainId,
+  });
+
+  if (!deployment) {
+    throw new HttpError(404, 'NOT_FOUND', 'Deployment not found');
   }
-});
+
+  res.json({
+    deployment: toApiDeployment(deployment),
+  });
+}));
 
 // GET /api/deployments/:id
-router.get('/:id', authenticate, async (req, res) => {
-  try {
-    const id = String(req.params.id);
-    const deployment = await getDeployment(req.userId!, id);
+router.get('/:id', authenticate, asyncHandler(async (req, res) => {
+  const { id } = idParamSchema.parse(req.params);
+  const access = accessSchema.parse(req.query);
+  const deployment = await getDeployment(
+    req.userId!,
+    id,
+    resolveWalletFilter(access),
+  );
 
-    if (!deployment) {
-      res.status(404).json({
-        error: { message: 'Deployment not found', code: 'NOT_FOUND' },
-      });
-      return;
-    }
-
-    res.json({
-      deployment: {
-        id: deployment.id,
-        templateId: deployment.templateId,
-        templateName: deployment.templateName,
-        contractAddress: deployment.contractAddress,
-        deployerAddress: deployment.deployerAddress,
-        chainId: deployment.chainId,
-        txHash: deployment.txHash,
-        constructorArgs: deployment.constructorArgs,
-        abi: deployment.abi,
-        blockNumber: deployment.blockNumber,
-        gasUsed: deployment.gasUsed,
-        deployedAt: deployment.deployedAt.toISOString(),
-        createdAt: deployment.createdAt.toISOString(),
-      },
-    });
-  } catch (err) {
-    console.error('Deployment get error:', err);
-    res.status(500).json({
-      error: {
-        message: 'Unable to fetch deployment',
-        code: 'DEPLOYMENT_GET_FAILED',
-      },
-    });
+  if (!deployment) {
+    throw new HttpError(404, 'NOT_FOUND', 'Deployment not found');
   }
-});
+
+  res.json({
+    deployment: toApiDeployment(deployment),
+  });
+}));
 
 // DELETE /api/deployments/:id
-router.delete('/:id', authenticate, async (req, res) => {
-  try {
-    const deleted = await deleteDeployment(req.userId!, String(req.params.id));
+router.delete('/:id', authenticate, asyncHandler(async (req, res) => {
+  const { id } = idParamSchema.parse(req.params);
+  const access = accessSchema.parse(req.query);
+  const deleted = await deleteDeployment(
+    req.userId!,
+    id,
+    resolveWalletFilter(access),
+  );
 
-    if (!deleted) {
-      res.status(404).json({
-        error: { message: 'Deployment not found', code: 'NOT_FOUND' },
-      });
-      return;
-    }
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Deployment delete error:', err);
-    res.status(500).json({
-      error: {
-        message: 'Unable to delete deployment',
-        code: 'DEPLOYMENT_DELETE_FAILED',
-      },
-    });
+  if (!deleted) {
+    throw new HttpError(404, 'NOT_FOUND', 'Deployment not found');
   }
-});
+
+  res.json({ success: true });
+}));
 
 export default router;

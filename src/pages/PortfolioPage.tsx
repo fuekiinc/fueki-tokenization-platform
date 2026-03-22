@@ -34,6 +34,7 @@ import { useContractService } from '../hooks/useContractService.ts';
 import { useWallet } from '../hooks/useWallet.ts';
 import { getAssetFetchGeneration, nextAssetFetchGeneration, useAssetStore } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
+import { useWalletStore } from '../store/walletStore.ts';
 import { Button, EmptyState, Modal } from '../components/Common/index.ts';
 import {
   copyToClipboard,
@@ -582,11 +583,12 @@ export default function PortfolioPage() {
     const scopedAddress = address.toLowerCase();
     const scopedChainId = chainId;
     const isStaleScope = (generation: number) => {
-      const scope = portfolioScopeRef.current;
+      // FIX: read fresh from store to avoid stale closure.
+      const currentWallet = useWalletStore.getState().wallet;
       return (
         generation !== getAssetFetchGeneration() ||
-        scope.address !== scopedAddress ||
-        scope.chainId !== scopedChainId
+        (currentWallet.address?.toLowerCase() ?? null) !== scopedAddress ||
+        (currentWallet.chainId ?? null) !== scopedChainId
       );
     };
 

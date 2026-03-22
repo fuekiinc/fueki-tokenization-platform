@@ -18,6 +18,7 @@ import { useContractDeployerStore } from '../store/contractDeployerStore';
 import { DeployWizard } from '../components/ContractDeployer/DeployWizard';
 import { createAdaptivePollingLoop } from '../lib/rpc/polling';
 import { subscribeToRpcRefetch } from '../lib/rpc/refetchEvents';
+import { useWalletStore } from '../store/walletStore';
 
 // ---------------------------------------------------------------------------
 // Category badge styling
@@ -60,13 +61,23 @@ export default function ContractDeployPage() {
   const resetWizard = useContractDeployerStore((s) => s.resetWizard);
   const loadHistory = useContractDeployerStore((s) => s.loadHistory);
   const historyError = useContractDeployerStore((s) => s.error);
+  const walletAddress = useWalletStore((s) => s.wallet.address);
 
-  // On mount: set the active template and load deployment history.
-  // On unmount: reset wizard state for a clean slate.
+  // Keep the deploy wizard scoped to the current template.
   useEffect(() => {
     if (templateId) {
       setActiveTemplate(templateId);
     }
+
+    return () => {
+      resetWizard();
+    };
+    // Only template navigation should reset the wizard lifecycle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId]);
+
+  // Keep deployment history synced for the active wallet/template session.
+  useEffect(() => {
     void loadHistory();
     const poller = createAdaptivePollingLoop({
       tier: 'low',
@@ -80,11 +91,10 @@ export default function ContractDeployPage() {
     return () => {
       unsubscribeRefetch();
       poller.cancel();
-      resetWizard();
     };
-    // Only run on mount/unmount and when the template ID changes.
+    // Re-sync when the active wallet changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templateId]);
+  }, [walletAddress]);
 
   // -----------------------------------------------------------------------
   // 404 state: template not found

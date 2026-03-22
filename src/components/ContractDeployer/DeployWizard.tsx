@@ -26,8 +26,11 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-import type { ContractTemplate } from '../../types/contractDeployer';
-import type { DeploymentRecord } from '../../types/contractDeployer';
+import type {
+  ContractDeploymentTemplateType,
+  ContractTemplate,
+  DeploymentRecord,
+} from '../../types/contractDeployer';
 import { useContractDeployerStore } from '../../store/contractDeployerStore';
 import { validateConstructorParams } from '../../lib/contractDeployer/validation';
 import { deployTemplate, waitForDeployment } from '../../lib/contractDeployer/deploy';
@@ -53,6 +56,46 @@ type WizardStepId = (typeof STEPS)[number]['id'];
 
 function stepIndex(stepId: WizardStepId): number {
   return STEPS.findIndex((s) => s.id === stepId);
+}
+
+function resolveTemplateType(template: ContractTemplate): ContractDeploymentTemplateType {
+  const normalizedId = template.id.toLowerCase();
+  const normalizedName = template.name.toLowerCase();
+  const normalizedTags = template.tags.map((tag) => tag.toLowerCase());
+
+  if (normalizedId.includes('1404') || normalizedTags.includes('erc1404')) {
+    return 'ERC1404';
+  }
+  if (normalizedId.includes('1155') || normalizedTags.includes('erc1155')) {
+    return 'ERC1155';
+  }
+  if (
+    normalizedId.includes('721') ||
+    normalizedTags.includes('erc721') ||
+    normalizedTags.includes('nft')
+  ) {
+    return 'ERC721';
+  }
+  if (normalizedTags.includes('erc20') || normalizedName.includes('token')) {
+    return 'ERC20';
+  }
+  if (normalizedName.includes('staking')) {
+    return 'STAKING';
+  }
+  if (normalizedName.includes('auction')) {
+    return 'AUCTION';
+  }
+  if (normalizedName.includes('escrow')) {
+    return 'ESCROW';
+  }
+  if (normalizedName.includes('split')) {
+    return 'SPLITTER';
+  }
+  if (normalizedName.includes('lottery')) {
+    return 'LOTTERY';
+  }
+
+  return 'CUSTOM';
 }
 
 // ---------------------------------------------------------------------------
@@ -294,22 +337,47 @@ export function DeployWizard({ template }: DeployWizardProps) {
         id: crypto.randomUUID(),
         templateId: template.id,
         templateName: template.name,
+        contractName: template.name,
+        templateType: resolveTemplateType(template),
         contractAddress: result.contractAddress,
-        deployerAddress: wallet.address ?? '',
+        deployerAddress: (wallet.address ?? '').toLowerCase(),
+        walletAddress: (wallet.address ?? '').toLowerCase(),
         chainId: wallet.chainId ?? 1,
         txHash: tx.hash,
         constructorArgs: { ...constructorValues },
         abi: template.abi,
+        sourceCode: null,
+        compilationWarnings: [],
         blockNumber: result.blockNumber,
         gasUsed: result.gasUsed,
         deployedAt: new Date().toISOString(),
       };
 
-      // Save to localStorage history
-      addDeployment(record);
+      // Persist to backend so history survives refreshes and reconnects.
+      const persistedDeployment = await saveDeploymentToBackend(record);
+      const storedRecord: DeploymentRecord = persistedDeployment
+        ? {
+            ...record,
+            id: persistedDeployment.id,
+            contractName: persistedDeployment.contractName ?? record.contractName,
+            templateType: persistedDeployment.templateType ?? record.templateType,
+            contractAddress: persistedDeployment.contractAddress,
+            deployerAddress: persistedDeployment.deployerAddress,
+            walletAddress: persistedDeployment.walletAddress ?? record.walletAddress,
+            txHash: persistedDeployment.txHash,
+            sourceCode: persistedDeployment.sourceCode ?? record.sourceCode,
+            compilationWarnings:
+              persistedDeployment.compilationWarnings ?? record.compilationWarnings,
+            blockNumber: persistedDeployment.blockNumber ?? undefined,
+            gasUsed: persistedDeployment.gasUsed ?? undefined,
+            deployedAt: persistedDeployment.deployedAt,
+            createdAt: persistedDeployment.createdAt,
+            updatedAt: persistedDeployment.updatedAt,
+          }
+        : record;
 
-      // Persist to backend (fire-and-forget — localStorage is the immediate store)
-      saveDeploymentToBackend(record);
+      // Save to local history using the backend-backed record ID when available.
+      addDeployment(storedRecord);
 
       // Update store with result
       setDeploymentResult({

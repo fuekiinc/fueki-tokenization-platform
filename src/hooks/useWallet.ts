@@ -334,6 +334,21 @@ function parseWalletError(err: unknown): string {
   return 'Wallet action failed. Please try again.';
 }
 
+let _latestWalletOperationId = 0;
+
+function beginWalletOperation(): number {
+  _latestWalletOperationId += 1;
+  return _latestWalletOperationId;
+}
+
+function invalidateWalletOperations(): void {
+  _latestWalletOperationId += 1;
+}
+
+function isCurrentWalletOperation(operationId: number): boolean {
+  return operationId === _latestWalletOperationId;
+}
+
 function dedupeUrls(urls: string[]): string[] {
   const seen = new Set<string>();
   const deduped: string[] = [];
@@ -484,6 +499,7 @@ export function useWallet() {
   const switchActiveWalletChain = useSwitchActiveWalletChain();
 
   const connectWallet = useCallback(async () => {
+    const operationId = beginWalletOperation();
     if (isDemoActive) {
       toast(
         'Demo wallet is auto-connected. Exit demo mode to connect your own wallet.',
@@ -534,6 +550,9 @@ export function useWallet() {
           : undefined,
       });
 
+      if (!isCurrentWalletOperation(operationId)) {
+        return;
+      }
       const connectedAddress = connectedWallet.getAccount()?.address;
       if (connectedAddress) {
         toast.success(
@@ -541,6 +560,9 @@ export function useWallet() {
         );
       }
     } catch (err: unknown) {
+      if (!isCurrentWalletOperation(operationId)) {
+        return;
+      }
       logger.error('Wallet connection failed:', err);
       const message = parseWalletError(err);
       setLastError(message);
@@ -549,7 +571,9 @@ export function useWallet() {
         toast.error(message);
       }
     } finally {
-      setWallet({ isConnecting: false });
+      if (isCurrentWalletOperation(operationId)) {
+        setWallet({ isConnecting: false });
+      }
     }
   }, [
     activeWalletChain,
@@ -564,6 +588,7 @@ export function useWallet() {
   ]);
 
   const disconnectWallet = useCallback(() => {
+    invalidateWalletOperations();
     if (activeWallet) {
       disconnect(activeWallet);
     }
@@ -576,6 +601,7 @@ export function useWallet() {
 
   const switchNetwork = useCallback(
     async (chainId: number) => {
+      const operationId = beginWalletOperation();
       if (!activeWallet) {
         const isDemoActive = useAuthStore.getState().user?.demoActive === true;
         if (isDemoActive) {
@@ -602,6 +628,9 @@ export function useWallet() {
         // Quick RPC preflight to find a healthy endpoint for the target chain.
         const preferredRpc = await findHealthyEndpoint(chainId, SWITCH_PRECHECK_TIMEOUT_MS)
           .catch(() => null);
+        if (!isCurrentWalletOperation(operationId)) {
+          return;
+        }
 
         const chain = getThirdwebChainForSwitch(chainId, preferredRpc);
 
@@ -613,6 +642,9 @@ export function useWallet() {
             30_000,
             'Network switch',
           );
+          if (!isCurrentWalletOperation(operationId)) {
+            return;
+          }
         } catch (primaryError) {
           // User rejected — bail immediately, no fallback.
           if (isUserRejectedError(primaryError)) throw primaryError;
@@ -637,6 +669,9 @@ export function useWallet() {
                 15_000,
                 'Fallback network switch',
               );
+              if (!isCurrentWalletOperation(operationId)) {
+                return;
+              }
               // Re-sync thirdweb after raw provider switch.
               await switchActiveWalletChain(chain).catch(() => {});
             } catch (fallbackError) {
@@ -652,16 +687,24 @@ export function useWallet() {
 
         // Brief wait for chain confirmation (3s max, non-blocking).
         await waitForWalletChain(activeWallet, chainId, activeAccount?.address);
+        if (!isCurrentWalletOperation(operationId)) {
+          return;
+        }
 
         clearWalletBoundStores();
         setLastError(null);
       } catch (err: unknown) {
+        if (!isCurrentWalletOperation(operationId)) {
+          return;
+        }
         logger.error('switchNetwork failed:', err);
         const message = parseWalletError(err);
         failChainSwitch(message);
         toast.error(message);
       } finally {
-        setSwitchInProgress(false);
+        if (isCurrentWalletOperation(operationId)) {
+          setSwitchInProgress(false);
+        }
       }
     },
     [

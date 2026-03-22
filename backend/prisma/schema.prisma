@@ -204,24 +204,45 @@ model SecurityTokenApprovalActionToken {
   @@index([requestId])
 }
 
+enum ContractTemplateType {
+  ERC20
+  ERC721
+  ERC1155
+  ERC1404
+  STAKING
+  AUCTION
+  ESCROW
+  SPLITTER
+  LOTTERY
+  CUSTOM
+}
+
 model DeployedContract {
-  id               String   @id @default(uuid())
-  userId           String
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  templateId       String
-  templateName     String
-  contractAddress  String
-  deployerAddress  String
-  chainId          Int
-  txHash           String
-  constructorArgs  Json     @default("{}")
-  abi              Json     @default("[]")
-  blockNumber      Int?
-  gasUsed          String?
-  deployedAt       DateTime @default(now())
-  createdAt        DateTime @default(now())
+  id                  String               @id @default(uuid())
+  userId              String
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateId          String
+  templateName        String
+  contractName        String
+  templateType        ContractTemplateType @default(CUSTOM)
+  contractAddress     String
+  deployerAddress     String
+  walletAddress       String
+  chainId             Int
+  txHash              String               @unique
+  constructorArgs     Json?
+  abi                 Json                 @default("[]")
+  sourceCode          String?
+  compilationWarnings String[]             @default([])
+  blockNumber         BigInt?
+  gasUsed             String?
+  deployedAt          DateTime             @default(now())
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@unique([chainId, contractAddress])
   @@index([userId])
   @@index([chainId])
+  @@index([walletAddress])
+  @@index([walletAddress, chainId])
 }

@@ -22,6 +22,33 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
   return parsed;
 }
 
+function resolveCorsOrigins(): string[] {
+  const origins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
+    .split(',')
+    .map((o) => o.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+
+  if (isProduction) {
+    const hasOnlyLocalOrigins = origins.length === 0 || origins.every((origin) => {
+      try {
+        const hostname = new URL(origin).hostname;
+        return hostname === 'localhost' || hostname === '127.0.0.1';
+      } catch {
+        return true;
+      }
+    });
+
+    if (hasOnlyLocalOrigins) {
+      console.error(
+        'FATAL: CORS_ORIGIN must be set to a non-localhost production origin when NODE_ENV=production.',
+      );
+      process.exit(1);
+    }
+  }
+
+  return origins;
+}
+
 const isProduction = process.env.NODE_ENV === 'production';
 const kycUploadMaxSizeMb = parsePositiveInt(process.env.KYC_UPLOAD_MAX_SIZE_MB, 20);
 type CookieSameSite = 'strict' | 'lax' | 'none';
@@ -60,10 +87,7 @@ export const config = {
   },
 
   cors: {
-    origin: (process.env.CORS_ORIGIN || 'http://localhost:5173')
-      .split(',')
-      .map((o) => o.trim().replace(/\/+$/, ''))
-      .filter(Boolean),
+    origin: resolveCorsOrigins(),
   },
 
   auth: {

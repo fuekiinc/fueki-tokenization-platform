@@ -84,6 +84,21 @@ interface PersistedDocumentState {
   validations: Array<[string, DocumentValidation]>;
 }
 
+let _latestDocumentParseOperationId = 0;
+
+function beginDocumentParseOperation(): number {
+  _latestDocumentParseOperationId += 1;
+  return _latestDocumentParseOperationId;
+}
+
+function invalidateDocumentParseOperations(): void {
+  _latestDocumentParseOperationId += 1;
+}
+
+function isCurrentDocumentParseOperation(operationId: number): boolean {
+  return operationId === _latestDocumentParseOperationId;
+}
+
 // ---------------------------------------------------------------------------
 // Initial state
 // ---------------------------------------------------------------------------
@@ -151,6 +166,7 @@ export const useDocumentStore = create<DocumentStore>()(
       setCurrentDocumentFile: (file) => set({ currentDocumentFile: file }),
 
       clearDocuments: () =>
+        (invalidateDocumentParseOperations(),
         set({
           parsedDocuments: [],
           currentDocument: null,
@@ -161,7 +177,7 @@ export const useDocumentStore = create<DocumentStore>()(
           error: null,
           isParsingDocument: false,
           parseError: null,
-        }),
+        })),
 
       // ---- Upload management ----------------------------------------------------
 
@@ -204,6 +220,7 @@ export const useDocumentStore = create<DocumentStore>()(
       // ---- Parsing state --------------------------------------------------------
 
       parseDocument: async (file) => {
+        const operationId = beginDocumentParseOperation();
         set({
           currentDocument: null,
           currentDocumentFile: file,
@@ -215,6 +232,9 @@ export const useDocumentStore = create<DocumentStore>()(
 
         try {
           const doc = await parseFile(file);
+          if (!isCurrentDocumentParseOperation(operationId)) {
+            return doc;
+          }
 
           if (doc.transactions.length === 0) {
             throw new Error(
@@ -247,13 +267,15 @@ export const useDocumentStore = create<DocumentStore>()(
           const message =
             error instanceof Error ? error.message : 'Failed to parse file';
 
-          set({
-            currentDocument: null,
-            isLoading: false,
-            error: message,
-            isParsingDocument: false,
-            parseError: message,
-          });
+          if (isCurrentDocumentParseOperation(operationId)) {
+            set({
+              currentDocument: null,
+              isLoading: false,
+              error: message,
+              isParsingDocument: false,
+              parseError: message,
+            });
+          }
 
           throw error;
         }

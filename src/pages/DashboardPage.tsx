@@ -177,11 +177,12 @@ export default function DashboardPage() {
     const scopedAddress = address?.toLowerCase() ?? null;
     const scopedChainId = chainId;
     const isStaleFetch = () => {
-      const scope = dashboardScopeRef.current;
+      // FIX: read fresh from store to avoid stale closure.
+      const currentWallet = useWalletStore.getState().wallet;
       return (
         dashboardFetchRunRef.current !== fetchRunId ||
-        scope.address !== scopedAddress ||
-        scope.chainId !== scopedChainId
+        (currentWallet.address?.toLowerCase() ?? null) !== scopedAddress ||
+        (currentWallet.chainId ?? null) !== scopedChainId
       );
     };
 

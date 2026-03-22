@@ -263,11 +263,12 @@ export default function ExchangePage() {
     const scopedChainId = wallet.chainId ?? null;
     const gen = nextAssetFetchGeneration();
     const isStaleScope = () => {
-      const scope = exchangeScopeRef.current;
+      // FIX: read fresh from store to avoid stale closure.
+      const currentWallet = useWalletStore.getState().wallet;
       return (
         gen !== getAssetFetchGeneration() ||
-        scope.address !== scopedAddress ||
-        scope.chainId !== scopedChainId
+        (currentWallet.address?.toLowerCase() ?? null) !== scopedAddress ||
+        (currentWallet.chainId ?? null) !== scopedChainId
       );
     };
 
@@ -436,10 +437,11 @@ export default function ExchangePage() {
           { maxAttempts: 2, baseDelayMs: 500, label: 'exchange:getEthBalance:direct' },
         );
         if (!cancelled) {
-          const scope = exchangeScopeRef.current;
+          // FIX: read fresh from store to avoid stale closure.
+          const currentWallet = useWalletStore.getState().wallet;
           if (
-            scope.address === address.toLowerCase() &&
-            scope.chainId === wallet.chainId
+            (currentWallet.address?.toLowerCase() ?? null) === address.toLowerCase() &&
+            (currentWallet.chainId ?? null) === (wallet.chainId ?? null)
           ) {
             setEthBalance(bal.toString());
           }

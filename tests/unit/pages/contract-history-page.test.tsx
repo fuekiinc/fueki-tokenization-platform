@@ -46,7 +46,12 @@ describe('ContractHistoryPage', () => {
       deploymentResult: null,
       deployError: null,
       deploymentHistory: [],
+      deploymentHistoryTotal: 0,
+      deploymentHistoryNextCursor: null,
+      isLoadingMoreHistory: false,
+      historyFilterAddress: null,
       loadHistory: vi.fn().mockResolvedValue(undefined),
+      loadMoreHistory: vi.fn().mockResolvedValue(undefined),
       addDeployment: vi.fn(),
       removeDeployment: vi.fn(),
       clearHistory: vi.fn(),
@@ -96,5 +101,35 @@ describe('ContractHistoryPage', () => {
     expect(
       screen.getByText(/Failed to load deployment history\. Please try again\./i),
     ).toBeInTheDocument();
+  });
+
+  it('shows a load more button when the backend reports additional history pages', () => {
+    useContractDeployerStore.setState({
+      deploymentHistory: [
+        {
+          id: 'remote-1',
+          templateId: 'erc20',
+          templateName: 'ERC20 Token',
+          contractAddress: '0x1234000000000000000000000000000000000000',
+          deployerAddress: '0x5678000000000000000000000000000000000000',
+          chainId: 421614,
+          txHash: '0xabc',
+          constructorArgs: {},
+          abi: [],
+          deployedAt: '2026-03-21T05:00:00.000Z',
+        },
+      ],
+      deploymentHistoryTotal: 20,
+      deploymentHistoryNextCursor: 'cursor-1',
+    });
+
+    render(
+      <MemoryRouter>
+        <ContractHistoryPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: /Load more deployments/i })).toBeInTheDocument();
+    expect(screen.getByText('20')).toBeInTheDocument();
   });
 });

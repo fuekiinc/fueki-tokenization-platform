@@ -6,6 +6,18 @@ export type TemplateCategory =
   | 'trading'
   | 'utility';
 
+export type ContractDeploymentTemplateType =
+  | 'ERC20'
+  | 'ERC721'
+  | 'ERC1155'
+  | 'ERC1404'
+  | 'STAKING'
+  | 'AUCTION'
+  | 'ESCROW'
+  | 'SPLITTER'
+  | 'LOTTERY'
+  | 'CUSTOM';
+
 /** Solidity types used in constructor parameters. */
 export type SolidityType =
   | 'address'
@@ -70,24 +82,38 @@ export interface DeploymentRecord {
   templateId: string;
   /** Template name at time of deployment. */
   templateName: string;
+  /** Contract display name persisted in the backend record. */
+  contractName?: string;
+  /** Normalized template/deployment type. */
+  templateType?: ContractDeploymentTemplateType;
   /** Deployed contract address. */
   contractAddress: string;
   /** Address of the deployer. */
   deployerAddress: string;
+  /** Normalized wallet address used for backend history filtering. */
+  walletAddress?: string;
   /** Chain ID the contract was deployed on. */
   chainId: number;
   /** Deployment transaction hash. */
   txHash: string;
   /** Serialized constructor arguments as key-value pairs. */
-  constructorArgs: Record<string, string>;
+  constructorArgs: Record<string, unknown>;
   /** ABI array for contract interaction. */
   abi: readonly Record<string, unknown>[];
+  /** Optional source code persisted for custom/AI-generated contracts. */
+  sourceCode?: string | null;
+  /** Optional compiler warnings captured during deployment preparation. */
+  compilationWarnings?: string[] | null;
   /** Block number of the deployment. */
   blockNumber?: number;
   /** Gas used for deployment. */
   gasUsed?: string;
   /** Deployment timestamp (ISO 8601). */
   deployedAt: string;
+  /** Backend record creation timestamp (ISO 8601). */
+  createdAt?: string;
+  /** Backend record update timestamp (ISO 8601). */
+  updatedAt?: string;
 }
 
 /** Parsed ABI function for the interaction page. */

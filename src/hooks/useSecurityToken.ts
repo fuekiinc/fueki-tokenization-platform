@@ -14,7 +14,7 @@
  *   - Errors are parsed through parseContractError for user-friendly messages.
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import logger from '../lib/logger';
@@ -292,18 +292,6 @@ export function useSecurityToken() {
   const tokenDetails = useSecurityTokenStore((s) => s.tokenDetails);
   const userRoles = useSecurityTokenStore((s) => s.userRoles);
 
-  const securityScopeRef = useRef<{ address: string | null; chainId: number | null }>({
-    address: address?.toLowerCase() ?? null,
-    chainId: chainId ?? null,
-  });
-
-  useEffect(() => {
-    securityScopeRef.current = {
-      address: address?.toLowerCase() ?? null,
-      chainId: chainId ?? null,
-    };
-  }, [address, chainId]);
-
   // -----------------------------------------------------------------------
   // Validation helpers
   // -----------------------------------------------------------------------
@@ -322,8 +310,12 @@ export function useSecurityToken() {
 
   const isStaleSecurityScope = useCallback(
     (scopedAddress: string | null, scopedChainId: number | null, tokenAddress?: string) => {
-      const scope = securityScopeRef.current;
-      if (scope.address !== scopedAddress || scope.chainId !== scopedChainId) {
+      // FIX: read fresh from store to avoid stale closure.
+      const currentWallet = useWalletStore.getState().wallet;
+      if (
+        (currentWallet.address?.toLowerCase() ?? null) !== scopedAddress ||
+        (currentWallet.chainId ?? null) !== scopedChainId
+      ) {
         return true;
       }
 
