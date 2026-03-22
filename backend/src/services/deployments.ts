@@ -150,8 +150,8 @@ export function toApiDeployment(deployment: {
   chainId: number;
   txHash: string;
   constructorArgs: Prisma.JsonValue;
-  abi: Prisma.JsonValue;
-  sourceCode: string | null;
+  abi?: Prisma.JsonValue;
+  sourceCode?: string | null;
   compilationWarnings: string[];
   blockNumber: bigint | null;
   gasUsed: string | null;
@@ -171,8 +171,8 @@ export function toApiDeployment(deployment: {
     chainId: deployment.chainId,
     txHash: deployment.txHash,
     constructorArgs: deployment.constructorArgs,
-    abi: deployment.abi,
-    sourceCode: deployment.sourceCode,
+    abi: deployment.abi ?? null,
+    sourceCode: deployment.sourceCode ?? null,
     compilationWarnings: deployment.compilationWarnings,
     blockNumber: deployment.blockNumber === null ? null : Number(deployment.blockNumber),
     gasUsed: deployment.gasUsed,
@@ -228,8 +228,36 @@ export async function listDeployments(
   });
 
   const take = limit + 1;
+
+  // Exclude heavy payload fields (abi, sourceCode, constructorArgs,
+  // compilationWarnings) from list queries to prevent timeouts and
+  // excessive memory use when fetching many rows at once.
+  const listSelect = {
+    id: true,
+    templateId: true,
+    templateName: true,
+    contractName: true,
+    templateType: true,
+    contractAddress: true,
+    deployerAddress: true,
+    walletAddress: true,
+    chainId: true,
+    txHash: true,
+    constructorArgs: true,
+    abi: false,
+    sourceCode: false,
+    compilationWarnings: true,
+    blockNumber: true,
+    gasUsed: true,
+    deployedAt: true,
+    createdAt: true,
+    updatedAt: true,
+    userId: true,
+  };
+
   const deployments = await prisma.deployedContract.findMany({
     where,
+    select: listSelect,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     ...(decodedCursor ? { take } : { take, skip: Math.max(page - 1, 0) * limit }),
   });

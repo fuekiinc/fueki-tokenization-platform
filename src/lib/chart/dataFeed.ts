@@ -260,23 +260,26 @@ export async function fetchHistoricalCandles(params: {
         setCache(cacheKey, result, TTL_MARKET);
         return result;
       }
-    } catch {
-      // Fall back to direct on-chain trade aggregation below.
+      console.debug('[chart/dataFeed] Backend returned 0 candles, falling back to RPC.');
+    } catch (backendError) {
+      console.warn('[chart/dataFeed] Backend candle fetch failed, falling back to RPC:', backendError);
     }
 
     try {
       const trades = await fetchPairTradePoints(chainId, tokenSell, tokenBuy);
+      console.debug(`[chart/dataFeed] RPC returned ${trades.length} raw trade(s).`);
       const rpcCandles = aggregateCandles(tradesToCandles(trades, interval), interval);
       const result = {
         candles: rpcCandles,
         source: rpcCandles.length > 0 ? 'rpc' as const : 'none' as const,
       };
-      setCache(cacheKey, result, TTL_MARKET);
+      if (rpcCandles.length > 0) {
+        setCache(cacheKey, result, TTL_MARKET);
+      }
       return result;
-    } catch {
-      const result = { candles: [], source: 'none' as const };
-      setCache(cacheKey, result, TTL_MARKET);
-      return result;
+    } catch (rpcError) {
+      console.warn('[chart/dataFeed] RPC candle fetch failed:', rpcError);
+      return { candles: [], source: 'none' as const };
     }
   });
 }

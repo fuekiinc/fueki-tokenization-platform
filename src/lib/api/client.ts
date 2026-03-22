@@ -217,11 +217,20 @@ apiClient.interceptors.response.use(
     } catch (refreshError) {
       processQueue(refreshError, null);
 
-      // Clear auth state and redirect to login.
+      // Clear in-memory token but let the app react via auth store state
+      // change rather than performing a jarring hard redirect.
       clearAccessToken();
       clearPersistedAuth();
+
+      // Dispatch a custom event so the auth store (or any listener) can
+      // react and show a "session expired" message instead of silently
+      // dumping the user to /login.
       if (typeof window !== 'undefined') {
-        window.location.href = '/login';
+        window.dispatchEvent(
+          new CustomEvent('fueki:session-expired', {
+            detail: { reason: 'refresh_failed' },
+          }),
+        );
       }
 
       return Promise.reject(refreshError);

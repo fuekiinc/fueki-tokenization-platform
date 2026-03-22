@@ -37,16 +37,25 @@ export function buildBufferedFeeOverridesFromFeeData(
     }
 
     const priorityFee = feeData.maxPriorityFeePerGas ?? DEFAULT_PRIORITY_FEE_WEI;
-    if (priorityFee <= 0n || priorityFee > bufferedMaxFee) {
+    if (priorityFee <= 0n) {
       return {};
     }
 
-    if (latestBaseFeePerGas != null && bufferedMaxFee < latestBaseFeePerGas + priorityFee) {
-      return {};
+    // Ensure maxFeePerGas always covers baseFee + priorityFee so the
+    // transaction is never rejected with "max fee per gas less than block
+    // base fee".  When the buffered fee is too low (e.g. the base fee
+    // spiked since the provider returned fee data), raise it.
+    let effectiveMaxFee = bufferedMaxFee;
+    const minRequired = latestBaseFeePerGas != null
+      ? latestBaseFeePerGas + priorityFee
+      : priorityFee;
+
+    if (effectiveMaxFee < minRequired) {
+      effectiveMaxFee = minRequired;
     }
 
     return {
-      maxFeePerGas: bufferedMaxFee,
+      maxFeePerGas: effectiveMaxFee,
       maxPriorityFeePerGas: priorityFee,
     };
   }

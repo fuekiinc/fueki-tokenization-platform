@@ -47,8 +47,10 @@ export async function createSession(
   const accessToken = generateAccessToken(userId);
   const refreshToken = generateRefreshToken(userId);
 
-  // Keep non-remembered sessions short-lived even if the browser stays open.
-  const sessionTtlSeconds = rememberMe ? config.jwt.refreshExpiresIn : 24 * 60 * 60;
+  // Session TTL must match the refresh token JWT lifetime so the DB session
+  // doesn't expire before the token does — a mismatch causes unexpected
+  // sign-outs when the still-valid JWT hits a deleted DB row.
+  const sessionTtlSeconds = config.jwt.refreshExpiresIn;
   const expiresAt = new Date();
   expiresAt.setTime(expiresAt.getTime() + sessionTtlSeconds * 1000);
 

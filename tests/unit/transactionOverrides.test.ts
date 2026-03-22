@@ -90,7 +90,11 @@ test('buildBufferedTransactionOverrides degrades gracefully when fee discovery f
   });
 });
 
-test('buildBufferedFeeOverridesFromFeeData rejects inconsistent EIP-1559 data when buffered max fee cannot cover base plus priority', () => {
+test('buildBufferedFeeOverridesFromFeeData raises maxFeePerGas to cover baseFee + priorityFee when buffer alone is insufficient', () => {
+  // maxFeePerGas = 20_000_000, buffered (1.5x) = 30_000_000
+  // baseFee = 2_022_800, default priorityFee = 1_500_000_000
+  // baseFee + priorityFee = 1_502_022_800 > 30_000_000
+  // → maxFeePerGas is elevated to baseFee + priorityFee
   const overrides = buildBufferedFeeOverridesFromFeeData(
     {
       gasPrice: null,
@@ -100,5 +104,8 @@ test('buildBufferedFeeOverridesFromFeeData rejects inconsistent EIP-1559 data wh
     2_022_800n,
   );
 
-  assert.deepEqual(overrides, {});
+  assert.deepEqual(overrides, {
+    maxFeePerGas: 2_022_800n + 1_500_000_000n,
+    maxPriorityFeePerGas: 1_500_000_000n,
+  });
 });

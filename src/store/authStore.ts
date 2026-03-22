@@ -124,11 +124,31 @@ async function withAuthBootstrapTimeout<T>(promise: Promise<T>, operation: strin
 // Store
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Session-expired listener — reacts to refresh failures from the API client
+// without a hard window.location redirect.
+// ---------------------------------------------------------------------------
+
+let _sessionExpiredListenerAttached = false;
+
+function attachSessionExpiredListener(): void {
+  if (_sessionExpiredListenerAttached || typeof window === 'undefined') return;
+  _sessionExpiredListenerAttached = true;
+  window.addEventListener('fueki:session-expired', () => {
+    const store = useAuthStore.getState();
+    if (store.isAuthenticated) {
+      store.clearAuth();
+      console.info('[auth] Session expired — user signed out.');
+    }
+  });
+}
+
 export const useAuthStore = create<AuthStore>()(withStoreMiddleware('auth', (set, get) => ({
   ...initialState,
 
   // ---- initialize ----------------------------------------------------------
   initialize: async () => {
+    attachSessionExpiredListener();
     if (_initPromise) return _initPromise;
 
     _initPromise = (async () => {

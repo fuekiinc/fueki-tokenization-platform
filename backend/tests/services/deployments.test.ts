@@ -112,24 +112,26 @@ describe('deployment service history queries', () => {
       where: { id: 'user-1' },
       select: { walletAddress: true },
     });
-    expect(mocks.prisma.deployedContract.findMany).toHaveBeenCalledWith({
-      where: {
-        AND: [
-          {
-            OR: [
-              { userId: 'user-1' },
-              { walletAddress: USER_WALLET },
-            ],
-          },
-          { walletAddress: SECONDARY_WALLET },
-          { chainId: 421614 },
-          { templateType: 'ERC20' },
-        ],
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      skip: 0,
-      take: 3,
-    });
+    expect(mocks.prisma.deployedContract.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            {
+              OR: [
+                { userId: 'user-1' },
+                { walletAddress: USER_WALLET },
+              ],
+            },
+            { walletAddress: SECONDARY_WALLET },
+            { chainId: 421614 },
+            { templateType: 'ERC20' },
+          ],
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: 0,
+        take: 3,
+      }),
+    );
     expect(result.deployments).toHaveLength(2);
     expect(result.total).toBe(3);
     expect(result.nextCursor).toEqual(expect.any(String));

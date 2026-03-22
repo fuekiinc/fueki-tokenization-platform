@@ -49,7 +49,7 @@ interface PerformanceSummary {
   portfolioValue: number;
   totalInvested: number;
   totalReturns: number;
-  successRate: number;
+  roi: number;
   totalTrades: number;
   successfulTrades: number;
 }
@@ -190,16 +190,16 @@ function computeSummary(
     (t) => t.type !== 'transfer',
   ).length;
 
-  // Success rate: completed trades / total trades (most are successful)
-  const successRate = totalTrades > 0
-    ? (successfulTrades / totalTrades) * 100
-    : 100; // No trades = 100% (nothing failed)
+  // ROI: (current value - total invested) / total invested * 100
+  const roi = totalInvested > 0
+    ? ((portfolioValue - totalInvested) / totalInvested) * 100
+    : 0;
 
   return {
     portfolioValue: Number.isFinite(portfolioValue) ? Math.max(0, portfolioValue) : 0,
     totalInvested: Number.isFinite(totalInvested) ? totalInvested : 0,
     totalReturns: Number.isFinite(totalReturns) ? totalReturns : 0,
-    successRate: Number.isFinite(successRate) ? Math.min(100, successRate) : 100,
+    roi: Number.isFinite(roi) ? roi : 0,
     totalTrades,
     successfulTrades,
   };
@@ -407,8 +407,8 @@ export default function PnLTracker({
         <StatCard label="Total Invested" value={summary.totalInvested} />
         <StatCard label="Returns" value={summary.totalReturns} />
         <StatCard
-          label="Success Rate"
-          value={summary.successRate}
+          label="ROI"
+          value={summary.roi}
           isPercentage
         />
       </div>
