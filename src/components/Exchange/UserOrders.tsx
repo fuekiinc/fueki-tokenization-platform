@@ -27,6 +27,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -47,6 +48,9 @@ import logger from '../../lib/logger';
 import { formatAddress } from '../../lib/utils/helpers';
 import { formatPrice, formatTokenAmount } from '../../lib/formatters';
 import Badge from '../Common/Badge';
+import { emitRpcRefetch } from '../../lib/rpc/refetchEvents';
+import { queryKeys } from '../../lib/queryClient';
+import { useWalletStore } from '../../store/walletStore';
 
 // ---------------------------------------------------------------------------
 // Helpers -- derive display status from on-chain Order fields
@@ -90,8 +94,6 @@ function statusSortValue(order: Order): number {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-const REFRESH_INTERVAL_MS = 30_000;
 
 const TABS: { label: string; value: TabFilter }[] = [
   { label: 'All', value: 'all' },
@@ -145,20 +147,16 @@ export default function UserOrders({
   userAddress,
   onOrderCancelled,
 }: UserOrdersProps) {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(false);
   const [cancellingId, setCancellingId] = useState<bigint | null>(null);
   const [cancelTxHash, setCancelTxHash] = useState<string | null>(null);
-  const [chainId, setChainId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabFilter>('all');
-  const [ethWithdrawable, setEthWithdrawable] = useState<bigint>(0n);
   const [withdrawing, setWithdrawing] = useState(false);
   const [sortField, setSortField] = useState<SortField>('id');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [confirmCancelId, setConfirmCancelId] = useState<bigint | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancellingRef = useRef(false);
-  const fetchRequestRef = useRef(0);
+  const queryClient = useQueryClient();
+  const chainId = useWalletStore((state) => state.wallet.chainId);
 
   // ---- Derived ------------------------------------------------------------
 
@@ -171,6 +169,66 @@ export default function UserOrders({
     if (!cancelTxHash || !networkConfig?.blockExplorer) return null;
     return `${networkConfig.blockExplorer}/tx/${cancelTxHash}`;
   }, [cancelTxHash, networkConfig]);
+
+  // ---- Fetch user orders --------------------------------------------------
+
+  const userOrdersQuery = useQuery<{ orders: Order[]; ethWithdrawable: bigint }>({
+    queryKey: queryKeys.userOrders(userAddress, chainId),
+    enabled: Boolean(contractService) && Boolean(userAddress),
+    refetchInterval: 12_000,
+    queryFn: async () => {
+      if (!contractService || !userAddress) {
+        return { orders: [], ethWithdrawable: 0n };
+      }
+
+      const [makerIds, takerIds] = await Promise.all([
+        contractService.getExchangeUserOrders(userAddress),
+        contractService.getExchangeFilledOrderIds(userAddress).catch(() => [] as bigint[]),
+      ]);
+
+      const seen = new Set<string>();
+      const allIds: bigint[] = [];
+      for (const id of [...makerIds, ...takerIds]) {
+        const key = id.toString();
+        if (!seen.has(key)) {
+          seen.add(key);
+          allIds.push(id);
+        }
+      }
+
+      const orders =
+        allIds.length === 0
+          ? []
+          : await contractService.getExchangeOrders(allIds);
+
+      orders.sort((a, b) => {
+        if (b.id > a.id) return 1;
+        if (b.id < a.id) return -1;
+        return 0;
+      });
+
+      const ethWithdrawable = await contractService
+        .getExchangeEthBalance(userAddress)
+        .catch(() => 0n);
+
+      return { orders, ethWithdrawable };
+    },
+  });
+
+  const orders = useMemo(
+    () => userOrdersQuery.data?.orders ?? [],
+    [userOrdersQuery.data?.orders],
+  );
+  const ethWithdrawable = userOrdersQuery.data?.ethWithdrawable ?? 0n;
+  const loading = userOrdersQuery.isLoading || userOrdersQuery.isFetching;
+
+  useEffect(() => {
+    if (!userOrdersQuery.error) {
+      return;
+    }
+
+    logger.error('Failed to fetch user orders:', userOrdersQuery.error);
+  }, [userOrdersQuery.error, userOrdersQuery.errorUpdatedAt]);
 
   // Sort toggle
   const toggleSort = useCallback(
@@ -226,126 +284,6 @@ export default function UserOrders({
     return counts;
   }, [orders]);
 
-  // ---- Fetch user orders --------------------------------------------------
-
-  const fetchUserOrders = useCallback(async () => {
-    const requestId = ++fetchRequestRef.current;
-
-    if (!contractService || !userAddress) {
-      setOrders([]);
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      // Get order IDs where user is the maker AND where user is a taker.
-      // The filled-order query scans historical events and may fail on public
-      // RPCs with log-range limits, so treat it as non-critical.
-      const [makerIds, takerIds] = await Promise.all([
-        contractService.getExchangeUserOrders(userAddress),
-        contractService.getExchangeFilledOrderIds(userAddress).catch(() => [] as bigint[]),
-      ]);
-
-      // Merge and deduplicate order IDs
-      const seen = new Set<string>();
-      const allIds: bigint[] = [];
-      for (const id of [...makerIds, ...takerIds]) {
-        const key = id.toString();
-        if (!seen.has(key)) {
-          seen.add(key);
-          allIds.push(id);
-        }
-      }
-
-      if (allIds.length === 0) {
-        setOrders([]);
-        return;
-      }
-
-      // Fetch full details for each order from AssetBackedExchange
-      const orderDetails = await Promise.all(
-        allIds.map((id) =>
-          contractService.getExchangeOrder(id).catch(() => null),
-        ),
-      );
-
-      const validOrders = orderDetails.filter(
-        (o): o is Order => o !== null,
-      );
-
-      // Sort by order ID descending (most recent first, since IDs are
-      // monotonically increasing).
-      validOrders.sort((a, b) => {
-        if (b.id > a.id) return 1;
-        if (b.id < a.id) return -1;
-        return 0;
-      });
-
-      if (fetchRequestRef.current !== requestId) return;
-      setOrders(validOrders);
-
-      // Also check if user has withdrawable ETH from cancelled sell-ETH orders
-      try {
-        const ethBal = await contractService.getExchangeEthBalance(userAddress);
-        if (fetchRequestRef.current === requestId) {
-          setEthWithdrawable(ethBal);
-        }
-      } catch {
-        // Non-critical
-      }
-    } catch (err) {
-      if (fetchRequestRef.current !== requestId) return;
-      logger.error('Failed to fetch user orders:', err);
-      toast.error('Unable to load your orders. Check your connection and try again.');
-    } finally {
-      if (fetchRequestRef.current === requestId) {
-        setLoading(false);
-      }
-    }
-  }, [contractService, userAddress]);
-
-  // ---- Resolve chainId ----------------------------------------------------
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function resolveChain() {
-      if (!contractService) return;
-      try {
-        const signer = await contractService.getSigner();
-        const provider = signer.provider;
-        if (provider) {
-          const network = await provider.getNetwork();
-          if (!cancelled) {
-            setChainId(Number(network.chainId));
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-    void resolveChain();
-    return () => {
-      cancelled = true;
-    };
-  }, [contractService]);
-
-  // ---- Periodic refresh ---------------------------------------------------
-
-  useEffect(() => {
-    void fetchUserOrders();
-
-    intervalRef.current = setInterval(() => {
-      void fetchUserOrders();
-    }, REFRESH_INTERVAL_MS);
-
-    return () => {
-      fetchRequestRef.current += 1;
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [fetchUserOrders]);
-
   // ---- Cancel order handler -----------------------------------------------
 
   const handleCancelOrder = useCallback(
@@ -365,8 +303,16 @@ export default function UserOrders({
         await contractService.waitForTransaction(tx);
         toast.success('Order cancelled', { id: 'cancel-order' });
 
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.userOrders(userAddress, chainId),
+            exact: true,
+          }),
+          queryClient.invalidateQueries({ queryKey: ['orderBook'] }),
+          queryClient.invalidateQueries({ queryKey: ['balance'] }),
+        ]);
+        emitRpcRefetch(['orders', 'balances']);
         onOrderCancelled();
-        void fetchUserOrders();
       } catch (err: unknown) {
         logger.error('Cancel order failed:', err);
         toast.error(parseContractError(err), { id: 'cancel-order' });
@@ -375,7 +321,7 @@ export default function UserOrders({
         setCancellingId(null);
       }
     },
-    [contractService, onOrderCancelled, fetchUserOrders],
+    [chainId, contractService, onOrderCancelled, queryClient, userAddress],
   );
 
   // ---- Withdraw ETH handler -----------------------------------------------
@@ -388,15 +334,21 @@ export default function UserOrders({
       const tx = await contractService.withdrawExchangeEth();
       await contractService.waitForTransaction(tx);
       toast.success('ETH withdrawn successfully', { id: 'withdraw-eth' });
-      setEthWithdrawable(0n);
-      void fetchUserOrders();
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.userOrders(userAddress, chainId),
+          exact: true,
+        }),
+        queryClient.invalidateQueries({ queryKey: ['balance'] }),
+      ]);
+      emitRpcRefetch(['orders', 'balances']);
     } catch (err: unknown) {
       logger.error('ETH withdrawal failed:', err);
       toast.error(parseContractError(err), { id: 'withdraw-eth' });
     } finally {
       setWithdrawing(false);
     }
-  }, [contractService, ethWithdrawable, withdrawing, fetchUserOrders]);
+  }, [chainId, contractService, ethWithdrawable, queryClient, userAddress, withdrawing]);
 
   // ---- CSV export handler -------------------------------------------------
 

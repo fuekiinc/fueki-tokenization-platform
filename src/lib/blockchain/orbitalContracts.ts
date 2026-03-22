@@ -23,6 +23,8 @@ import { WrappedAssetABI } from '../../contracts/abis/WrappedAsset.ts';
 import { getNetworkConfig } from '../../contracts/addresses';
 import { multicallSameTarget } from './multicall.ts';
 import { parseContractError } from './contracts.ts';
+import { multicall as rpcMulticall } from '../rpc/multicall';
+import { dedupeRpcRequest } from '../rpc/requestDedup';
 import {
   getOrderedRpcEndpoints,
   isRetryableRpcError,
@@ -36,6 +38,7 @@ import {
   invalidatePoolCache,
   makeChainCacheKey,
   setCache,
+  TTL_ALLOWANCE,
   TTL_BALANCE,
   TTL_METADATA,
   TTL_POOL,
@@ -459,12 +462,14 @@ export class OrbitalContractService {
     if (cached !== undefined) return cached;
 
     try {
-      const balance = await this.withReadProvider('getLPBalance', async (readProvider) => {
+      return await dedupeRpcRequest<bigint>(cacheKey, async () => {
+        const balance = await this.withReadProvider('getLPBalance', async (readProvider) => {
         const pool = this.getPoolContract(poolAddress, readProvider);
         return BigInt(await pool.balanceOf(user));
+        });
+        setCache(cacheKey, balance, TTL_BALANCE);
+        return balance;
       });
-      setCache(cacheKey, balance, TTL_BALANCE);
-      return balance;
     } catch (error: unknown) {
       throw new Error(`Failed to fetch LP balance: ${parseContractError(error)}`);
     }
@@ -479,15 +484,61 @@ export class OrbitalContractService {
     if (cached !== undefined) return cached;
 
     try {
-      const balance = await this.withReadProvider('getTokenBalance', async (readProvider) => {
+      return await dedupeRpcRequest<bigint>(cacheKey, async () => {
+        const balance = await this.withReadProvider('getTokenBalance', async (readProvider) => {
         const token = this.getTokenContract(tokenAddress, readProvider);
         return BigInt(await token.balanceOf(user));
+        });
+        setCache(cacheKey, balance, TTL_BALANCE);
+        return balance;
       });
-      setCache(cacheKey, balance, TTL_BALANCE);
-      return balance;
     } catch (error: unknown) {
       throw new Error(`Failed to fetch token balance: ${parseContractError(error)}`);
     }
+  }
+
+  async getTokenBalances(tokenAddresses: string[], user: string): Promise<Record<string, bigint>> {
+    this.validateAddress(user, 'user');
+    const normalizedAddresses = Array.from(new Set(tokenAddresses.map((address) => address.trim())));
+    const balances: Record<string, bigint> = {};
+    const missingAddresses: string[] = [];
+
+    for (const tokenAddress of normalizedAddresses) {
+      this.validateAddress(tokenAddress, 'token');
+      const cacheKey = this.cacheKey(`orbital:token:${tokenAddress}:balance:${user}`);
+      const cached = getCached<bigint>(cacheKey);
+      if (cached !== undefined) {
+        balances[tokenAddress] = cached;
+      } else {
+        missingAddresses.push(tokenAddress);
+      }
+    }
+
+    if (missingAddresses.length === 0) {
+      return balances;
+    }
+
+    const requestKey = this.cacheKey(`orbital:token-balances:${user}:${missingAddresses.join(',')}`);
+    const fetched = await dedupeRpcRequest<Record<string, bigint>>(requestKey, async () => {
+      const results = await rpcMulticall<bigint>(
+        this.chainId,
+        missingAddresses.map((tokenAddress) => ({
+          target: tokenAddress,
+          abi: WrappedAssetABI,
+          functionName: 'balanceOf',
+          args: [user],
+        })),
+      );
+
+      return missingAddresses.reduce<Record<string, bigint>>((accumulator, tokenAddress, index) => {
+        const balance = results[index]?.success ? BigInt(results[index].data as bigint) : 0n;
+        setCache(this.cacheKey(`orbital:token:${tokenAddress}:balance:${user}`), balance, TTL_BALANCE);
+        accumulator[tokenAddress] = balance;
+        return accumulator;
+      }, {});
+    });
+
+    return { ...balances, ...fetched };
   }
 
   /** Get the ERC-20 allowance granted by an owner to a spender. */
@@ -500,15 +551,17 @@ export class OrbitalContractService {
     if (cached !== undefined) return cached;
 
     try {
-      const allowance = await this.withReadProvider(
+      return await dedupeRpcRequest<bigint>(cacheKey, async () => {
+        const allowance = await this.withReadProvider(
         'getTokenAllowance',
         async (readProvider) => {
           const token = this.getTokenContract(tokenAddress, readProvider);
           return BigInt(await token.allowance(owner, spender));
         },
-      );
-      setCache(cacheKey, allowance, TTL_BALANCE);
-      return allowance;
+        );
+        setCache(cacheKey, allowance, TTL_ALLOWANCE);
+        return allowance;
+      });
     } catch (error: unknown) {
       throw new Error(`Failed to fetch token allowance: ${parseContractError(error)}`);
     }

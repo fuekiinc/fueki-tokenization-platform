@@ -139,7 +139,6 @@ export interface RefreshTokenResponse {
 
 export interface AuthState {
   user: User | null;
-  tokens: AuthTokens | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   isInitialized: boolean;

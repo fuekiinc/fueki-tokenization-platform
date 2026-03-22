@@ -34,8 +34,16 @@ export async function parseXmlFile(file: File): Promise<ParsedDocument> {
     // Ensure arrays are not collapsed to single values for known
     // collection element names so that single-transaction files still
     // produce arrays in extractTransactions().
-    isArray: (_name: string, jpath: string) => {
-      const leaf = jpath.split('.').pop() ?? '';
+    isArray: (
+      _name: string,
+      jPathOrMatcher: unknown,
+      _isLeafNode: boolean,
+      _isAttribute: boolean,
+    ) => {
+      const leaf =
+        typeof jPathOrMatcher === 'string'
+          ? (jPathOrMatcher.split('.').pop() ?? '')
+          : '';
       return [
         'transaction', 'transactions',
         'entry', 'entries',

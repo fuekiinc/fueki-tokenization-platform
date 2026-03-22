@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { ModalContent, Notification } from '../types/index.ts';
+import { withStoreMiddleware } from './storeMiddleware';
 
 // ---------------------------------------------------------------------------
 // Toast notification type
@@ -86,7 +87,7 @@ const _toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // Store
 // ---------------------------------------------------------------------------
 
-export const useUIStore = create<UIStore>()((set, get) => ({
+export const useUIStore = create<UIStore>()(withStoreMiddleware('ui', (set, get) => ({
   ...initialUIState,
 
   // ---- Tab ------------------------------------------------------------------
@@ -209,7 +210,7 @@ export const useUIStore = create<UIStore>()((set, get) => ({
 
   togglePanel: () =>
     set((state) => ({ isPanelCollapsed: !state.isPanelCollapsed })),
-}));
+})));
 
 // ---------------------------------------------------------------------------
 // Selectors -- use with shallow comparison for performance

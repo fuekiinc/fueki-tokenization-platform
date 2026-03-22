@@ -1,114 +1,52 @@
-/**
- * ContractHistoryPage -- page for `/contracts/history`.
- *
- * Displays all previously deployed smart contracts. The page merges records
- * from localStorage (instant, offline-capable) with backend-persisted records
- * (durable, survives browser data clears). Backend records that are missing
- * from localStorage are back-filled so the two stores stay in sync.
- */
-
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
-import { Plus, ScrollText } from 'lucide-react';
-import {
-  loadDeployments,
-  removeDeployment,
-  saveDeployment,
-} from '../lib/contractDeployer/deploymentHistory';
-import {
-  deleteDeploymentFromBackend,
-  fetchDeploymentsFromBackend,
-} from '../lib/api/deployments';
+import { AlertCircle, Plus, ScrollText } from 'lucide-react';
+import { deleteDeploymentFromBackend } from '../lib/api/deployments';
 import { DeploymentHistoryList } from '../components/ContractDeployer/DeploymentHistoryList';
-import type { DeploymentRecord } from '../types/contractDeployer';
-import logger from '../lib/logger';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Merge localStorage records with backend records. Backend records whose
- * contractAddress+chainId combo is missing from localStorage are appended.
- * The merged list is sorted newest-first by `deployedAt`.
- */
-function mergeDeployments(
-  local: DeploymentRecord[],
-  remote: DeploymentRecord[],
-): DeploymentRecord[] {
-  const seenKeys = new Set(
-    local.map((d) => `${d.chainId}:${d.contractAddress.toLowerCase()}`),
-  );
-
-  const merged = [...local];
-  for (const r of remote) {
-    const key = `${r.chainId}:${r.contractAddress.toLowerCase()}`;
-    if (!seenKeys.has(key)) {
-      merged.push(r);
-      seenKeys.add(key);
-      // Back-fill into localStorage so future loads are instant
-      saveDeployment(r);
-    }
-  }
-
-  // Sort newest first
-  return merged.sort((a, b) => {
-    const da = new Date(a.deployedAt).getTime();
-    const db = new Date(b.deployedAt).getTime();
-    return db - da;
-  });
-}
+import Spinner from '../components/Common/Spinner';
+import { createAdaptivePollingLoop } from '../lib/rpc/polling';
+import { emitRpcRefetch, subscribeToRpcRefetch } from '../lib/rpc/refetchEvents';
+import { useContractDeployerStore } from '../store/contractDeployerStore';
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export default function ContractHistoryPage() {
-  const [deployments, setDeployments] = useState<DeploymentRecord[]>([]);
+  const deployments = useContractDeployerStore((s) => s.deploymentHistory);
+  const isLoading = useContractDeployerStore((s) => s.isLoading);
+  const error = useContractDeployerStore((s) => s.error);
+  const loadHistory = useContractDeployerStore((s) => s.loadHistory);
+  const removeDeployment = useContractDeployerStore((s) => s.removeDeployment);
 
   // Load deployment history from localStorage immediately, then merge with
   // backend records (which may contain deployments from other devices or
   // sessions where localStorage was cleared).
   useEffect(() => {
-    const localRecords = loadDeployments();
-    setDeployments(localRecords);
+    void loadHistory();
 
-    // Async fetch from backend and merge
-    fetchDeploymentsFromBackend({ limit: 100 })
-      .then((response) => {
-        const backendRecords: DeploymentRecord[] = response.deployments.map((d) => ({
-          id: d.id,
-          templateId: d.templateId,
-          templateName: d.templateName,
-          contractAddress: d.contractAddress,
-          deployerAddress: d.deployerAddress,
-          chainId: d.chainId,
-          txHash: d.txHash,
-          constructorArgs: d.constructorArgs,
-          abi: [],
-          blockNumber: d.blockNumber ?? undefined,
-          gasUsed: d.gasUsed ?? undefined,
-          deployedAt: d.deployedAt,
-        }));
+    const poller = createAdaptivePollingLoop({
+      tier: 'low',
+      poll: loadHistory,
+      immediate: false,
+    });
+    const unsubscribeRefetch = subscribeToRpcRefetch(['history'], () => {
+      poller.triggerNow();
+    });
 
-        // Re-read localStorage (may have changed since initial load)
-        const freshLocal = loadDeployments();
-        const merged = mergeDeployments(freshLocal, backendRecords);
-        setDeployments(merged);
-      })
-      .catch((err) => {
-        // Non-fatal: localStorage records are still displayed.
-        logger.warn('[ContractHistoryPage] Failed to fetch backend deployments:', err);
-      });
-  }, []);
+    return () => {
+      unsubscribeRefetch();
+      poller.cancel();
+    };
+  }, [loadHistory]);
 
   // Delete a deployment record and update local state
   const handleDelete = useCallback((id: string) => {
     removeDeployment(id);
-    deleteDeploymentFromBackend(id);
-    setDeployments((prev) => prev.filter((d) => d.id !== id));
-  }, []);
+    void deleteDeploymentFromBackend(id);
+    emitRpcRefetch(['history']);
+  }, [removeDeployment]);
 
   return (
     <div className="w-full">
@@ -161,6 +99,25 @@ export default function ContractHistoryPage() {
       {/* ================================================================== */}
       {/* Deployment History                                                 */}
       {/* ================================================================== */}
+      {error && (
+        <div
+          className="mb-6 flex items-start gap-4 rounded-2xl border border-red-500/15 bg-red-500/[0.05] p-5"
+          role="alert"
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-500/10 ring-1 ring-red-500/20">
+            <AlertCircle className="h-5 w-5 text-red-400" aria-hidden="true" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-red-300">
+              Unable to load deployment history
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-red-300/70">
+              {error}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div
         className={clsx(
           'relative overflow-hidden',
@@ -189,11 +146,24 @@ export default function ContractHistoryPage() {
           </div>
         </div>
 
-        {/* List component */}
-        <DeploymentHistoryList
-          deployments={deployments}
-          onDelete={handleDelete}
-        />
+        {isLoading && deployments.length === 0 ? (
+          <div className="flex min-h-[320px] flex-col items-center justify-center gap-4 text-center">
+            <Spinner size="lg" label="Loading deployment history" />
+            <div>
+              <p className="text-sm font-semibold text-gray-200">
+                Loading deployment history
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                Restoring your saved contract metadata and syncing with the backend.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <DeploymentHistoryList
+            deployments={deployments}
+            onDelete={handleDelete}
+          />
+        )}
       </div>
     </div>
   );

@@ -14,6 +14,7 @@
 
 import { create } from 'zustand';
 import type { SecurityTokenDetails } from '../lib/blockchain/contracts';
+import { withStoreMiddleware } from './storeMiddleware';
 
 // ---------------------------------------------------------------------------
 // State & Actions interfaces
@@ -68,7 +69,7 @@ const initialState: SecurityTokenState = {
 // Store
 // ---------------------------------------------------------------------------
 
-export const useSecurityTokenStore = create<SecurityTokenStore>()((set) => ({
+export const useSecurityTokenStore = create<SecurityTokenStore>()(withStoreMiddleware('security-token', (set) => ({
   ...initialState,
 
   setSelectedToken: (address) =>
@@ -102,7 +103,7 @@ export const useSecurityTokenStore = create<SecurityTokenStore>()((set) => ({
 
   reset: () =>
     set({ ...initialState }),
-}));
+})));
 
 // ---------------------------------------------------------------------------
 // Selectors -- use with shallow comparison for performance

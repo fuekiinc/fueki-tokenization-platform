@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ethers } from 'ethers';
 import {
   useActiveAccount,
@@ -20,6 +21,7 @@ import { clearWalletBoundStores } from './walletBoundStores';
 import { findHealthyEndpoint } from '../lib/rpc/endpoints';
 import { getReadOnlyProvider } from '../lib/blockchain/contracts';
 import { useAuthStore } from '../store/authStore';
+import { queryKeys } from '../lib/queryClient';
 
 function parseConnectionError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
@@ -98,6 +100,22 @@ async function fetchBalanceWithRetry(
   return '0';
 }
 
+function matchesCurrentWallet(address: string, chainId: number | null): boolean {
+  const currentWallet = useWalletStore.getState().wallet;
+  return (
+    currentWallet.isConnected &&
+    typeof currentWallet.address === 'string' &&
+    currentWallet.address.toLowerCase() === address.toLowerCase() &&
+    currentWallet.chainId === chainId
+  );
+}
+
+interface BalanceSnapshot {
+  address: string;
+  chainId: number | null;
+  balance: string;
+}
+
 /**
  * Single wallet/network orchestrator.
  * Mount once near the app root so wallet sync side effects run exactly once.
@@ -121,7 +139,6 @@ export function WalletConnectionController() {
 
   const wasConnectedRef = useRef(false);
   const syncVersionRef = useRef(0);
-  const balanceIntervalRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** Consecutive balance poll failures -- used for exponential backoff. */
   const balanceFailCountRef = useRef(0);
   /** Debounce timer for disconnect detection during chain switches. */
@@ -359,75 +376,87 @@ export function WalletConnectionController() {
   }, [activeAccount?.address, activeWallet, connectionStatus, isDemoActive, setLastError]);
 
   useEffect(() => {
-    clearTimeout(balanceIntervalRef.current);
-
     if (isDemoActive) {
-      balanceFailCountRef.current = 0;
-      return () => clearTimeout(balanceIntervalRef.current);
-    }
-
-    if (!wallet.isConnected || !wallet.address) {
       balanceFailCountRef.current = 0;
       return;
     }
+    if (!wallet.isConnected || !wallet.address) {
+      balanceFailCountRef.current = 0;
+    }
+  }, [isDemoActive, wallet.isConnected, wallet.address]);
 
-    const BASE_INTERVAL = 60_000; // 60 s (was 30 s -- reduces RPC load)
-    const MAX_INTERVAL = 5 * 60_000; // cap at 5 minutes on repeated failures
+  const balanceQuery = useQuery<BalanceSnapshot>({
+    queryKey: queryKeys.balance(wallet.address, wallet.chainId),
+    enabled: !isDemoActive && wallet.isConnected && Boolean(wallet.address),
+    refetchInterval: 15_000,
+    queryFn: async () => {
+      // FIX: read fresh from store to avoid stale closure.
+      const currentWallet = useWalletStore.getState().wallet;
+      if (!currentWallet.address || !currentWallet.isConnected) {
+        throw new Error('Wallet is not connected');
+      }
 
-    function scheduleBalancePoll() {
-      const backoff = Math.min(
-        BASE_INTERVAL * Math.pow(2, balanceFailCountRef.current),
-        MAX_INTERVAL,
-      );
+      const { address, chainId } = currentWallet;
 
-      balanceIntervalRef.current = setTimeout(async () => {
-        if (!wallet.address) return;
-        try {
-          // Use direct RPC provider first to avoid thirdweb proxy rate limits.
-          if (wallet.chainId) {
-            const readProvider = getReadOnlyProvider(wallet.chainId);
-            const raw = await readProvider.getBalance(wallet.address);
-            setWallet({ balance: ethers.formatEther(raw), lastSyncAt: Date.now() });
-            balanceFailCountRef.current = 0;
-            scheduleBalancePoll();
-            return;
-          }
-          // Fall back to wallet provider if chainId not available.
-          const provider = getProvider();
-          if (!provider) { scheduleBalancePoll(); return; }
-          const raw = await provider.getBalance(wallet.address);
-          setWallet({ balance: ethers.formatEther(raw), lastSyncAt: Date.now() });
-          balanceFailCountRef.current = 0;
-        } catch {
-          // Direct RPC failed — try finding a healthy endpoint.
-          if (wallet.chainId) {
-            let fallback: ethers.JsonRpcProvider | undefined;
-            try {
-              const rpcUrl = await findHealthyEndpoint(wallet.chainId);
-              if (rpcUrl) {
-                fallback = new ethers.JsonRpcProvider(rpcUrl);
-                const raw = await fallback.getBalance(wallet.address!);
-                setWallet({ balance: ethers.formatEther(raw), lastSyncAt: Date.now() });
-                balanceFailCountRef.current = 0;
-                scheduleBalancePoll();
-                return;
-              }
-            } catch {
-              // fallback also failed
-            } finally {
-              fallback?.destroy();
-            }
-          }
-          balanceFailCountRef.current++;
+      try {
+        if (chainId) {
+          const readProvider = getReadOnlyProvider(chainId);
+          const raw = await readProvider.getBalance(address);
+          return { address, chainId, balance: ethers.formatEther(raw) };
         }
-        scheduleBalancePoll();
-      }, backoff);
+
+        const provider = getProvider();
+        if (!provider) {
+          throw new Error('Wallet provider unavailable');
+        }
+
+        const raw = await provider.getBalance(address);
+        return { address, chainId, balance: ethers.formatEther(raw) };
+      } catch {
+        if (chainId) {
+          let fallback: ethers.JsonRpcProvider | undefined;
+          try {
+            const rpcUrl = await findHealthyEndpoint(chainId);
+            if (rpcUrl) {
+              fallback = new ethers.JsonRpcProvider(rpcUrl);
+              const raw = await fallback.getBalance(address);
+              return { address, chainId, balance: ethers.formatEther(raw) };
+            }
+          } finally {
+            fallback?.destroy();
+          }
+        }
+
+        const provider = getProvider();
+        if (!provider) {
+          throw new Error('Wallet provider unavailable');
+        }
+
+        const raw = await provider.getBalance(address);
+        return { address, chainId, balance: ethers.formatEther(raw) };
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (!balanceQuery.data) {
+      return;
     }
 
-    scheduleBalancePoll();
+    const { address, chainId, balance } = balanceQuery.data;
+    if (!matchesCurrentWallet(address, chainId)) {
+      return;
+    }
 
-    return () => clearTimeout(balanceIntervalRef.current);
-  }, [wallet.isConnected, wallet.address, wallet.chainId, isDemoActive, setWallet]);
+    setWallet({ balance, lastSyncAt: Date.now() });
+    balanceFailCountRef.current = 0;
+  }, [balanceQuery.data, setWallet]);
+
+  useEffect(() => {
+    if (balanceQuery.error && balanceQuery.fetchStatus === 'idle') {
+      balanceFailCountRef.current += 1;
+    }
+  }, [balanceQuery.error, balanceQuery.fetchStatus, balanceQuery.errorUpdatedAt]);
 
   return null;
 }

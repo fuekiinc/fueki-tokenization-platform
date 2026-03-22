@@ -27,6 +27,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
 
+  const [authError, setAuthError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
   const {
@@ -38,6 +39,8 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (values: LoginFormValues) => {
+    setAuthError(null);
+
     try {
       await login(values);
 
@@ -66,18 +69,32 @@ export default function LoginPage() {
 
       toast.success('Welcome back!');
     } catch (err: unknown) {
-      let message = 'Login failed';
+      let message = 'Unable to sign in right now. Please try again.';
+      let errorCode: string | undefined;
+
       if (
         err !== null &&
         typeof err === 'object' &&
         'response' in err
       ) {
-        const axiosErr = err as { response?: { data?: { error?: { message?: string } } } };
+        const axiosErr = err as {
+          response?: { data?: { error?: { code?: string; message?: string } } };
+        };
+        errorCode = axiosErr.response?.data?.error?.code;
         message = axiosErr.response?.data?.error?.message ?? message;
       } else if (err instanceof Error) {
         message = err.message;
       }
-      toast.error(message);
+
+      if (errorCode === 'INVALID_CREDENTIALS') {
+        message = 'Incorrect email or password. Please try again.';
+      }
+
+      setAuthError(message);
+
+      if (errorCode !== 'INVALID_CREDENTIALS') {
+        toast.error(message);
+      }
     }
   };
 
@@ -117,6 +134,19 @@ export default function LoginPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-6">
+          {authError && (
+            <div
+              role="alert"
+              aria-live="polite"
+              className={clsx(
+                'rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3',
+                'text-sm font-medium text-red-300',
+              )}
+            >
+              {authError}
+            </div>
+          )}
+
           {/* Email */}
           <div className="space-y-2">
             <label
@@ -148,6 +178,7 @@ export default function LoginPage() {
                     value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
                     message: 'Enter a valid email address',
                   },
+                  onChange: () => setAuthError(null),
                 })}
               />
             </div>
@@ -189,6 +220,7 @@ export default function LoginPage() {
                     value: 8,
                     message: 'Password must be at least 8 characters',
                   },
+                  onChange: () => setAuthError(null),
                 })}
               />
               <button

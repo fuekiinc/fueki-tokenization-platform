@@ -6,11 +6,80 @@ const LEGACY_GAS_PRICE_BUFFER_BPS = 12_500n;
 const BPS_DENOMINATOR = 10_000n;
 const DEFAULT_PRIORITY_FEE_WEI = 1_500_000_000n;
 
+export type FeeOverrides = Pick<
+  ethers.Overrides,
+  'gasPrice' | 'maxFeePerGas' | 'maxPriorityFeePerGas'
+>;
+
+function applyBuffer(value: bigint, bufferBps: bigint): bigint {
+  return (value * bufferBps) / BPS_DENOMINATOR;
+}
+
 export function applyGasLimitBuffer(
   gasEstimate: bigint,
   bufferBps: bigint = GAS_LIMIT_BUFFER_BPS,
 ): bigint {
-  return (gasEstimate * bufferBps) / BPS_DENOMINATOR;
+  return applyBuffer(gasEstimate, bufferBps);
+}
+
+export function buildBufferedFeeOverridesFromFeeData(
+  feeData: Pick<ethers.FeeData, 'gasPrice' | 'maxFeePerGas' | 'maxPriorityFeePerGas'>,
+  latestBaseFeePerGas: bigint | null = null,
+): FeeOverrides {
+  if (feeData.maxFeePerGas != null) {
+    const bufferedMaxFee = applyBuffer(
+      feeData.maxFeePerGas,
+      EIP1559_MAX_FEE_BUFFER_BPS,
+    );
+
+    if (bufferedMaxFee <= 0n) {
+      return {};
+    }
+
+    const priorityFee = feeData.maxPriorityFeePerGas ?? DEFAULT_PRIORITY_FEE_WEI;
+    if (priorityFee <= 0n || priorityFee > bufferedMaxFee) {
+      return {};
+    }
+
+    if (latestBaseFeePerGas != null && bufferedMaxFee < latestBaseFeePerGas + priorityFee) {
+      return {};
+    }
+
+    return {
+      maxFeePerGas: bufferedMaxFee,
+      maxPriorityFeePerGas: priorityFee,
+    };
+  }
+
+  if (feeData.gasPrice != null && feeData.gasPrice > 0n) {
+    return {
+      gasPrice: applyBuffer(feeData.gasPrice, LEGACY_GAS_PRICE_BUFFER_BPS),
+    };
+  }
+
+  return {};
+}
+
+export async function buildBufferedFeeOverrides(
+  provider: ethers.Provider | null | undefined,
+): Promise<FeeOverrides> {
+  if (!provider) {
+    return {};
+  }
+
+  try {
+    const [feeData, latestBlock] = await Promise.all([
+      provider.getFeeData(),
+      provider.getBlock('latest'),
+    ]);
+
+    return buildBufferedFeeOverridesFromFeeData(
+      feeData,
+      latestBlock?.baseFeePerGas ?? null,
+    );
+  } catch {
+    return {};
+  }
 }
 
 export async function buildBufferedTransactionOverrides(
@@ -26,20 +95,7 @@ export async function buildBufferedTransactionOverrides(
   }
 
   try {
-    const feeData = await provider.getFeeData();
-
-    if (feeData.maxFeePerGas != null) {
-      overrides.maxFeePerGas =
-        (feeData.maxFeePerGas * EIP1559_MAX_FEE_BUFFER_BPS) / BPS_DENOMINATOR;
-      overrides.maxPriorityFeePerGas =
-        feeData.maxPriorityFeePerGas ?? DEFAULT_PRIORITY_FEE_WEI;
-      return overrides;
-    }
-
-    if (feeData.gasPrice != null) {
-      overrides.gasPrice =
-        (feeData.gasPrice * LEGACY_GAS_PRICE_BUFFER_BPS) / BPS_DENOMINATOR;
-    }
+    Object.assign(overrides, await buildBufferedFeeOverrides(provider));
   } catch {
     // Fee override population is best-effort. Callers can still submit with
     // a buffered gas limit and let the wallet/provider fill the fee fields.

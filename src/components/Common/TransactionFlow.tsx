@@ -61,6 +61,7 @@ import { getProvider, useWalletStore } from '../../store/walletStore.ts';
 import { addPendingTransaction } from '../../lib/transactionRecovery.ts';
 import type { PendingTransaction } from '../../lib/transactionRecovery.ts';
 import { parseContractError } from '../../lib/blockchain/contracts.ts';
+import { emitRpcRefetch, type RpcRefetchTopic } from '../../lib/rpc/refetchEvents.ts';
 import Spinner from './Spinner.tsx';
 import OctopusLoader from './OctopusLoader.tsx';
 
@@ -146,6 +147,25 @@ function toRecoveryType(
     approve: 'approve',
   };
   return map[type];
+}
+
+function getRefetchTopicsForTransaction(type: TransactionType): RpcRefetchTopic[] {
+  switch (type) {
+    case 'approve':
+      return ['allowances', 'balances', 'pending-transactions'];
+    case 'trade':
+      return ['orders', 'balances', 'pending-transactions'];
+    case 'swap':
+      return ['pool', 'market-data', 'balances', 'pending-transactions'];
+    case 'addLiquidity':
+    case 'removeLiquidity':
+      return ['pool', 'balances', 'pending-transactions'];
+    case 'mint':
+    case 'burn':
+    case 'transfer':
+    default:
+      return ['balances', 'pending-transactions'];
+  }
 }
 
 /** Human-readable label for the transaction type badge. */
@@ -661,6 +681,7 @@ export function useTransactionFlow(): UseTransactionFlowReturn {
             pollIntervalRef.current = null;
 
             if (receipt.status === 1) {
+              emitRpcRefetch(getRefetchTopicsForTransaction(flowConfig.type));
               setTxStatus('confirmed');
               flowConfig.onSuccess?.(receipt);
             } else {

@@ -16,10 +16,9 @@ import {
   X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { parseFile } from '../../lib/parsers';
 import { useDocumentStore } from '../../store/documentStore.ts';
 import { formatCurrency } from '../../lib/utils/helpers';
-import type { ParsedDocument, SupportedFileType } from '../../types';
+import type { SupportedFileType } from '../../types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -105,14 +104,16 @@ function formatBytes(bytes: number): string {
 // ---------------------------------------------------------------------------
 
 export default function FileUploader() {
+  const currentDocument = useDocumentStore((s) => s.currentDocument);
+  const currentDocumentFile = useDocumentStore((s) => s.currentDocumentFile);
+  const isLoading = useDocumentStore((s) => s.isLoading);
+  const error = useDocumentStore((s) => s.error);
   const setCurrentDocument = useDocumentStore((s) => s.setCurrentDocument);
   const setCurrentDocumentFile = useDocumentStore((s) => s.setCurrentDocumentFile);
-  const addDocument = useDocumentStore((s) => s.addDocument);
+  const parseDocument = useDocumentStore((s) => s.parseDocument);
+  const setError = useDocumentStore((s) => s.setError);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isParsing, setIsParsing] = useState(false);
-  const [parseError, setParseError] = useState<string | null>(null);
-  const [parsedDoc, setParsedDoc] = useState<ParsedDocument | null>(null);
 
   // Generation counter used to detect when a new file is dropped while a
   // parse is still in-flight. Each new drop increments the generation so
@@ -125,26 +126,26 @@ export default function FileUploader() {
     // Increment generation to invalidate any in-flight parse result.
     parseGenerationRef.current += 1;
 
-    setParseError(null);
-    setParsedDoc(null);
+    setError(null);
     setCurrentDocument(null);
     setCurrentDocumentFile(null);
+    setSelectedFile(null);
 
     if (acceptedFiles.length === 0) return;
 
     const file = acceptedFiles[0];
     setSelectedFile(file);
     setCurrentDocumentFile(file);
-  }, [setCurrentDocument, setCurrentDocumentFile]);
+  }, [setCurrentDocument, setCurrentDocumentFile, setError]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: ACCEPTED_TYPES,
     maxFiles: 1,
     multiple: false,
-    disabled: isParsing,
-    noClick: isParsing,
-    noDrag: isParsing,
+    disabled: isLoading,
+    noClick: isLoading,
+    noDrag: isLoading,
     maxSize: 10 * 1024 * 1024, // 10 MB -- matches MAX_FILE_SIZE_BYTES in parsers
     onDropRejected: (rejections) => {
       const errorCode = rejections[0]?.errors[0]?.code;
@@ -156,8 +157,9 @@ export default function FileUploader() {
         msg = 'Unsupported file type. Please upload a JSON, CSV, XML, PDF, PNG, or JPG file.';
       }
       setSelectedFile(null);
-      setParsedDoc(null);
-      setParseError(msg);
+      setCurrentDocument(null);
+      setCurrentDocumentFile(null);
+      setError(msg);
       toast.error(msg);
     },
   });
@@ -171,15 +173,8 @@ export default function FileUploader() {
     // dropped while this parse is running (which would make our result stale).
     const generation = parseGenerationRef.current;
 
-    setIsParsing(true);
-    setParseError(null);
-    setParsedDoc(null);
-    // Defensively clear the store so no stale document persists if this
-    // parse fails or is superseded by a new drop.
-    setCurrentDocument(null);
-
     try {
-      const doc = await parseFile(selectedFile);
+      const doc = await parseDocument(selectedFile);
 
       // If the user dropped a different file while we were parsing,
       // discard this now-stale result silently.
@@ -187,22 +182,7 @@ export default function FileUploader() {
         return;
       }
 
-      if (doc.transactions.length === 0) {
-        throw new Error(
-          'No valid transactions found in this file. Please check the file structure.',
-        );
-      }
-
-      if (doc.totalValue <= 0) {
-        throw new Error(
-          'The document has no positive monetary value to tokenize. ' +
-          'The total of all transaction amounts must be greater than zero.',
-        );
-      }
-
-      setParsedDoc(doc);
-      setCurrentDocument(doc);
-      addDocument(doc);
+      setSelectedFile(null);
       toast.success(
         `Parsed ${doc.transactions.length} transaction${doc.transactions.length === 1 ? '' : 's'} successfully`,
       );
@@ -213,14 +193,8 @@ export default function FileUploader() {
       }
       const message =
         err instanceof Error ? err.message : 'Failed to parse file';
-      setParseError(message);
+      setError(message);
       toast.error(message);
-    } finally {
-      // Only clear isParsing if this is still the active parse generation.
-      // Otherwise the new file's UI state should not be affected.
-      if (generation === parseGenerationRef.current) {
-        setIsParsing(false);
-      }
     }
   };
 
@@ -228,8 +202,7 @@ export default function FileUploader() {
 
   const handleReset = () => {
     setSelectedFile(null);
-    setParsedDoc(null);
-    setParseError(null);
+    setError(null);
     setCurrentDocument(null);
     setCurrentDocumentFile(null);
   };
@@ -245,7 +218,7 @@ export default function FileUploader() {
         {...getRootProps()}
         role="button"
         aria-label="Upload document - drag and drop or click to browse"
-        tabIndex={isParsing ? -1 : 0}
+        tabIndex={isLoading ? -1 : 0}
         className={[
           'group relative flex cursor-pointer flex-col items-center justify-center',
           'rounded-2xl border-2 border-dashed p-10 sm:p-14',
@@ -258,7 +231,7 @@ export default function FileUploader() {
                 'hover:border-white/[0.15]',
                 'hover:shadow-[0_0_40px_-12px_rgba(99,102,241,0.08)]',
               ].join(' '),
-          isParsing && 'opacity-50 cursor-not-allowed',
+          isLoading && 'opacity-50 cursor-not-allowed',
         ].join(' ')}
       >
         <input {...getInputProps()} />
@@ -296,7 +269,7 @@ export default function FileUploader() {
       {/* ------------------------------------------------------------------ */}
       {/* Format badges & size limit                                         */}
       {/* ------------------------------------------------------------------ */}
-      {!selectedFile && !parsedDoc && (
+      {!selectedFile && !currentDocument && (
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2 flex-wrap">
             {FORMAT_BADGES.map((fmt) => (
@@ -317,7 +290,7 @@ export default function FileUploader() {
       {/* ------------------------------------------------------------------ */}
       {/* Selected file card                                                 */}
       {/* ------------------------------------------------------------------ */}
-      {selectedFile && !parsedDoc && (
+      {selectedFile && !currentDocument && (
         <div className="animate-fade-in rounded-2xl bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] p-6">
           <div className="flex items-center gap-5">
             {/* File icon with colored background */}
@@ -361,7 +334,7 @@ export default function FileUploader() {
       {/* ------------------------------------------------------------------ */}
       {/* Parse error                                                        */}
       {/* ------------------------------------------------------------------ */}
-      {parseError && (
+      {error && (
         <div className="animate-fade-in rounded-2xl border border-red-500/15 bg-red-500/[0.05] p-7" role="alert">
           <div className="flex items-start gap-4">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-500/10 ring-1 ring-red-500/20">
@@ -372,7 +345,7 @@ export default function FileUploader() {
                 Parsing Error
               </p>
               <p className="mt-1.5 text-sm leading-relaxed text-red-300/60">
-                {parseError}
+                {error}
               </p>
             </div>
           </div>
@@ -391,17 +364,17 @@ export default function FileUploader() {
       {/* ------------------------------------------------------------------ */}
       {/* Parse button                                                       */}
       {/* ------------------------------------------------------------------ */}
-      {selectedFile && !parsedDoc && (
+      {selectedFile && !currentDocument && (
         <button
           type="button"
           onClick={() => { void handleParse(); }}
-          disabled={isParsing}
+          disabled={isLoading}
           className={[
             'relative flex w-full items-center justify-center gap-2.5 overflow-hidden',
             'rounded-2xl px-6 py-4 text-sm font-semibold text-white',
             'transition-all duration-300',
             'disabled:cursor-not-allowed disabled:opacity-50',
-            isParsing
+            isLoading
               ? 'bg-indigo-600/80'
               : [
                   'bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-600',
@@ -411,7 +384,7 @@ export default function FileUploader() {
                 ].join(' '),
           ].join(' ')}
         >
-          {isParsing ? (
+          {isLoading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>Analyzing document...</span>
@@ -428,7 +401,7 @@ export default function FileUploader() {
       {/* ------------------------------------------------------------------ */}
       {/* Success state                                                      */}
       {/* ------------------------------------------------------------------ */}
-      {parsedDoc && (
+      {currentDocument && (
         <div className="animate-fade-in space-y-4" role="status" aria-live="polite">
           {/* Success card */}
           <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.04] p-7">
@@ -442,8 +415,13 @@ export default function FileUploader() {
                   Document parsed successfully
                 </p>
                 <p className="mt-1 text-xs text-emerald-400/50">
-                  {parsedDoc.transactions.length} transaction{parsedDoc.transactions.length === 1 ? '' : 's'} extracted
+                  {currentDocument.transactions.length} transaction{currentDocument.transactions.length === 1 ? '' : 's'} extracted
                 </p>
+                {!currentDocumentFile && (
+                  <p className="mt-2 text-xs leading-relaxed text-amber-300/80">
+                    The parsed metadata was restored after refresh. Re-upload the original file before minting.
+                  </p>
+                )}
 
                 {/* Stats grid */}
                 <div className="mt-5 grid grid-cols-3 gap-4">
@@ -452,7 +430,7 @@ export default function FileUploader() {
                       Transactions
                     </p>
                     <p className="mt-1.5 text-lg font-bold tabular-nums text-gray-100">
-                      {parsedDoc.transactions.length}
+                      {currentDocument.transactions.length}
                     </p>
                   </div>
                   <div className="rounded-xl bg-[#0D0F14]/60 px-4 py-3.5 ring-1 ring-white/[0.04]">
@@ -460,7 +438,7 @@ export default function FileUploader() {
                       Total Value
                     </p>
                     <p className="mt-1.5 text-lg font-bold tabular-nums text-gray-100">
-                      {formatCurrency(parsedDoc.totalValue, parsedDoc.currency)}
+                      {formatCurrency(currentDocument.totalValue, currentDocument.currency)}
                     </p>
                   </div>
                   <div className="rounded-xl bg-[#0D0F14]/60 px-4 py-3.5 ring-1 ring-white/[0.04]">
@@ -468,7 +446,7 @@ export default function FileUploader() {
                       Currency
                     </p>
                     <p className="mt-1.5 text-lg font-bold text-gray-100">
-                      {parsedDoc.currency}
+                      {currentDocument.currency}
                     </p>
                   </div>
                 </div>

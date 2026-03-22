@@ -16,12 +16,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { ethers } from 'ethers';
+import { useContractService } from '../hooks/useContractService';
 import { useWallet } from '../hooks/useWallet';
 import { useAuthStore } from '../store/authStore';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
-import { getProvider, useWalletStore } from '../store/walletStore.ts';
+import { useWalletStore } from '../store/walletStore.ts';
 import { getAssetFetchGeneration, nextAssetFetchGeneration, useAssetStore } from '../store/assetStore.ts';
-import { ContractService, ETH_SENTINEL, getReadOnlyProvider } from '../lib/blockchain/contracts';
+import { ETH_SENTINEL, getReadOnlyProvider } from '../lib/blockchain/contracts';
 import { retryAsync } from '../lib/utils/retry';
 import { mapInBatches } from '../lib/utils/asyncBatch';
 import logger from '../lib/logger';
@@ -70,6 +71,26 @@ const MOBILE_TABS: { id: MobileTab; label: string; icon: React.ReactNode }[] = [
   { id: 'trade', label: 'Trade', icon: <ArrowLeftRight className="h-4 w-4" /> },
   { id: 'orders', label: 'My Orders', icon: <Clock className="h-4 w-4" /> },
 ];
+
+function pickDistinctTradeToken(
+  assets: WrappedAsset[],
+  excludedToken: string | null,
+): string | null {
+  const normalizedExcluded = excludedToken?.toLowerCase() ?? null;
+  const alternateAsset = assets.find(
+    (asset) => asset.address.toLowerCase() !== normalizedExcluded,
+  );
+
+  if (alternateAsset) {
+    return alternateAsset.address;
+  }
+
+  if (normalizedExcluded !== ETH_SENTINEL.toLowerCase()) {
+    return ETH_SENTINEL;
+  }
+
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Reusable glass card wrapper
@@ -140,7 +161,6 @@ export default function ExchangePage() {
 
   // ---- Local state --------------------------------------------------------
 
-  const [contractService, setContractService] = useState<ContractService | null>(null);
   const [assets, setLocalAssets] = useState<WrappedAsset[]>([]);
   const [loadingAssets, setLocalLoadingAssets] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobileTab>('trade');
@@ -152,6 +172,7 @@ export default function ExchangePage() {
   const [selectedSellToken, setSelectedSellToken] = useState<string | null>(null);
   const [selectedBuyToken, setSelectedBuyToken] = useState<string | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
+  const { contractService, isReady: isContractServiceReady } = useContractService();
 
   // ---- Derived state ------------------------------------------------------
 
@@ -173,27 +194,26 @@ export default function ExchangePage() {
 
   useEffect(() => {
     if (!isConnected || !wallet.chainId || !isNetworkReady || isSwitchingNetwork) {
-      setContractService(null);
-      return;
-    }
-
-    const provider = getProvider();
-    if (!provider) {
-      setContractService(null);
-      return;
-    }
-
-    try {
-      const service = new ContractService(provider, wallet.chainId);
-      setContractService(service);
       setInitError(null);
-    } catch (err) {
-      logger.error('Failed to initialize ContractService:', err);
-      toast.error('Unable to connect to exchange contracts. Please check your network and try again.');
-      setContractService(null);
-      setInitError('Failed to initialize exchange contracts. Please check your network.');
+      return;
     }
-  }, [isConnected, isNetworkReady, isSwitchingNetwork, wallet.chainId]);
+
+    if (isContractServiceReady && contractService) {
+      setInitError(null);
+      return;
+    }
+
+    logger.error('Failed to initialize ContractService for exchange view');
+    toast.error('Unable to connect to exchange contracts. Please check your network and try again.');
+    setInitError('Failed to initialize exchange contracts. Please check your network.');
+  }, [
+    contractService,
+    isConnected,
+    isContractServiceReady,
+    isNetworkReady,
+    isSwitchingNetwork,
+    wallet.chainId,
+  ]);
 
   // ---- Fetch all wrapped assets -------------------------------------------
 
@@ -325,10 +345,9 @@ export default function ExchangePage() {
         ),
       );
 
-      // Fetch details and balances for every known asset in bounded batches.
       let failedCount = 0;
       const readProvider = getReadOnlyProvider(wallet.chainId!);
-      const assetList = (
+      const validKnownAddresses = (
         await mapInBatches(knownAddresses, 8, async (addr) => {
           try {
             // Skip stale registry entries that do not point to deployed contracts.
@@ -338,34 +357,30 @@ export default function ExchangePage() {
               return null;
             }
 
-            const [details, balance] = await Promise.all([
-              retryAsync(
-                () => contractService.getAssetDetails(addr),
-                { maxAttempts: 2, baseDelayMs: 400, label: `exchange:getAssetDetails:${addr}` },
-              ),
-              retryAsync(
-                () => contractService.getAssetBalance(addr, address),
-                { maxAttempts: 2, baseDelayMs: 400, label: `exchange:getAssetBalance:${addr}` },
-              ),
-            ]);
-
-            return {
-              address: addr,
-              name: details.name,
-              symbol: details.symbol,
-              totalSupply: details.totalSupply.toString(),
-              balance: balance.toString(),
-              documentHash: details.documentHash,
-              documentType: details.documentType,
-              originalValue: details.originalValue.toString(),
-            } satisfies WrappedAsset;
+            return addr;
           } catch (err) {
             failedCount++;
             logger.error(`Failed to load asset ${addr}:`, err);
             return null;
           }
         })
-      ).filter((asset): asset is WrappedAsset => asset !== null);
+      ).filter((asset): asset is string => asset !== null);
+
+      const assetSnapshots = await retryAsync(
+        () => contractService.getUserAssetSnapshots(validKnownAddresses, address),
+        { maxAttempts: 2, baseDelayMs: 400, label: 'exchange:getUserAssetSnapshots' },
+      );
+
+      const assetList = assetSnapshots.map((snapshot) => ({
+        address: snapshot.address,
+        name: snapshot.name,
+        symbol: snapshot.symbol,
+        totalSupply: snapshot.totalSupply.toString(),
+        balance: snapshot.balance.toString(),
+        documentHash: snapshot.documentHash,
+        documentType: snapshot.documentType,
+        originalValue: snapshot.originalValue.toString(),
+      } satisfies WrappedAsset));
 
       if (isStaleScope()) return;
 
@@ -464,13 +479,19 @@ export default function ExchangePage() {
     setSelectedSellToken((prev) => prev ?? assets[0].address);
     setSelectedBuyToken((prev) => {
       if (prev) return prev;
-      const defaultSell = assets[0].address.toLowerCase();
-      const secondAsset = assets.find(
-        (asset) => asset.address.toLowerCase() !== defaultSell,
-      );
-      return secondAsset?.address ?? ETH_SENTINEL;
+      return pickDistinctTradeToken(assets, assets[0].address) ?? ETH_SENTINEL;
     });
   }, [assets]);
+
+  useEffect(() => {
+    if (!selectedSellToken || !selectedBuyToken) return;
+    if (selectedSellToken.toLowerCase() !== selectedBuyToken.toLowerCase()) return;
+
+    const replacementBuyToken = pickDistinctTradeToken(assets, selectedSellToken);
+    if (!replacementBuyToken) return;
+
+    setSelectedBuyToken(replacementBuyToken);
+  }, [assets, selectedBuyToken, selectedSellToken]);
 
   const handlePairChange = useCallback(
     (sellToken: string | null, buyToken: string | null) => {

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { SecurityToken, WrappedAsset } from '../types/index.ts';
+import { withStoreMiddleware } from './storeMiddleware';
 
 // ---------------------------------------------------------------------------
 // State & Actions interfaces
@@ -90,7 +91,7 @@ const initialAssetState: AssetState = {
 // Store
 // ---------------------------------------------------------------------------
 
-export const useAssetStore = create<AssetStore>()((set, get) => ({
+export const useAssetStore = create<AssetStore>()(withStoreMiddleware('asset', (set, get) => ({
   ...initialAssetState,
 
   // ---- Wrapped assets -------------------------------------------------------
@@ -207,7 +208,7 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
     if (!lastTokensFetchedAt) return false;
     return Date.now() - new Date(lastTokensFetchedAt).getTime() < maxAgeMs;
   },
-}));
+})));
 
 // ---------------------------------------------------------------------------
 // Selectors -- use with shallow comparison for performance

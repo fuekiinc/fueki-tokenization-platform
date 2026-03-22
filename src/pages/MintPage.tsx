@@ -247,6 +247,8 @@ function SectionCard({
 
 export default function MintPage() {
   const currentDocument = useDocumentStore((s) => s.currentDocument);
+  const isDocumentLoading = useDocumentStore((s) => s.isLoading);
+  const documentError = useDocumentStore((s) => s.error);
   const tradeHistory = useTradeStore((s) => s.tradeHistory);
   const [selectedMintRequest, setSelectedMintRequest] =
     useState<MintApprovalRequestItem | null>(null);
@@ -268,7 +270,11 @@ export default function MintPage() {
 
   const transactionCountLabel = currentDocument?.transactions?.length
     ? `${currentDocument.transactions.length} transaction${currentDocument.transactions.length === 1 ? '' : 's'} parsed from ${currentDocument.fileName}`
-    : 'Parsed transactions will appear here after upload.';
+    : isDocumentLoading
+      ? 'Parsing your document and loading extracted transactions.'
+      : documentError
+        ? documentError
+        : 'Parsed transactions will appear here after upload.';
 
   return (
     <div className="w-full">

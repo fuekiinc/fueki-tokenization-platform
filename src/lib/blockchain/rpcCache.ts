@@ -7,8 +7,9 @@
  * multiple times within a short window (e.g. navigating between pages).
  *
  * TTL tiers:
- *   - BALANCE  (30 s): balances, allowances -- time-sensitive
- *   - POOL     (60 s): pool reserves, LP positions -- moderate freshness
+ *   - HIGH     (8 s): balances, gas, pending-tx-adjacent reads
+ *   - MEDIUM   (15 s): allowances, order books, pool reserves, LP positions
+ *   - LOW      (45 s): historical market data, deployment history, volume stats
  *   - METADATA (300 s): names, symbols, decimals -- rarely change
  *
  * Write operations must NEVER be cached. After any on-chain mutation the
@@ -22,11 +23,26 @@ import logger from '../logger';
 // TTL constants (milliseconds)
 // ---------------------------------------------------------------------------
 
-/** 30 seconds -- balances, allowances. */
-export const TTL_BALANCE = 30_000;
+/** 8 seconds -- balances and other high-volatility reads. */
+export const TTL_HIGH = 8_000;
 
-/** 60 seconds -- pool reserves, LP data. */
-export const TTL_POOL = 60_000;
+/** 15 seconds -- medium-volatility reads like allowances and pool state. */
+export const TTL_MEDIUM = 15_000;
+
+/** 45 seconds -- lower-volatility reads like history and aggregate stats. */
+export const TTL_LOW = 45_000;
+
+/** 8 seconds -- balances. */
+export const TTL_BALANCE = TTL_HIGH;
+
+/** 15 seconds -- allowances. */
+export const TTL_ALLOWANCE = TTL_MEDIUM;
+
+/** 15 seconds -- pool reserves, LP data. */
+export const TTL_POOL = TTL_MEDIUM;
+
+/** 45 seconds -- market history and aggregate trade views. */
+export const TTL_MARKET = TTL_LOW;
 
 /** 300 seconds -- token metadata (name, symbol, decimals). */
 export const TTL_METADATA = 300_000;

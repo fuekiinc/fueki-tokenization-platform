@@ -14,18 +14,30 @@
  */
 
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { fetchDeploymentsFromBackend } from '../lib/api/deployments';
+import {
+  clearDeployments,
+  loadDeployments,
+  mergeDeployments,
+  replaceDeployments,
+} from '../lib/contractDeployer/deploymentHistory';
+import logger from '../lib/logger';
+import { emitRpcRefetch } from '../lib/rpc/refetchEvents';
 import type {
   DeploymentRecord,
   DeployWizardStep,
   GasEstimate,
   TemplateCategory,
 } from '../types/contractDeployer';
+import { createSafeJsonStorage } from './persistStorage';
+import { withStoreMiddleware } from './storeMiddleware';
 
 // ---------------------------------------------------------------------------
 // Persistence constants
 // ---------------------------------------------------------------------------
 
-const DEPLOY_HISTORY_KEY = 'fueki:deploy:history';
+const CONTRACT_DEPLOYER_STORE_KEY = 'fueki-contract-deployer-store-v1';
 const MAX_HISTORY_ENTRIES = 100;
 
 // ---------------------------------------------------------------------------
@@ -45,6 +57,8 @@ export interface ContractDeployerState {
 
   // Deploy state
   isDeploying: boolean;
+  isLoading: boolean;
+  error: string | null;
   gasEstimate: GasEstimate | null;
   deploymentResult: {
     contractAddress: string;
@@ -81,11 +95,17 @@ export interface ContractDeployerActions {
   // History
   addDeployment: (record: DeploymentRecord) => void;
   removeDeployment: (id: string) => void;
-  loadHistory: () => void;
+  loadHistory: () => Promise<void>;
   clearHistory: () => void;
 }
 
 export type ContractDeployerStore = ContractDeployerState & ContractDeployerActions;
+
+interface PersistedContractDeployerState {
+  selectedCategory: TemplateCategory | 'all';
+  searchQuery: string;
+  deploymentHistory: DeploymentRecord[];
+}
 
 // ---------------------------------------------------------------------------
 // Initial state
@@ -98,6 +118,8 @@ const initialWizardState: Pick<
   | 'constructorValues'
   | 'validationErrors'
   | 'isDeploying'
+  | 'isLoading'
+  | 'error'
   | 'gasEstimate'
   | 'deploymentResult'
   | 'deployError'
@@ -107,6 +129,8 @@ const initialWizardState: Pick<
   constructorValues: {},
   validationErrors: {},
   isDeploying: false,
+  isLoading: false,
+  error: null,
   gasEstimate: null,
   deploymentResult: null,
   deployError: null,
@@ -115,128 +139,161 @@ const initialWizardState: Pick<
 const initialState: ContractDeployerState = {
   selectedCategory: 'all',
   searchQuery: '',
-  deploymentHistory: [],
+  deploymentHistory: loadDeployments(),
   ...initialWizardState,
 };
 
-// ---------------------------------------------------------------------------
-// localStorage helpers
-// ---------------------------------------------------------------------------
-
-function saveHistoryToStorage(history: DeploymentRecord[]): void {
-  try {
-    localStorage.setItem(DEPLOY_HISTORY_KEY, JSON.stringify(history));
-  } catch {
-    // localStorage may be unavailable (private browsing, quota exceeded, etc.)
-    console.warn('contractDeployerStore: failed to save deployment history to localStorage');
-  }
-}
-
-function readHistoryFromStorage(): DeploymentRecord[] {
-  try {
-    const raw = localStorage.getItem(DEPLOY_HISTORY_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      console.warn('contractDeployerStore: localStorage history is not an array, ignoring');
-      return [];
-    }
-    return parsed as DeploymentRecord[];
-  } catch {
-    console.warn('contractDeployerStore: failed to read deployment history from localStorage');
-    return [];
-  }
+function mapBackendDeployments(
+  response: Awaited<ReturnType<typeof fetchDeploymentsFromBackend>>,
+): DeploymentRecord[] {
+  return response.deployments.map((deployment) => ({
+    id: deployment.id,
+    templateId: deployment.templateId,
+    templateName: deployment.templateName,
+    contractAddress: deployment.contractAddress,
+    deployerAddress: deployment.deployerAddress,
+    chainId: deployment.chainId,
+    txHash: deployment.txHash,
+    constructorArgs: deployment.constructorArgs,
+    abi: [],
+    blockNumber: deployment.blockNumber ?? undefined,
+    gasUsed: deployment.gasUsed ?? undefined,
+    deployedAt: deployment.deployedAt,
+  }));
 }
 
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
 
-export const useContractDeployerStore = create<ContractDeployerStore>()((set, get) => ({
-  ...initialState,
+export const useContractDeployerStore = create<ContractDeployerStore>()(
+  withStoreMiddleware('contract-deployer', persist(
+    (set, get) => ({
+      ...initialState,
 
-  // ---------------------------------------------------------------------------
-  // Browser actions
-  // ---------------------------------------------------------------------------
+      // ---------------------------------------------------------------------------
+      // Browser actions
+      // ---------------------------------------------------------------------------
 
-  setCategory: (category) => set({ selectedCategory: category }),
+      setCategory: (category) => set({ selectedCategory: category }),
 
-  setSearchQuery: (query) => set({ searchQuery: query }),
+      setSearchQuery: (query) => set({ searchQuery: query }),
 
-  // ---------------------------------------------------------------------------
-  // Wizard actions
-  // ---------------------------------------------------------------------------
+      // ---------------------------------------------------------------------------
+      // Wizard actions
+      // ---------------------------------------------------------------------------
 
-  setActiveTemplate: (templateId) => set({ activeTemplateId: templateId }),
+      setActiveTemplate: (templateId) => set({ activeTemplateId: templateId }),
 
-  setWizardStep: (step) => set({ wizardStep: step }),
+      setWizardStep: (step) => set({ wizardStep: step }),
 
-  setConstructorValue: (name, value) =>
-    set((state) => {
-      // Also clear the validation error for this field when the user edits it.
-      const { [name]: _removed, ...remainingErrors } = state.validationErrors;
-      return {
-        constructorValues: { ...state.constructorValues, [name]: value },
-        validationErrors: remainingErrors,
-      };
+      setConstructorValue: (name, value) =>
+        set((state) => {
+          // Also clear the validation error for this field when the user edits it.
+          const { [name]: _removed, ...remainingErrors } = state.validationErrors;
+          return {
+            constructorValues: { ...state.constructorValues, [name]: value },
+            validationErrors: remainingErrors,
+          };
+        }),
+
+      setConstructorValues: (values) =>
+        set((state) => ({
+          constructorValues: { ...state.constructorValues, ...values },
+        })),
+
+      setValidationErrors: (errors) => set({ validationErrors: errors }),
+
+      clearValidationError: (name) =>
+        set((state) => {
+          const { [name]: _removed, ...remainingErrors } = state.validationErrors;
+          return { validationErrors: remainingErrors };
+        }),
+
+      resetWizard: () => set({ ...initialWizardState }),
+
+      // ---------------------------------------------------------------------------
+      // Deploy actions
+      // ---------------------------------------------------------------------------
+
+      setDeploying: (deploying) => set({ isDeploying: deploying }),
+
+      setGasEstimate: (estimate) => set({ gasEstimate: estimate }),
+
+      setDeploymentResult: (result) => set({ deploymentResult: result }),
+
+      setDeployError: (error) => set({ deployError: error }),
+
+      // ---------------------------------------------------------------------------
+      // History actions
+      // ---------------------------------------------------------------------------
+
+      loadHistory: async () => {
+        set({ isLoading: true, error: null });
+
+        try {
+          const response = await fetchDeploymentsFromBackend({ limit: MAX_HISTORY_ENTRIES });
+          const mergedHistory = mergeDeployments(
+            get().deploymentHistory,
+            mapBackendDeployments(response),
+          );
+          replaceDeployments(mergedHistory);
+
+          set({
+            deploymentHistory: mergedHistory,
+            isLoading: false,
+            error: null,
+          });
+        } catch (error) {
+          logger.warn(
+            '[contractDeployerStore] Failed to sync deployment history from backend',
+            error,
+          );
+          set({
+            isLoading: false,
+            error: 'Failed to load deployment history. Please try again.',
+          });
+        }
+      },
+
+      addDeployment: (record) => {
+        const current = get().deploymentHistory;
+        const updated = mergeDeployments([record], current);
+        replaceDeployments(updated);
+        set({
+          deploymentHistory: updated,
+          error: null,
+        });
+        emitRpcRefetch(['history']);
+      },
+
+      removeDeployment: (id) => {
+        const current = get().deploymentHistory;
+        const updated = current.filter((entry) => entry.id !== id);
+        replaceDeployments(updated);
+        set({ deploymentHistory: updated });
+        emitRpcRefetch(['history']);
+      },
+
+      clearHistory: () => {
+        clearDeployments();
+        set({
+          deploymentHistory: [],
+          error: null,
+          isLoading: false,
+        });
+        emitRpcRefetch(['history']);
+      },
     }),
-
-  setConstructorValues: (values) =>
-    set((state) => ({
-      constructorValues: { ...state.constructorValues, ...values },
-    })),
-
-  setValidationErrors: (errors) => set({ validationErrors: errors }),
-
-  clearValidationError: (name) =>
-    set((state) => {
-      const { [name]: _removed, ...remainingErrors } = state.validationErrors;
-      return { validationErrors: remainingErrors };
-    }),
-
-  resetWizard: () => set({ ...initialWizardState }),
-
-  // ---------------------------------------------------------------------------
-  // Deploy actions
-  // ---------------------------------------------------------------------------
-
-  setDeploying: (deploying) => set({ isDeploying: deploying }),
-
-  setGasEstimate: (estimate) => set({ gasEstimate: estimate }),
-
-  setDeploymentResult: (result) => set({ deploymentResult: result }),
-
-  setDeployError: (error) => set({ deployError: error }),
-
-  // ---------------------------------------------------------------------------
-  // History actions
-  // ---------------------------------------------------------------------------
-
-  loadHistory: () => {
-    const history = readHistoryFromStorage();
-    set({ deploymentHistory: history });
-  },
-
-  addDeployment: (record) => {
-    const current = get().deploymentHistory;
-    const updated = [record, ...current].slice(0, MAX_HISTORY_ENTRIES);
-    saveHistoryToStorage(updated);
-    set({ deploymentHistory: updated });
-  },
-
-  removeDeployment: (id) => {
-    const current = get().deploymentHistory;
-    const updated = current.filter((entry) => entry.id !== id);
-    saveHistoryToStorage(updated);
-    set({ deploymentHistory: updated });
-  },
-
-  clearHistory: () => {
-    try {
-      localStorage.removeItem(DEPLOY_HISTORY_KEY);
-    } catch {
-      console.warn('contractDeployerStore: failed to clear deployment history from localStorage');
-    }
-    set({ deploymentHistory: [] });
-  },
-}));
+    {
+      name: CONTRACT_DEPLOYER_STORE_KEY,
+      version: 1,
+      storage: createSafeJsonStorage('contract-deployer-store'),
+      partialize: (state): PersistedContractDeployerState => ({
+        selectedCategory: state.selectedCategory,
+        searchQuery: state.searchQuery,
+        deploymentHistory: state.deploymentHistory,
+      }),
+    },
+  )),
+);

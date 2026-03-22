@@ -26,6 +26,7 @@ vi.mock('../../src/contracts/addresses', () => ({
 
 vi.mock('../../src/lib/blockchain/rpcCache', () => ({
   TTL_BALANCE: 15_000,
+  TTL_MARKET: 45_000,
   getCached: (...args: unknown[]) => mocks.getCached(...args),
   makeChainCacheKey: (chainId: number, suffix: string) => `${chainId}:${suffix}`,
   setCache: (...args: unknown[]) => mocks.setCache(...args),

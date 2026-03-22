@@ -14,6 +14,7 @@
 
 import type { BrowserProvider, TransactionReceipt } from 'ethers';
 import logger from './logger';
+import { emitRpcRefetch } from './rpc/refetchEvents';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -109,6 +110,7 @@ export function addPendingTransaction(tx: PendingTransaction): void {
   const current = pruneStale(readStorage());
   if (current.some((existing) => existing.hash === tx.hash)) return;
   writeStorage([...current, tx]);
+  emitRpcRefetch(['pending-transactions', 'balances']);
 }
 
 /**
@@ -117,6 +119,7 @@ export function addPendingTransaction(tx: PendingTransaction): void {
 export function removePendingTransaction(hash: string): void {
   const current = readStorage();
   writeStorage(current.filter((tx) => tx.hash !== hash));
+  emitRpcRefetch(['pending-transactions', 'balances']);
 }
 
 /**
@@ -138,6 +141,7 @@ export function getPendingTransactions(): PendingTransaction[] {
  */
 export function clearPendingTransactions(): void {
   writeStorage([]);
+  emitRpcRefetch(['pending-transactions']);
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +199,9 @@ export async function checkPendingTransactions(
 
   // Persist only the still-pending ones; confirmed/failed are done.
   writeStorage(stillPending);
+  if (confirmed.length > 0 || failed.length > 0) {
+    emitRpcRefetch(['pending-transactions', 'balances', 'orders', 'pool']);
+  }
 
   return { confirmed, failed, stillPending };
 }
@@ -259,6 +266,7 @@ export function replaceTransaction(
   logger.info(
     `[transactionRecovery] replaced ${oldHash.slice(0, 10)}... with ${newTx.hash.slice(0, 10)}...`,
   );
+  emitRpcRefetch(['pending-transactions', 'balances']);
 }
 
 // ---------------------------------------------------------------------------

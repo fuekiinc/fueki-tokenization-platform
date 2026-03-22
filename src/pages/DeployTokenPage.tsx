@@ -33,6 +33,7 @@ import { ethers } from 'ethers';
 
 import { getProvider, useWalletStore } from '../store/walletStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
+import { useContractService } from '../hooks/useContractService.ts';
 import { useWallet } from '../hooks/useWallet.ts';
 import { useAuthStore } from '../store/authStore.ts';
 import { SecurityTokenFactoryABI } from '../contracts/abis/SecurityTokenFactory.ts';
@@ -43,7 +44,7 @@ import {
   getExplorerTxUrl,
   SUPPORTED_NETWORKS,
 } from '../contracts/addresses.ts';
-import { ContractService, encodeDocumentHash, parseContractError } from '../lib/blockchain/contracts.ts';
+import { encodeDocumentHash, parseContractError } from '../lib/blockchain/contracts.ts';
 import HelpTooltip, { type TooltipId } from '../components/Common/HelpTooltip';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 import PendingDeploymentsPanel from '../components/SecurityToken/PendingDeploymentsPanel.tsx';
@@ -535,6 +536,7 @@ export default function DeployTokenPage() {
   const [isEstimatingGas, setIsEstimatingGas] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedDocumentFile, setSelectedDocumentFile] = useState<File | null>(null);
+  const { contractService } = useContractService();
   const [selectedApprovalRequest, setSelectedApprovalRequest] =
     useState<SecurityTokenApprovalRequestItem | null>(null);
 
@@ -911,7 +913,7 @@ export default function DeployTokenPage() {
   // -----------------------------------------------------------------------
 
   const estimateGas = useCallback(async () => {
-    if (!wallet.isConnected || !isOnCorrectChain) return;
+    if (!wallet.isConnected || !isOnCorrectChain || !contractService) return;
 
     const provider = getProvider();
     if (!provider || !targetNetwork?.securityTokenFactoryAddress) return;
@@ -929,8 +931,7 @@ export default function DeployTokenPage() {
         totalSupplyWei,
       } = prepareDeployValues(form);
 
-      const service = new ContractService(provider, targetChainId);
-      const gasQuote = await service.estimateCreateSecurityTokenGas(
+      const gasQuote = await contractService.estimateCreateSecurityTokenGas(
         TRANSFER_RULES_BYTECODE,
         RESTRICTED_SWAP_BYTECODE,
         form.name,
@@ -956,7 +957,7 @@ export default function DeployTokenPage() {
     } finally {
       setIsEstimatingGas(false);
     }
-  }, [form, isOnCorrectChain, targetChainId, targetNetwork, wallet]);
+  }, [contractService, form, isOnCorrectChain, targetNetwork, wallet]);
 
   // -----------------------------------------------------------------------
   // Network switching
@@ -1021,9 +1022,15 @@ export default function DeployTokenPage() {
       return;
     }
 
+    if (!contractService) {
+      toast.error('Unable to initialize deployment contracts on the active network.');
+      return;
+    }
+
     setIsDeploying(true);
 
     try {
+      const service = contractService;
       const approval = await getSecurityTokenApprovalStatus(approvalQuery);
       applyApprovalStatus(approval.status, {
         requestId: approval.requestId,
@@ -1056,8 +1063,6 @@ export default function DeployTokenPage() {
         originalValue,
         totalSupplyWei,
       } = prepareDeployValues(form);
-
-      const service = new ContractService(provider, targetChainId);
 
       toast.loading('Confirm the transaction in your wallet...', {
         id: 'deploy-tx',
@@ -1159,6 +1164,7 @@ export default function DeployTokenPage() {
     approvalQuery,
     approvalStatus,
     applyApprovalStatus,
+    contractService,
     form,
     isOnCorrectChain,
     isSwitchingNetwork,

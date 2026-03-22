@@ -12,12 +12,15 @@
 import { useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
-import { ArrowRight, FileCode2, History } from 'lucide-react';
+import { AlertCircle, ArrowRight, FileCode2, History } from 'lucide-react';
 import { useContractDeployerStore } from '../store/contractDeployerStore';
 import { TemplateSearch } from '../components/ContractDeployer/TemplateSearch';
 import { TemplateBrowser } from '../components/ContractDeployer/TemplateBrowser';
 import { BADGE_CLASSES } from '../lib/designTokens';
 import type { TemplateCategory } from '../types/contractDeployer';
+import { createAdaptivePollingLoop } from '../lib/rpc/polling';
+import { subscribeToRpcRefetch } from '../lib/rpc/refetchEvents';
+import Spinner from '../components/Common/Spinner';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -33,10 +36,24 @@ export default function ContractBrowserPage() {
   const setCategory = useContractDeployerStore((s) => s.setCategory);
   const loadHistory = useContractDeployerStore((s) => s.loadHistory);
   const deploymentHistory = useContractDeployerStore((s) => s.deploymentHistory);
+  const isLoading = useContractDeployerStore((s) => s.isLoading);
+  const error = useContractDeployerStore((s) => s.error);
 
   // Load deployment history on mount so the history count is accurate.
   useEffect(() => {
-    loadHistory();
+    void loadHistory();
+    const poller = createAdaptivePollingLoop({
+      tier: 'low',
+      poll: loadHistory,
+      immediate: false,
+    });
+    const unsubscribeRefetch = subscribeToRpcRefetch(['history'], () => {
+      poller.triggerNow();
+    });
+    return () => {
+      unsubscribeRefetch();
+      poller.cancel();
+    };
   }, [loadHistory]);
 
   // Handlers
@@ -107,6 +124,13 @@ export default function ContractBrowserPage() {
               <span className="text-sm text-gray-400 transition-colors group-hover/btn:text-white">
                 History
               </span>
+              {isLoading && (
+                <Spinner
+                  size="xs"
+                  label="Loading deployment history"
+                  className="text-indigo-400"
+                />
+              )}
               {deploymentHistory.length > 0 && (
                 <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-500/15 px-1.5 text-[10px] font-semibold tabular-nums text-indigo-400 border border-indigo-500/20">
                   {deploymentHistory.length}
@@ -120,6 +144,25 @@ export default function ContractBrowserPage() {
           </div>
         </div>
       </div>
+
+      {error && (
+        <div
+          className="mb-8 flex items-start gap-4 rounded-2xl border border-red-500/15 bg-red-500/[0.05] p-5"
+          role="alert"
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-500/10 ring-1 ring-red-500/20">
+            <AlertCircle className="h-5 w-5 text-red-400" aria-hidden="true" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-red-300">
+              Deployment history sync failed
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-red-300/70">
+              {error}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ================================================================== */}
       {/* Search & Filters                                                   */}

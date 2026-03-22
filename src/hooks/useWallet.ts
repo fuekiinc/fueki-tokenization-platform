@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import {
@@ -18,7 +19,7 @@ import {
   getOrderedRpcEndpoints,
   getWalletSwitchRpcUrls,
 } from '../lib/rpc/endpoints';
-import { getProvider as getStoreProvider, setSwitchInProgress, useWalletStore } from '../store/walletStore.ts';
+import { setSwitchInProgress, useWalletStore } from '../store/walletStore.ts';
 import {
   getThirdwebAppMetadata,
   getThirdwebChainForSwitch,
@@ -33,6 +34,7 @@ import {
 import { clearWalletBoundStores } from '../wallet/walletBoundStores';
 import { useAuthStore } from '../store/authStore';
 import { DEMO_CHAIN_LABEL } from '../lib/demoMode';
+import { queryKeys } from '../lib/queryClient';
 
 const SWITCH_PRECHECK_TIMEOUT_MS = 3_500;
 
@@ -462,27 +464,8 @@ async function attemptRawProviderChainSwitch(
   throw lastError ?? new Error('Fallback chain switch failed on all injected providers.');
 }
 
-async function fetchBalanceWithRetry(
-  provider: ethers.BrowserProvider,
-  address: string,
-  retries = 2,
-): Promise<string> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const raw = await provider.getBalance(address);
-      return ethers.formatEther(raw);
-    } catch (err) {
-      if (attempt === retries) {
-        logger.error('Balance fetch failed after retries:', err);
-        return '0';
-      }
-      await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
-    }
-  }
-  return '0';
-}
-
 export function useWallet() {
+  const queryClient = useQueryClient();
   const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
   const wallet = useWalletStore((s) => s.wallet);
   const setWallet = useWalletStore((s) => s.setWallet);
@@ -692,14 +675,16 @@ export function useWallet() {
   );
 
   const refreshBalance = useCallback(async () => {
-    if (!wallet.address || !wallet.isConnected) return;
+    // FIX: read fresh from store to avoid stale closure.
+    const currentWallet = useWalletStore.getState().wallet;
+    if (!currentWallet.address || !currentWallet.isConnected) return;
 
-    const provider = getStoreProvider();
-    if (!provider) return;
-
-    const balance = await fetchBalanceWithRetry(provider, wallet.address);
-    setWallet({ balance, lastSyncAt: Date.now() });
-  }, [setWallet, wallet.address, wallet.isConnected]);
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.balance(currentWallet.address, currentWallet.chainId),
+      exact: true,
+      refetchType: 'active',
+    });
+  }, [queryClient]);
 
   return {
     ...wallet,

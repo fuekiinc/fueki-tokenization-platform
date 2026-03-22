@@ -16,6 +16,8 @@ const THIRDWEB_CLIENT_ID =
   import.meta.env.VITE_THIRDWEB_CLIENT_ID?.trim() ||
   '2e0666f968e836ef3adfb480987686c6';
 export const THIRDWEB_WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID?.trim();
+export const THIRDWEB_STORAGE_GATEWAY =
+  import.meta.env.VITE_THIRDWEB_STORAGE_GATEWAY?.trim() || 'https://ipfs.io/ipfs/{cid}';
 
 export const isThirdwebConfigured = Boolean(THIRDWEB_CLIENT_ID);
 
@@ -31,6 +33,9 @@ export const thirdwebClient = THIRDWEB_CLIENT_ID
         rpc: {
           maxBatchSize: 4,
           batchTimeoutMs: 100,
+        },
+        storage: {
+          gatewayUrl: THIRDWEB_STORAGE_GATEWAY,
         },
       },
     })

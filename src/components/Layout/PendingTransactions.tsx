@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRightLeft,
   ArrowUpDown,
@@ -29,6 +30,8 @@ import type { PendingTransaction } from '../../lib/transactionRecovery';
 import { getProvider, useWalletStore } from '../../store/walletStore';
 import { SUPPORTED_NETWORKS } from '../../contracts/addresses';
 import logger from '../../lib/logger';
+import { subscribeToRpcRefetch } from '../../lib/rpc/refetchEvents';
+import { queryKeys } from '../../lib/queryClient';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,10 +47,6 @@ interface ResolvedTransaction extends PendingTransaction {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-/** Base polling interval for on-chain status (ms).  Raised from 10 s to
- *  reduce RPC load.  The component backs off further on consecutive errors. */
-const POLL_INTERVAL_MS = 30_000;
 
 /** How long a resolved TX stays visible before being removed (ms). */
 const RESOLVED_DISPLAY_MS = 4_000;
@@ -122,17 +121,16 @@ function useClickOutside(
 // ---------------------------------------------------------------------------
 
 export default function PendingTransactions() {
-  const isConnected = useWalletStore((s) => s.wallet.isConnected);
+  const wallet = useWalletStore((s) => s.wallet);
+  const { isConnected, address, chainId } = wallet;
 
   const [isOpen, setIsOpen] = useState(false);
   const [pendingTxs, setPendingTxs] = useState<PendingTransaction[]>([]);
   const [resolvedTxs, setResolvedTxs] = useState<ResolvedTransaction[]>([]);
-  const [isChecking, setIsChecking] = useState(false);
   /** Consecutive check failures -- displayed as a warning in the dropdown. */
   const [checkErrorCount, setCheckErrorCount] = useState(0);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const resolvedTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
@@ -159,68 +157,35 @@ export default function PendingTransactions() {
     setPendingTxs(txs);
   }, []);
 
-  // ---- Check on-chain status ----
-  const checkStatuses = useCallback(async () => {
-    const provider = getProvider();
-    if (!provider) return;
+  const pendingStatusQuery = useQuery({
+    queryKey: queryKeys.pendingTxs(address, chainId),
+    enabled: isConnected && isOpen && pendingTxs.length > 0,
+    refetchInterval: 5_000,
+    queryFn: async () => {
+      const provider = getProvider();
+      const currentPending = getPendingTransactions();
 
-    const currentPending = getPendingTransactions();
-    if (currentPending.length === 0) {
-      setPendingTxs([]);
-      return;
-    }
-
-    setIsChecking(true);
-    try {
-      const result = await checkPendingTransactions(provider);
-
-      // Reset error counter on a successful check.
-      setCheckErrorCount(0);
-
-      // Update pending list with what is still pending.
-      setPendingTxs(result.stillPending);
-
-      // Add newly confirmed TXs to the resolved list.
-      const now = Date.now();
-      const newResolved: ResolvedTransaction[] = [];
-
-      for (const tx of result.confirmed) {
-        newResolved.push({
-          ...tx,
-          resolvedStatus: 'confirmed',
-          resolvedAt: now,
-        });
+      if (!provider || currentPending.length === 0) {
+        return {
+          confirmed: [] as PendingTransaction[],
+          failed: [] as PendingTransaction[],
+          stillPending: currentPending,
+        };
       }
 
-      for (const tx of result.failed) {
-        newResolved.push({
-          ...tx,
-          resolvedStatus: 'failed',
-          resolvedAt: now,
-        });
-      }
+      return checkPendingTransactions(provider);
+    },
+  });
 
-      if (newResolved.length > 0) {
-        setResolvedTxs((prev) => [...newResolved, ...prev]);
+  const {
+    data: pendingStatusData,
+    error: pendingStatusError,
+    errorUpdatedAt: pendingStatusErrorUpdatedAt,
+    isFetching: isChecking,
+    refetch: refetchPendingStatuses,
+  } = pendingStatusQuery;
 
-        // Schedule removal of resolved TXs after a brief display period.
-        for (const tx of newResolved) {
-          const timer = setTimeout(() => {
-            setResolvedTxs((prev) => prev.filter((r) => r.hash !== tx.hash));
-            resolvedTimersRef.current.delete(tx.hash);
-          }, RESOLVED_DISPLAY_MS);
-          resolvedTimersRef.current.set(tx.hash, timer);
-        }
-      }
-    } catch (err) {
-      logger.error('[PendingTransactions] status check failed:', err);
-      setCheckErrorCount((prev) => prev + 1);
-    } finally {
-      setIsChecking(false);
-    }
-  }, []);
-
-  // ---- Polling lifecycle (with exponential backoff on errors) ----
+  // ---- Polling lifecycle --------------------------------------------------
   useEffect(() => {
     if (!isConnected) {
       setPendingTxs([]);
@@ -228,41 +193,94 @@ export default function PendingTransactions() {
       return;
     }
 
-    // Initial read.
     refreshFromStorage();
+  }, [isConnected, refreshFromStorage]);
 
-    // Immediately check statuses on mount.
-    void checkStatuses();
-
-    // Use setTimeout-based loop so we can widen the interval on errors.
-    const MAX_INTERVAL = 3 * 60_000; // 3 minutes cap
-
-    function scheduleNextPoll() {
-      const backoff = Math.min(
-        POLL_INTERVAL_MS * Math.pow(1.5, checkErrorCount),
-        MAX_INTERVAL,
-      );
-
-      pollTimerRef.current = setTimeout(() => {
-        refreshFromStorage();
-        void checkStatuses().finally(scheduleNextPoll);
-      }, backoff) as unknown as ReturnType<typeof setInterval>;
+  // Keep the badge list in sync even while the dropdown is closed.
+  useEffect(() => {
+    if (!isConnected) {
+      return () => {};
     }
 
-    scheduleNextPoll();
+    const unsubscribeRefetch = subscribeToRpcRefetch(['pending-transactions'], () => {
+      refreshFromStorage();
+      if (isOpen && getPendingTransactions().length > 0) {
+        void refetchPendingStatuses();
+      }
+    });
 
     return () => {
-      clearTimeout(pollTimerRef.current as unknown as ReturnType<typeof setTimeout>);
+      unsubscribeRefetch();
     };
-  }, [isConnected, refreshFromStorage, checkStatuses, checkErrorCount]);
+  }, [isConnected, isOpen, refreshFromStorage, refetchPendingStatuses]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    refreshFromStorage();
+  }, [isOpen, refreshFromStorage]);
+
+  useEffect(() => {
+    if (!pendingStatusData) {
+      return;
+    }
+
+    setCheckErrorCount(0);
+    setPendingTxs(pendingStatusData.stillPending);
+
+    const now = Date.now();
+    const newResolved: ResolvedTransaction[] = [];
+
+    for (const tx of pendingStatusData.confirmed) {
+      newResolved.push({
+        ...tx,
+        resolvedStatus: 'confirmed',
+        resolvedAt: now,
+      });
+    }
+
+    for (const tx of pendingStatusData.failed) {
+      newResolved.push({
+        ...tx,
+        resolvedStatus: 'failed',
+        resolvedAt: now,
+      });
+    }
+
+    if (newResolved.length === 0) {
+      return;
+    }
+
+    setResolvedTxs((prev) => [...newResolved, ...prev]);
+
+    for (const tx of newResolved) {
+      const timer = setTimeout(() => {
+        setResolvedTxs((prev) => prev.filter((r) => r.hash !== tx.hash));
+        resolvedTimersRef.current.delete(tx.hash);
+      }, RESOLVED_DISPLAY_MS);
+      resolvedTimersRef.current.set(tx.hash, timer);
+    }
+  }, [pendingStatusData]);
+
+  useEffect(() => {
+    if (!pendingStatusError) {
+      return;
+    }
+
+    logger.error('[PendingTransactions] status check failed:', pendingStatusError);
+    setCheckErrorCount((prev) => prev + 1);
+  }, [pendingStatusError, pendingStatusErrorUpdatedAt]);
 
   // ---- Clean up resolved timers on unmount ----
   useEffect(() => {
+    const timers = resolvedTimersRef.current;
     return () => {
-      for (const timer of resolvedTimersRef.current.values()) {
+      for (const timer of timers.values()) {
         clearTimeout(timer);
       }
-      resolvedTimersRef.current.clear();
+      timers.clear();
     };
   }, []);
 

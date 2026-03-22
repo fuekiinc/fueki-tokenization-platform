@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logger from '../lib/logger';
 import { showError } from '../lib/errorUtils';
-import { mapInBatches } from '../lib/utils/asyncBatch';
 import clsx from 'clsx';
 import { useAuthStore } from '../store/authStore';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
@@ -30,9 +29,9 @@ import {
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ethers } from 'ethers';
-import { ContractService, parseContractError } from '../lib/blockchain/contracts.ts';
+import { parseContractError } from '../lib/blockchain/contracts.ts';
+import { useContractService } from '../hooks/useContractService.ts';
 import { useWallet } from '../hooks/useWallet.ts';
-import { getProvider } from '../store/walletStore.ts';
 import { getAssetFetchGeneration, nextAssetFetchGeneration, useAssetStore } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
 import { Button, EmptyState, Modal } from '../components/Common/index.ts';
@@ -504,6 +503,7 @@ function AssetGridCard({
 // ---------------------------------------------------------------------------
 
 export default function PortfolioPage() {
+  const { contractService } = useContractService();
   const navigate = useNavigate();
   const { isConnected, address, chainId, connectWallet, error: walletError } = useWallet();
   const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
@@ -590,8 +590,7 @@ export default function PortfolioPage() {
       );
     };
 
-    const provider = getProvider();
-    if (!provider) {
+    if (!contractService) {
       if (!isStaleScope(getAssetFetchGeneration())) {
         setFetchError('Please connect your wallet to view your portfolio.');
       }
@@ -602,15 +601,13 @@ export default function PortfolioPage() {
     const gen = nextAssetFetchGeneration();
     setLoadingAssets(true);
     try {
-      const service = new ContractService(provider, chainId);
-
       // Gather asset addresses from multiple sources:
       //   1. Assets the user created (factory.getUserAssets)
       //   2. ALL platform assets (factory.getAssetAtIndex) — catches assets
       //      the user holds but didn't create
       let userAddresses: string[] = [];
       try {
-        userAddresses = await service.getUserAssets(address);
+        userAddresses = await contractService.getUserAssets(address);
       } catch {
         logger.warn('Portfolio: unable to fetch user-created assets');
       }
@@ -618,7 +615,7 @@ export default function PortfolioPage() {
 
       const allAddresses: string[] = [];
       try {
-        const total = await service.getTotalAssets();
+        const total = await contractService.getTotalAssets();
         const count = Number(total);
         const maxScan = Math.min(count, 500);
         const startIndex = Math.max(0, count - maxScan);
@@ -628,7 +625,7 @@ export default function PortfolioPage() {
           const end = Math.min(s + BATCH, count);
           const batch = [];
           for (let i = s; i < end; i++) {
-            batch.push(service.getAssetAtIndex(i).catch(() => null));
+            batch.push(contractService.getAssetAtIndex(i).catch(() => null));
           }
           const results = await Promise.all(batch);
           for (const r of results) {
@@ -645,27 +642,16 @@ export default function PortfolioPage() {
       );
       if (isStaleScope(gen)) return;
 
-      const assets = (
-        await mapInBatches(uniqueAddresses, 8, async (addr) => {
-          try {
-            const details = await service.getAssetDetails(addr);
-            const balanceWei = await service.getAssetBalance(addr, address);
-            return {
-              address: addr,
-              name: details.name,
-              symbol: details.symbol,
-              totalSupply: details.totalSupply.toString(),
-              balance: balanceWei.toString(),
-              documentHash: details.documentHash,
-              documentType: details.documentType,
-              originalValue: details.originalValue.toString(),
-            } satisfies WrappedAsset;
-          } catch (err) {
-            logger.warn(`Portfolio: skipping asset ${addr}:`, err);
-            return null;
-          }
-        })
-      ).filter((asset): asset is WrappedAsset => asset !== null);
+      const assets = (await contractService.getUserAssetSnapshots(uniqueAddresses, address)).map((snapshot) => ({
+        address: snapshot.address,
+        name: snapshot.name,
+        symbol: snapshot.symbol,
+        totalSupply: snapshot.totalSupply.toString(),
+        balance: snapshot.balance.toString(),
+        documentHash: snapshot.documentHash,
+        documentType: snapshot.documentType,
+        originalValue: snapshot.originalValue.toString(),
+      } satisfies WrappedAsset));
 
       if (isStaleScope(gen)) return;
 
@@ -690,7 +676,7 @@ export default function PortfolioPage() {
         setLoadingAssets(false);
       }
     }
-  }, [isConnected, address, chainId, setAssets, setLoadingAssets]);
+  }, [contractService, isConnected, address, chainId, setAssets, setLoadingAssets]);
 
   useEffect(() => {
     void fetchAssets();
@@ -806,8 +792,7 @@ export default function PortfolioPage() {
   const handleTransferSubmit = useCallback(async () => {
     if (!transferAsset || !address || !chainId) return;
 
-    const provider = getProvider();
-    if (!provider) {
+    if (!contractService) {
       setTransferError('Please connect your wallet before transferring.');
       return;
     }
@@ -845,8 +830,6 @@ export default function PortfolioPage() {
     setTransferError(null);
 
     try {
-      const service = new ContractService(provider, chainId);
-
       let amountWei: bigint;
       try {
         amountWei = ethers.parseEther(transferForm.amount.trim());
@@ -855,12 +838,12 @@ export default function PortfolioPage() {
         setTransferLoading(false);
         return;
       }
-      const tx = await service.transferAsset(
+      const tx = await contractService.transferAsset(
         transferAsset.address,
         transferForm.recipient,
         amountWei,
       );
-      await service.waitForTransaction(tx);
+      await contractService.waitForTransaction(tx);
 
       const trade: TradeHistory = {
         id: `transfer-${Date.now()}`,
@@ -903,14 +886,14 @@ export default function PortfolioPage() {
     chainId,
     addTrade,
     updateAsset,
+    contractService,
     fetchAssets,
   ]);
 
   const handleBurnSubmit = useCallback(async () => {
     if (!burnAsset || !address || !chainId) return;
 
-    const provider = getProvider();
-    if (!provider) {
+    if (!contractService) {
       setBurnError('Please connect your wallet before burning.');
       return;
     }
@@ -943,8 +926,6 @@ export default function PortfolioPage() {
     setBurnError(null);
 
     try {
-      const service = new ContractService(provider, chainId);
-
       let amountWei: bigint;
       try {
         amountWei = ethers.parseEther(burnForm.amount.trim());
@@ -953,8 +934,8 @@ export default function PortfolioPage() {
         setBurnLoading(false);
         return;
       }
-      const tx = await service.burnAsset(burnAsset.address, amountWei);
-      await service.waitForTransaction(tx);
+      const tx = await contractService.burnAsset(burnAsset.address, amountWei);
+      await contractService.waitForTransaction(tx);
 
       const trade: TradeHistory = {
         id: `burn-${Date.now()}`,
@@ -990,7 +971,7 @@ export default function PortfolioPage() {
     } finally {
       setBurnLoading(false);
     }
-  }, [burnAsset, burnForm, address, chainId, addTrade, updateAsset, fetchAssets]);
+  }, [burnAsset, burnForm, address, chainId, addTrade, updateAsset, contractService, fetchAssets]);
 
   // ---- Demo mode: wallet still initialising --------------------------------
 

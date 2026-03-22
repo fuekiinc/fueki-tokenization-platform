@@ -258,16 +258,23 @@ export default function LiquidityPanel({
       }
 
       // Token balances
-      const bals: bigint[] = [];
-      for (const token of selectedPool.tokens) {
-        try {
-          const bal = await contractService.getTokenBalance(token.address, userAddress);
-          bals.push(bal);
-        } catch {
-          bals.push(0n);
+      try {
+        const balancesByAddress = await contractService.getTokenBalances(
+          selectedPool.tokens.map((token) => token.address),
+          userAddress,
+        );
+        if (!cancelled) {
+          setTokenBalances(
+            selectedPool.tokens.map(
+              (token) => balancesByAddress[token.address] ?? 0n,
+            ),
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setTokenBalances(selectedPool.tokens.map(() => 0n));
         }
       }
-      if (!cancelled) setTokenBalances(bals);
     }
 
     void loadBalances();

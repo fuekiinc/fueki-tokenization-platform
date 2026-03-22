@@ -18,12 +18,12 @@ import { useCallback, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import logger from '../lib/logger';
+import { useContractService } from './useContractService';
 import { getProvider, useWalletStore } from '../store/walletStore';
 import { useSecurityTokenStore } from '../store/securityTokenStore';
 import { ALL_ROLES, SecurityTokenABI } from '../contracts/abis/SecurityToken';
 import { parseContractError } from '../lib/blockchain/contracts';
 import type { SecurityTokenDetails } from '../lib/blockchain/contracts';
-import { ContractService } from '../lib/blockchain/contracts';
 import { multicallSameTarget } from '../lib/blockchain/multicall';
 import {
   findHealthyEndpoint,
@@ -278,6 +278,7 @@ function invalidateTokenCache(tokenAddress: string): void {
 // ---------------------------------------------------------------------------
 
 export function useSecurityToken() {
+  const { contractService } = useContractService();
   const address = useWalletStore((s) => s.wallet.address);
   const chainId = useWalletStore((s) => s.wallet.chainId);
   const isConnected = useWalletStore((s) => s.wallet.isConnected);
@@ -346,8 +347,7 @@ export function useSecurityToken() {
    */
   const loadTokenList = useCallback(async () => {
     requireConnected();
-    const provider = getProvider();
-    if (!provider || !chainId) return;
+    if (!contractService || !chainId) return;
     const scopedAddress = address?.toLowerCase() ?? null;
     const scopedChainId = chainId;
 
@@ -355,8 +355,7 @@ export function useSecurityToken() {
     store.getState().setError(null);
 
     try {
-      const service = new ContractService(provider, chainId);
-      const tokens = await service.getUserSecurityTokens(address!);
+      const tokens = await contractService.getUserSecurityTokens(address!);
       if (isStaleSecurityScope(scopedAddress, scopedChainId)) return;
       store.getState().setTokenList(tokens);
 
@@ -372,7 +371,7 @@ export function useSecurityToken() {
       log.error('Failed to load token list', err);
       store.getState().setError(msg);
     }
-  }, [address, chainId, isStaleSecurityScope, requireConnected, store]);
+  }, [address, chainId, contractService, isStaleSecurityScope, requireConnected, store]);
 
   /**
    * Load full on-chain details for a security token from the factory
@@ -380,8 +379,7 @@ export function useSecurityToken() {
    */
   const loadTokenDetails = useCallback(async (tokenAddress: string) => {
     validateAddress(tokenAddress, 'token');
-    const provider = getProvider();
-    if (!provider || !chainId) return;
+    if (!contractService || !chainId) return;
     const scopedAddress = address?.toLowerCase() ?? null;
     const scopedChainId = chainId;
 
@@ -394,8 +392,7 @@ export function useSecurityToken() {
     }
 
     try {
-      const service = new ContractService(provider, chainId);
-      const details = await service.getSecurityTokenDetails(tokenAddress);
+      const details = await contractService.getSecurityTokenDetails(tokenAddress);
       if (isStaleSecurityScope(scopedAddress, scopedChainId)) return details;
       store.getState().setTokenDetails(tokenAddress, details);
       setCache(cacheKey, details, TTL_METADATA);
@@ -409,7 +406,7 @@ export function useSecurityToken() {
       toast.error(`Failed to load token details: ${msg}`);
       throw err;
     }
-  }, [address, chainId, isStaleSecurityScope, validateAddress, store]);
+  }, [address, chainId, contractService, isStaleSecurityScope, validateAddress, store]);
 
   /**
    * Check all 4 admin roles for the connected wallet on a given token.

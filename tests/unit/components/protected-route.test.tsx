@@ -25,7 +25,6 @@ describe('ProtectedRoute', () => {
   beforeEach(() => {
     useAuthStore.setState({
       user: null,
-      tokens: null,
       isAuthenticated: false,
       isLoading: false,
       isInitialized: true,

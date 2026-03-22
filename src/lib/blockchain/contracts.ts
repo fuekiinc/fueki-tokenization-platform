@@ -19,6 +19,7 @@ import { LiquidityPoolAMMLegacyABI } from '../../contracts/abis/LiquidityPoolAMM
 import { getNetworkConfig, getNetworkMetadata } from '../../contracts/addresses';
 import { multicall, multicallSameTarget } from './multicall.ts';
 import type { MulticallRequest, MulticallResult } from './multicall.ts';
+import { multicall as rpcMulticall, multicallSameTarget as rpcMulticallSameTarget } from '../rpc/multicall';
 import {
   getOrderedRpcEndpoints,
   getWalletSwitchRpcUrls,
@@ -34,12 +35,19 @@ import {
   invalidateChainCache,
   makeChainCacheKey,
   setCache,
+  TTL_ALLOWANCE,
+  TTL_BALANCE,
+  TTL_MARKET,
+  TTL_MEDIUM,
+  TTL_POOL,
 } from './rpcCache.ts';
+import { dedupeRpcRequest } from '../rpc/requestDedup';
 import { getSigner as getStoreSigner } from '../../store/walletStore.ts';
 import {
   sendTransactionWithRetry,
   waitForTransactionReceipt,
 } from './txExecution.ts';
+import { buildBufferedFeeOverrides } from './transactionOverrides';
 import { queryRecentLogsBestEffort } from './logQuery';
 import logger from '../logger';
 
@@ -55,6 +63,11 @@ export interface AssetDetails {
   documentHash: string;
   documentType: string;
   originalValue: bigint;
+}
+
+export interface AssetSnapshot extends AssetDetails {
+  address: string;
+  balance: bigint;
 }
 
 /**
@@ -1210,6 +1223,158 @@ export class ContractService {
     }
   }
 
+  async getAssetBalances(
+    assetAddresses: string[],
+    userAddress: string,
+  ): Promise<Record<string, bigint>> {
+    this.validateAddress(userAddress, 'user');
+    const normalizedAddresses = Array.from(
+      new Set(
+        assetAddresses
+          .map((address) => address.trim())
+          .filter((address) => address.length > 0),
+      ),
+    );
+
+    const balances: Record<string, bigint> = {};
+    const missingAddresses: string[] = [];
+
+    for (const assetAddress of normalizedAddresses) {
+      this.validateAddress(assetAddress, 'asset');
+      const cacheKey = this.cacheKey(`asset:${assetAddress}:balance:${userAddress}`);
+      const cached = getCached<bigint>(cacheKey);
+      if (cached !== undefined) {
+        balances[assetAddress] = cached;
+        continue;
+      }
+      missingAddresses.push(assetAddress);
+    }
+
+    if (missingAddresses.length === 0) {
+      return balances;
+    }
+
+    const requestKey = this.cacheKey(
+      `asset-balances:${userAddress}:${missingAddresses.join(',')}`,
+    );
+
+    const fetchedBalances = await dedupeRpcRequest<Record<string, bigint>>(requestKey, async () => {
+      const results = await rpcMulticall<bigint>(
+        this.chainId,
+        missingAddresses.map((assetAddress) => ({
+          target: assetAddress,
+          abi: WrappedAssetABI,
+          functionName: 'balanceOf',
+          args: [userAddress],
+        })),
+      );
+
+      return missingAddresses.reduce<Record<string, bigint>>((accumulator, assetAddress, index) => {
+        const balance = results[index]?.success
+          ? BigInt(results[index].data as bigint)
+          : 0n;
+        const cacheKey = this.cacheKey(`asset:${assetAddress}:balance:${userAddress}`);
+        setCache(cacheKey, balance, TTL_BALANCE);
+        accumulator[assetAddress] = balance;
+        return accumulator;
+      }, {});
+    });
+
+    return { ...balances, ...fetchedBalances };
+  }
+
+  async getAssetAllowances(
+    assetAddresses: string[],
+    ownerAddress: string,
+    spenderAddress: string,
+  ): Promise<Record<string, bigint>> {
+    this.validateAddress(ownerAddress, 'owner');
+    this.validateAddress(spenderAddress, 'spender');
+    const normalizedAddresses = Array.from(
+      new Set(
+        assetAddresses
+          .map((address) => address.trim())
+          .filter((address) => address.length > 0),
+      ),
+    );
+
+    const allowances: Record<string, bigint> = {};
+    const missingAddresses: string[] = [];
+
+    for (const assetAddress of normalizedAddresses) {
+      this.validateAddress(assetAddress, 'asset');
+      const cacheKey = this.cacheKey(`asset:${assetAddress}:allowance:${ownerAddress}:${spenderAddress}`);
+      const cached = getCached<bigint>(cacheKey);
+      if (cached !== undefined) {
+        allowances[assetAddress] = cached;
+        continue;
+      }
+      missingAddresses.push(assetAddress);
+    }
+
+    if (missingAddresses.length === 0) {
+      return allowances;
+    }
+
+    const requestKey = this.cacheKey(
+      `asset-allowances:${ownerAddress}:${spenderAddress}:${missingAddresses.join(',')}`,
+    );
+
+    const fetchedAllowances = await dedupeRpcRequest<Record<string, bigint>>(requestKey, async () => {
+      const results = await rpcMulticall<bigint>(
+        this.chainId,
+        missingAddresses.map((assetAddress) => ({
+          target: assetAddress,
+          abi: WrappedAssetABI,
+          functionName: 'allowance',
+          args: [ownerAddress, spenderAddress],
+        })),
+      );
+
+      return missingAddresses.reduce<Record<string, bigint>>((accumulator, assetAddress, index) => {
+        const allowance = results[index]?.success
+          ? BigInt(results[index].data as bigint)
+          : 0n;
+        const cacheKey = this.cacheKey(
+          `asset:${assetAddress}:allowance:${ownerAddress}:${spenderAddress}`,
+        );
+        setCache(cacheKey, allowance, TTL_ALLOWANCE);
+        accumulator[assetAddress] = allowance;
+        return accumulator;
+      }, {});
+    });
+
+    return { ...allowances, ...fetchedAllowances };
+  }
+
+  async getUserAssetSnapshots(
+    assetAddresses: string[],
+    userAddress: string,
+  ): Promise<AssetSnapshot[]> {
+    if (assetAddresses.length === 0) {
+      return [];
+    }
+
+    const [details, balances] = await Promise.all([
+      this.getMultipleAssetDetails(assetAddresses),
+      this.getAssetBalances(assetAddresses, userAddress),
+    ]);
+
+    return assetAddresses.reduce<AssetSnapshot[]>((accumulator, assetAddress, index) => {
+      const detail = details[index];
+      if (!detail) {
+        return accumulator;
+      }
+
+      accumulator.push({
+        address: assetAddress,
+        ...detail,
+        balance: balances[assetAddress] ?? 0n,
+      });
+      return accumulator;
+    }, []);
+  }
+
   /** Get the token balance of a specific address for a WrappedAsset. */
   async getAssetBalance(
     assetAddress: string,
@@ -1221,12 +1386,14 @@ export class ContractService {
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
     try {
-      const result = await this.withContractRead(
+      return await dedupeRpcRequest<bigint>(cacheKey, async () => {
+        const result = await this.withContractRead(
         (provider) => this.getAssetContract(assetAddress, provider),
         (asset) => asset.balanceOf(userAddress) as Promise<bigint>,
-      );
-      setCache(cacheKey, result);
-      return result;
+        );
+        setCache(cacheKey, result, TTL_BALANCE);
+        return result;
+      });
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch balance for ${userAddress} on ${assetAddress}: ${error instanceof Error ? error.message : String(error)}`,
@@ -1247,12 +1414,14 @@ export class ContractService {
     const cached = getCached<bigint>(cacheKey);
     if (cached !== undefined) return cached;
     try {
-      const result = await this.withContractRead(
+      return await dedupeRpcRequest<bigint>(cacheKey, async () => {
+        const result = await this.withContractRead(
         (provider) => this.getAssetContract(assetAddress, provider),
         (asset) => asset.allowance(ownerAddress, spenderAddress) as Promise<bigint>,
-      );
-      setCache(cacheKey, result);
-      return result;
+        );
+        setCache(cacheKey, result, TTL_ALLOWANCE);
+        return result;
+      });
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch allowance for ${ownerAddress}->${spenderAddress} on ${assetAddress}: ${error instanceof Error ? error.message : String(error)}`,
@@ -1862,12 +2031,20 @@ export class ContractService {
 
   /** Get an order from the asset-backed exchange. */
   async getExchangeOrder(orderId: bigint): Promise<Order> {
+    const cacheKey = this.cacheKey(`exchange:order:${orderId.toString()}`);
+    const cached = getCached<Order>(cacheKey);
+    if (cached) return cached;
+
     try {
-      const raw = await this.withContractRead(
+      return await dedupeRpcRequest<Order>(cacheKey, async () => {
+        const raw = await this.withContractRead(
         (provider) => this.getAssetBackedExchangeContract(provider),
         (exchange) => exchange.getOrder(orderId) as Promise<Record<string, unknown>>,
-      );
-      return this.parseOrder(raw);
+        );
+        const parsed = this.parseOrder(raw);
+        setCache(cacheKey, parsed, TTL_MEDIUM);
+        return parsed;
+      });
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch order #${orderId}: ${parseContractError(error)}`,
@@ -1875,14 +2052,88 @@ export class ContractService {
     }
   }
 
+  async getExchangeOrders(orderIds: bigint[]): Promise<Order[]> {
+    if (orderIds.length === 0) {
+      return [];
+    }
+
+    const uniqueOrderIds = Array.from(
+      new Set(orderIds.map((orderId) => orderId.toString())),
+    ).map((value) => BigInt(value));
+
+    const ordersById = new Map<string, Order>();
+    const missingOrderIds: bigint[] = [];
+
+    for (const orderId of uniqueOrderIds) {
+      const cacheKey = this.cacheKey(`exchange:order:${orderId.toString()}`);
+      const cached = getCached<Order>(cacheKey);
+      if (cached) {
+        ordersById.set(orderId.toString(), cached);
+        continue;
+      }
+      missingOrderIds.push(orderId);
+    }
+
+    if (missingOrderIds.length > 0) {
+      const requestKey = this.cacheKey(
+        `exchange:orders:${missingOrderIds.map((id) => id.toString()).join(',')}`,
+      );
+
+      const fetchedOrders = await dedupeRpcRequest<Order[]>(requestKey, async () => {
+        const config = getNetworkConfig(this.chainId);
+        if (!config?.assetBackedExchangeAddress) {
+          return [];
+        }
+
+        const results = await rpcMulticallSameTarget<Record<string, unknown>>(
+          this.chainId,
+          config.assetBackedExchangeAddress,
+          AssetBackedExchangeABI,
+          missingOrderIds.map((orderId) => ({
+            functionName: 'getOrder',
+            args: [orderId],
+          })),
+        );
+
+        return missingOrderIds.reduce<Order[]>((accumulator, orderId, index) => {
+          const raw = results[index];
+          if (!raw?.success || !raw.data) {
+            return accumulator;
+          }
+          const parsed = this.parseOrder(raw.data as Record<string, unknown>);
+          const cacheKey = this.cacheKey(`exchange:order:${orderId.toString()}`);
+          setCache(cacheKey, parsed, TTL_MEDIUM);
+          accumulator.push(parsed);
+          return accumulator;
+        }, []);
+      });
+
+      for (const order of fetchedOrders) {
+        ordersById.set(order.id.toString(), order);
+      }
+    }
+
+    return uniqueOrderIds
+      .map((orderId) => ordersById.get(orderId.toString()) ?? null)
+      .filter((order): order is Order => order !== null);
+  }
+
   /** Get all order IDs for a user on the asset-backed exchange. */
   async getExchangeUserOrders(userAddress: string): Promise<bigint[]> {
     this.validateAddress(userAddress, 'user');
+    const cacheKey = this.cacheKey(`exchange:user-orders:${userAddress}`);
+    const cached = getCached<bigint[]>(cacheKey);
+    if (cached) return cached;
+
     try {
-      return await this.withContractRead(
+      return await dedupeRpcRequest<bigint[]>(cacheKey, async () => {
+        const result = await this.withContractRead(
         (provider) => this.getAssetBackedExchangeContract(provider),
         (exchange) => exchange.getUserOrders(userAddress) as Promise<bigint[]>,
-      );
+        );
+        setCache(cacheKey, result, TTL_MEDIUM);
+        return result;
+      });
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch your orders: ${parseContractError(error)}`,
@@ -1892,13 +2143,21 @@ export class ContractService {
 
   /** Get active orders for a specific trading pair on the asset-backed exchange. */
   async getExchangeActiveOrders(tokenSell: string, tokenBuy: string): Promise<Order[]> {
+    const cacheKey = this.cacheKey(`exchange:active-orders:${tokenSell}:${tokenBuy}`);
+    const cached = getCached<Order[]>(cacheKey);
+    if (cached) return cached;
+
     try {
-      const raw = await this.withContractRead(
+      return await dedupeRpcRequest<Order[]>(cacheKey, async () => {
+        const raw = await this.withContractRead(
         (provider) => this.getAssetBackedExchangeContract(provider),
         (exchange) =>
           exchange.getActiveOrders(tokenSell, tokenBuy) as Promise<Record<string, unknown>[]>,
-      );
-      return raw.map((r: Record<string, unknown>) => this.parseOrder(r));
+        );
+        const parsed = raw.map((r: Record<string, unknown>) => this.parseOrder(r));
+        setCache(cacheKey, parsed, TTL_MEDIUM);
+        return parsed;
+      });
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch active orders: ${parseContractError(error)}`,
@@ -1909,8 +2168,13 @@ export class ContractService {
   /** Get order IDs that a user filled as a taker (via OrderFilled events). */
   async getExchangeFilledOrderIds(userAddress: string): Promise<bigint[]> {
     this.validateAddress(userAddress, 'user');
+    const cacheKey = this.cacheKey(`exchange:filled-order-ids:${userAddress}`);
+    const cached = getCached<bigint[]>(cacheKey);
+    if (cached) return cached;
+
     try {
-      const events = await this.withContractRead(
+      return await dedupeRpcRequest<bigint[]>(cacheKey, async () => {
+        const events = await this.withContractRead(
         (provider) => this.getAssetBackedExchangeContract(provider),
         async (exchange) => {
           const filter = exchange.filters.OrderFilled(null, userAddress);
@@ -1934,19 +2198,21 @@ export class ContractService {
             },
           );
         },
-      );
-      // Deduplicate order IDs (a user can fill the same order multiple times via partial fills)
-      const seen = new Set<string>();
-      const ids: bigint[] = [];
-      for (const e of events) {
-        const orderId = (e as ethers.EventLog).args[0] as bigint;
-        const key = orderId.toString();
-        if (!seen.has(key)) {
-          seen.add(key);
-          ids.push(orderId);
+        );
+        // Deduplicate order IDs (a user can fill the same order multiple times via partial fills)
+        const seen = new Set<string>();
+        const ids: bigint[] = [];
+        for (const e of events) {
+          const orderId = (e as ethers.EventLog).args[0] as bigint;
+          const key = orderId.toString();
+          if (!seen.has(key)) {
+            seen.add(key);
+            ids.push(orderId);
+          }
         }
-      }
-      return ids;
+        setCache(cacheKey, ids, TTL_MARKET);
+        return ids;
+      });
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch filled orders for user ${userAddress}: ${error instanceof Error ? error.message : String(error)}`,
@@ -1957,11 +2223,19 @@ export class ContractService {
   /** Get the ETH balance available for withdrawal from the exchange. */
   async getExchangeEthBalance(userAddress: string): Promise<bigint> {
     this.validateAddress(userAddress, 'user');
+    const cacheKey = this.cacheKey(`exchange:eth-balance:${userAddress}`);
+    const cached = getCached<bigint>(cacheKey);
+    if (cached !== undefined) return cached;
+
     try {
-      return await this.withContractRead(
+      return await dedupeRpcRequest<bigint>(cacheKey, async () => {
+        const result = await this.withContractRead(
         (provider) => this.getAssetBackedExchangeContract(provider),
         (exchange) => exchange.ethBalances(userAddress) as Promise<bigint>,
-      );
+        );
+        setCache(cacheKey, result, TTL_BALANCE);
+        return result;
+      });
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch withdrawable ETH balance: ${parseContractError(error)}`,
@@ -2271,23 +2545,85 @@ export class ContractService {
     const cached = getCached<Pool>(cacheKey);
     if (cached) return cached;
     try {
-      const raw = await this.withContractRead(
+      return await dedupeRpcRequest<Pool>(cacheKey, async () => {
+        const raw = await this.withContractRead(
         (provider) => this.getAMMContract(provider),
         (amm) => amm.getPool(tokenA, tokenB) as Promise<RawPool>,
-      );
-      const result: Pool = {
+        );
+        const result: Pool = {
         token0: raw.token0 ?? ethers.ZeroAddress,
         token1: raw.token1 ?? ethers.ZeroAddress,
         reserve0: BigInt(raw.reserve0 ?? 0),
         reserve1: BigInt(raw.reserve1 ?? 0),
         totalLiquidity: BigInt(raw.totalLiquidity ?? 0),
         kLast: BigInt(raw.kLast ?? 0),
-      };
-      setCache(cacheKey, result);
-      return result;
+        };
+        setCache(cacheKey, result, TTL_POOL);
+        return result;
+      });
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch AMM pool data: ${parseContractError(error)}`,
+      );
+    }
+  }
+
+  async getAMMPoolSnapshot(
+    tokenA: string,
+    tokenB: string,
+    userAddress: string,
+  ): Promise<{ pool: Pool; liquidityBalance: bigint }> {
+    this.validateAddress(tokenA, 'tokenA');
+    this.validateAddress(tokenB, 'tokenB');
+    this.validateAddress(userAddress, 'user');
+
+    const cacheKey = this.cacheKey(`amm:pool-snapshot:${tokenA}:${tokenB}:${userAddress}`);
+    const cached = getCached<{ pool: Pool; liquidityBalance: bigint }>(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const config = getNetworkConfig(this.chainId);
+      if (!config?.ammAddress) {
+        throw new Error(`LiquidityPoolAMM not deployed on chain ${this.chainId}`);
+      }
+
+      return await dedupeRpcRequest(cacheKey, async () => {
+        const results = await rpcMulticallSameTarget<unknown>(
+          this.chainId,
+          config.ammAddress,
+          LiquidityPoolAMMABI,
+          [
+            { functionName: 'getPool', args: [tokenA, tokenB] },
+            { functionName: 'getLiquidityBalance', args: [tokenA, tokenB, userAddress] },
+          ],
+        );
+
+        const rawPool = (results[0]?.success ? results[0].data : null) as RawPool | null;
+        const pool: Pool = {
+          token0: rawPool?.token0 ?? ethers.ZeroAddress,
+          token1: rawPool?.token1 ?? ethers.ZeroAddress,
+          reserve0: BigInt(rawPool?.reserve0 ?? 0),
+          reserve1: BigInt(rawPool?.reserve1 ?? 0),
+          totalLiquidity: BigInt(rawPool?.totalLiquidity ?? 0),
+          kLast: BigInt(rawPool?.kLast ?? 0),
+        };
+        const liquidityBalance = results[1]?.success
+          ? BigInt(results[1].data as bigint)
+          : 0n;
+
+        const snapshot = { pool, liquidityBalance };
+        setCache(cacheKey, snapshot, TTL_POOL);
+        setCache(this.cacheKey(`amm:pool:${tokenA}:${tokenB}`), pool, TTL_POOL);
+        setCache(
+          this.cacheKey(`amm:pool:${tokenA}:${tokenB}:lp:${userAddress}`),
+          liquidityBalance,
+          TTL_POOL,
+        );
+        return snapshot;
+      });
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to fetch AMM pool snapshot: ${parseContractError(error)}`,
       );
     }
   }
@@ -2301,11 +2637,19 @@ export class ContractService {
     this.validateAddress(tokenA, 'tokenA');
     this.validateAddress(tokenB, 'tokenB');
     this.validateAddress(provider, 'provider');
+    const cacheKey = this.cacheKey(`amm:pool:${tokenA}:${tokenB}:lp:${provider}`);
+    const cached = getCached<bigint>(cacheKey);
+    if (cached !== undefined) return cached;
+
     try {
-      return await this.withContractRead(
+      return await dedupeRpcRequest<bigint>(cacheKey, async () => {
+        const result = await this.withContractRead(
         (readProvider) => this.getAMMContract(readProvider),
         (amm) => amm.getLiquidityBalance(tokenA, tokenB, provider) as Promise<bigint>,
-      );
+        );
+        setCache(cacheKey, result, TTL_POOL);
+        return result;
+      });
     } catch (error: unknown) {
       throw new Error(
         `Failed to fetch LP balance: ${parseContractError(error)}`,
@@ -2575,6 +2919,10 @@ export class ContractService {
     // gasLimit as an override, the only wallet RPC call is eth_sendTransaction
     // itself — which MetaMask handles natively and reliably.
     const mergedOverrides: ethers.Overrides = { ...(overrides ?? {}) };
+    const callerProvidedFeeOverrides =
+      mergedOverrides.gasPrice != null ||
+      mergedOverrides.maxFeePerGas != null ||
+      mergedOverrides.maxPriorityFeePerGas != null;
 
     if (mergedOverrides.gasLimit == null) {
       try {
@@ -2608,20 +2956,35 @@ export class ContractService {
     // values. Add a 50% buffer to maxFeePerGas to absorb base-fee
     // fluctuations between estimation and inclusion — especially on L2s
     // like Arbitrum where base fees can spike between blocks.
+    const clearAutoFeeOverrides = () => {
+      if (callerProvidedFeeOverrides) return;
+      delete mergedOverrides.gasPrice;
+      delete mergedOverrides.maxFeePerGas;
+      delete mergedOverrides.maxPriorityFeePerGas;
+    };
+
     const populateFeeOverrides = async () => {
-      if (mergedOverrides.gasPrice != null) return;
+      if (callerProvidedFeeOverrides) return;
+      clearAutoFeeOverrides();
       try {
-        const feeData = await this.withReadProvider((p) => p.getFeeData());
-        if (feeData.maxFeePerGas != null) {
-          // 50% buffer prevents "maxFeePerGas less than block base fee"
-          // when base fee rises between estimation and submission.
-          mergedOverrides.maxFeePerGas =
-            (feeData.maxFeePerGas * 150n) / 100n;
-          mergedOverrides.maxPriorityFeePerGas =
-            feeData.maxPriorityFeePerGas ?? 1_500_000_000n;
+        const feeOverrides = await this.withReadProvider((provider) =>
+          buildBufferedFeeOverrides(provider),
+        );
+
+        if (
+          feeOverrides.gasPrice != null ||
+          feeOverrides.maxFeePerGas != null ||
+          feeOverrides.maxPriorityFeePerGas != null
+        ) {
+          Object.assign(mergedOverrides, feeOverrides);
+        } else {
+          logger.warn(
+            `[executeWrite] ${method}: read RPC fee data was unavailable or inconsistent, deferring to wallet`,
+          );
         }
       } catch (feeErr) {
         // Non-fatal: the wallet will handle fee estimation as fallback.
+        clearAutoFeeOverrides();
         logger.warn(`[executeWrite] ${method}: fee data fetch failed, deferring to wallet`, feeErr);
       }
     };

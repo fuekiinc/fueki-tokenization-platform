@@ -7,6 +7,7 @@
  */
 
 import { create } from 'zustand';
+import { withStoreMiddleware } from './storeMiddleware';
 
 // ---------------------------------------------------------------------------
 // Feature flags
@@ -74,7 +75,7 @@ const initialAppState: AppState = {
 // Store
 // ---------------------------------------------------------------------------
 
-export const useAppStore = create<AppStore>()((set) => ({
+export const useAppStore = create<AppStore>()(withStoreMiddleware('app', (set) => ({
   ...initialAppState,
 
   setAppReady: (ready) => set({ isAppReady: ready }),
@@ -93,7 +94,7 @@ export const useAppStore = create<AppStore>()((set) => ({
   setGlobalError: (error) => set({ globalError: error }),
 
   resetApp: () => set({ ...initialAppState }),
-}));
+})));
 
 // ---------------------------------------------------------------------------
 // Selectors

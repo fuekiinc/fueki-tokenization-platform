@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  AlertCircle,
   ArrowRightLeft,
   ArrowUpDown,
   Banknote,
@@ -8,6 +9,7 @@ import {
   CreditCard,
   FileSearch,
   Hash,
+  Loader2,
   Receipt,
   TrendingUp,
   Wallet,
@@ -101,6 +103,8 @@ function SortButton({
 
 export default function TransactionPreview() {
   const currentDocument = useDocumentStore((s) => s.currentDocument);
+  const isLoading = useDocumentStore((s) => s.isLoading);
+  const error = useDocumentStore((s) => s.error);
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -136,6 +140,46 @@ export default function TransactionPreview() {
 
   const visibleTransactions = sortedTransactions.slice(0, visibleCount);
   const hasMore = visibleCount < sortedTransactions.length;
+
+  // ---- Loading state ------------------------------------------------------
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-2xl bg-[#0D0F14]/80 backdrop-blur-xl border border-white/[0.06] py-20 text-center">
+        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-500/10 ring-1 ring-indigo-500/20">
+          <Loader2 className="h-7 w-7 animate-spin text-indigo-400" />
+        </div>
+        <p className="text-sm font-semibold text-gray-200">
+          Loading document transactions
+        </p>
+        <p className="mt-2 max-w-[320px] text-xs leading-relaxed text-gray-500">
+          We&apos;re parsing your document and preparing a preview of the extracted transactions.
+        </p>
+      </div>
+    );
+  }
+
+  // ---- Error state --------------------------------------------------------
+
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-red-500/15 bg-red-500/[0.05] p-7" role="alert">
+        <div className="flex items-start gap-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-500/10 ring-1 ring-red-500/20">
+            <AlertCircle className="h-5 w-5 text-red-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-red-300">
+              Unable to load document preview
+            </p>
+            <p className="mt-1.5 text-sm leading-relaxed text-red-300/60">
+              {error}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ---- Empty state --------------------------------------------------------
 

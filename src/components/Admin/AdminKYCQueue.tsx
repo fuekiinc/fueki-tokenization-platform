@@ -71,6 +71,21 @@ function formatSnakeCaseLabel(value: string | null | undefined, fallback = 'Unkn
   return value.replace(/_/g, ' ');
 }
 
+function isRenderableAdminUser(user: unknown): user is AdminUser {
+  if (typeof user !== 'object' || user === null) {
+    return false;
+  }
+
+  const candidate = user as Record<string, unknown>;
+
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.email === 'string' &&
+    typeof candidate.kycStatus === 'string' &&
+    typeof candidate.createdAt === 'string'
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Confirmation dialog
 // ---------------------------------------------------------------------------
@@ -95,6 +110,8 @@ function ConfirmDialog({
   onCancel: () => void;
 }) {
   const [reason, setReason] = useState('');
+  const reasonFieldId =
+    confirmVariant === 'approve' ? 'kyc-approve-reason' : 'kyc-reject-reason';
 
   // Close on Escape
   useEffect(() => {
@@ -142,6 +159,8 @@ function ConfirmDialog({
 
             {showReasonInput && (
               <textarea
+                id={reasonFieldId}
+                name={reasonFieldId}
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="Enter reason for rejection..."
@@ -374,7 +393,9 @@ export default function AdminKYCQueue() {
     }
   };
 
-  const users = Array.isArray(data?.users) ? data.users : [];
+  const users = Array.isArray(data?.users)
+    ? data.users.filter((user): user is AdminUser => isRenderableAdminUser(user))
+    : [];
 
   // ---- Batch actions --------------------------------------------------------
 
@@ -454,6 +475,8 @@ export default function AdminKYCQueue() {
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-gray-500" aria-hidden="true" />
           <select
+            id="kyc-status-filter"
+            name="kycStatusFilter"
             value={statusFilter}
             onChange={(e) => handleStatusFilterChange(e.target.value)}
             aria-label="Filter by KYC status"

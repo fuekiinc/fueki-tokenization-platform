@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import type { ethers } from 'ethers';
 import {
   applyGasLimitBuffer,
+  buildBufferedFeeOverridesFromFeeData,
   buildBufferedTransactionOverrides,
 } from '../../src/lib/blockchain/transactionOverrides';
 
@@ -25,6 +26,9 @@ test('buildBufferedTransactionOverrides buffers EIP-1559 fees and preserves expl
       maxFeePerGas: 20_000_000_000n,
       maxPriorityFeePerGas: 2_500_000_000n,
     }),
+    getBlock: async () => ({
+      baseFeePerGas: 10_000_000_000n,
+    }),
   } as unknown as ethers.Provider;
 
   const overrides = await buildBufferedTransactionOverrides(provider, 500_000n);
@@ -41,6 +45,9 @@ test('buildBufferedTransactionOverrides falls back to a default priority fee whe
       maxFeePerGas: 10_000_000_000n,
       maxPriorityFeePerGas: null,
     }),
+    getBlock: async () => ({
+      baseFeePerGas: 500_000_000n,
+    }),
   } as unknown as ethers.Provider;
 
   const overrides = await buildBufferedTransactionOverrides(provider, 100_000n);
@@ -55,6 +62,9 @@ test('buildBufferedTransactionOverrides buffers legacy gas price data when EIP-1
       maxFeePerGas: null,
       maxPriorityFeePerGas: null,
     }),
+    getBlock: async () => ({
+      baseFeePerGas: null,
+    }),
   } as unknown as ethers.Provider;
 
   const overrides = await buildBufferedTransactionOverrides(provider, 80_000n);
@@ -68,6 +78,9 @@ test('buildBufferedTransactionOverrides degrades gracefully when fee discovery f
     getFeeData: async () => {
       throw new Error('fee data unavailable');
     },
+    getBlock: async () => ({
+      baseFeePerGas: 0n,
+    }),
   } as unknown as ethers.Provider;
 
   const overrides = await buildBufferedTransactionOverrides(provider, 90_000n);
@@ -75,4 +88,17 @@ test('buildBufferedTransactionOverrides degrades gracefully when fee discovery f
   assert.deepEqual(overrides, {
     gasLimit: 117_000n,
   });
+});
+
+test('buildBufferedFeeOverridesFromFeeData rejects inconsistent EIP-1559 data when buffered max fee cannot cover base plus priority', () => {
+  const overrides = buildBufferedFeeOverridesFromFeeData(
+    {
+      gasPrice: null,
+      maxFeePerGas: 20_000_000n,
+      maxPriorityFeePerGas: null,
+    },
+    2_022_800n,
+  );
+
+  assert.deepEqual(overrides, {});
 });

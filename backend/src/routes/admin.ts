@@ -13,12 +13,73 @@ import { approveKYC, rejectKYC } from '../services/kyc';
 import { decrypt } from '../services/encryption';
 import { prisma } from '../prisma';
 import { buildTokenLookupCandidates } from '../services/tokenHash';
+import { readEncryptedDocument } from '../services/storage';
 
 const router = Router();
 
 // All admin routes require at least "admin" role
 const adminOnly = requireRole('admin', 'super_admin');
 const superAdminOnly = requireRole('super_admin');
+
+function decryptAdminField(
+  encryptedValue: string | null | undefined,
+  context: {
+    adminUserId: string;
+    targetUserId: string;
+    field: string;
+    fallback?: string | null;
+  },
+): string | null {
+  const fallback = context.fallback ?? 'Unavailable';
+
+  if (!encryptedValue) {
+    return fallback;
+  }
+
+  try {
+    return decrypt(encryptedValue);
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        audit: 'ADMIN_PII_DECRYPT_FAILED',
+        adminUserId: context.adminUserId,
+        targetUserId: context.targetUserId,
+        field: context.field,
+        timestamp: new Date().toISOString(),
+        error:
+          error instanceof Error ? error.message : 'Unknown decryption failure',
+      }),
+    );
+
+    return fallback;
+  }
+}
+
+function inferContentType(fileName: string | null | undefined, explicitContentType?: string | null): string {
+  if (explicitContentType) {
+    return explicitContentType;
+  }
+
+  const normalized = (fileName ?? '').toLowerCase();
+
+  if (normalized.endsWith('.pdf')) return 'application/pdf';
+  if (normalized.endsWith('.png')) return 'image/png';
+  if (normalized.endsWith('.jpg') || normalized.endsWith('.jpeg')) return 'image/jpeg';
+  if (normalized.endsWith('.webp')) return 'image/webp';
+  if (normalized.endsWith('.gif')) return 'image/gif';
+  if (normalized.endsWith('.mov')) return 'video/quicktime';
+  if (normalized.endsWith('.mp4')) return 'video/mp4';
+  if (normalized.endsWith('.webm')) return 'video/webm';
+
+  return 'application/octet-stream';
+}
+
+function sanitizeContentDispositionFilename(fileName: string): string {
+  return fileName
+    .replace(/[\r\n"]/g, '_')
+    .replace(/[^\x20-\x7E]/g, '_')
+    .slice(0, 150);
+}
 
 // ---------------------------------------------------------------------------
 // GET /api/admin/stats — Dashboard statistics
@@ -147,6 +208,7 @@ router.get('/users', adminOnly, async (req: Request, res: Response) => {
 router.get('/users/:id', adminOnly, async (req: Request, res: Response) => {
   try {
     const userId = req.params.id as string;
+    const adminUserId = (req as unknown as { userId?: string }).userId ?? 'unknown';
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -167,23 +229,65 @@ router.get('/users/:id', adminOnly, async (req: Request, res: Response) => {
 
     if (kycData) {
       // C-07: Mask SSN — only expose last 4 digits to reduce PII exposure.
-      const rawSsn = decrypt(kycData.encryptedSSN);
-      const maskedSsn = rawSsn.length >= 4
+      const rawSsn = decryptAdminField(kycData.encryptedSSN, {
+        adminUserId,
+        targetUserId: userId,
+        field: 'ssn',
+        fallback: null,
+      });
+      const maskedSsn = typeof rawSsn === 'string' && rawSsn.length >= 4
         ? `***-**-${rawSsn.slice(-4)}`
-        : '***-**-****';
+        : 'Unavailable';
 
       kycDetails = {
         id: kycData.id,
-        firstName: decrypt(kycData.encryptedFirstName),
-        lastName: decrypt(kycData.encryptedLastName),
-        dateOfBirth: decrypt(kycData.encryptedDOB),
+        firstName: decryptAdminField(kycData.encryptedFirstName, {
+          adminUserId,
+          targetUserId: userId,
+          field: 'firstName',
+        }),
+        lastName: decryptAdminField(kycData.encryptedLastName, {
+          adminUserId,
+          targetUserId: userId,
+          field: 'lastName',
+        }),
+        dateOfBirth: decryptAdminField(kycData.encryptedDOB, {
+          adminUserId,
+          targetUserId: userId,
+          field: 'dateOfBirth',
+        }),
         ssn: maskedSsn,
-        addressLine1: decrypt(kycData.encryptedAddress1),
-        addressLine2: kycData.encryptedAddress2 ? decrypt(kycData.encryptedAddress2) : null,
-        city: decrypt(kycData.encryptedCity),
-        state: decrypt(kycData.encryptedState),
-        zipCode: decrypt(kycData.encryptedZipCode),
-        country: decrypt(kycData.encryptedCountry),
+        addressLine1: decryptAdminField(kycData.encryptedAddress1, {
+          adminUserId,
+          targetUserId: userId,
+          field: 'addressLine1',
+        }),
+        addressLine2: decryptAdminField(kycData.encryptedAddress2, {
+          adminUserId,
+          targetUserId: userId,
+          field: 'addressLine2',
+          fallback: null,
+        }),
+        city: decryptAdminField(kycData.encryptedCity, {
+          adminUserId,
+          targetUserId: userId,
+          field: 'city',
+        }),
+        state: decryptAdminField(kycData.encryptedState, {
+          adminUserId,
+          targetUserId: userId,
+          field: 'state',
+        }),
+        zipCode: decryptAdminField(kycData.encryptedZipCode, {
+          adminUserId,
+          targetUserId: userId,
+          field: 'zipCode',
+        }),
+        country: decryptAdminField(kycData.encryptedCountry, {
+          adminUserId,
+          targetUserId: userId,
+          field: 'country',
+        }),
         documentType: kycData.documentType,
         documentOrigName: kycData.documentOrigName,
         documentBackOrigName: kycData.documentBackOrigName,
@@ -196,7 +300,7 @@ router.get('/users/:id', adminOnly, async (req: Request, res: Response) => {
       // C-07: Audit log — record every admin PII access for compliance.
       console.info(JSON.stringify({
         audit: 'ADMIN_PII_ACCESS',
-        adminUserId: (req as unknown as { userId?: string }).userId ?? 'unknown',
+        adminUserId,
         targetUserId: userId,
         kycDataId: kycData.id,
         fieldsAccessed: ['firstName', 'lastName', 'dateOfBirth', 'ssn(masked)', 'address', 'city', 'state', 'zipCode', 'country'],
@@ -219,6 +323,103 @@ router.get('/users/:id', adminOnly, async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Admin user detail error:', err);
     res.status(500).json({ error: { message: 'Failed to fetch user details', code: 'INTERNAL_ERROR' } });
+  }
+});
+
+const adminKycDocumentSchema = z.object({
+  id: z.string().uuid(),
+  documentKind: z.enum(['front', 'back', 'liveVideo']),
+});
+
+router.get('/users/:id/kyc-documents/:documentKind', adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { id: userId, documentKind } = adminKycDocumentSchema.parse(req.params);
+    const adminUserId = (req as unknown as { userId?: string }).userId ?? 'unknown';
+
+    const kycData = await prisma.kYCData.findUnique({
+      where: { userId },
+      select: {
+        id: true,
+        documentPath: true,
+        documentOrigName: true,
+        documentMimeType: true,
+        documentBackPath: true,
+        documentBackOrigName: true,
+        documentBackMimeType: true,
+        liveVideoPath: true,
+        liveVideoOrigName: true,
+        liveVideoMimeType: true,
+      },
+    });
+
+    if (!kycData) {
+      res.status(404).json({ error: { message: 'KYC documents not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    const documentRecord = (() => {
+      switch (documentKind) {
+        case 'front':
+          return {
+            storagePath: kycData.documentPath,
+            originalName: kycData.documentOrigName,
+            mimeType: kycData.documentMimeType,
+            auditField: 'documentFront',
+          };
+        case 'back':
+          return {
+            storagePath: kycData.documentBackPath,
+            originalName: kycData.documentBackOrigName,
+            mimeType: kycData.documentBackMimeType,
+            auditField: 'documentBack',
+          };
+        case 'liveVideo':
+          return {
+            storagePath: kycData.liveVideoPath,
+            originalName: kycData.liveVideoOrigName,
+            mimeType: kycData.liveVideoMimeType,
+            auditField: 'liveVideo',
+          };
+      }
+    })();
+
+    if (!documentRecord.storagePath || !documentRecord.originalName) {
+      res.status(404).json({ error: { message: 'Requested KYC document is unavailable', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    const decryptedDocument = await readEncryptedDocument(documentRecord.storagePath, userId);
+    const contentType = inferContentType(
+      documentRecord.originalName,
+      documentRecord.mimeType,
+    );
+    const safeFileName = sanitizeContentDispositionFilename(documentRecord.originalName);
+
+    console.info(JSON.stringify({
+      audit: 'ADMIN_KYC_DOCUMENT_ACCESS',
+      adminUserId,
+      targetUserId: userId,
+      kycDataId: kycData.id,
+      documentKind: documentRecord.auditField,
+      timestamp: new Date().toISOString(),
+    }));
+
+    res.set({
+      'Cache-Control': 'private, max-age=0, no-store',
+      'Content-Disposition': `inline; filename="${safeFileName}"`,
+      'Content-Length': String(decryptedDocument.byteLength),
+      'Content-Type': contentType,
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.send(decryptedDocument);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: { message: err.errors[0].message, code: 'VALIDATION_ERROR' } });
+      return;
+    }
+
+    console.error('Admin KYC document error:', err);
+    res.status(500).json({ error: { message: 'Failed to fetch KYC document', code: 'INTERNAL_ERROR' } });
   }
 });
 

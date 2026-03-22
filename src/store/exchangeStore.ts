@@ -11,6 +11,7 @@
 
 import { create } from 'zustand';
 import type { ExchangeOrder } from '../types/index.ts';
+import { withStoreMiddleware } from './storeMiddleware';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -104,7 +105,7 @@ const initialExchangeState: ExchangeState = {
 // Store
 // ---------------------------------------------------------------------------
 
-export const useExchangeStore = create<ExchangeStore>()((set, get) => ({
+export const useExchangeStore = create<ExchangeStore>()(withStoreMiddleware('exchange', (set, get) => ({
   ...initialExchangeState,
 
   reset: () => set({ ...initialExchangeState }),
@@ -181,4 +182,4 @@ export const useExchangeStore = create<ExchangeStore>()((set, get) => ({
 
       return { orders: updatedOrders, userOrders: updatedUserOrders };
     }),
-}));
+})));

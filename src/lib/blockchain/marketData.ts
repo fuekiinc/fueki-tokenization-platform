@@ -2,11 +2,12 @@ import { ethers } from 'ethers';
 import { AssetBackedExchangeABI } from '../../contracts/abis/AssetBackedExchange';
 import { LiquidityPoolAMMABI } from '../../contracts/abis/LiquidityPoolAMM';
 import { getNetworkConfig } from '../../contracts/addresses';
-import { getCached, makeChainCacheKey, setCache, TTL_BALANCE } from './rpcCache';
+import { dedupeRpcRequest } from '../rpc/requestDedup';
+import { getCached, makeChainCacheKey, setCache, TTL_MARKET } from './rpcCache';
 import { getReadOnlyProvider } from './contracts';
 import { queryRecentLogsBestEffort } from './logQuery';
 
-const PAIR_TRADE_CACHE_TTL_MS = TTL_BALANCE;
+const PAIR_TRADE_CACHE_TTL_MS = TTL_MARKET;
 const AMM_LOOKBACK_BLOCKS = 250_000;
 const ORDERBOOK_LOOKBACK_BLOCKS = 250_000;
 const MAX_TRADE_EVENTS = 200;
@@ -292,33 +293,35 @@ export async function fetchPairTradePoints(
     return [];
   }
 
-  const blockTimestampCache = new Map<number, number>();
-  const sources = await Promise.allSettled([
-    network.ammAddress
-      ? fetchAmmPairTrades(
-          chainId,
-          network.ammAddress,
-          tokenSell,
-          tokenBuy,
-          blockTimestampCache,
-        )
-      : Promise.resolve([]),
-    network.assetBackedExchangeAddress
-      ? fetchOrderbookPairTrades(
-          chainId,
-          network.assetBackedExchangeAddress,
-          tokenSell,
-          tokenBuy,
-          blockTimestampCache,
-        )
-      : Promise.resolve([]),
-  ]);
+  return dedupeRpcRequest<PairTradePoint[]>(cacheKey, async () => {
+    const blockTimestampCache = new Map<number, number>();
+    const sources = await Promise.allSettled([
+      network.ammAddress
+        ? fetchAmmPairTrades(
+            chainId,
+            network.ammAddress,
+            tokenSell,
+            tokenBuy,
+            blockTimestampCache,
+          )
+        : Promise.resolve([]),
+      network.assetBackedExchangeAddress
+        ? fetchOrderbookPairTrades(
+            chainId,
+            network.assetBackedExchangeAddress,
+            tokenSell,
+            tokenBuy,
+            blockTimestampCache,
+          )
+        : Promise.resolve([]),
+    ]);
 
-  const merged = sources
-    .filter((result): result is PromiseFulfilledResult<PairTradePoint[]> => result.status === 'fulfilled')
-    .flatMap((result) => result.value)
-    .sort((left, right) => left.timestampMs - right.timestampMs);
+    const merged = sources
+      .filter((result): result is PromiseFulfilledResult<PairTradePoint[]> => result.status === 'fulfilled')
+      .flatMap((result) => result.value)
+      .sort((left, right) => left.timestampMs - right.timestampMs);
 
-  setCache(cacheKey, merged, PAIR_TRADE_CACHE_TTL_MS);
-  return merged;
+    setCache(cacheKey, merged, PAIR_TRADE_CACHE_TTL_MS);
+    return merged;
+  });
 }

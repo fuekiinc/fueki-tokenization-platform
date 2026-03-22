@@ -16,6 +16,8 @@ import { AlertCircle, ArrowLeft, Sparkles } from 'lucide-react';
 import { getTemplateById } from '../contracts/templates';
 import { useContractDeployerStore } from '../store/contractDeployerStore';
 import { DeployWizard } from '../components/ContractDeployer/DeployWizard';
+import { createAdaptivePollingLoop } from '../lib/rpc/polling';
+import { subscribeToRpcRefetch } from '../lib/rpc/refetchEvents';
 
 // ---------------------------------------------------------------------------
 // Category badge styling
@@ -57,6 +59,7 @@ export default function ContractDeployPage() {
   const setActiveTemplate = useContractDeployerStore((s) => s.setActiveTemplate);
   const resetWizard = useContractDeployerStore((s) => s.resetWizard);
   const loadHistory = useContractDeployerStore((s) => s.loadHistory);
+  const historyError = useContractDeployerStore((s) => s.error);
 
   // On mount: set the active template and load deployment history.
   // On unmount: reset wizard state for a clean slate.
@@ -64,9 +67,19 @@ export default function ContractDeployPage() {
     if (templateId) {
       setActiveTemplate(templateId);
     }
-    loadHistory();
+    void loadHistory();
+    const poller = createAdaptivePollingLoop({
+      tier: 'low',
+      poll: loadHistory,
+      immediate: false,
+    });
+    const unsubscribeRefetch = subscribeToRpcRefetch(['history'], () => {
+      poller.triggerNow();
+    });
 
     return () => {
+      unsubscribeRefetch();
+      poller.cancel();
       resetWizard();
     };
     // Only run on mount/unmount and when the template ID changes.
@@ -180,6 +193,25 @@ export default function ContractDeployPage() {
           {template.description}
         </p>
       </header>
+
+      {historyError && (
+        <div
+          className="mb-8 flex items-start gap-4 rounded-2xl border border-red-500/15 bg-red-500/[0.05] p-5"
+          role="alert"
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-500/10 ring-1 ring-red-500/20">
+            <AlertCircle className="h-5 w-5 text-red-400" aria-hidden="true" />
+          </div>
+          <div className="text-left">
+            <p className="text-sm font-semibold text-red-300">
+              Deployment history sync failed
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-red-300/70">
+              {historyError}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Wizard */}
       <DeployWizard template={template} />

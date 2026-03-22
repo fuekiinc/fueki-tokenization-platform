@@ -11,17 +11,17 @@ import {
 import { ethers } from 'ethers';
 import logger from '../lib/logger';
 import { classifyError, showError } from '../lib/errorUtils';
-import { getProvider, useWalletStore } from '../store/walletStore.ts';
+import { useWalletStore } from '../store/walletStore.ts';
 import { getAssetFetchGeneration, nextAssetFetchGeneration, useAssetStore } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
 import { useExchangeStore } from '../store/exchangeStore.ts';
 import { useAuthStore } from '../store/authStore';
 import { useWallet } from '../hooks/useWallet';
-import { ContractService, getReadOnlyProvider } from '../lib/blockchain/contracts';
+import { useContractService } from '../hooks/useContractService';
+import { getReadOnlyProvider } from '../lib/blockchain/contracts';
 import { queryRecentLogsBestEffort } from '../lib/blockchain/logQuery';
 import { isRetryableRpcError } from '../lib/rpc/endpoints';
 import { retryAsync } from '../lib/utils/retry';
-import { mapInBatches } from '../lib/utils/asyncBatch';
 import { copyToClipboard, formatAddress, parseTokenAmount } from '../lib/utils/helpers';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
 import { OrbitalRouterABI } from '../contracts/abis/OrbitalRouter.ts';
@@ -113,6 +113,7 @@ export default function DashboardPage() {
   const setLoadingAssets = useAssetStore((s) => s.setLoadingAssets);
   const chainId = useWalletStore((s) => s.wallet.chainId);
   const providerReady = useWalletStore((s) => s.wallet.providerReady);
+  const { contractService } = useContractService();
 
   // Track whether the initial data fetch is still in progress
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -206,21 +207,8 @@ export default function DashboardPage() {
       return;
     }
 
-    const provider = getProvider();
-    if (!provider) {
+    if (!contractService) {
       logger.debug('Dashboard data fetch deferred: provider not yet available');
-      return;
-    }
-
-    let service: ContractService;
-    try {
-      service = new ContractService(provider, chainId);
-    } catch (error) {
-      showError(error, 'Unable to initialize contracts on this network');
-      if (!isStaleFetch()) {
-        setIsInitialLoading(false);
-        setLoadError('Unable to initialize contracts. Please check your network and try again.');
-      }
       return;
     }
 
@@ -233,7 +221,7 @@ export default function DashboardPage() {
     setLoadingAssets(true);
     try {
       const totalAssetCount = await retryAsync(
-        () => service.getTotalAssets(),
+        () => contractService.getTotalAssets(),
         {
           maxAttempts: 3,
           baseDelayMs: 800,
@@ -252,7 +240,7 @@ export default function DashboardPage() {
         let userAssetAddresses: string[] = [];
         try {
           userAssetAddresses = await retryAsync(
-            () => service.getUserAssets(address),
+            () => contractService.getUserAssets(address),
             {
               maxAttempts: 3,
               baseDelayMs: 800,
@@ -279,7 +267,7 @@ export default function DashboardPage() {
             const end = Math.min(start + BATCH_SIZE, count);
             const batch = [];
             for (let i = start; i < end; i++) {
-              batch.push(service.getAssetAtIndex(i).catch(() => null));
+              batch.push(contractService.getAssetAtIndex(i).catch(() => null));
             }
             const results = await Promise.all(batch);
             for (const r of results) {
@@ -299,30 +287,19 @@ export default function DashboardPage() {
           ...wrappedAssetsRef.current.map((a) => a.address),
         ]);
 
-        // Fetch details in bounded batches to avoid RPC thundering-herd spikes.
-        const assetList = (
-          await mapInBatches(Array.from(knownAddresses), 8, async (addr) => {
-            try {
-              const [details, balance] = await Promise.all([
-                service.getAssetDetails(addr),
-                service.getAssetBalance(addr, address),
-              ]);
-              return {
-                address: addr,
-                name: details.name,
-                symbol: details.symbol,
-                totalSupply: details.totalSupply.toString(),
-                balance: balance.toString(),
-                documentHash: details.documentHash,
-                documentType: details.documentType,
-                originalValue: details.originalValue.toString(),
-              } satisfies import('../types').WrappedAsset;
-            } catch (error) {
-              logger.warn(`Skipping asset ${addr}:`, error);
-              return null;
-            }
-          })
-        ).filter((asset): asset is import('../types').WrappedAsset => asset !== null);
+        const assetList = (await contractService.getUserAssetSnapshots(
+          Array.from(knownAddresses),
+          address,
+        )).map((snapshot) => ({
+          address: snapshot.address,
+          name: snapshot.name,
+          symbol: snapshot.symbol,
+          totalSupply: snapshot.totalSupply.toString(),
+          balance: snapshot.balance.toString(),
+          documentHash: snapshot.documentHash,
+          documentType: snapshot.documentType,
+          originalValue: snapshot.originalValue.toString(),
+        } satisfies import('../types').WrappedAsset));
         // Wallet-scoped dashboard view:
         // 1) Prefer assets where this wallet holds a positive balance.
         // 2) If none, fall back to assets created by this wallet.
@@ -371,8 +348,8 @@ export default function DashboardPage() {
     // Fetch user orders from AssetBackedExchange (maker + taker)
     try {
       const [makerIds, takerIds] = await Promise.all([
-        service.getExchangeUserOrders(address),
-        service.getExchangeFilledOrderIds(address),
+        contractService.getExchangeUserOrders(address),
+        contractService.getExchangeFilledOrderIds(address),
       ]);
 
       // Merge and deduplicate order IDs
@@ -387,12 +364,9 @@ export default function DashboardPage() {
       }
 
       if (allIds.length > 0) {
-        const orderDetails = await Promise.all(
-          allIds.map((id) => service.getExchangeOrder(id).catch(() => null)),
-        );
+        const orderDetails = await contractService.getExchangeOrders(allIds);
         if (isStaleFetch()) return;
         const exchangeOrders: import('../types').ExchangeOrder[] = orderDetails
-          .filter((o): o is NonNullable<typeof o> => o !== null)
           .map((o) => ({
             id: o.id.toString(),
             maker: o.maker,
@@ -474,7 +448,7 @@ export default function DashboardPage() {
 
       // 1. Mint history — query AssetCreated events from the factory
       try {
-        const factory = service.getFactoryContract(readProvider);
+        const factory = contractService.getFactoryContract(readProvider);
         const mintFilter = factory.filters.AssetCreated(address);
         const mintEvents = await queryFilterBestEffort(
           (fromBlock, toBlock) => factory.queryFilter(mintFilter, fromBlock, toBlock),
@@ -517,7 +491,7 @@ export default function DashboardPage() {
 
       // 2. Security-token deployment history — query SecurityTokenCreated events
       try {
-        const securityFactory = service.getSecurityTokenFactoryContract(readProvider);
+        const securityFactory = contractService.getSecurityTokenFactoryContract(readProvider);
         const securityMintFilter = securityFactory.filters.SecurityTokenCreated(address);
         const securityMintEvents = await queryFilterBestEffort(
           (fromBlock, toBlock) => securityFactory.queryFilter(securityMintFilter, fromBlock, toBlock),
@@ -559,7 +533,7 @@ export default function DashboardPage() {
       //   4) OrderFilled as taker
       //   5) OrderFilled for maker orders
       try {
-        const exchange = service.getAssetBackedExchangeContract(readProvider);
+        const exchange = contractService.getAssetBackedExchangeContract(readProvider);
         const orderCreatedFilter = exchange.filters.OrderCreated(null, address);
         const orderCreatedEvents = await queryFilterBestEffort(
           (fromBlock, toBlock) => exchange.queryFilter(orderCreatedFilter, fromBlock, toBlock),
@@ -601,7 +575,7 @@ export default function DashboardPage() {
           'exchange OrderFilled (taker)',
         );
 
-        const makerOrderIds = await service.getExchangeUserOrders(address);
+        const makerOrderIds = await contractService.getExchangeUserOrders(address);
         const makerFillEventGroups = await Promise.all(
           makerOrderIds.map((orderId) => {
             const filter = exchange.filters.OrderFilled(orderId);
@@ -821,6 +795,7 @@ export default function DashboardPage() {
       setIsInitialLoading(false);
     }
   }, [
+    contractService,
     isConnected,
     address,
     chainId,

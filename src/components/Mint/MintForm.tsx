@@ -17,12 +17,12 @@ import {
   X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { ContractService } from '../../lib/blockchain/contracts';
 import logger from '../../lib/logger';
 import HelpTooltip from '../Common/HelpTooltip';
 import { FormField } from '../Common/FormField';
 import NetworkCapabilityGuard from '../Common/NetworkCapabilityGuard';
 import { useDemoWalletStore } from '../DemoMode/DemoWalletProvider';
+import { useContractService } from '../../hooks/useContractService';
 import { useWallet } from '../../hooks/useWallet';
 import { useTradeStore } from '../../store/tradeStore.ts';
 import { useAssetStore } from '../../store/assetStore.ts';
@@ -136,6 +136,7 @@ export default function MintForm({
   const demoWalletError = useDemoWalletStore((s) => s.setupError);
   const demoWalletReady = useDemoWalletStore((s) => s.isReady);
   const { address, chainId, isConnected, connectWallet, switchNetwork } = useWallet();
+  const { contractService } = useContractService();
   const addTrade = useTradeStore((s) => s.addTrade);
   const addAsset = useAssetStore((s) => s.addAsset);
   const currentDocumentFile = useDocumentStore((s) => s.currentDocumentFile);
@@ -631,7 +632,7 @@ export default function MintForm({
     }
 
     const provider = getProvider();
-    if (!provider || !chainId || !address) {
+    if (!contractService || !provider || !chainId || !address) {
       toast.error('Please connect your wallet before minting.');
       return;
     }
@@ -650,8 +651,6 @@ export default function MintForm({
     let submittedMintHash: string | null = null;
 
     try {
-      const service = new ContractService(provider, chainId);
-
       // Sanitize amount input: strip commas/spaces and truncate to 18 decimals
       const sanitizeAmount = (val: string): string => {
         const cleaned = val.replace(/[,\s]/g, '');
@@ -702,7 +701,7 @@ export default function MintForm({
       // opening the wallet, rather than a generic wallet-side failure.
       if (address) {
         try {
-          const { estimatedCostWei } = await service.estimateCreateWrappedAssetGas(
+          const { estimatedCostWei } = await contractService.estimateCreateWrappedAssetGas(
             tokenName.trim(),
             tokenSymbol.trim(),
             contextDocumentHash,
@@ -741,7 +740,7 @@ export default function MintForm({
         }
       }
 
-      const tx = await service.createWrappedAsset(
+      const tx = await contractService.createWrappedAsset(
         tokenName.trim(),
         tokenSymbol.trim(),
         contextDocumentHash,
@@ -755,7 +754,7 @@ export default function MintForm({
       setTxHash(tx.hash);
       txSubmittedToast(tx.hash, chainId, 'Minting token... Waiting for confirmation');
 
-      const receipt = await service.waitForTransaction(tx);
+      const receipt = await contractService.waitForTransaction(tx);
 
       // Extract the real token address from the AssetCreated event log.
       // The fallback is an empty string rather than the tx hash, because
@@ -903,6 +902,7 @@ export default function MintForm({
     applyApprovalStatus,
     capabilities?.mintAsset,
     chainId,
+    contractService,
     contextDocumentHash,
     contextDocumentType,
     contextOriginalValue,

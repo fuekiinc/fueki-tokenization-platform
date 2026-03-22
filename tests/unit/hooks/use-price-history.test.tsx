@@ -1,16 +1,13 @@
-/**
- * usePriceHistory hook tests.
- *
- * Verifies deterministic seed generation fallback and conversion of recent
- * on-chain pair trades to OHLCV candles.
- */
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePriceHistory } from '../../../src/hooks/usePriceHistory';
 import type { PairTradePoint } from '../../../src/lib/blockchain/marketData';
+import { createQueryClientWrapper } from '../testQueryClient';
 
 const apiClientGetMock = vi.fn();
-const fetchPairTradePointsMock = vi.fn<(chainId: number, tokenSell: string, tokenBuy: string) => Promise<PairTradePoint[]>>();
+const fetchPairTradePointsMock = vi.fn<
+  (chainId: number, tokenSell: string, tokenBuy: string) => Promise<PairTradePoint[]>
+>();
 
 vi.mock('../../../src/lib/api/client', () => ({
   default: {
@@ -19,7 +16,8 @@ vi.mock('../../../src/lib/api/client', () => ({
 }));
 
 vi.mock('../../../src/lib/blockchain/marketData', () => ({
-  fetchPairTradePoints: (...args: [number, string, string]) => fetchPairTradePointsMock(...args),
+  fetchPairTradePoints: (...args: [number, string, string]) =>
+    fetchPairTradePointsMock(...args),
 }));
 
 vi.mock('../../../src/store/walletStore', () => ({
@@ -34,34 +32,27 @@ describe('usePriceHistory', () => {
     fetchPairTradePointsMock.mockResolvedValue([]);
   });
 
-  it('returns deterministic seeded candles when no trade data exists', () => {
-    const { result: first } = renderHook(() =>
-      usePriceHistory('0xTokenA', '0xTokenB', '15m'),
-    );
-    const { result: second } = renderHook(() =>
-      usePriceHistory('0xTokenA', '0xTokenB', '15m'),
+  it('returns an empty state instead of synthetic candles when no real market data exists', async () => {
+    const tokenSell = '0xTokenA15m';
+    const tokenBuy = '0xTokenB15m';
+    const { wrapper } = createQueryClientWrapper();
+    const { result } = renderHook(() =>
+      usePriceHistory(tokenSell, tokenBuy, '15m'),
+      { wrapper },
     );
 
-    expect(first.current.isRealData).toBe(false);
-    expect(first.current.data.length).toBe(100);
-    expect(second.current.data.length).toBe(100);
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
 
-    const firstSnapshot = first.current.data.slice(0, 5).map((d) => ({
-      open: d.open,
-      close: d.close,
-      low: d.low,
-      high: d.high,
-    }));
-    const secondSnapshot = second.current.data.slice(0, 5).map((d) => ({
-      open: d.open,
-      close: d.close,
-      low: d.low,
-      high: d.high,
-    }));
-    expect(firstSnapshot).toEqual(secondSnapshot);
+    expect(result.current.isRealData).toBe(false);
+    expect(result.current.data).toEqual([]);
+    expect(result.current.source).toBe('none');
   });
 
   it('prefers backend candle data when enough history is available', async () => {
+    const tokenSell = '0xTokenA1mBackend';
+    const tokenBuy = '0xTokenB1mBackend';
     const nowSeconds = Math.floor(Date.now() / 1000);
     apiClientGetMock.mockResolvedValue({
       data: {
@@ -73,8 +64,10 @@ describe('usePriceHistory', () => {
       },
     });
 
+    const { wrapper } = createQueryClientWrapper();
     const { result } = renderHook(() =>
-      usePriceHistory('0xTokenA', '0xTokenB', '1m'),
+      usePriceHistory(tokenSell, tokenBuy, '1m'),
+      { wrapper },
     );
 
     await waitFor(() => {
@@ -83,10 +76,56 @@ describe('usePriceHistory', () => {
     });
 
     expect(fetchPairTradePointsMock).not.toHaveBeenCalled();
+    expect(result.current.source).toBe('backend');
     expect(result.current.data.at(-1)?.close).toBe(1.25);
   });
 
+  it('aggregates backend daily candles into weekly candles for 1W charts', async () => {
+    const tokenSell = '0xTokenA1w';
+    const tokenBuy = '0xTokenB1w';
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    apiClientGetMock.mockResolvedValue({
+      data: {
+        candles: [
+          { time: nowSeconds - 7 * 86_400, open: 1, high: 1.1, low: 0.9, close: 1.05, volume: 10 },
+          { time: nowSeconds - 6 * 86_400, open: 1.05, high: 1.2, low: 1.0, close: 1.18, volume: 11 },
+          { time: nowSeconds - 5 * 86_400, open: 1.18, high: 1.25, low: 1.1, close: 1.22, volume: 13 },
+        ],
+        source: 'cache',
+      },
+    });
+
+    const { wrapper } = createQueryClientWrapper();
+    const { result } = renderHook(() =>
+      usePriceHistory(tokenSell, tokenBuy, '1w'),
+      { wrapper },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(apiClientGetMock).toHaveBeenCalledWith(
+      '/api/market-data/candles',
+      expect.objectContaining({
+        params: expect.objectContaining({ interval: '1d' }),
+      }),
+    );
+    expect(result.current.data.length).toBe(1);
+    expect(result.current.data[0]).toEqual(
+      expect.objectContaining({
+        open: 1,
+        high: 1.25,
+        low: 0.9,
+        close: 1.22,
+        volume: 34,
+      }),
+    );
+  });
+
   it('falls back to direct RPC trades when backend candles are unavailable', async () => {
+    const tokenSell = '0xTokenA1mRpc';
+    const tokenBuy = '0xTokenB1mRpc';
     const nowMs = Date.now();
     apiClientGetMock.mockRejectedValue(new Error('backend unavailable'));
     fetchPairTradePointsMock.mockResolvedValue([
@@ -94,8 +133,10 @@ describe('usePriceHistory', () => {
       { id: 'ms2', timestampMs: nowMs - 60_000, price: 125.25, volume: 5, source: 'orderbook' },
     ]);
 
+    const { wrapper } = createQueryClientWrapper();
     const { result } = renderHook(() =>
-      usePriceHistory('0xTokenA', '0xTokenB', '1m'),
+      usePriceHistory(tokenSell, tokenBuy, '1m'),
+      { wrapper },
     );
 
     await waitFor(() => {
@@ -103,33 +144,24 @@ describe('usePriceHistory', () => {
       expect(result.current.data.length).toBeGreaterThanOrEqual(2);
     });
 
-    expect(fetchPairTradePointsMock).toHaveBeenCalledWith(421614, '0xTokenA', '0xTokenB');
-    for (const candle of result.current.data) {
-      expect(candle.time).toBeLessThan(10_000_000_000);
-    }
+    expect(fetchPairTradePointsMock).toHaveBeenCalledWith(421614, tokenSell, tokenBuy);
+    expect(result.current.source).toBe('rpc');
   });
 
-  it('falls back to deterministic seed data when backend and RPC data are insufficient', async () => {
-    apiClientGetMock.mockResolvedValue({
-      data: {
-        candles: [
-          { time: Math.floor(Date.now() / 1000), open: 1, high: 1.1, low: 0.9, close: 1.05, volume: 3 },
-        ],
-        source: 'rpc',
-      },
-    });
-    fetchPairTradePointsMock.mockResolvedValue([
-      { id: 'bad1', timestampMs: Date.now(), price: Number.NaN, volume: 10, source: 'amm' },
-      { id: 'bad2', timestampMs: Date.now() - 10_000, price: -12, volume: 8, source: 'orderbook' },
-    ]);
-
+  it('skips candle loading for same-token pairs', async () => {
+    const { wrapper } = createQueryClientWrapper();
     const { result } = renderHook(() =>
-      usePriceHistory('0xTokenA', '0xTokenB', '5m'),
+      usePriceHistory('0xTokenA', '0xTokenA', '1h'),
+      { wrapper },
     );
 
     await waitFor(() => {
-      expect(result.current.isRealData).toBe(false);
-      expect(result.current.data.length).toBe(100);
+      expect(result.current.isLoading).toBe(false);
     });
+
+    expect(result.current.isRealData).toBe(false);
+    expect(result.current.data).toEqual([]);
+    expect(apiClientGetMock).not.toHaveBeenCalled();
+    expect(fetchPairTradePointsMock).not.toHaveBeenCalled();
   });
 });

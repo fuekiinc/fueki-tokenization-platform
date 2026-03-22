@@ -16,7 +16,8 @@
  * - Shows "(ETH)" label for orders involving native ETH
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -33,12 +34,14 @@ import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress } from '../../lib/utils/helpers';
 import { formatPercent, formatPrice, formatTokenAmount } from '../../lib/formatters';
 import logger from '../../lib/logger';
+import { emitRpcRefetch } from '../../lib/rpc/refetchEvents';
+import { queryKeys } from '../../lib/queryClient';
+import { useWalletStore } from '../../store/walletStore';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const REFRESH_INTERVAL_MS = 30_000;
 const SKELETON_ROWS = 8;
 
 // ---------------------------------------------------------------------------
@@ -116,13 +119,10 @@ export default function OrderBook({
   contractService,
   onOrderFilled,
 }: OrderBookProps) {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(false);
   const [fillingId, setFillingId] = useState<bigint | null>(null);
   const [fillTxHash, setFillTxHash] = useState<string | null>(null);
-  const [chainId, setChainId] = useState<number | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const fetchRequestRef = useRef(0);
+  const queryClient = useQueryClient();
+  const chainId = useWalletStore((state) => state.wallet.chainId);
 
   // ---- Derived state ------------------------------------------------------
 
@@ -135,6 +135,44 @@ export default function OrderBook({
     if (!fillTxHash || !networkConfig?.blockExplorer) return null;
     return `${networkConfig.blockExplorer}/tx/${fillTxHash}`;
   }, [fillTxHash, networkConfig]);
+
+  // ---- Fetch orders -------------------------------------------------------
+
+  const orderBookQuery = useQuery<Order[]>({
+    queryKey: queryKeys.orderBook(tokenSell, tokenBuy, chainId),
+    enabled:
+      Boolean(contractService) &&
+      Boolean(tokenSell) &&
+      Boolean(tokenBuy) &&
+      tokenSell.toLowerCase() !== tokenBuy.toLowerCase(),
+    refetchInterval: 10_000,
+    queryFn: async () => {
+      if (!contractService || !tokenSell || !tokenBuy) {
+        return [];
+      }
+
+      const [sellSide, buySide] = await Promise.all([
+        contractService.getExchangeActiveOrders(tokenSell, tokenBuy).catch(() => []),
+        contractService.getExchangeActiveOrders(tokenBuy, tokenSell).catch(() => []),
+      ]);
+
+      return [...sellSide, ...buySide];
+    },
+  });
+
+  useEffect(() => {
+    if (!orderBookQuery.error) {
+      return;
+    }
+
+    logger.error('Failed to fetch order book:', orderBookQuery.error);
+  }, [orderBookQuery.error, orderBookQuery.errorUpdatedAt]);
+
+  const orders = useMemo(
+    () => orderBookQuery.data ?? [],
+    [orderBookQuery.data],
+  );
+  const loading = orderBookQuery.isLoading || orderBookQuery.isFetching;
 
   /**
    * Separate open orders into two sides:
@@ -219,81 +257,6 @@ export default function OrderBook({
     return { value: spreadValue, percent: spreadPct };
   }, [sellOrders, buyOrders]);
 
-  // ---- Fetch orders -------------------------------------------------------
-
-  const fetchOrders = useCallback(async () => {
-    const requestId = ++fetchRequestRef.current;
-
-    if (!contractService || !tokenSell || !tokenBuy) {
-      setOrders([]);
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      // Fetch both directions of the pair from AssetBackedExchange
-      const [sellSide, buySide] = await Promise.all([
-        contractService.getExchangeActiveOrders(tokenSell, tokenBuy).catch(() => []),
-        contractService.getExchangeActiveOrders(tokenBuy, tokenSell).catch(() => []),
-      ]);
-
-      if (fetchRequestRef.current !== requestId) return;
-      setOrders([...sellSide, ...buySide]);
-    } catch (err) {
-      if (fetchRequestRef.current !== requestId) return;
-      logger.error('Failed to fetch order book:', err);
-      toast.error('Unable to load the order book. Check your connection and try again.');
-    } finally {
-      if (fetchRequestRef.current === requestId) {
-        setLoading(false);
-      }
-    }
-  }, [contractService, tokenSell, tokenBuy]);
-
-  // ---- Resolve chainId ----------------------------------------------------
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function resolveChain() {
-      if (!contractService) return;
-      try {
-        const signer = await contractService.getSigner();
-        const provider = signer.provider;
-        if (provider) {
-          const network = await provider.getNetwork();
-          if (!cancelled) {
-            setChainId(Number(network.chainId));
-          }
-        }
-      } catch (error) {
-        if (cancelled) return;
-        logger.error('Failed to resolve chain:', error);
-        toast.error('Unable to detect your network. Please check your wallet connection.');
-      }
-    }
-    void resolveChain();
-    return () => {
-      cancelled = true;
-    };
-  }, [contractService]);
-
-  // ---- Periodic refresh ---------------------------------------------------
-
-  useEffect(() => {
-    void fetchOrders();
-
-    intervalRef.current = setInterval(() => {
-      void fetchOrders();
-    }, REFRESH_INTERVAL_MS);
-
-    return () => {
-      fetchRequestRef.current += 1;
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [fetchOrders]);
-
   // ---- Fill order handler -------------------------------------------------
 
   const handleFillOrder = useCallback(
@@ -362,8 +325,17 @@ export default function OrderBook({
         toast.success('Order filled successfully!', { id: 'fill-order' });
 
         // Refresh
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.orderBook(tokenSell, tokenBuy, chainId),
+            exact: true,
+          }),
+          queryClient.invalidateQueries({ queryKey: ['userOrders'] }),
+          queryClient.invalidateQueries({ queryKey: ['balance'] }),
+          queryClient.invalidateQueries({ queryKey: ['poolStats'] }),
+        ]);
+        emitRpcRefetch(['orders', 'balances', 'pool']);
         onOrderFilled();
-        void fetchOrders();
       } catch (err: unknown) {
         logger.error('Fill order failed:', err);
         toast.error(parseContractError(err), { id: 'fill-order' });
@@ -372,7 +344,7 @@ export default function OrderBook({
         setFillingId(null);
       }
     },
-    [contractService, fillingId, onOrderFilled, fetchOrders],
+    [chainId, contractService, fillingId, onOrderFilled, queryClient, tokenBuy, tokenSell],
   );
 
   // ---- Render helpers -----------------------------------------------------

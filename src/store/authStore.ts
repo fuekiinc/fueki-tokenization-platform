@@ -21,7 +21,8 @@ import {
   persistUser,
   readAuthSnapshot,
 } from '../lib/authStorage';
-import { clearAccessToken, getAccessToken, setAccessToken, } from '../lib/authSession';
+import { clearAccessToken, getAccessToken, setAccessToken } from '../lib/authSession';
+import { withStoreMiddleware } from './storeMiddleware';
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // Store interface
@@ -97,7 +98,7 @@ async function withAuthBootstrapTimeout<T>(promise: Promise<T>, operation: strin
 // Store
 // ---------------------------------------------------------------------------
 
-export const useAuthStore = create<AuthStore>()((set, get) => ({
+export const useAuthStore = create<AuthStore>()(withStoreMiddleware('auth', (set, get) => ({
   ...initialState,
 
   // ---- initialize ----------------------------------------------------------
@@ -105,10 +106,12 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     if (_initPromise) return _initPromise;
 
     _initPromise = (async () => {
+      set({ isLoading: true });
       const snapshot = readAuthSnapshot();
 
       if (!snapshot) {
-        set({ isInitialized: true });
+        clearAccessToken();
+        set({ isInitialized: true, isLoading: false, isAuthenticated: false, user: null });
         return;
       }
 
@@ -135,6 +138,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
           user,
           isAuthenticated: true,
           isInitialized: true,
+          isLoading: false,
           storageMode,
         });
       };
@@ -144,7 +148,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         await refreshAndHydrate();
       } catch {
         get().clearAuth();
-        set({ isInitialized: true });
+        set({ isInitialized: true, isLoading: false });
       }
     })();
 
@@ -196,33 +200,32 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     }
   },
 
-// ---- logout --------------------------------------------------------------
-logout: async () => {
-  // Check both the in-memory session and the store state for the token.
-  const state = get() as unknown as Record<string, unknown>;
-  let activeToken = getAccessToken()
-    ?? (state.tokens as { accessToken?: string } | undefined)?.accessToken
-    ?? null;
+  // ---- logout --------------------------------------------------------------
+  logout: async () => {
+    let activeToken = getAccessToken();
+    const hasPersistedSession = readAuthSnapshot() !== null;
 
-  const user = get().user;
-  if (user?.demoActive) {
-    try { await authApi.endDemo(); } catch { /* best-effort */ }
-  }
+    const user = get().user;
+    if (user?.demoActive) {
+      try { await authApi.endDemo(); } catch { /* best-effort */ }
+    }
 
-  // If the token is expired, attempt a single refresh so the server-side
-  // session can be properly invalidated with a valid bearer.
-  if (activeToken && isJwtExpired(activeToken, 0)) {
-    try {
-      const refreshed = await authApi.refreshToken({ skipAuthRefresh: true });
-      activeToken = refreshed.accessToken;
-    } catch { /* best-effort — proceed with logout anyway */ }
-  }
+    // FIX: read fresh from auth session to avoid stale token snapshots.
+    if (activeToken && isJwtExpired(activeToken, 0)) {
+      try {
+        const refreshed = await authApi.refreshToken({ skipAuthRefresh: true });
+        setAccessToken(refreshed.accessToken);
+        activeToken = getAccessToken();
+      } catch {
+        activeToken = getAccessToken();
+      }
+    }
 
-  if (activeToken) {
-    authApi.logout(activeToken).catch(() => {});
-  }
-  get().clearAuth();
-},
+    if (activeToken || hasPersistedSession) {
+      authApi.logout(getAccessToken() ?? undefined).catch(() => {});
+    }
+    get().clearAuth();
+  },
 
   // ---- submitKYC -----------------------------------------------------------
   submitKYC: async (data) => {
@@ -316,7 +319,8 @@ logout: async () => {
     set({
       user: null,
       isAuthenticated: false,
+      isLoading: false,
       storageMode: 'local',
     });
   },
-}));
+})));

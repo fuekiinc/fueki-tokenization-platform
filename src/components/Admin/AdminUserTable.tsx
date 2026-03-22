@@ -71,6 +71,22 @@ function formatDate(dateStr: string): string {
   });
 }
 
+function isRenderableAdminUser(user: unknown): user is AdminUser {
+  if (typeof user !== 'object' || user === null) {
+    return false;
+  }
+
+  const candidate = user as Record<string, unknown>;
+
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.email === 'string' &&
+    typeof candidate.role === 'string' &&
+    typeof candidate.kycStatus === 'string' &&
+    typeof candidate.createdAt === 'string'
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Role dropdown
 // ---------------------------------------------------------------------------
@@ -232,6 +248,10 @@ export default function AdminUserTable() {
     setPage(1);
   };
 
+  const users = Array.isArray(data?.users)
+    ? data.users.filter((user): user is AdminUser => isRenderableAdminUser(user))
+    : [];
+
   return (
     <>
       {/* Filters */}
@@ -240,6 +260,8 @@ export default function AdminUserTable() {
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" aria-hidden="true" />
           <input
+            id="admin-user-search"
+            name="adminUserSearch"
             type="search"
             placeholder="Search by email..."
             value={search}
@@ -257,6 +279,8 @@ export default function AdminUserTable() {
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-gray-500" aria-hidden="true" />
           <select
+            id="admin-role-filter"
+            name="adminRoleFilter"
             value={roleFilter}
             onChange={(e) => handleRoleFilterChange(e.target.value)}
             aria-label="Filter by role"
@@ -276,6 +300,8 @@ export default function AdminUserTable() {
 
         {/* KYC filter */}
         <select
+          id="admin-kyc-filter"
+          name="adminKycFilter"
           value={kycFilter}
           onChange={(e) => handleKycFilterChange(e.target.value)}
           aria-label="Filter by KYC status"
@@ -311,7 +337,7 @@ export default function AdminUserTable() {
               Retry
             </button>
           </div>
-        ) : !data || data.users.length === 0 ? (
+        ) : !data || users.length === 0 ? (
           <div className="p-8">
             <EmptyState
               icon={<Users />}
@@ -346,7 +372,7 @@ export default function AdminUserTable() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.04]">
-                  {data.users.map((user: AdminUser) => (
+                  {users.map((user: AdminUser) => (
                     <tr
                       key={user.id}
                       onClick={() => setSelectedUserId(user.id)}

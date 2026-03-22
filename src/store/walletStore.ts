@@ -16,6 +16,7 @@
 import { create } from 'zustand';
 import type { BrowserProvider, JsonRpcSigner } from 'ethers';
 import { invalidateCache, invalidateChainCache } from '../lib/blockchain/rpcCache';
+import { withStoreMiddleware } from './storeMiddleware';
 
 // ---------------------------------------------------------------------------
 // Persistence key for localStorage
@@ -181,7 +182,7 @@ function normalizeWalletState(wallet: WalletState['wallet']): WalletState['walle
 // Store
 // ---------------------------------------------------------------------------
 
-export const useWalletStore = create<WalletStore>()((set, get) => ({
+export const useWalletStore = create<WalletStore>()(withStoreMiddleware('wallet', (set, get) => ({
   wallet: { ...initialWalletState },
 
   setWallet: (partial) =>
@@ -366,4 +367,4 @@ export const useWalletStore = create<WalletStore>()((set, get) => ({
       return false;
     }
   },
-}));
+})));

@@ -8,7 +8,7 @@
  * Reuses TokenSelector, glass-morphism styling, and existing patterns.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -28,6 +28,8 @@ import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPercent, formatPrice } from '../../lib/formatters';
 import { txConfirmedToast, txFailedToast, txSubmittedToast } from '../../lib/utils/txToast';
+import { createAdaptivePollingLoop } from '../../lib/rpc/polling';
+import { emitRpcRefetch, subscribeToRpcRefetch } from '../../lib/rpc/refetchEvents';
 import TokenSelector from './TokenSelector';
 
 // ---------------------------------------------------------------------------
@@ -80,6 +82,7 @@ export default function LiquidityPanel({
   const [balanceA, setBalanceA] = useState<bigint>(0n);
   const [balanceB, setBalanceB] = useState<bigint>(0n);
   const [chainId, setChainId] = useState<number | null>(null);
+  const loadRequestIdRef = useRef(0);
 
   const tokenAIsETH = isETH(tokenA);
   const tokenBIsETH = isETH(tokenB);
@@ -101,68 +104,86 @@ export default function LiquidityPanel({
     void resolve();
   }, [contractService]);
 
-  // ---- Load pool data + balances ------------------------------------------
+  const loadLiquidityState = useCallback(async () => {
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
 
-  useEffect(() => {
-    let cancelled = false;
+    if (!contractService || !tokenA || !tokenB || sameTokenError) {
+      setPool(null);
+      setLpBalance(0n);
+      setBalanceA(tokenAIsETH ? parseEthBalance(ethBalance) : 0n);
+      setBalanceB(tokenBIsETH ? parseEthBalance(ethBalance) : 0n);
+      return;
+    }
 
-    async function load() {
-      if (!contractService || !tokenA || !tokenB || sameTokenError) {
-        setPool(null);
-        setLpBalance(0n);
+    try {
+      const snapshot = await contractService.getAMMPoolSnapshot(tokenA, tokenB, userAddress);
+      if (loadRequestIdRef.current !== requestId) {
         return;
       }
 
-      try {
-        const poolData = await contractService.getAMMPool(tokenA, tokenB);
-        if (!cancelled) {
-          // Pool exists if token0 is non-zero
-          if (poolData.token0 === ethers.ZeroAddress) {
-            setPool(null);
-          } else {
-            setPool(poolData);
-          }
-        }
-      } catch {
-        if (!cancelled) setPool(null);
-      }
-
-      if (userAddress) {
-        try {
-          const lp = await contractService.getAMMLiquidityBalance(tokenA, tokenB, userAddress);
-          if (!cancelled) setLpBalance(lp);
-        } catch {
-          if (!cancelled) setLpBalance(0n);
-        }
-
-        // Token balances
-        try {
-          if (tokenAIsETH) {
-            setBalanceA(parseEthBalance(ethBalance));
-          } else {
-            const bal = await contractService.getAssetBalance(tokenA, userAddress);
-            if (!cancelled) setBalanceA(bal);
-          }
-        } catch {
-          if (!cancelled) setBalanceA(0n);
-        }
-
-        try {
-          if (tokenBIsETH) {
-            setBalanceB(parseEthBalance(ethBalance));
-          } else {
-            const bal = await contractService.getAssetBalance(tokenB, userAddress);
-            if (!cancelled) setBalanceB(bal);
-          }
-        } catch {
-          if (!cancelled) setBalanceB(0n);
-        }
+      const nextPool =
+        snapshot.pool.token0 === ethers.ZeroAddress ? null : snapshot.pool;
+      setPool(nextPool);
+      setLpBalance(snapshot.liquidityBalance);
+    } catch {
+      if (loadRequestIdRef.current === requestId) {
+        setPool(null);
+        setLpBalance(0n);
       }
     }
 
-    void load();
-    return () => { cancelled = true; };
-  }, [contractService, tokenA, tokenB, userAddress, sameTokenError, tokenAIsETH, tokenBIsETH, ethBalance, txStatus]);
+    try {
+      const tokenAddresses = [tokenA, tokenB].filter((address) => !isETH(address));
+      const balances = tokenAddresses.length > 0
+        ? await contractService.getAssetBalances(tokenAddresses, userAddress)
+        : {};
+      if (loadRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setBalanceA(tokenAIsETH ? parseEthBalance(ethBalance) : (balances[tokenA] ?? 0n));
+      setBalanceB(tokenBIsETH ? parseEthBalance(ethBalance) : (balances[tokenB] ?? 0n));
+    } catch {
+      if (loadRequestIdRef.current === requestId) {
+        setBalanceA(tokenAIsETH ? parseEthBalance(ethBalance) : 0n);
+        setBalanceB(tokenBIsETH ? parseEthBalance(ethBalance) : 0n);
+      }
+    }
+  }, [
+    contractService,
+    tokenA,
+    tokenB,
+    userAddress,
+    sameTokenError,
+    tokenAIsETH,
+    tokenBIsETH,
+    ethBalance,
+  ]);
+
+  // ---- Load pool data + balances ------------------------------------------
+
+  useEffect(() => {
+    void loadLiquidityState();
+
+    if (!contractService || !tokenA || !tokenB || sameTokenError) {
+      return;
+    }
+
+    const poller = createAdaptivePollingLoop({
+      tier: 'medium',
+      poll: loadLiquidityState,
+      immediate: false,
+    });
+    const unsubscribeRefetch = subscribeToRpcRefetch(['pool', 'balances', 'allowances'], () => {
+      poller.triggerNow();
+    });
+
+    return () => {
+      unsubscribeRefetch();
+      poller.cancel();
+    };
+  }, [contractService, tokenA, tokenB, sameTokenError, loadLiquidityState]);
 
   // ---- Parsed amounts -----------------------------------------------------
 
@@ -240,6 +261,7 @@ export default function LiquidityPanel({
       const tx = await contractService.createPool(tokenA, tokenB);
       txSubmittedToast(tx.hash, liqChainId, 'Creating pool...');
       await contractService.waitForTransaction(tx);
+      emitRpcRefetch(['pool', 'balances', 'market-data']);
       txConfirmedToast(tx.hash, 'Pool created!');
       setTxStatus('confirmed');
       setTimeout(() => { setTxStatus('idle'); onLiquidityChanged(); }, 2000);
@@ -272,6 +294,7 @@ export default function LiquidityPanel({
           const approveTxA = await contractService.approveAMM(tokenA, parsedAmountA);
           txSubmittedToast(approveTxA.hash, liqChainId, `Approving ${tokenLabel(tokenA)}...`);
           await contractService.waitForTransaction(approveTxA);
+          emitRpcRefetch(['allowances']);
           txConfirmedToast(approveTxA.hash, `${tokenLabel(tokenA)} approved for pool`);
         }
       } catch (err: unknown) {
@@ -290,6 +313,7 @@ export default function LiquidityPanel({
           const approveTxB = await contractService.approveAMM(tokenB, parsedAmountB);
           txSubmittedToast(approveTxB.hash, liqChainId, `Approving ${tokenLabel(tokenB)}...`);
           await contractService.waitForTransaction(approveTxB);
+          emitRpcRefetch(['allowances']);
           txConfirmedToast(approveTxB.hash, `${tokenLabel(tokenB)} approved for pool`);
         }
       } catch (err: unknown) {
@@ -339,6 +363,7 @@ export default function LiquidityPanel({
       submittedAddHash = tx.hash;
       txSubmittedToast(tx.hash, liqChainId, 'Adding liquidity...');
       await contractService.waitForTransaction(tx);
+      emitRpcRefetch(['pool', 'balances', 'allowances', 'market-data']);
       txConfirmedToast(tx.hash, 'Liquidity added!');
       setTxStatus('confirmed');
       setAmountA('');
@@ -387,6 +412,7 @@ export default function LiquidityPanel({
       submittedRemoveHash = tx.hash;
       txSubmittedToast(tx.hash, liqChainId, 'Removing liquidity...');
       await contractService.waitForTransaction(tx);
+      emitRpcRefetch(['pool', 'balances', 'market-data']);
       txConfirmedToast(tx.hash, 'Liquidity removed!');
       setTxStatus('confirmed');
       setRemoveAmount('');

@@ -29,6 +29,12 @@ import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPercent, formatPrice } from '../../lib/formatters';
 import HelpTooltip from '../Common/HelpTooltip';
 import logger from '../../lib/logger';
+import {
+  createAdaptivePollingLoop,
+  getPollingIntervalMs,
+  subscribeToVisibilityChange,
+} from '../../lib/rpc/polling';
+import { emitRpcRefetch } from '../../lib/rpc/refetchEvents';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -99,13 +105,14 @@ export default function SwapInterface({
   const [txStatus, setTxStatus] = useState<TxStatus>('idle');
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
   const [showSwapReview, setShowSwapReview] = useState(false);
-  const [quoteCountdown, setQuoteCountdown] = useState(15);
+  const [quoteCountdown, setQuoteCountdown] = useState(
+    Math.ceil(getPollingIntervalMs('medium') / 1000),
+  );
   const [customSlippage, setCustomSlippage] = useState('');
 
   // ---- Timer ref for status reset -------------------------------------------
 
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const fetchPoolsRequestRef = useRef(0);
 
   useEffect(() => {
@@ -115,7 +122,6 @@ export default function SwapInterface({
   useEffect(() => {
     return () => {
       clearTimeout(statusTimerRef.current);
-      clearInterval(refreshIntervalRef.current);
     };
   }, []);
 
@@ -298,94 +304,87 @@ export default function SwapInterface({
 
   // ---- Fetch quote ----------------------------------------------------------
 
+  const fetchQuote = useCallback(async () => {
+    if (
+      !contractService ||
+      !selectedPool ||
+      !tokenIn ||
+      !tokenOut ||
+      parsedAmountIn === 0n
+    ) {
+      setQuoteOut(0n);
+      setFeeAmount(0n);
+      return;
+    }
+
+    try {
+      const result = await contractService.getPoolAmountOut(
+        selectedPool.address,
+        tokenIn.index,
+        tokenOut.index,
+        parsedAmountIn,
+      );
+      setQuoteOut(result.amountOut);
+      setFeeAmount(result.feeAmount);
+    } catch {
+      setQuoteOut(0n);
+      setFeeAmount(0n);
+    }
+  }, [contractService, parsedAmountIn, selectedPool, tokenIn, tokenOut]);
+
   useEffect(() => {
     let cancelled = false;
 
-    async function fetchQuote() {
-      if (
-        !contractService ||
-        !selectedPool ||
-        !tokenIn ||
-        !tokenOut ||
-        parsedAmountIn === 0n
-      ) {
-        setQuoteOut(0n);
-        setFeeAmount(0n);
-        return;
-      }
-
-      try {
-        const result = await contractService.getPoolAmountOut(
-          selectedPool.address,
-          tokenIn.index,
-          tokenOut.index,
-          parsedAmountIn,
-        );
-        if (!cancelled) {
-          setQuoteOut(result.amountOut);
-          setFeeAmount(result.feeAmount);
-        }
-      } catch {
-        if (!cancelled) {
-          setQuoteOut(0n);
-          setFeeAmount(0n);
-        }
-      }
-    }
-
     const timer = setTimeout(() => {
-      void fetchQuote();
+      if (!cancelled) {
+        void fetchQuote();
+      }
     }, 300); // Debounce
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [contractService, selectedPool, tokenIn, tokenOut, parsedAmountIn]);
+  }, [fetchQuote]);
 
-  // ---- Auto-refresh quotes every 15 seconds ---------------------------------
+  // ---- Auto-refresh quotes on the medium polling tier -----------------------
 
   useEffect(() => {
-    let cancelled = false;
-
     if (!contractService || !selectedPool || !tokenIn || !tokenOut || parsedAmountIn === 0n) {
-      setQuoteCountdown(15);
-      clearInterval(refreshIntervalRef.current);
+      setQuoteCountdown(Math.ceil(getPollingIntervalMs('medium') / 1000));
       return;
     }
 
-    setQuoteCountdown(15);
-    refreshIntervalRef.current = setInterval(() => {
+    const resetCountdown = () => {
+      setQuoteCountdown(Math.ceil(getPollingIntervalMs('medium') / 1000));
+    };
+
+    const poller = createAdaptivePollingLoop({
+      tier: 'medium',
+      poll: async () => {
+        resetCountdown();
+        await fetchQuote();
+      },
+      immediate: false,
+    });
+
+    resetCountdown();
+    const countdown = setInterval(() => {
       setQuoteCountdown((prev) => {
-        if (prev <= 1) {
-          // Re-fetch quote
-          void (async () => {
-            try {
-              const result = await contractService.getPoolAmountOut(
-                selectedPool.address,
-                tokenIn.index,
-                tokenOut.index,
-                parsedAmountIn,
-              );
-              if (!cancelled) {
-                setQuoteOut(result.amountOut);
-                setFeeAmount(result.feeAmount);
-              }
-            } catch {
-              // keep existing quote
-            }
-          })();
-          return 15;
-        }
+        if (prev <= 1) return 1;
         return prev - 1;
       });
     }, 1000);
+    const unsubscribeVisibility = subscribeToVisibilityChange(() => {
+      resetCountdown();
+    });
 
     return () => {
-      cancelled = true;
-      clearInterval(refreshIntervalRef.current);
+      unsubscribeVisibility();
+      clearInterval(countdown);
+      poller.cancel();
     };
-  }, [contractService, selectedPool, tokenIn, tokenOut, parsedAmountIn]);
+  }, [contractService, fetchQuote, parsedAmountIn, selectedPool, tokenIn, tokenOut]);
 
   // ---- Price impact severity classification ---------------------------------
 
@@ -467,6 +466,7 @@ export default function SwapInterface({
           parsedAmountIn,
         );
         await contractService.waitForTransaction(approveTx);
+        emitRpcRefetch(['allowances', 'balances']);
         toast.success('Token approved', { id: 'orbital-approve' });
       }
     } catch (err: unknown) {
@@ -489,6 +489,7 @@ export default function SwapInterface({
         deadline,
       );
       await contractService.waitForTransaction(tx);
+      emitRpcRefetch(['balances', 'pool', 'market-data']);
       toast.success('Swap successful!', { id: 'orbital-swap' });
       setTxStatus('confirmed');
       setAmountIn('');

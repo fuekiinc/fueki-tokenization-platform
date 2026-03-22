@@ -12,7 +12,12 @@ vi.mock('../../../src/lib/api/client', () => ({
   },
 }));
 
-import { getKYCSubmissions, getUserDetail } from '../../../src/lib/api/admin';
+import {
+  getKYCSubmissions,
+  getUserDetail,
+  getUserKycDocument,
+  getUsers,
+} from '../../../src/lib/api/admin';
 
 describe('admin API adapters', () => {
   beforeEach(() => {
@@ -35,10 +40,17 @@ describe('admin API adapters', () => {
           firstName: 'Mark',
           lastName: 'Fueki',
           dateOfBirth: '1990-01-01',
+          ssn: '***-**-6789',
+          addressLine1: '123 Main St',
+          addressLine2: 'Suite 100',
           city: 'Phoenix',
           state: 'AZ',
+          zipCode: '85001',
           country: 'US',
           documentType: 'drivers_license',
+          documentOrigName: 'front.png',
+          documentBackOrigName: 'back.png',
+          liveVideoOrigName: 'selfie.mov',
           submittedAt: '2026-03-18T00:30:00.000Z',
           reviewedAt: null,
           reviewNotes: null,
@@ -54,9 +66,25 @@ describe('admin API adapters', () => {
       email: 'mark@fueki-tech.com',
       role: 'super_admin',
       kycData: expect.objectContaining({
+        ssn: '***-**-6789',
         documentType: 'drivers_license',
+        documentOrigName: 'front.png',
+        liveVideoOrigName: 'selfie.mov',
       }),
     });
+  });
+
+  it('requests admin KYC documents as blobs', async () => {
+    const blob = new Blob(['kyc-doc']);
+    getMock.mockResolvedValue({ data: blob });
+
+    const result = await getUserKycDocument('user-1', 'front');
+
+    expect(getMock).toHaveBeenCalledWith(
+      '/api/admin/users/user-1/kyc-documents/front',
+      { responseType: 'blob' },
+    );
+    expect(result).toBe(blob);
   });
 
   it('normalizes backend KYC submissions into the queue user list shape', async () => {
@@ -121,6 +149,53 @@ describe('admin API adapters', () => {
       page: 2,
       limit: 50,
       totalPages: 0,
+    });
+  });
+
+  it('drops malformed user rows when the admin users payload is incomplete', async () => {
+    getMock.mockResolvedValue({
+      data: {
+        users: [
+          {
+            id: 'user-1',
+            email: 'mark@fueki-tech.com',
+            role: 'admin',
+            kycStatus: 'approved',
+            walletAddress: null,
+            createdAt: '2026-03-18T00:00:00.000Z',
+            updatedAt: '2026-03-18T01:00:00.000Z',
+          },
+          {
+            id: 'user-2',
+            email: 'broken@fueki-tech.com',
+          },
+          null,
+        ],
+        total: 2,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      },
+    });
+
+    const result = await getUsers({ page: 1, limit: 20 });
+
+    expect(result).toEqual({
+      users: [
+        {
+          id: 'user-1',
+          email: 'mark@fueki-tech.com',
+          role: 'admin',
+          kycStatus: 'approved',
+          walletAddress: null,
+          createdAt: '2026-03-18T00:00:00.000Z',
+          updatedAt: '2026-03-18T01:00:00.000Z',
+        },
+      ],
+      total: 2,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
     });
   });
 });

@@ -7,6 +7,8 @@ import {
   Check,
   Clock,
   Copy,
+  Download,
+  ExternalLink,
   FileCheck,
   Loader2,
   Mail,
@@ -20,10 +22,11 @@ import {
 import {
   approveKYC,
   getUserDetail,
+  getUserKycDocument,
   rejectKYC,
   updateUserRole,
 } from '../../lib/api/admin';
-import type { UserDetail } from '../../lib/api/admin';
+import type { AdminKycDocumentKind, UserDetail } from '../../lib/api/admin';
 import Badge from '../Common/Badge';
 import Spinner from '../Common/Spinner';
 
@@ -90,6 +93,27 @@ function copyToClipboard(text: string) {
   void navigator.clipboard.writeText(text).then(() => {
     toast.success('Copied to clipboard');
   });
+}
+
+function formatDocumentLabel(kind: AdminKycDocumentKind): string {
+  switch (kind) {
+    case 'front':
+      return 'Front Document';
+    case 'back':
+      return 'Back Document';
+    case 'liveVideo':
+      return 'Live Verification Video';
+  }
+}
+
+function createDownloadLink(blobUrl: string, fileName: string) {
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = fileName;
+  link.rel = 'noopener';
+  document.body.append(link);
+  link.click();
+  link.remove();
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +247,8 @@ function KYCActionPanel({
       </h3>
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 space-y-3">
         <textarea
+          id={action === 'approve' ? 'admin-approval-notes' : 'admin-rejection-reason'}
+          name={action === 'approve' ? 'adminApprovalNotes' : 'adminRejectionReason'}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder={
@@ -435,6 +461,135 @@ function ActivityTimeline({ user }: { user: UserDetail }) {
   );
 }
 
+function KycDocumentActions({
+  userId,
+  documents,
+}: {
+  userId: string;
+  documents: Array<{
+    kind: AdminKycDocumentKind;
+    fileName: string;
+  }>;
+}) {
+  const [activeAction, setActiveAction] = useState<string | null>(null);
+
+  const handleDocumentAction = async (
+    documentKind: AdminKycDocumentKind,
+    fileName: string,
+    action: 'preview' | 'download',
+  ) => {
+    const actionKey = `${documentKind}:${action}`;
+    setActiveAction(actionKey);
+
+    try {
+      const blob = await getUserKycDocument(userId, documentKind);
+      const blobUrl = URL.createObjectURL(blob);
+
+      if (action === 'preview') {
+        const previewWindow = window.open(blobUrl, '_blank', 'noopener,noreferrer');
+
+        if (!previewWindow) {
+          toast.error('Preview was blocked by your browser');
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+
+        window.setTimeout(() => {
+          URL.revokeObjectURL(blobUrl);
+        }, 60_000);
+      } else {
+        createDownloadLink(blobUrl, fileName);
+        window.setTimeout(() => {
+          URL.revokeObjectURL(blobUrl);
+        }, 0);
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to fetch KYC document';
+      toast.error(message);
+    } finally {
+      setActiveAction(null);
+    }
+  };
+
+  if (documents.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-1">
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
+        Uploaded Documents
+      </h3>
+      <div className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+        {documents.map((document) => {
+          const previewKey = `${document.kind}:preview`;
+          const downloadKey = `${document.kind}:download`;
+
+          return (
+            <div
+              key={document.kind}
+              className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                    {formatDocumentLabel(document.kind)}
+                  </p>
+                  <p className="mt-1 break-all text-sm text-white">
+                    {document.fileName}
+                  </p>
+                </div>
+                <FileCheck className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
+              </div>
+              <div className="mt-4 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleDocumentAction(document.kind, document.fileName, 'preview');
+                  }}
+                  disabled={activeAction !== null}
+                  className={clsx(
+                    'flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium',
+                    'border border-white/[0.06] bg-white/[0.03] text-gray-200 transition-colors hover:bg-white/[0.08]',
+                    'disabled:cursor-not-allowed disabled:opacity-50',
+                  )}
+                >
+                  {activeAction === previewKey ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Preview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleDocumentAction(document.kind, document.fileName, 'download');
+                  }}
+                  disabled={activeAction !== null}
+                  className={clsx(
+                    'flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium',
+                    'border border-indigo-500/20 bg-indigo-500/10 text-indigo-300 transition-colors hover:bg-indigo-500/20',
+                    'disabled:cursor-not-allowed disabled:opacity-50',
+                  )}
+                >
+                  {activeAction === downloadKey ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Download className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Download
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -487,6 +642,28 @@ export default function AdminUserDetail({
       previousActiveElement?.focus();
     };
   }, []);
+
+  const kycDocuments = [
+    {
+      kind: 'front' as const,
+      fileName: user?.kycData?.documentOrigName,
+    },
+    {
+      kind: 'back' as const,
+      fileName: user?.kycData?.documentBackOrigName,
+    },
+    {
+      kind: 'liveVideo' as const,
+      fileName: user?.kycData?.liveVideoOrigName,
+    },
+  ].filter(
+    (
+      document,
+    ): document is {
+      kind: AdminKycDocumentKind;
+      fileName: string;
+    } => typeof document.fileName === 'string' && document.fileName.length > 0,
+  );
 
   return (
     <>
@@ -638,11 +815,35 @@ export default function AdminUserDetail({
                       label="Date of Birth"
                       value={user.kycData.dateOfBirth}
                     />
+                    {user.kycData.ssn && (
+                      <DetailRow
+                        icon={Shield}
+                        label="SSN"
+                        value={user.kycData.ssn}
+                      />
+                    )}
                     <DetailRow
                       icon={MapPin}
                       label="Location"
                       value={`${user.kycData.city}, ${user.kycData.state}, ${user.kycData.country}`}
                     />
+                    {user.kycData.addressLine1 && (
+                      <DetailRow
+                        icon={MapPin}
+                        label="Address"
+                        value={
+                          <div className="space-y-1">
+                            <div>{user.kycData.addressLine1}</div>
+                            {user.kycData.addressLine2 && (
+                              <div>{user.kycData.addressLine2}</div>
+                            )}
+                            {user.kycData.zipCode && (
+                              <div className="text-gray-300">{user.kycData.zipCode}</div>
+                            )}
+                          </div>
+                        }
+                      />
+                    )}
                     <DetailRow
                       icon={FileCheck}
                       label="Document Type"
@@ -673,6 +874,13 @@ export default function AdminUserDetail({
                     )}
                   </div>
                 </div>
+              )}
+
+              {user.kycData && (
+                <KycDocumentActions
+                  userId={user.id}
+                  documents={kycDocuments}
+                />
               )}
 
               {/* Activity Timeline */}

@@ -10,6 +10,7 @@ export default defineConfig([
     'dist',
     'artifacts',
     'cache',
+    'test-results/**',
     'typechain-types',
     'backend/dist/**',
     '.claude/**',

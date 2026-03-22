@@ -45,6 +45,8 @@ import { getNetworkConfig } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPrice, formatTokenAmount } from '../../lib/formatters';
 import { txConfirmedToast, txFailedToast, txSubmittedToast } from '../../lib/utils/txToast';
+import { createAdaptivePollingLoop, getPollingIntervalMs, subscribeToVisibilityChange } from '../../lib/rpc/polling';
+import { emitRpcRefetch } from '../../lib/rpc/refetchEvents';
 import TokenSelector from './TokenSelector';
 import logger from '../../lib/logger';
 
@@ -109,7 +111,9 @@ export default function TradeForm({
   const [slippage, setSlippage] = useState(0.5); // percentage
   const [customSlippage, setCustomSlippage] = useState('');
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
-  const [quoteRefreshTimer, setQuoteRefreshTimer] = useState(30);
+  const [quoteRefreshTimer, setQuoteRefreshTimer] = useState(
+    Math.ceil(getPollingIntervalMs('medium') / 1000),
+  );
 
   useEffect(() => {
     if (!enableAMM && tradeMode === 'amm') {
@@ -303,12 +307,14 @@ export default function TradeForm({
           const config = effectiveChainId ? getNetworkConfig(effectiveChainId) : null;
           const spender = config?.assetBackedExchangeAddress;
 
-          const [bal, allow] = await Promise.all([
-            contractService.getAssetBalance(sellToken, userAddress),
+          const [balances, allowances] = await Promise.all([
+            contractService.getAssetBalances([sellToken], userAddress),
             spender
-              ? contractService.getAssetAllowance(sellToken, userAddress, spender)
-              : Promise.resolve(0n),
+              ? contractService.getAssetAllowances([sellToken], userAddress, spender)
+              : Promise.resolve<Record<string, bigint>>({}),
           ]);
+          const bal = balances[sellToken] ?? 0n;
+          const allow = spender ? (allowances[sellToken] ?? 0n) : 0n;
 
           // Also fetch ETH balance for the ETH entry in selectors
           if (provider) {
@@ -402,6 +408,7 @@ export default function TradeForm({
 
       await contractService.waitForTransaction(tx);
       setTxStatus('approved');
+      emitRpcRefetch(['allowances', 'balances']);
       txConfirmedToast(tx.hash, 'Token approved for exchange');
     } catch (err: unknown) {
       logger.error('Approve failed:', err);
@@ -484,6 +491,7 @@ export default function TradeForm({
 
       await contractService.waitForTransaction(tx);
       setTxStatus('confirmed');
+      emitRpcRefetch(['orders', 'balances']);
       txConfirmedToast(tx.hash, 'Order created successfully!');
 
       // Record trade in store so dashboard updates immediately
@@ -541,73 +549,80 @@ export default function TradeForm({
 
   // ---- AMM: fetch quote when sell amount changes ---------------------------
 
+  const fetchAmmQuote = useCallback(async () => {
+    if (!contractService || !sellToken || !buyToken || parsedSellAmount === 0n) {
+      setAmmQuote(0n);
+      return;
+    }
+    if (sellToken.toLowerCase() === buyToken.toLowerCase()) {
+      setAmmQuote(0n);
+      return;
+    }
+
+    setAmmQuoteLoading(true);
+    try {
+      const q = await contractService.getAMMQuote(sellToken, buyToken, parsedSellAmount);
+      setAmmQuote(q);
+    } catch {
+      setAmmQuote(0n);
+    } finally {
+      setAmmQuoteLoading(false);
+    }
+  }, [buyToken, contractService, parsedSellAmount, sellToken]);
+
   useEffect(() => {
     if (tradeMode !== 'amm') return;
 
     let cancelled = false;
 
-    async function fetchQuote() {
-      if (!contractService || !sellToken || !buyToken || parsedSellAmount === 0n) {
-        setAmmQuote(0n);
-        return;
+    const timer = setTimeout(() => {
+      if (!cancelled) {
+        void fetchAmmQuote();
       }
-      if (sellToken.toLowerCase() === buyToken.toLowerCase()) {
-        setAmmQuote(0n);
-        return;
-      }
-
-      setAmmQuoteLoading(true);
-      try {
-        const q = await contractService.getAMMQuote(sellToken, buyToken, parsedSellAmount);
-        if (!cancelled) setAmmQuote(q);
-      } catch {
-        if (!cancelled) setAmmQuote(0n);
-      } finally {
-        if (!cancelled) setAmmQuoteLoading(false);
-      }
-    }
-
-    const timer = setTimeout(() => void fetchQuote(), 300);
+    }, 300);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [tradeMode, contractService, sellToken, buyToken, parsedSellAmount]);
+  }, [fetchAmmQuote, tradeMode]);
 
-  // Auto-refresh AMM quote every 30 seconds with countdown
+  // Auto-refresh AMM quotes on the medium polling tier with background backoff.
   useEffect(() => {
     if (tradeMode !== 'amm' || !contractService || !sellToken || !buyToken || parsedSellAmount === 0n) {
-      setQuoteRefreshTimer(30);
+      setQuoteRefreshTimer(Math.ceil(getPollingIntervalMs('medium') / 1000));
       return;
     }
 
-    setQuoteRefreshTimer(30);
-    const interval = setInterval(() => {
+    const resetCountdown = () => {
+      setQuoteRefreshTimer(Math.ceil(getPollingIntervalMs('medium') / 1000));
+    };
+
+    const poller = createAdaptivePollingLoop({
+      tier: 'medium',
+      poll: async () => {
+        resetCountdown();
+        await fetchAmmQuote();
+      },
+      immediate: false,
+    });
+
+    resetCountdown();
+    const countdown = setInterval(() => {
       setQuoteRefreshTimer((prev) => {
-        if (prev <= 1) {
-          // Trigger a re-fetch by resetting to 30 -- the quote effect
-          // depends on parsedSellAmount which has not changed, but we can
-          // nudge it by setting the amount string to itself (no-op for
-          // React since it is the same value). Instead, we rely on the
-          // interval approach: we call the quote inline.
-          void (async () => {
-            if (!contractService || !sellToken || !buyToken || parsedSellAmount === 0n) return;
-            if (sellToken.toLowerCase() === buyToken.toLowerCase()) return;
-            try {
-              const q = await contractService.getAMMQuote(sellToken, buyToken, parsedSellAmount);
-              setAmmQuote(q);
-            } catch {
-              // keep existing quote
-            }
-          })();
-          return 30;
-        }
+        if (prev <= 1) return 1;
         return prev - 1;
       });
     }, 1000);
+    const unsubscribeVisibility = subscribeToVisibilityChange(() => {
+      resetCountdown();
+    });
 
-    return () => clearInterval(interval);
-  }, [tradeMode, contractService, sellToken, buyToken, parsedSellAmount]);
+    return () => {
+      unsubscribeVisibility();
+      clearInterval(countdown);
+      poller.cancel();
+    };
+  }, [buyToken, contractService, fetchAmmQuote, parsedSellAmount, sellToken, tradeMode]);
 
   // AMM swap handler
   const handleAMMSwap = useCallback(async () => {
@@ -642,6 +657,7 @@ export default function TradeForm({
             txSubmittedToast(approveTx.hash, currentChainId, 'Approving token for AMM...');
             await contractService.waitForTransaction(approveTx);
             txConfirmedToast(approveTx.hash, 'Token approved for AMM');
+            emitRpcRefetch(['allowances', 'balances']);
             setTxStatus('approved');
           } catch (err: unknown) {
             toast.error(parseContractError(err), { id: 'amm-approve' });
@@ -681,6 +697,7 @@ export default function TradeForm({
       txSubmittedToast(tx.hash, swapChainId, 'Swapping via AMM...');
       await contractService.waitForTransaction(tx);
       setTxStatus('confirmed');
+      emitRpcRefetch(['pool', 'market-data', 'balances']);
       txConfirmedToast(tx.hash, 'Swap completed!');
 
       // Record AMM swap in store so dashboard updates immediately

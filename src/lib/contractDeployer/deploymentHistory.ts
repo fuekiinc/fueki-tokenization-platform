@@ -13,8 +13,13 @@ import logger from '../logger';
 // Constants
 // ---------------------------------------------------------------------------
 
-const STORAGE_KEY = 'fueki:deploy:history';
+const STORAGE_KEY = 'fueki-contract-history-v1';
+const LEGACY_STORAGE_KEY = 'fueki:deploy:history';
 const MAX_ENTRIES = 100;
+
+function deploymentIdentity(record: Pick<DeploymentRecord, 'chainId' | 'contractAddress'>): string {
+  return `${record.chainId}:${record.contractAddress.toLowerCase()}`;
+}
 
 // ---------------------------------------------------------------------------
 // Read operations
@@ -26,7 +31,9 @@ const MAX_ENTRIES = 100;
  */
 export function loadDeployments(): DeploymentRecord[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw =
+      localStorage.getItem(STORAGE_KEY) ??
+      localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return [];
 
     const parsed: unknown = JSON.parse(raw);
@@ -73,6 +80,40 @@ export function getDeploymentsByChain(chainId: number): DeploymentRecord[] {
   return loadDeployments().filter((r) => r.chainId === chainId);
 }
 
+/**
+ * Merge deployment records from multiple sources while deduping by
+ * chainId+contractAddress. Newer records win when duplicates exist.
+ */
+export function mergeDeployments(
+  local: DeploymentRecord[],
+  remote: DeploymentRecord[],
+): DeploymentRecord[] {
+  const merged = new Map<string, DeploymentRecord>();
+
+  for (const record of [...local, ...remote]) {
+    const key = deploymentIdentity(record);
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, record);
+      continue;
+    }
+
+    const existingTime = new Date(existing.deployedAt).getTime();
+    const recordTime = new Date(record.deployedAt).getTime();
+    if (recordTime >= existingTime) {
+      merged.set(key, record);
+    }
+  }
+
+  return Array.from(merged.values())
+    .sort((left, right) => {
+      const leftTime = new Date(left.deployedAt).getTime();
+      const rightTime = new Date(right.deployedAt).getTime();
+      return rightTime - leftTime;
+    })
+    .slice(0, MAX_ENTRIES);
+}
+
 // ---------------------------------------------------------------------------
 // Write operations
 // ---------------------------------------------------------------------------
@@ -82,27 +123,7 @@ export function getDeploymentsByChain(chainId: number): DeploymentRecord[] {
  * first). If the list exceeds MAX_ENTRIES, the oldest entries are pruned.
  */
 export function saveDeployment(record: DeploymentRecord): void {
-  const history = loadDeployments();
-
-  // Prevent duplicate entries for the same contract on the same chain
-  const existingIndex = history.findIndex(
-    (r) =>
-      r.chainId === record.chainId &&
-      r.contractAddress.toLowerCase() === record.contractAddress.toLowerCase(),
-  );
-  if (existingIndex !== -1) {
-    history.splice(existingIndex, 1);
-  }
-
-  // Prepend new record (newest first)
-  history.unshift(record);
-
-  // Prune oldest entries if over limit
-  if (history.length > MAX_ENTRIES) {
-    history.length = MAX_ENTRIES;
-  }
-
-  persistHistory(history);
+  persistHistory(mergeDeployments([record], loadDeployments()));
 }
 
 /**
@@ -124,6 +145,13 @@ export function clearDeployments(): void {
   }
 }
 
+/**
+ * Replace the full persisted deployment history with a pre-merged list.
+ */
+export function replaceDeployments(history: DeploymentRecord[]): void {
+  persistHistory(history);
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -135,6 +163,7 @@ export function clearDeployments(): void {
 function persistHistory(history: DeploymentRecord[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
   } catch (err) {
     logger.warn('[deploymentHistory] Failed to persist history', err);
   }

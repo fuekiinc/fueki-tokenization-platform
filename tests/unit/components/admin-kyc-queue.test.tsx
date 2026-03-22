@@ -36,4 +36,37 @@ describe('AdminKYCQueue', () => {
       expect(screen.getByText('No KYC submissions')).toBeInTheDocument();
     });
   });
+
+  it('ignores malformed queue rows instead of crashing the review screen', async () => {
+    apiMocks.getKYCSubmissions.mockResolvedValue({
+      users: [
+        {
+          id: 'user-1',
+          email: 'mark@fueki-tech.com',
+          role: 'user',
+          kycStatus: 'pending',
+          walletAddress: null,
+          createdAt: '2026-03-18T00:00:00.000Z',
+          updatedAt: '2026-03-18T01:00:00.000Z',
+        },
+        null,
+        {
+          id: 'user-2',
+          email: 'broken@fueki-tech.com',
+        },
+      ],
+      total: 3,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+    });
+
+    render(<AdminKYCQueue />);
+
+    await waitFor(() => {
+      expect(screen.getByText('mark@fueki-tech.com')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('broken@fueki-tech.com')).not.toBeInTheDocument();
+  });
 });

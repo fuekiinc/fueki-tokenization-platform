@@ -7,10 +7,11 @@
  *   - Total liquidity
  *   - Your LP balance and pool share
  *
- * Auto-refreshes every 15 seconds (same pattern as OrderBook).
+ * Auto-refreshes on a visibility-aware medium-volatility cadence.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ethers } from 'ethers';
 import {
   ArrowRightLeft,
@@ -25,6 +26,8 @@ import { ContractService, isETH } from '../../lib/blockchain/contracts';
 import type { Pool } from '../../lib/blockchain/contracts';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
 import { formatPercent, formatPrice } from '../../lib/formatters';
+import { queryKeys } from '../../lib/queryClient';
+import { useWalletStore } from '../../store/walletStore';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -51,11 +54,12 @@ export default function PoolInfo({
   assets,
   refreshKey = 0,
 }: PoolInfoProps) {
-  const [pool, setPool] = useState<Pool | null>(null);
-  const [lpBalance, setLpBalance] = useState<bigint>(0n);
-  const [loading, setLoading] = useState(false);
-  const [autoRefreshCounter, setAutoRefreshCounter] = useState(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const queryClient = useQueryClient();
+  const chainId = useWalletStore((state) => state.wallet.chainId);
+  const hasDistinctPair =
+    Boolean(tokenA) &&
+    Boolean(tokenB) &&
+    tokenA?.toLowerCase() !== tokenB?.toLowerCase();
 
   // ---- Token name resolver ------------------------------------------------
 
@@ -69,65 +73,48 @@ export default function PoolInfo({
 
   // ---- Fetch pool data ----------------------------------------------------
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
+  const poolStatsQuery = useQuery<{ pool: Pool | null; lpBalance: bigint }>({
+    queryKey: queryKeys.poolStats(tokenA, tokenB, chainId, userAddress),
+    enabled:
+      Boolean(contractService) &&
+      hasDistinctPair,
+    refetchInterval: 30_000,
+    queryFn: async () => {
       if (!contractService || !tokenA || !tokenB) {
-        setPool(null);
-        setLpBalance(0n);
-        return;
-      }
-      if (tokenA.toLowerCase() === tokenB.toLowerCase()) {
-        setPool(null);
-        return;
+        return { pool: null, lpBalance: 0n };
       }
 
-      setLoading(true);
-      try {
-        const poolData = await contractService.getAMMPool(tokenA, tokenB);
-        if (!cancelled) {
-          if (poolData.token0 === ethers.ZeroAddress) {
-            setPool(null);
-          } else {
-            setPool(poolData);
-          }
-        }
-      } catch {
-        if (!cancelled) setPool(null);
+      const snapshot = await contractService.getAMMPoolSnapshot(
+        tokenA,
+        tokenB,
+        userAddress,
+      );
+
+      if (snapshot.pool.token0 === ethers.ZeroAddress) {
+        return { pool: null, lpBalance: 0n };
       }
 
-      if (userAddress && tokenA && tokenB) {
-        try {
-          const lp = await contractService.getAMMLiquidityBalance(tokenA, tokenB, userAddress);
-          if (!cancelled) setLpBalance(lp);
-        } catch {
-          if (!cancelled) setLpBalance(0n);
-        }
-      }
+      return {
+        pool: snapshot.pool,
+        lpBalance: snapshot.liquidityBalance,
+      };
+    },
+  });
 
-      if (!cancelled) setLoading(false);
+  useEffect(() => {
+    if (!contractService || !tokenA || !tokenB) {
+      return;
     }
 
-    void load();
-    return () => { cancelled = true; };
-  }, [contractService, tokenA, tokenB, userAddress, refreshKey, autoRefreshCounter]);
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.poolStats(tokenA, tokenB, chainId, userAddress),
+      exact: true,
+    });
+  }, [chainId, contractService, queryClient, refreshKey, tokenA, tokenB, userAddress]);
 
-  // ---- Auto-refresh every 30s ---------------------------------------------
-
-  useEffect(() => {
-    if (!contractService || !tokenA || !tokenB) return;
-
-    intervalRef.current = setInterval(() => {
-      // Increment a counter that is included in the fetch effect's dependency
-      // array (via refreshKey). This forces a genuine re-fetch every 30 seconds.
-      setAutoRefreshCounter((c) => c + 1);
-    }, 30_000);
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [contractService, tokenA, tokenB]);
+  const pool = poolStatsQuery.data?.pool ?? null;
+  const lpBalance = poolStatsQuery.data?.lpBalance ?? 0n;
+  const loading = poolStatsQuery.isLoading || poolStatsQuery.isFetching;
 
   // ---- Derived values -----------------------------------------------------
 

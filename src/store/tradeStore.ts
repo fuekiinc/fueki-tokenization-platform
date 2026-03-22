@@ -10,6 +10,7 @@
 
 import { create } from 'zustand';
 import type { TradeHistory } from '../types/index.ts';
+import { withStoreMiddleware } from './storeMiddleware';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -192,7 +193,7 @@ const initialTradesState: TradeState = {
 // Store
 // ---------------------------------------------------------------------------
 
-export const useTradeStore = create<TradeStore>()((set, get) => ({
+export const useTradeStore = create<TradeStore>()(withStoreMiddleware('trade', (set, get) => ({
   ...initialTradesState,
 
   setScope: (address, chainId) =>
@@ -272,4 +273,4 @@ export const useTradeStore = create<TradeStore>()((set, get) => ({
     })),
 
   clearPendingTxs: () => set({ pendingTransactions: [] }),
-}));
+})));

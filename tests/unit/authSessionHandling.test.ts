@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as authApi from '../../src/lib/api/auth';
 import { AUTH_SESSION_KEY, AUTH_TOKENS_KEY, AUTH_USER_KEY } from '../../src/lib/authStorage';
-import { getAccessToken } from '../../src/lib/authSession';
+import { getAccessToken, setAccessToken } from '../../src/lib/authSession';
 import { useAuthStore } from '../../src/store/authStore';
 import type { User } from '../../src/types/auth';
 
@@ -96,6 +96,17 @@ describe('auth session handling', () => {
     expect(useAuthStore.getState().user?.helpLevel).toBe('expert');
   });
 
+  it('clears any stale in-memory access token when no persisted session exists on startup', async () => {
+    setAccessToken(buildJwt(600));
+
+    await useAuthStore.getState().initialize();
+
+    expect(authApi.refreshToken).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBeNull();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().isInitialized).toBe(true);
+  });
+
   it('clears stored session state on logout while sending the current bearer', async () => {
     vi.mocked(authApi.login).mockResolvedValue({
       user: userFixture,
@@ -128,10 +139,10 @@ describe('auth session handling', () => {
     localStorage.setItem(AUTH_USER_KEY, JSON.stringify(userFixture));
     useAuthStore.setState({
       user: userFixture,
-      tokens: { accessToken: expiredAccessToken },
       isAuthenticated: true,
       storageMode: 'local',
     });
+    setAccessToken(expiredAccessToken);
 
     vi.mocked(authApi.refreshToken).mockResolvedValue({
       accessToken: refreshedAccessToken,
