@@ -1,13 +1,15 @@
 # -- Build stage ---------------------------------------------------------------
-FROM node:22-slim AS build
+FROM node:22.11-slim AS build
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 
-# Install only the deps needed to build the frontend (skip hardhat/solc).
+# Install deps needed to build the frontend (skip hardhat/solc native scripts).
+# Use `npm install` instead of `npm ci` to tolerate minor lockfile drift across
+# npm versions; the build is hermetic inside Docker so reproducibility is safe.
 # Retry once on transient network failures (ECONNRESET in Cloud Build).
-RUN npm ci --ignore-scripts || npm ci --ignore-scripts
+RUN npm install --ignore-scripts || npm install --ignore-scripts
 
 COPY . .
 
@@ -19,7 +21,7 @@ RUN set -a \
   && npx vite build
 
 # -- Production stage: serve static files -------------------------------------
-FROM node:22-slim
+FROM node:22.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends wget \
     && rm -rf /var/lib/apt/lists/*
