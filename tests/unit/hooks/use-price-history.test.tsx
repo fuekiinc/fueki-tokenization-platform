@@ -83,13 +83,16 @@ describe('usePriceHistory', () => {
   it('aggregates backend daily candles into weekly candles for 1W charts', async () => {
     const tokenSell = '0xTokenA1w';
     const tokenBuy = '0xTokenB1w';
-    const nowSeconds = Math.floor(Date.now() / 1000);
+    // Use a fixed base timestamp aligned to a weekly bucket boundary so the
+    // three daily candles always land in the same week regardless of when the
+    // test is executed.  604_800 = seconds per week.
+    const weekBucketStart = 604_800 * 2900; // a deterministic week boundary
     apiClientGetMock.mockResolvedValue({
       data: {
         candles: [
-          { time: nowSeconds - 7 * 86_400, open: 1, high: 1.1, low: 0.9, close: 1.05, volume: 10 },
-          { time: nowSeconds - 6 * 86_400, open: 1.05, high: 1.2, low: 1.0, close: 1.18, volume: 11 },
-          { time: nowSeconds - 5 * 86_400, open: 1.18, high: 1.25, low: 1.1, close: 1.22, volume: 13 },
+          { time: weekBucketStart + 86_400 * 0, open: 1, high: 1.1, low: 0.9, close: 1.05, volume: 10 },
+          { time: weekBucketStart + 86_400 * 1, open: 1.05, high: 1.2, low: 1.0, close: 1.18, volume: 11 },
+          { time: weekBucketStart + 86_400 * 2, open: 1.18, high: 1.25, low: 1.1, close: 1.22, volume: 13 },
         ],
         source: 'cache',
       },

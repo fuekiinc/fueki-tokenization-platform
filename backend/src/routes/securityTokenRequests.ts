@@ -387,7 +387,7 @@ router.post(
       if (err instanceof z.ZodError) {
         res.status(400).json({
           error: {
-            message: err.errors[0]?.message ?? 'Invalid request payload',
+            message: err.issues[0]?.message ?? 'Invalid request payload',
             code: 'VALIDATION_ERROR',
           },
         });
@@ -480,7 +480,7 @@ router.get('/status', authenticate, statusLimiter, async (req, res) => {
     if (err instanceof z.ZodError) {
       res.status(400).json({
         error: {
-          message: err.errors[0]?.message ?? 'Invalid status query',
+          message: err.issues[0]?.message ?? 'Invalid status query',
           code: 'VALIDATION_ERROR',
         },
       });
@@ -570,7 +570,7 @@ router.get('/list', authenticate, listLimiter, async (req, res) => {
     if (err instanceof z.ZodError) {
       res.status(400).json({
         error: {
-          message: err.errors[0]?.message ?? 'Invalid list query',
+          message: err.issues[0]?.message ?? 'Invalid list query',
           code: 'VALIDATION_ERROR',
         },
       });

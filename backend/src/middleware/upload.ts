@@ -53,7 +53,7 @@ export const mintApprovalUpload = multer({
       'image/png',
       'image/jpeg',
     ];
-    if (allowed.includes(file.mimetype)) {
+    if (allowed.includes(normalizeMimeType(file.mimetype))) {
       cb(null, true);
     } else {
       cb(
