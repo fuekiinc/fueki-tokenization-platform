@@ -319,7 +319,7 @@ export default function SignupPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [isAuthenticated, accountData, personalData, addressData, subscriptionPlan, identityCapture.documentFrontFile, identityCapture.documentBackFile, identityCapture.liveVideoFile, authRegister, uploadDocument, submitKYC, navigate]);
+  }, [isAuthenticated, accountData, personalData, addressData, subscriptionPlan, identityCapture.documentFrontFile, identityCapture.documentBackFile, identityCapture.liveVideoFile, authRegister, uploadDocument, submitKYC, navigate, isKycOnly]);
 
   // ---- Step renderers -------------------------------------------------------
 

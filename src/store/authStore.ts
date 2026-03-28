@@ -138,7 +138,7 @@ function attachSessionExpiredListener(): void {
     const store = useAuthStore.getState();
     if (store.isAuthenticated) {
       store.clearAuth();
-      console.info('[auth] Session expired — user signed out.');
+      console.warn('[auth] Session expired — user signed out.');
     }
   });
 }
