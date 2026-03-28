@@ -362,7 +362,7 @@ export async function fetchPoolSpotPrice(
     const pool = await amm.getPool(tokenSell, tokenBuy);
 
     const token0 = String(pool.token0 ?? pool[0] ?? '');
-    const token1 = String(pool.token1 ?? pool[1] ?? '');
+    const _token1 = String(pool.token1 ?? pool[1] ?? '');
     const reserve0Raw = BigInt(pool.reserve0 ?? pool[2] ?? 0);
     const reserve1Raw = BigInt(pool.reserve1 ?? pool[3] ?? 0);
 

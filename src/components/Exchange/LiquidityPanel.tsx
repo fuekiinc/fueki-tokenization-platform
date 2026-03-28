@@ -377,7 +377,7 @@ export default function LiquidityPanel({
       }
       setTxStatus('idle');
     }
-  }, [contractService, tokenA, tokenB, parsedAmountA, parsedAmountB, tokenAIsETH, tokenBIsETH, userAddress, chainId, txStatus, onLiquidityChanged, tokenLabel, pool]);
+  }, [contractService, tokenA, tokenB, parsedAmountA, parsedAmountB, tokenAIsETH, tokenBIsETH, userAddress, chainId, txStatus, onLiquidityChanged, tokenLabel, pool, SLIPPAGE_BPS]);
 
   const handleRemoveLiquidity = useCallback(async () => {
     if (!contractService || !tokenA || !tokenB || parsedRemoveAmount === 0n) return;
@@ -425,7 +425,7 @@ export default function LiquidityPanel({
       }
       setTxStatus('idle');
     }
-  }, [contractService, tokenA, tokenB, parsedRemoveAmount, tokenAIsETH, tokenBIsETH, txStatus, chainId, onLiquidityChanged]);
+  }, [contractService, tokenA, tokenB, parsedRemoveAmount, tokenAIsETH, tokenBIsETH, txStatus, chainId, onLiquidityChanged, SLIPPAGE_BPS, pool]);
 
   // ---- Render -------------------------------------------------------------
 

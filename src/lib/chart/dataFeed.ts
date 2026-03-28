@@ -303,7 +303,7 @@ export async function fetchHistoricalCandles(params: {
         setCache(cacheKey, result, TTL_MARKET);
         return result;
       }
-      console.debug('[chart/dataFeed] Backend returned 0 candles, falling back to RPC.');
+      // Backend returned 0 candles, falling back to RPC.
     } catch (backendError) {
       console.warn('[chart/dataFeed] Backend candle fetch failed, falling back to RPC:', backendError);
     }
@@ -311,7 +311,7 @@ export async function fetchHistoricalCandles(params: {
     let rpcCandles: ChartCandle[] = [];
     try {
       const trades = await fetchPairTradePoints(chainId, tokenSell, tokenBuy);
-      console.debug(`[chart/dataFeed] RPC returned ${trades.length} raw trade(s).`);
+      // RPC returned trade(s) for candle aggregation.
       rpcCandles = aggregateCandles(tradesToCandles(trades, interval), interval);
       if (rpcCandles.length > 0) {
         const result = { candles: rpcCandles, source: 'rpc' as const };
@@ -326,7 +326,7 @@ export async function fetchHistoricalCandles(params: {
     try {
       const spot = await fetchPoolSpotPrice(chainId, tokenSell, tokenBuy);
       if (spot && spot.price > 0) {
-        console.debug(`[chart/dataFeed] Using AMM pool spot price: ${spot.price}`);
+        // Using AMM pool spot price as fallback for chart data.
         const spotCandles = buildSpotPriceCandles(spot.price, spot.timestampMs, interval);
         const result = {
           candles: spotCandles,
