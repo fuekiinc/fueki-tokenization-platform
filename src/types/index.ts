@@ -137,6 +137,8 @@ export interface ExchangeOrder {
   /** Decimal string of the total filled amount on the buy side. */
   filledBuy: string;
   cancelled: boolean;
+  /** Decimal string -- unix timestamp (seconds) after which the order expires. "0" = no expiry. */
+  deadline: string;
 }
 
 // ---------------------------------------------------------------------------

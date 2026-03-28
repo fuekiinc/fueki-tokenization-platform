@@ -378,6 +378,7 @@ export default function DashboardPage() {
             filledSell: o.filledSell.toString(),
             filledBuy: o.filledBuy.toString(),
             cancelled: o.cancelled,
+            deadline: o.deadline.toString(),
           }));
         setUserOrders(exchangeOrders);
       } else {
