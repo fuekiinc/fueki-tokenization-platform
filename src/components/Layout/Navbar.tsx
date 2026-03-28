@@ -10,6 +10,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useDemoWalletStore } from '../DemoMode/DemoWalletProvider';
 import { ComponentErrorBoundary } from '../ErrorBoundary';
 import logger from '../../lib/logger';
+import { clearWalletBoundStores } from '../../wallet/walletBoundStores';
 import { isContractDeploymentOnlyPlan } from '../../lib/subscriptionPlans';
 import {
   getThirdwebAppMetadata,
@@ -693,6 +694,7 @@ function LogoutButton({ compact = false }: { compact?: boolean }) {
     } finally {
       // Clear all client-side stores regardless of API success to prevent
       // stale data from leaking to a subsequent login on the same tab.
+      clearWalletBoundStores();
       useWalletStore.getState().resetWallet();
       navigate('/login');
     }

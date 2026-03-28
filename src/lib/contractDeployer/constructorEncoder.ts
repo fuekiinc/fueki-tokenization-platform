@@ -119,11 +119,18 @@ function encodeSolidityValue(raw: string, type: string, decimals?: number): unkn
   // ---- uint256[N] (fixed-length) ----
   const fixedMatch = type.match(/^uint256\[(\d+)]$/);
   if (fixedMatch) {
-    return raw
+    const expectedLength = Number(fixedMatch[1]);
+    const elements = raw
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
       .map((s) => BigInt(s));
+    if (elements.length !== expectedLength) {
+      throw new Error(
+        `Expected ${expectedLength} element(s) for ${type}, but got ${elements.length}`,
+      );
+    }
+    return elements;
   }
 
   // Fallback: return raw string for unknown types

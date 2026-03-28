@@ -4,6 +4,7 @@ import type { BrowserProvider, JsonRpcSigner } from 'ethers';
 import { useAuthStore } from '../../store/authStore';
 import { useWalletStore } from '../../store/walletStore';
 import logger from '../../lib/logger';
+import { clearWalletBoundStores } from '../../wallet/walletBoundStores';
 import { findHealthyEndpoint, getOrderedRpcEndpoints } from '../../lib/rpc/endpoints';
 import {
   DEMO_CHAIN_DESCRIPTION,
@@ -123,6 +124,7 @@ export default function DemoWalletProvider() {
     if (!isDemoActive) {
       if (wasDemoActiveRef.current) {
         // End demo mode cleanly so normal thirdweb sync can take over.
+        clearWalletBoundStores();
         setProvider(null);
         setSigner(null);
         resetWallet();

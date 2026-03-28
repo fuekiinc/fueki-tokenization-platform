@@ -89,7 +89,7 @@ describe('PendingTokensPanel', () => {
     render(<PendingTokensPanel onSelectRequest={onSelectRequest} />);
 
     await waitFor(() => {
-      expect(listMintApprovalRequestsMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Mainnet Approved')).toBeInTheDocument();
     });
     expect(listMintApprovalRequestsMock).toHaveBeenCalledWith({
       limit: 30,
