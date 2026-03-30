@@ -100,7 +100,7 @@ describe('AdminUserDetail', () => {
     );
   });
 
-  it('submits a revoke access action from the admin detail panel', async () => {
+  it('submits a revoke user action from the role management section', async () => {
     render(<AdminUserDetail userId="user-1" onClose={() => {}} />);
 
     await waitFor(() => {
@@ -110,7 +110,7 @@ describe('AdminUserDetail', () => {
     fireEvent.change(screen.getByLabelText('Platform access change reason'), {
       target: { value: 'Compliance hold' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke Access' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke User' }));
 
     await waitFor(() => {
       expect(apiMocks.updateUserAccess).toHaveBeenCalledWith(

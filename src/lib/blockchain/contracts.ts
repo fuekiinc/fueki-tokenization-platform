@@ -21,6 +21,7 @@ import { multicall, multicallSameTarget } from './multicall.ts';
 import type { MulticallRequest, MulticallResult } from './multicall.ts';
 import { multicall as rpcMulticall, multicallSameTarget as rpcMulticallSameTarget } from '../rpc/multicall';
 import {
+  findHealthyEndpoint,
   getOrderedRpcEndpoints,
   getWalletSwitchRpcUrls,
   isRetryableRpcError,
@@ -2285,17 +2286,23 @@ export class ContractService {
         const events = await this.withContractRead(
         (provider) => this.getAssetBackedExchangeContract(provider),
         async (exchange) => {
-          const filter = exchange.filters.OrderFilled(null, userAddress);
           const provider = exchange.runner && 'provider' in exchange.runner
             ? (exchange.runner as { provider: ethers.Provider }).provider
             : null;
           if (!provider) {
-            return exchange.queryFilter(filter, 0);
+            return exchange.queryFilter(exchange.filters.OrderFilled(null, userAddress), 0);
           }
 
           return queryRecentLogsBestEffort(
             provider,
-            (fromBlock, toBlock) => exchange.queryFilter(filter, fromBlock, toBlock),
+            (queryProvider, fromBlock, toBlock) => {
+              const queryExchange = this.getAssetBackedExchangeContract(queryProvider);
+              return queryExchange.queryFilter(
+                queryExchange.filters.OrderFilled(null, userAddress),
+                fromBlock,
+                toBlock,
+              );
+            },
             {
               chainId: this.chainId,
               label: 'exchange OrderFilled (filled order ids)',
@@ -2897,7 +2904,9 @@ export class ContractService {
     const network = getNetworkMetadata(this.chainId);
     if (!network) return false;
 
+    const healthyEndpoint = await findHealthyEndpoint(this.chainId).catch(() => null);
     const rpcUrls = dedupeRpcUrls([
+      ...(healthyEndpoint ? [healthyEndpoint] : []),
       ...getWalletSwitchRpcUrls(this.chainId),
       ...getOrderedRpcEndpoints(this.chainId),
       network.rpcUrl,

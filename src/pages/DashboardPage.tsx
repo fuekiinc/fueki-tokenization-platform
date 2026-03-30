@@ -409,7 +409,11 @@ export default function DashboardPage() {
       // keeps history reliable on mainnet/testnets.
       const readProvider = getReadOnlyProvider(chainId);
       const queryFilterBestEffort = async (
-        runQuery: (fromBlock: number, toBlock: number) => Promise<Array<ethers.Log | ethers.EventLog>>,
+        runQuery: (
+          provider: ethers.Provider,
+          fromBlock: number,
+          toBlock: number,
+        ) => Promise<Array<ethers.Log | ethers.EventLog>>,
         lookbackBlocks: number,
         label: string,
         maxEvents = 16,
@@ -450,10 +454,11 @@ export default function DashboardPage() {
 
       // 1. Mint history — query AssetCreated events from the factory
       try {
-        const factory = contractService.getFactoryContract(readProvider);
-        const mintFilter = factory.filters.AssetCreated(address);
         const mintEvents = await queryFilterBestEffort(
-          (fromBlock, toBlock) => factory.queryFilter(mintFilter, fromBlock, toBlock),
+          (provider, fromBlock, toBlock) => {
+            const factory = contractService.getFactoryContract(provider);
+            return factory.queryFilter(factory.filters.AssetCreated(address), fromBlock, toBlock);
+          },
           5_000_000,
           'factory AssetCreated',
         );
@@ -493,10 +498,15 @@ export default function DashboardPage() {
 
       // 2. Security-token deployment history — query SecurityTokenCreated events
       try {
-        const securityFactory = contractService.getSecurityTokenFactoryContract(readProvider);
-        const securityMintFilter = securityFactory.filters.SecurityTokenCreated(address);
         const securityMintEvents = await queryFilterBestEffort(
-          (fromBlock, toBlock) => securityFactory.queryFilter(securityMintFilter, fromBlock, toBlock),
+          (provider, fromBlock, toBlock) => {
+            const securityFactory = contractService.getSecurityTokenFactoryContract(provider);
+            return securityFactory.queryFilter(
+              securityFactory.filters.SecurityTokenCreated(address),
+              fromBlock,
+              toBlock,
+            );
+          },
           5_000_000,
           'security factory SecurityTokenCreated',
         );
@@ -535,10 +545,15 @@ export default function DashboardPage() {
       //   4) OrderFilled as taker
       //   5) OrderFilled for maker orders
       try {
-        const exchange = contractService.getAssetBackedExchangeContract(readProvider);
-        const orderCreatedFilter = exchange.filters.OrderCreated(null, address);
         const orderCreatedEvents = await queryFilterBestEffort(
-          (fromBlock, toBlock) => exchange.queryFilter(orderCreatedFilter, fromBlock, toBlock),
+          (provider, fromBlock, toBlock) => {
+            const exchange = contractService.getAssetBackedExchangeContract(provider);
+            return exchange.queryFilter(
+              exchange.filters.OrderCreated(null, address),
+              fromBlock,
+              toBlock,
+            );
+          },
           2_000_000,
           'exchange OrderCreated',
         );
@@ -570,9 +585,15 @@ export default function DashboardPage() {
           });
         }
 
-        const takerFilter = exchange.filters.OrderFilled(null, address);
         const takerFillEvents = await queryFilterBestEffort(
-          (fromBlock, toBlock) => exchange.queryFilter(takerFilter, fromBlock, toBlock),
+          (provider, fromBlock, toBlock) => {
+            const exchange = contractService.getAssetBackedExchangeContract(provider);
+            return exchange.queryFilter(
+              exchange.filters.OrderFilled(null, address),
+              fromBlock,
+              toBlock,
+            );
+          },
           2_000_000,
           'exchange OrderFilled (taker)',
         );
@@ -580,9 +601,15 @@ export default function DashboardPage() {
         const makerOrderIds = await contractService.getExchangeUserOrders(address);
         const makerFillEventGroups = await Promise.all(
           makerOrderIds.map((orderId) => {
-            const filter = exchange.filters.OrderFilled(orderId);
             return queryFilterBestEffort(
-              (fromBlock, toBlock) => exchange.queryFilter(filter, fromBlock, toBlock),
+              (provider, fromBlock, toBlock) => {
+                const exchange = contractService.getAssetBackedExchangeContract(provider);
+                return exchange.queryFilter(
+                  exchange.filters.OrderFilled(orderId),
+                  fromBlock,
+                  toBlock,
+                );
+              },
               5_000_000,
               'exchange OrderFilled (maker)',
             );
@@ -630,15 +657,19 @@ export default function DashboardPage() {
         const orbitalRouterAddress = networkConfig?.orbitalRouterAddress;
 
         if (orbitalRouterAddress && orbitalRouterAddress !== ethers.ZeroAddress) {
-          const orbitalRouter = new ethers.Contract(
-            orbitalRouterAddress,
-            OrbitalRouterABI,
-            readProvider,
-          );
-
-          const liquidityAddedFilter = orbitalRouter.filters.LiquidityAdded(address);
           const liquidityAddedEvents = await queryFilterBestEffort(
-            (fromBlock, toBlock) => orbitalRouter.queryFilter(liquidityAddedFilter, fromBlock, toBlock),
+            (provider, fromBlock, toBlock) => {
+              const orbitalRouter = new ethers.Contract(
+                orbitalRouterAddress,
+                OrbitalRouterABI,
+                provider,
+              );
+              return orbitalRouter.queryFilter(
+                orbitalRouter.filters.LiquidityAdded(address),
+                fromBlock,
+                toBlock,
+              );
+            },
             2_000_000,
             'orbital LiquidityAdded',
           );
@@ -668,9 +699,19 @@ export default function DashboardPage() {
             });
           }
 
-          const liquidityRemovedFilter = orbitalRouter.filters.LiquidityRemoved(address);
           const liquidityRemovedEvents = await queryFilterBestEffort(
-            (fromBlock, toBlock) => orbitalRouter.queryFilter(liquidityRemovedFilter, fromBlock, toBlock),
+            (provider, fromBlock, toBlock) => {
+              const orbitalRouter = new ethers.Contract(
+                orbitalRouterAddress,
+                OrbitalRouterABI,
+                provider,
+              );
+              return orbitalRouter.queryFilter(
+                orbitalRouter.filters.LiquidityRemoved(address),
+                fromBlock,
+                toBlock,
+              );
+            },
             2_000_000,
             'orbital LiquidityRemoved',
           );
@@ -700,9 +741,19 @@ export default function DashboardPage() {
             });
           }
 
-          const swapExecutedFilter = orbitalRouter.filters.SwapExecuted(address);
           const swapExecutedEvents = await queryFilterBestEffort(
-            (fromBlock, toBlock) => orbitalRouter.queryFilter(swapExecutedFilter, fromBlock, toBlock),
+            (provider, fromBlock, toBlock) => {
+              const orbitalRouter = new ethers.Contract(
+                orbitalRouterAddress,
+                OrbitalRouterABI,
+                provider,
+              );
+              return orbitalRouter.queryFilter(
+                orbitalRouter.filters.SwapExecuted(address),
+                fromBlock,
+                toBlock,
+              );
+            },
             2_000_000,
             'orbital SwapExecuted',
           );
@@ -740,9 +791,19 @@ export default function DashboardPage() {
             });
           }
 
-          const multiHopSwapFilter = orbitalRouter.filters.MultiHopSwapExecuted(address);
           const multiHopSwapEvents = await queryFilterBestEffort(
-            (fromBlock, toBlock) => orbitalRouter.queryFilter(multiHopSwapFilter, fromBlock, toBlock),
+            (provider, fromBlock, toBlock) => {
+              const orbitalRouter = new ethers.Contract(
+                orbitalRouterAddress,
+                OrbitalRouterABI,
+                provider,
+              );
+              return orbitalRouter.queryFilter(
+                orbitalRouter.filters.MultiHopSwapExecuted(address),
+                fromBlock,
+                toBlock,
+              );
+            },
             2_000_000,
             'orbital MultiHopSwapExecuted',
           );

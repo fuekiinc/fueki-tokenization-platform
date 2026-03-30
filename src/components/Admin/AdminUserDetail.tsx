@@ -317,105 +317,105 @@ function KYCActionPanel({
 // ---------------------------------------------------------------------------
 
 function RoleManagement({
-  userId,
-  currentRole,
-  onRoleChanged,
-}: {
-  userId: string;
-  currentRole: string;
-  onRoleChanged: () => void;
-}) {
-  const [isUpdating, setIsUpdating] = useState(false);
-  const roles = ['user', 'admin', 'super_admin'] as const;
-
-  const handleRoleChange = async (newRole: string) => {
-    if (newRole === currentRole) return;
-    setIsUpdating(true);
-    try {
-      await updateUserRole(userId, newRole);
-      toast.success(`Role updated to ${newRole.replace('_', ' ')}`);
-      onRoleChanged();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update role';
-      toast.error(message);
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  return (
-    <div className="space-y-2">
-      <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
-        Role Management
-      </h3>
-      <div className="flex gap-2">
-        {roles.map((role) => (
-          <button
-            key={role}
-            type="button"
-            onClick={() => { void handleRoleChange(role); }}
-            disabled={isUpdating || role === currentRole}
-            className={clsx(
-              'flex-1 rounded-xl px-3 py-2.5 text-xs font-medium transition-all duration-200',
-              'border',
-              role === currentRole
-                ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-400 cursor-default'
-                : 'border-white/[0.06] bg-white/[0.02] text-gray-400 hover:bg-white/[0.06] hover:text-white',
-              isUpdating && 'opacity-50 cursor-not-allowed',
-            )}
-            aria-pressed={role === currentRole}
-          >
-            {isUpdating && role !== currentRole ? (
-              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-            ) : (
-              role.replace('_', ' ')
-            )}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function AccessManagement({
   user,
-  onAccessChanged,
+  onUserChanged,
 }: {
   user: UserDetail;
-  onAccessChanged: () => void;
+  onUserChanged: () => void;
 }) {
-  const [isUpdating, setIsUpdating] = useState(false);
+  const [isRoleUpdating, setIsRoleUpdating] = useState(false);
+  const [isAccessUpdating, setIsAccessUpdating] = useState(false);
   const [reason, setReason] = useState(user.accessRevocationReason ?? '');
-
+  const roles = ['user', 'admin', 'super_admin'] as const;
   const isRevoked = Boolean(user.accessRevokedAt);
 
   useEffect(() => {
     setReason(user.accessRevocationReason ?? '');
   }, [user.accessRevocationReason]);
 
+  const handleRoleChange = async (newRole: string) => {
+    if (newRole === user.role) return;
+    setIsRoleUpdating(true);
+    try {
+      await updateUserRole(user.id, newRole);
+      toast.success(`Role updated to ${newRole.replace('_', ' ')}`);
+      onUserChanged();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update role';
+      toast.error(message);
+    } finally {
+      setIsRoleUpdating(false);
+    }
+  };
+
   const handleAccessChange = async (revoked: boolean) => {
-    setIsUpdating(true);
+    setIsAccessUpdating(true);
     try {
       await updateUserAccess(user.id, revoked, revoked ? reason : undefined);
       toast.success(
         revoked ? 'Platform access revoked successfully' : 'Platform access restored successfully',
       );
-      onAccessChanged();
+      onUserChanged();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Failed to update platform access';
       toast.error(message);
     } finally {
-      setIsUpdating(false);
+      setIsAccessUpdating(false);
     }
   };
 
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
-        Platform Access
+        Role Management
       </h3>
-      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 space-y-3">
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {roles.map((role) => (
+            <button
+              key={role}
+              type="button"
+              onClick={() => { void handleRoleChange(role); }}
+              disabled={isRoleUpdating || isAccessUpdating || role === user.role}
+              className={clsx(
+                'min-w-[96px] flex-1 rounded-xl px-3 py-2.5 text-xs font-medium transition-all duration-200',
+                'border',
+                role === user.role
+                  ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-400 cursor-default'
+                  : 'border-white/[0.06] bg-white/[0.02] text-gray-400 hover:bg-white/[0.06] hover:text-white',
+                (isRoleUpdating || isAccessUpdating) && 'opacity-50 cursor-not-allowed',
+              )}
+              aria-pressed={role === user.role}
+            >
+              {isRoleUpdating && role !== user.role ? (
+                <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                role.replace('_', ' ')
+              )}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => { void handleAccessChange(!isRevoked); }}
+            disabled={isRoleUpdating || isAccessUpdating}
+            className={clsx(
+              'min-w-[120px] flex-1 rounded-xl px-3 py-2.5 text-xs font-medium transition-all duration-200',
+              'border',
+              isRevoked
+                ? 'border-emerald-500/20 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
+                : 'border-red-500/20 bg-red-500/15 text-red-300 hover:bg-red-500/25',
+              (isRoleUpdating || isAccessUpdating) && 'opacity-50 cursor-not-allowed',
+            )}
+          >
+            {isAccessUpdating ? (
+              <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              isRevoked ? 'Restore User' : 'Revoke User'
+            )}
+          </button>
+        </div>
+
         <div className="flex items-center gap-2">
           <Badge variant={accessBadgeVariant(user.accessRevokedAt)} size="sm" dot>
             {isRevoked ? 'revoked' : 'active'}
@@ -433,7 +433,7 @@ function AccessManagement({
           </p>
         ) : (
           <p className="text-sm text-gray-300">
-            Revoke platform access to immediately invalidate this user&apos;s sessions and block future authenticated access.
+            Revoke this user to immediately invalidate their sessions and block future authenticated access.
           </p>
         )}
 
@@ -452,38 +452,6 @@ function AccessManagement({
           )}
           aria-label="Platform access change reason"
         />
-
-        <div className="flex gap-3">
-          {isRevoked ? (
-            <button
-              type="button"
-              onClick={() => { void handleAccessChange(false); }}
-              disabled={isUpdating}
-              className={clsx(
-                'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium',
-                'bg-emerald-500/15 text-emerald-300 transition-colors hover:bg-emerald-500/25',
-                'disabled:cursor-not-allowed disabled:opacity-50',
-              )}
-            >
-              {isUpdating && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-              Restore Access
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => { void handleAccessChange(true); }}
-              disabled={isUpdating}
-              className={clsx(
-                'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium',
-                'bg-red-500/15 text-red-300 transition-colors hover:bg-red-500/25',
-                'disabled:cursor-not-allowed disabled:opacity-50',
-              )}
-            >
-              {isUpdating && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-              Revoke Access
-            </button>
-          )}
-        </div>
       </div>
     </div>
   );
@@ -918,14 +886,8 @@ export default function AdminUserDetail({
 
               {/* Role management */}
               <RoleManagement
-                userId={user.id}
-                currentRole={user.role}
-                onRoleChanged={() => { void fetchUser(); }}
-              />
-
-              <AccessManagement
                 user={user}
-                onAccessChanged={() => { void fetchUser(); }}
+                onUserChanged={() => { void fetchUser(); }}
               />
 
               {/* KYC review actions */}

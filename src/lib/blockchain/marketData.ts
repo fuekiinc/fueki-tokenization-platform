@@ -130,12 +130,17 @@ async function fetchAmmPairTrades(
   blockTimestampCache: Map<number, number>,
 ): Promise<PairTradePoint[]> {
   const provider = getReadOnlyProvider(chainId);
-  const amm = new ethers.Contract(ammAddress, LiquidityPoolAMMABI, provider);
 
   const events = await queryRecentLogsBestEffort(
     provider,
-    (fromBlock, toBlock) =>
-      amm.queryFilter(amm.filters.Swap(), fromBlock, toBlock),
+    (queryProvider, fromBlock, toBlock) => {
+      const queryAmm = new ethers.Contract(ammAddress, LiquidityPoolAMMABI, queryProvider);
+      return queryAmm.queryFilter(
+        queryAmm.filters.Swap(),
+        fromBlock,
+        toBlock,
+      );
+    },
     {
       chainId,
       label: 'amm Swap',
@@ -206,8 +211,18 @@ async function fetchOrderbookPairTrades(
 
   const events = await queryRecentLogsBestEffort(
     provider,
-    (fromBlock, toBlock) =>
-      exchange.queryFilter(exchange.filters.OrderFilled(), fromBlock, toBlock),
+    (queryProvider, fromBlock, toBlock) => {
+      const queryExchange = new ethers.Contract(
+        exchangeAddress,
+        AssetBackedExchangeABI,
+        queryProvider,
+      );
+      return queryExchange.queryFilter(
+        queryExchange.filters.OrderFilled(),
+        fromBlock,
+        toBlock,
+      );
+    },
     {
       chainId,
       label: 'exchange OrderFilled',
@@ -362,7 +377,6 @@ export async function fetchPoolSpotPrice(
     const pool = await amm.getPool(tokenSell, tokenBuy);
 
     const token0 = String(pool.token0 ?? pool[0] ?? '');
-    const _token1 = String(pool.token1 ?? pool[1] ?? '');
     const reserve0Raw = BigInt(pool.reserve0 ?? pool[2] ?? 0);
     const reserve1Raw = BigInt(pool.reserve1 ?? pool[3] ?? 0);
 

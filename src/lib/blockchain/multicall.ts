@@ -17,6 +17,7 @@
 import { ethers } from 'ethers';
 import type { InterfaceAbi } from 'ethers';
 import logger from '../logger';
+import { isRetryableRpcError } from '../rpc/endpoints';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -163,7 +164,12 @@ async function executeSequentialFallback<T>(
       const decoded = iface.decodeFunctionResult(req.functionName, rawResult);
       const data = decoded.length === 1 ? decoded[0] : decoded;
       results.push({ success: true, data: data as T });
-    } catch {
+    } catch (error) {
+      // Transport / provider failures should trigger higher-level endpoint
+      // failover instead of silently looking like contract-level null data.
+      if (isRetryableRpcError(error)) {
+        throw error;
+      }
       results.push({ success: false, data: null });
     }
   }

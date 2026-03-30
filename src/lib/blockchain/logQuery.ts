@@ -1,11 +1,15 @@
 import { ethers } from 'ethers';
 import logger from '../logger';
 import {
+  getOrderedRpcEndpoints,
   isRetryableRpcError,
   reportRpcEndpointFailure,
   reportRpcEndpointSuccess,
 } from '../rpc/endpoints';
-import { getJsonRpcProviderUrl } from '../rpc/providers';
+import {
+  createReadOnlyRpcProvider,
+  getJsonRpcProviderUrl,
+} from '../rpc/providers';
 
 export interface RecentLogQueryOptions {
   chainId: number;
@@ -21,6 +25,7 @@ const DEFAULT_INITIAL_CHUNK_SIZE = 100_000;
 const DEFAULT_MIN_CHUNK_SIZE = 2_000;
 const DEFAULT_MAX_REQUESTS = 12;
 const DEFAULT_MAX_EVENTS = 24;
+const FALLBACK_DELAY_MS = 300;
 
 function extractErrorMessage(error: unknown): string {
   if (typeof error === 'string') return error;
@@ -61,7 +66,11 @@ function logSortValue(log: ethers.Log | ethers.EventLog): [number, number] {
  */
 export async function queryRecentLogsBestEffort(
   provider: ethers.Provider,
-  runQuery: (fromBlock: number, toBlock: number) => Promise<Array<ethers.Log | ethers.EventLog>>,
+  runQuery: (
+    provider: ethers.Provider,
+    fromBlock: number,
+    toBlock: number,
+  ) => Promise<Array<ethers.Log | ethers.EventLog>>,
   options: RecentLogQueryOptions,
 ): Promise<Array<ethers.Log | ethers.EventLog>> {
   const {
@@ -74,15 +83,87 @@ export async function queryRecentLogsBestEffort(
     maxEvents = DEFAULT_MAX_EVENTS,
   } = options;
 
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const baseEndpointUrl = getJsonRpcProviderUrl(provider);
+  const orderedEndpoints = getOrderedRpcEndpoints(chainId);
+  const candidateEndpoints =
+    baseEndpointUrl && orderedEndpoints.includes(baseEndpointUrl)
+      ? [baseEndpointUrl, ...orderedEndpoints.filter((endpoint) => endpoint !== baseEndpointUrl)]
+      : orderedEndpoints;
+  const transientProviders = new Map<string, ethers.JsonRpcProvider>();
+
+  let activeProvider = provider;
+  let activeEndpointUrl = baseEndpointUrl;
+
+  const getProviderForEndpoint = (endpoint: string): ethers.Provider => {
+    if (endpoint === baseEndpointUrl) {
+      return provider;
+    }
+
+    const cached = transientProviders.get(endpoint);
+    if (cached) {
+      return cached;
+    }
+
+    const nextProvider = createReadOnlyRpcProvider(endpoint, chainId);
+    transientProviders.set(endpoint, nextProvider);
+    return nextProvider;
+  };
+
+  const switchToNextProvider = (): boolean => {
+    const currentIndex = activeEndpointUrl
+      ? candidateEndpoints.indexOf(activeEndpointUrl)
+      : -1;
+
+    for (let index = Math.max(0, currentIndex + 1); index < candidateEndpoints.length; index += 1) {
+      const nextEndpoint = candidateEndpoints[index];
+      if (nextEndpoint === activeEndpointUrl) {
+        continue;
+      }
+
+      activeProvider = getProviderForEndpoint(nextEndpoint);
+      activeEndpointUrl = nextEndpoint;
+      return true;
+    }
+
+    return false;
+  };
+
   let latestBlock: number;
   try {
-    latestBlock = await provider.getBlockNumber();
+    latestBlock = await activeProvider.getBlockNumber();
+    if (activeEndpointUrl) {
+      reportRpcEndpointSuccess(chainId, activeEndpointUrl);
+    }
   } catch (error) {
-    logger.warn(`Unable to determine latest block for ${label}`, error);
-    return [];
+    const retryable = isRetryableRpcError(error);
+    if (retryable && activeEndpointUrl) {
+      reportRpcEndpointFailure(chainId, activeEndpointUrl);
+    }
+
+    if (retryable && switchToNextProvider()) {
+      try {
+        await sleep(FALLBACK_DELAY_MS);
+        latestBlock = await activeProvider.getBlockNumber();
+        if (activeEndpointUrl) {
+          reportRpcEndpointSuccess(chainId, activeEndpointUrl);
+        }
+      } catch (fallbackError) {
+        logger.warn(`Unable to determine latest block for ${label}`, fallbackError);
+        for (const transientProvider of transientProviders.values()) {
+          transientProvider.destroy();
+        }
+        return [];
+      }
+    } else {
+      logger.warn(`Unable to determine latest block for ${label}`, error);
+      for (const transientProvider of transientProviders.values()) {
+        transientProvider.destroy();
+      }
+      return [];
+    }
   }
 
-  const endpointUrl = getJsonRpcProviderUrl(provider);
   const earliestBlock = Math.max(0, latestBlock - Math.max(1, maxLookbackBlocks) + 1);
   const effectiveMinChunkSize = Math.max(
     1,
@@ -101,17 +182,33 @@ export async function queryRecentLogsBestEffort(
     requestCount += 1;
 
     try {
-      const chunk = await runQuery(fromBlock, cursor);
-      if (endpointUrl) {
-        reportRpcEndpointSuccess(chainId, endpointUrl);
+      const chunk = await runQuery(activeProvider, fromBlock, cursor);
+      if (activeEndpointUrl) {
+        reportRpcEndpointSuccess(chainId, activeEndpointUrl);
       }
       results.push(...chunk);
       cursor = fromBlock - 1;
       continue;
     } catch (error) {
-      const retryable = isRetryableRpcError(error) || isPayloadTooLargeError(error);
-      if (retryable && endpointUrl) {
-        reportRpcEndpointFailure(chainId, endpointUrl);
+      const payloadTooLarge = isPayloadTooLargeError(error);
+      const retryable = isRetryableRpcError(error) || payloadTooLarge;
+      const failedEndpointUrl = activeEndpointUrl;
+
+      if (retryable && failedEndpointUrl) {
+        reportRpcEndpointFailure(chainId, failedEndpointUrl);
+      }
+
+      if (retryable && !payloadTooLarge && switchToNextProvider()) {
+        logger.warn(`Retrying ${label} logs against fallback RPC endpoint`, {
+          chainId,
+          fromBlock,
+          toBlock: cursor,
+          failedEndpoint: failedEndpointUrl,
+          nextEndpoint: activeEndpointUrl,
+          error: extractErrorMessage(error),
+        });
+        await sleep(FALLBACK_DELAY_MS);
+        continue;
       }
 
       const nextChunkSize = Math.max(effectiveMinChunkSize, Math.floor(chunkSize / 2));
@@ -147,6 +244,10 @@ export async function queryRecentLogsBestEffort(
     }
     return rightIndex - leftIndex;
   });
+
+  for (const transientProvider of transientProviders.values()) {
+    transientProvider.destroy();
+  }
 
   return results.slice(0, maxEvents);
 }
