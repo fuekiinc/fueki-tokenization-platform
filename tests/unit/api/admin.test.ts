@@ -17,6 +17,7 @@ import {
   getUserDetail,
   getUserKycDocument,
   getUsers,
+  updateUserAccess,
 } from '../../../src/lib/api/admin';
 
 describe('admin API adapters', () => {
@@ -31,6 +32,8 @@ describe('admin API adapters', () => {
           id: 'user-1',
           email: 'mark@fueki-tech.com',
           role: 'super_admin',
+          accessRevokedAt: null,
+          accessRevocationReason: null,
           kycStatus: 'approved',
           walletAddress: null,
           createdAt: '2026-03-18T00:00:00.000Z',
@@ -65,6 +68,7 @@ describe('admin API adapters', () => {
       id: 'user-1',
       email: 'mark@fueki-tech.com',
       role: 'super_admin',
+      accessRevokedAt: null,
       kycData: expect.objectContaining({
         ssn: '***-**-6789',
         documentType: 'drivers_license',
@@ -118,6 +122,8 @@ describe('admin API adapters', () => {
           id: 'user-1',
           email: 'mark@fueki-tech.com',
           role: 'user',
+          accessRevokedAt: null,
+          accessRevocationReason: null,
           kycStatus: 'pending',
           walletAddress: null,
           createdAt: '2026-03-18T00:30:00.000Z',
@@ -160,6 +166,8 @@ describe('admin API adapters', () => {
             id: 'user-1',
             email: 'mark@fueki-tech.com',
             role: 'admin',
+            accessRevokedAt: '2026-03-18T02:00:00.000Z',
+            accessRevocationReason: 'Compliance review',
             kycStatus: 'approved',
             walletAddress: null,
             createdAt: '2026-03-18T00:00:00.000Z',
@@ -186,6 +194,8 @@ describe('admin API adapters', () => {
           id: 'user-1',
           email: 'mark@fueki-tech.com',
           role: 'admin',
+          accessRevokedAt: '2026-03-18T02:00:00.000Z',
+          accessRevocationReason: 'Compliance review',
           kycStatus: 'approved',
           walletAddress: null,
           createdAt: '2026-03-18T00:00:00.000Z',
@@ -196,6 +206,17 @@ describe('admin API adapters', () => {
       page: 1,
       limit: 20,
       totalPages: 1,
+    });
+  });
+
+  it('sends platform access updates through the admin endpoint', async () => {
+    putMock.mockResolvedValue({ data: { success: true } });
+
+    await updateUserAccess('user-1', true, 'Compliance hold');
+
+    expect(putMock).toHaveBeenCalledWith('/api/admin/users/user-1/access', {
+      revoked: true,
+      reason: 'Compliance hold',
     });
   });
 });

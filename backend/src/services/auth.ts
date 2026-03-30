@@ -5,6 +5,31 @@ import { prisma } from '../prisma';
 import { buildTokenLookupCandidates, hashToken } from './tokenHash';
 const SALT_ROUNDS = 12;
 
+export class AccountAccessRevokedError extends Error {
+  constructor(message = 'Your access to the platform has been revoked by an administrator.') {
+    super(message);
+    this.name = 'AccountAccessRevokedError';
+  }
+}
+
+async function assertUserAccessActive(userId: string): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      accessRevokedAt: true,
+    },
+  });
+
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  if (user.accessRevokedAt) {
+    throw new AccountAccessRevokedError();
+  }
+}
+
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);
 }
@@ -43,6 +68,8 @@ export async function createSession(
   userId: string,
   options: SessionCreateOptions = {},
 ): Promise<SessionTokens> {
+  await assertUserAccessActive(userId);
+
   const rememberMe = options.rememberMe === true;
   const accessToken = generateAccessToken(userId);
   const refreshToken = generateRefreshToken(userId);
@@ -78,10 +105,23 @@ export async function refreshSession(oldRefreshToken: string): Promise<SessionTo
         refreshToken: candidate,
       })),
     },
+    include: {
+      user: {
+        select: {
+          id: true,
+          accessRevokedAt: true,
+        },
+      },
+    },
   });
 
   if (!session || session.expiresAt < new Date()) {
     throw new Error('Invalid or expired refresh token');
+  }
+
+  if (session.user.accessRevokedAt) {
+    await invalidateAllSessions(session.user.id);
+    throw new AccountAccessRevokedError();
   }
 
   // Rotate: delete old session, create new one

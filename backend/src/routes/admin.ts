@@ -166,6 +166,8 @@ router.get('/users', adminOnly, async (req: Request, res: Response) => {
           id: true,
           email: true,
           role: true,
+          accessRevokedAt: true,
+          accessRevocationReason: true,
           walletAddress: true,
           kycStatus: true,
           createdAt: true,
@@ -183,6 +185,7 @@ router.get('/users', adminOnly, async (req: Request, res: Response) => {
     res.json({
       users: users.map((u) => ({
         ...u,
+        accessRevokedAt: u.accessRevokedAt?.toISOString() ?? null,
         createdAt: u.createdAt.toISOString(),
         updatedAt: u.updatedAt.toISOString(),
       })),
@@ -313,6 +316,8 @@ router.get('/users/:id', adminOnly, async (req: Request, res: Response) => {
         id: user.id,
         email: user.email,
         role: user.role,
+        accessRevokedAt: user.accessRevokedAt?.toISOString() ?? null,
+        accessRevocationReason: user.accessRevocationReason ?? null,
         walletAddress: user.walletAddress,
         kycStatus: user.kycStatus,
         createdAt: user.createdAt.toISOString(),
@@ -433,9 +438,16 @@ const updateRoleSchema = z.object({
   role: z.enum(VALID_ROLES),
 });
 
+const updateAccessSchema = z.object({
+  revoked: z.boolean(),
+  reason: z.string().trim().max(500).optional().nullable(),
+});
+
 // Accept both PUT and PATCH for compatibility with the frontend client.
 router.put('/users/:id/role', superAdminOnly, updateUserRole);
 router.patch('/users/:id/role', superAdminOnly, updateUserRole);
+router.put('/users/:id/access', adminOnly, updateUserAccess);
+router.patch('/users/:id/access', adminOnly, updateUserAccess);
 
 async function updateUserRole(req: Request, res: Response) {
   try {
@@ -478,6 +490,107 @@ async function updateUserRole(req: Request, res: Response) {
     }
     console.error('Admin update role error:', err);
     res.status(500).json({ error: { message: 'Failed to update user role', code: 'INTERNAL_ERROR' } });
+  }
+}
+
+async function updateUserAccess(req: Request, res: Response) {
+  try {
+    const { revoked, reason } = updateAccessSchema.parse(req.body);
+    const targetUserId = req.params.id as string;
+    const actorUserId = req.userId as string;
+    const actorUserRole = (req as Request & { userRole?: string }).userRole;
+    const normalizedReason = reason?.trim() ? reason.trim() : null;
+
+    if (targetUserId === actorUserId) {
+      res.status(400).json({
+        error: { message: 'You cannot change your own platform access', code: 'SELF_ACCESS_CHANGE' },
+      });
+      return;
+    }
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: {
+        id: true,
+        role: true,
+        accessRevokedAt: true,
+        accessRevokedBy: true,
+      },
+    });
+
+    if (!targetUser) {
+      res.status(404).json({ error: { message: 'User not found', code: 'NOT_FOUND' } });
+      return;
+    }
+
+    // Admins can moderate end-user access, but only super admins can block
+    // other privileged operators from the platform.
+    if (actorUserRole !== 'super_admin' && targetUser.role !== 'user') {
+      res.status(403).json({
+        error: {
+          message: 'Only super admins can change platform access for admin accounts',
+          code: 'FORBIDDEN',
+        },
+      });
+      return;
+    }
+
+    const [updatedUser] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: targetUserId },
+        data: revoked
+          ? {
+              accessRevokedAt: targetUser.accessRevokedAt ?? new Date(),
+              accessRevokedBy: targetUser.accessRevokedBy ?? actorUserId,
+              accessRevocationReason: normalizedReason,
+            }
+          : {
+              accessRevokedAt: null,
+              accessRevokedBy: null,
+              accessRevocationReason: null,
+            },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          accessRevokedAt: true,
+          accessRevocationReason: true,
+        },
+      }),
+      ...(revoked
+        ? [
+            prisma.session.deleteMany({
+              where: { userId: targetUserId },
+            }),
+          ]
+        : []),
+    ]);
+
+    console.info(JSON.stringify({
+      audit: revoked ? 'ADMIN_PLATFORM_ACCESS_REVOKED' : 'ADMIN_PLATFORM_ACCESS_RESTORED',
+      actorUserId,
+      actorUserRole: actorUserRole ?? 'unknown',
+      targetUserId,
+      targetUserRole: targetUser.role,
+      hasReason: normalizedReason !== null,
+      timestamp: new Date().toISOString(),
+    }));
+
+    res.json({
+      success: true,
+      user: {
+        ...updatedUser,
+        accessRevokedAt: updatedUser.accessRevokedAt?.toISOString() ?? null,
+        accessRevocationReason: updatedUser.accessRevocationReason ?? null,
+      },
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: { message: err.errors[0].message, code: 'VALIDATION_ERROR' } });
+      return;
+    }
+    console.error('Admin update access error:', err);
+    res.status(500).json({ error: { message: 'Failed to update platform access', code: 'INTERNAL_ERROR' } });
   }
 }
 

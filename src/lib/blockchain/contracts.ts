@@ -175,8 +175,13 @@ const SECURITY_TOKEN_CREATE_MODERN_SIGNATURE =
   'createSecurityToken(bytes,bytes,string,string,uint8,uint256,uint256,bytes32,string,uint256,uint256,uint256)';
 const SECURITY_TOKEN_CREATE_LEGACY_SIGNATURE =
   'createSecurityToken(string,string,uint8,uint256,uint256,bytes32,string,uint256,uint256,uint256)';
+const SECURITY_TOKEN_CREATE_MODERN_SELECTOR =
+  ethers.id(SECURITY_TOKEN_CREATE_MODERN_SIGNATURE).slice(2, 10).toLowerCase();
+const SECURITY_TOKEN_CREATE_LEGACY_SELECTOR =
+  ethers.id(SECURITY_TOKEN_CREATE_LEGACY_SIGNATURE).slice(2, 10).toLowerCase();
 const PAYLOAD_MISMATCH_PATTERN =
   /function selector was not recognized|unknown selector|no matching fragment|unrecognized function selector|selector[^|]*not recognized/i;
+const securityTokenCreateSignatureCache = new Map<number, typeof SECURITY_TOKEN_CREATE_MODERN_SIGNATURE | typeof SECURITY_TOKEN_CREATE_LEGACY_SIGNATURE>();
 
 /** Sentinel address representing native ETH in AssetBackedExchange orders. */
 export const ETH_SENTINEL = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
@@ -850,6 +855,53 @@ export class ContractService {
       SecurityTokenFactoryABI,
       signerOrProvider || this.provider,
     );
+  }
+
+  private async detectSecurityTokenCreateSignature(
+    factory: ethers.Contract,
+  ): Promise<
+    | typeof SECURITY_TOKEN_CREATE_MODERN_SIGNATURE
+    | typeof SECURITY_TOKEN_CREATE_LEGACY_SIGNATURE
+    | null
+  > {
+    const cached = securityTokenCreateSignatureCache.get(this.chainId);
+    if (cached) {
+      return cached;
+    }
+
+    const factoryAddress = this.resolveContractAddress(factory);
+
+    try {
+      const code = await this.withReadProvider((provider) =>
+        provider.getCode(factoryAddress),
+      );
+      const normalizedCode = code.toLowerCase();
+      const hasModernSelector = normalizedCode.includes(
+        SECURITY_TOKEN_CREATE_MODERN_SELECTOR,
+      );
+      const hasLegacySelector = normalizedCode.includes(
+        SECURITY_TOKEN_CREATE_LEGACY_SELECTOR,
+      );
+
+      const resolvedSignature =
+        hasModernSelector && !hasLegacySelector
+          ? SECURITY_TOKEN_CREATE_MODERN_SIGNATURE
+          : hasLegacySelector && !hasModernSelector
+            ? SECURITY_TOKEN_CREATE_LEGACY_SIGNATURE
+            : null;
+
+      if (resolvedSignature) {
+        securityTokenCreateSignatureCache.set(this.chainId, resolvedSignature);
+      }
+
+      return resolvedSignature;
+    } catch (error) {
+      logger.warn(
+        '[SecurityTokenFactory compatibility] failed to inspect deployed factory bytecode; falling back to selector retry path',
+        error,
+      );
+      return null;
+    }
   }
 
   /**
@@ -1637,6 +1689,9 @@ export class ContractService {
   ): Promise<ethers.ContractTransactionResponse> {
     const signer = await this.getSigner();
     const factory = this.getSecurityTokenFactoryContract(signer);
+    const preferredSignature = await this.detectSecurityTokenCreateSignature(
+      factory,
+    );
 
     const encodedHash = encodeDocumentHash(documentHash);
 
@@ -1668,36 +1723,58 @@ export class ContractService {
       maxReleaseDelay,
     ];
 
+    const primarySignature =
+      preferredSignature ?? SECURITY_TOKEN_CREATE_MODERN_SIGNATURE;
+    const primaryArgs =
+      primarySignature === SECURITY_TOKEN_CREATE_MODERN_SIGNATURE
+        ? modernArgs
+        : legacyArgs;
+    const fallbackSignature =
+      primarySignature === SECURITY_TOKEN_CREATE_MODERN_SIGNATURE
+        ? SECURITY_TOKEN_CREATE_LEGACY_SIGNATURE
+        : SECURITY_TOKEN_CREATE_MODERN_SIGNATURE;
+    const fallbackArgs =
+      fallbackSignature === SECURITY_TOKEN_CREATE_MODERN_SIGNATURE
+        ? modernArgs
+        : legacyArgs;
+
     let tx: ethers.ContractTransactionResponse;
     try {
       tx = await this.executeWrite(
         factory,
-        SECURITY_TOKEN_CREATE_MODERN_SIGNATURE,
-        modernArgs,
+        primarySignature,
+        primaryArgs,
       );
-    } catch (modernErr: unknown) {
-      if (!isSecurityTokenFactoryPayloadMismatchError(modernErr)) {
-        throw modernErr;
+    } catch (primaryErr: unknown) {
+      if (
+        preferredSignature !== null &&
+        !isSecurityTokenFactoryPayloadMismatchError(primaryErr)
+      ) {
+        throw primaryErr;
+      }
+
+      if (!isSecurityTokenFactoryPayloadMismatchError(primaryErr)) {
+        throw primaryErr;
       }
 
       logger.warn(
-        '[SecurityTokenFactory compatibility] modern createSecurityToken selector rejected, retrying legacy signature',
-        modernErr,
+        `[SecurityTokenFactory compatibility] ${primarySignature} selector rejected, retrying ${fallbackSignature}`,
+        primaryErr,
       );
 
       try {
         tx = await this.executeWrite(
           factory,
-          SECURITY_TOKEN_CREATE_LEGACY_SIGNATURE,
-          legacyArgs,
+          fallbackSignature,
+          fallbackArgs,
         );
-      } catch (legacyErr: unknown) {
-        if (isSecurityTokenFactoryPayloadMismatchError(legacyErr)) {
+      } catch (fallbackErr: unknown) {
+        if (isSecurityTokenFactoryPayloadMismatchError(fallbackErr)) {
           throw new Error(
             'This network uses an incompatible SecurityTokenFactory deployment. Refresh and verify the selected network before retrying.',
           );
         }
-        throw legacyErr;
+        throw fallbackErr;
       }
     }
 
@@ -1726,6 +1803,9 @@ export class ContractService {
     const signer = await this.getSigner();
     const signerAddress = await signer.getAddress();
     const factory = this.getSecurityTokenFactoryContract(signer);
+    const preferredSignature = await this.detectSecurityTokenCreateSignature(
+      factory,
+    );
     const encodedHash = encodeDocumentHash(documentHash);
 
     const modernArgs: unknown[] = [
@@ -1755,38 +1835,60 @@ export class ContractService {
       maxReleaseDelay,
     ];
 
+    const primarySignature =
+      preferredSignature ?? SECURITY_TOKEN_CREATE_MODERN_SIGNATURE;
+    const primaryArgs =
+      primarySignature === SECURITY_TOKEN_CREATE_MODERN_SIGNATURE
+        ? modernArgs
+        : legacyArgs;
+    const fallbackSignature =
+      primarySignature === SECURITY_TOKEN_CREATE_MODERN_SIGNATURE
+        ? SECURITY_TOKEN_CREATE_LEGACY_SIGNATURE
+        : SECURITY_TOKEN_CREATE_MODERN_SIGNATURE;
+    const fallbackArgs =
+      fallbackSignature === SECURITY_TOKEN_CREATE_MODERN_SIGNATURE
+        ? modernArgs
+        : legacyArgs;
+
     let gasUnits: bigint | null;
     try {
       gasUnits = await this.estimateGasWithFallback(
         factory,
-        SECURITY_TOKEN_CREATE_MODERN_SIGNATURE,
-        modernArgs,
+        primarySignature,
+        primaryArgs,
         signerAddress,
       );
-    } catch (modernErr: unknown) {
-      if (!isSecurityTokenFactoryPayloadMismatchError(modernErr)) {
-        throw modernErr;
+    } catch (primaryErr: unknown) {
+      if (
+        preferredSignature !== null &&
+        !isSecurityTokenFactoryPayloadMismatchError(primaryErr)
+      ) {
+        throw primaryErr;
+      }
+
+      if (!isSecurityTokenFactoryPayloadMismatchError(primaryErr)) {
+        throw primaryErr;
       }
 
       logger.warn(
-        '[SecurityTokenFactory compatibility] modern createSecurityToken estimate selector rejected, retrying legacy signature',
-        modernErr,
+        `[SecurityTokenFactory compatibility] ${primarySignature} estimate selector rejected, retrying ${fallbackSignature}`,
+        primaryErr,
       );
 
       try {
         gasUnits = await this.estimateGasWithFallback(
           factory,
-          SECURITY_TOKEN_CREATE_LEGACY_SIGNATURE,
-          legacyArgs,
+          fallbackSignature,
+          fallbackArgs,
           signerAddress,
         );
-      } catch (legacyErr: unknown) {
-        if (isSecurityTokenFactoryPayloadMismatchError(legacyErr)) {
+      } catch (fallbackErr: unknown) {
+        if (isSecurityTokenFactoryPayloadMismatchError(fallbackErr)) {
           throw new Error(
             'Unable to estimate security token deployment gas because this network has an incompatible factory deployment.',
           );
         }
-        throw legacyErr;
+        throw fallbackErr;
       }
     }
 

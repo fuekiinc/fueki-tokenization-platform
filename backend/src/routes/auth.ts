@@ -1,7 +1,15 @@
 import { Response, Router } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { createSession, hashPassword, invalidateAllSessions, invalidateSession, refreshSession, verifyPassword } from '../services/auth';
+import {
+  AccountAccessRevokedError,
+  createSession,
+  hashPassword,
+  invalidateAllSessions,
+  invalidateSession,
+  refreshSession,
+  verifyPassword,
+} from '../services/auth';
 import { authenticate } from '../middleware/auth';
 import { config } from '../config';
 import { sendPasswordResetEmail } from '../services/email';
@@ -91,6 +99,8 @@ function mapUserResponse(
     id: string;
     email: string;
     role: string;
+    accessRevokedAt?: Date | null;
+    accessRevocationReason?: string | null;
     walletAddress: string | null;
     kycStatus: string;
     helpLevel: string;
@@ -117,6 +127,9 @@ function mapUserResponse(
     id: user.id,
     email: user.email,
     role: user.role,
+    accessRevoked: Boolean(user.accessRevokedAt),
+    accessRevokedAt: user.accessRevokedAt?.toISOString() ?? null,
+    accessRevocationReason: user.accessRevocationReason ?? null,
     walletAddress: user.walletAddress,
     kycStatus: normalizedKycStatus,
     helpLevel: user.helpLevel,
@@ -254,6 +267,17 @@ router.post('/login', async (req, res) => {
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
       res.status(401).json({ error: { message: 'Invalid email or password', code: 'INVALID_CREDENTIALS' } });
+      return;
+    }
+
+    if (user.accessRevokedAt) {
+      await invalidateAllSessions(user.id);
+      res.status(403).json({
+        error: {
+          message: 'Your access to the platform has been revoked by an administrator.',
+          code: 'ACCOUNT_ACCESS_REVOKED',
+        },
+      });
       return;
     }
 
@@ -396,6 +420,16 @@ router.post('/refresh', async (req, res) => {
     // Return only the access token in the response body
     res.json({ accessToken: tokens.accessToken });
   } catch (err) {
+    if (err instanceof AccountAccessRevokedError) {
+      clearRefreshCookie(res);
+      res.status(403).json({
+        error: {
+          message: err.message,
+          code: 'ACCOUNT_ACCESS_REVOKED',
+        },
+      });
+      return;
+    }
     console.error('Refresh error:', err);
     // Clear any stale cookie on refresh failure
     clearRefreshCookie(res);

@@ -57,6 +57,12 @@ function roleBadgeVariant(
   }
 }
 
+function accessBadgeVariant(
+  revokedAt: string | null,
+): 'success' | 'warning' | 'danger' | 'default' | 'primary' | 'info' {
+  return revokedAt ? 'danger' : 'success';
+}
+
 function formatAddress(addr: string | null): string {
   if (!addr) return '--';
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
@@ -379,7 +385,12 @@ export default function AdminUserTable() {
                       className="cursor-pointer transition-colors hover:bg-white/[0.02]"
                     >
                       <td className="whitespace-nowrap px-6 py-4 font-medium text-white">
-                        {user.email}
+                        <div className="space-y-1">
+                          <div>{user.email}</div>
+                          <Badge variant={accessBadgeVariant(user.accessRevokedAt)} size="sm" dot>
+                            {user.accessRevokedAt ? 'access revoked' : 'active'}
+                          </Badge>
+                        </div>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
                         <Badge variant={roleBadgeVariant(user.role)} size="sm">

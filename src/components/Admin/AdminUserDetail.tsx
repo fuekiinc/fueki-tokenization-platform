@@ -24,6 +24,7 @@ import {
   getUserDetail,
   getUserKycDocument,
   rejectKYC,
+  updateUserAccess,
   updateUserRole,
 } from '../../lib/api/admin';
 import type { AdminKycDocumentKind, UserDetail } from '../../lib/api/admin';
@@ -62,6 +63,12 @@ function roleBadgeVariant(
     default:
       return 'default';
   }
+}
+
+function accessBadgeVariant(
+  revokedAt: string | null,
+): 'success' | 'warning' | 'danger' | 'default' | 'primary' | 'info' {
+  return revokedAt ? 'danger' : 'success';
 }
 
 function formatDate(dateStr: string): string {
@@ -365,6 +372,118 @@ function RoleManagement({
             )}
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function AccessManagement({
+  user,
+  onAccessChanged,
+}: {
+  user: UserDetail;
+  onAccessChanged: () => void;
+}) {
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [reason, setReason] = useState(user.accessRevocationReason ?? '');
+
+  const isRevoked = Boolean(user.accessRevokedAt);
+
+  useEffect(() => {
+    setReason(user.accessRevocationReason ?? '');
+  }, [user.accessRevocationReason]);
+
+  const handleAccessChange = async (revoked: boolean) => {
+    setIsUpdating(true);
+    try {
+      await updateUserAccess(user.id, revoked, revoked ? reason : undefined);
+      toast.success(
+        revoked ? 'Platform access revoked successfully' : 'Platform access restored successfully',
+      );
+      onAccessChanged();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to update platform access';
+      toast.error(message);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
+        Platform Access
+      </h3>
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Badge variant={accessBadgeVariant(user.accessRevokedAt)} size="sm" dot>
+            {isRevoked ? 'revoked' : 'active'}
+          </Badge>
+          {user.accessRevokedAt && (
+            <span className="text-xs text-gray-500">
+              Revoked {formatRelativeTime(user.accessRevokedAt)}
+            </span>
+          )}
+        </div>
+
+        {isRevoked ? (
+          <p className="text-sm text-gray-300">
+            This user is blocked from logging in, refreshing sessions, and accessing authenticated platform routes.
+          </p>
+        ) : (
+          <p className="text-sm text-gray-300">
+            Revoke platform access to immediately invalidate this user&apos;s sessions and block future authenticated access.
+          </p>
+        )}
+
+        <textarea
+          id="admin-access-reason"
+          name="adminAccessReason"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Optional admin note for this access change..."
+          rows={3}
+          className={clsx(
+            'w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3',
+            'text-sm text-white placeholder-gray-500',
+            'focus:border-indigo-500/40 focus:outline-none focus:ring-1 focus:ring-indigo-500/20',
+            'resize-none',
+          )}
+          aria-label="Platform access change reason"
+        />
+
+        <div className="flex gap-3">
+          {isRevoked ? (
+            <button
+              type="button"
+              onClick={() => { void handleAccessChange(false); }}
+              disabled={isUpdating}
+              className={clsx(
+                'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium',
+                'bg-emerald-500/15 text-emerald-300 transition-colors hover:bg-emerald-500/25',
+                'disabled:cursor-not-allowed disabled:opacity-50',
+              )}
+            >
+              {isUpdating && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+              Restore Access
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => { void handleAccessChange(true); }}
+              disabled={isUpdating}
+              className={clsx(
+                'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium',
+                'bg-red-500/15 text-red-300 transition-colors hover:bg-red-500/25',
+                'disabled:cursor-not-allowed disabled:opacity-50',
+              )}
+            >
+              {isUpdating && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+              Revoke Access
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -745,6 +864,19 @@ export default function AdminUserDetail({
                     }
                   />
                   <DetailRow
+                    icon={AlertTriangle}
+                    label="Platform Access"
+                    value={
+                      <Badge
+                        variant={accessBadgeVariant(user.accessRevokedAt)}
+                        size="sm"
+                        dot
+                      >
+                        {user.accessRevokedAt ? 'revoked' : 'active'}
+                      </Badge>
+                    }
+                  />
+                  <DetailRow
                     icon={FileCheck}
                     label="KYC Status"
                     value={
@@ -789,6 +921,11 @@ export default function AdminUserDetail({
                 userId={user.id}
                 currentRole={user.role}
                 onRoleChanged={() => { void fetchUser(); }}
+              />
+
+              <AccessManagement
+                user={user}
+                onAccessChanged={() => { void fetchUser(); }}
               />
 
               {/* KYC review actions */}

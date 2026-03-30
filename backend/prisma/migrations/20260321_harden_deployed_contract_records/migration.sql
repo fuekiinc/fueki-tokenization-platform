@@ -20,6 +20,30 @@ BEGIN
   END IF;
 END $$;
 
+CREATE TABLE IF NOT EXISTS "DeployedContract" (
+  "id" TEXT NOT NULL,
+  "userId" TEXT NOT NULL,
+  "templateId" TEXT NOT NULL,
+  "templateName" TEXT NOT NULL,
+  "contractName" TEXT NOT NULL DEFAULT '',
+  "templateType" "ContractTemplateType" NOT NULL DEFAULT 'CUSTOM',
+  "contractAddress" TEXT NOT NULL,
+  "deployerAddress" TEXT NOT NULL,
+  "walletAddress" TEXT NOT NULL DEFAULT '',
+  "chainId" INTEGER NOT NULL,
+  "txHash" TEXT NOT NULL,
+  "constructorArgs" JSONB,
+  "abi" JSONB NOT NULL DEFAULT '[]'::JSONB,
+  "sourceCode" TEXT,
+  "compilationWarnings" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  "blockNumber" BIGINT,
+  "gasUsed" TEXT,
+  "deployedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "DeployedContract_pkey" PRIMARY KEY ("id")
+);
+
 ALTER TABLE "DeployedContract"
   ADD COLUMN IF NOT EXISTS "contractName" TEXT,
   ADD COLUMN IF NOT EXISTS "templateType" "ContractTemplateType" NOT NULL DEFAULT 'CUSTOM',
@@ -93,8 +117,31 @@ ALTER TABLE "DeployedContract"
 CREATE UNIQUE INDEX IF NOT EXISTS "DeployedContract_txHash_key"
   ON "DeployedContract"("txHash");
 
+CREATE UNIQUE INDEX IF NOT EXISTS "DeployedContract_chainId_contractAddress_key"
+  ON "DeployedContract"("chainId", "contractAddress");
+
+CREATE INDEX IF NOT EXISTS "DeployedContract_userId_idx"
+  ON "DeployedContract"("userId");
+
+CREATE INDEX IF NOT EXISTS "DeployedContract_chainId_idx"
+  ON "DeployedContract"("chainId");
+
 CREATE INDEX IF NOT EXISTS "DeployedContract_walletAddress_idx"
   ON "DeployedContract"("walletAddress");
 
 CREATE INDEX IF NOT EXISTS "DeployedContract_walletAddress_chainId_idx"
   ON "DeployedContract"("walletAddress", "chainId");
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'DeployedContract_userId_fkey'
+  ) THEN
+    ALTER TABLE "DeployedContract"
+      ADD CONSTRAINT "DeployedContract_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User"("id")
+      ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;

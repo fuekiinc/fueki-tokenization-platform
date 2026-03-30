@@ -8,6 +8,7 @@ const apiMocks = vi.hoisted(() => ({
   getUserDetail: vi.fn(),
   getUserKycDocument: vi.fn(),
   rejectKYC: vi.fn(),
+  updateUserAccess: vi.fn(),
   updateUserRole: vi.fn(),
 }));
 
@@ -16,6 +17,7 @@ vi.mock('../../../src/lib/api/admin', () => ({
   getUserDetail: (...args: unknown[]) => apiMocks.getUserDetail(...args),
   getUserKycDocument: (...args: unknown[]) => apiMocks.getUserKycDocument(...args),
   rejectKYC: (...args: unknown[]) => apiMocks.rejectKYC(...args),
+  updateUserAccess: (...args: unknown[]) => apiMocks.updateUserAccess(...args),
   updateUserRole: (...args: unknown[]) => apiMocks.updateUserRole(...args),
 }));
 
@@ -27,6 +29,8 @@ describe('AdminUserDetail', () => {
       id: 'user-1',
       email: 'kyc.user@example.com',
       role: 'user',
+      accessRevokedAt: null,
+      accessRevocationReason: null,
       walletAddress: '0x1234',
       kycStatus: 'pending',
       createdAt: '2026-03-01T00:00:00.000Z',
@@ -94,5 +98,26 @@ describe('AdminUserDetail', () => {
       '_blank',
       'noopener,noreferrer',
     );
+  });
+
+  it('submits a revoke access action from the admin detail panel', async () => {
+    render(<AdminUserDetail userId="user-1" onClose={() => {}} />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Platform access change reason')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText('Platform access change reason'), {
+      target: { value: 'Compliance hold' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke Access' }));
+
+    await waitFor(() => {
+      expect(apiMocks.updateUserAccess).toHaveBeenCalledWith(
+        'user-1',
+        true,
+        'Compliance hold',
+      );
+    });
   });
 });

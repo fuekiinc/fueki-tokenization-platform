@@ -23,6 +23,9 @@ export interface User {
   helpLevel: HelpLevel;
   subscriptionPlan?: SubscriptionPlan | null;
   role?: string;
+  accessRevoked?: boolean;
+  accessRevokedAt?: string | null;
+  accessRevocationReason?: string | null;
   demoUsed?: boolean;
   demoActive?: boolean;
   createdAt: string;

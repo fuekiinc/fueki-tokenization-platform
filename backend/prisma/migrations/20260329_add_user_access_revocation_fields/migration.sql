@@ -1,0 +1,4 @@
+ALTER TABLE "User"
+  ADD COLUMN IF NOT EXISTS "accessRevokedAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "accessRevokedBy" TEXT,
+  ADD COLUMN IF NOT EXISTS "accessRevocationReason" TEXT;

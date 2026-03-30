@@ -18,6 +18,8 @@ export interface AdminUser {
   id: string;
   email: string;
   role: string;
+  accessRevokedAt: string | null;
+  accessRevocationReason: string | null;
   kycStatus: string;
   walletAddress: string | null;
   createdAt: string;
@@ -92,6 +94,8 @@ function normalizeAdminUser(value: unknown): AdminUser | null {
   const id = value.id;
   const email = value.email;
   const role = value.role;
+  const accessRevokedAt = value.accessRevokedAt;
+  const accessRevocationReason = value.accessRevocationReason;
   const kycStatus = value.kycStatus;
   const walletAddress = value.walletAddress;
   const createdAt = value.createdAt;
@@ -112,6 +116,9 @@ function normalizeAdminUser(value: unknown): AdminUser | null {
     id,
     email,
     role,
+    accessRevokedAt: typeof accessRevokedAt === 'string' ? accessRevokedAt : null,
+    accessRevocationReason:
+      typeof accessRevocationReason === 'string' ? accessRevocationReason : null,
     kycStatus,
     walletAddress: typeof walletAddress === 'string' ? walletAddress : null,
     createdAt,
@@ -251,6 +258,14 @@ export async function updateUserRole(id: string, role: string): Promise<void> {
   await apiClient.put(`/api/admin/users/${id}/role`, { role });
 }
 
+export async function updateUserAccess(
+  id: string,
+  revoked: boolean,
+  reason?: string,
+): Promise<void> {
+  await apiClient.put(`/api/admin/users/${id}/access`, { revoked, reason });
+}
+
 export async function getKYCSubmissions(params: {
   page?: number;
   status?: string;
@@ -289,6 +304,8 @@ export async function getKYCSubmissions(params: {
         id: userId,
         email,
         role: 'user',
+        accessRevokedAt: null,
+        accessRevocationReason: null,
         kycStatus,
         walletAddress: null,
         createdAt: typeof submittedAt === 'string' ? submittedAt : userCreatedAt,
