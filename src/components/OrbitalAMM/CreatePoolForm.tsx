@@ -234,7 +234,7 @@ export default function CreatePoolForm({
       if (!poolName || poolName.startsWith('Orbital ')) setPoolName(autoName);
       if (!poolSymbol || poolSymbol.startsWith('OLP-')) setPoolSymbol(autoSymbol);
     }
-  }, [selectedTokens.length]); // Only regenerate when count changes
+  }, [selectedTokens, poolName, poolSymbol]); // Regenerate when tokens or names change
 
   // ---- Filtered available tokens for picker ---------------------------------
 

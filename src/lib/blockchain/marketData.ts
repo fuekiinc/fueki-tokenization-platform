@@ -12,6 +12,13 @@ const AMM_LOOKBACK_BLOCKS = 250_000;
 const ORDERBOOK_LOOKBACK_BLOCKS = 250_000;
 const MAX_TRADE_EVENTS = 200;
 
+export interface PoolSpotPrice {
+  price: number;
+  reserveSell: number;
+  reserveBuy: number;
+  timestampMs: number;
+}
+
 export interface PairTradePoint {
   id: string;
   timestampMs: number;
@@ -324,4 +331,82 @@ export async function fetchPairTradePoints(
     setCache(cacheKey, merged, PAIR_TRADE_CACHE_TTL_MS);
     return merged;
   });
+}
+
+/**
+ * Query the AMM pool reserves for a token pair and derive a spot price.
+ * Returns null if the pool doesn't exist or has no liquidity.
+ */
+export async function fetchPoolSpotPrice(
+  chainId: number,
+  tokenSell: string,
+  tokenBuy: string,
+): Promise<PoolSpotPrice | null> {
+  const network = getNetworkConfig(chainId);
+  if (!network?.ammAddress) {
+    return null;
+  }
+
+  const cacheKey = makeChainCacheKey(
+    chainId,
+    `market:${normalizeAddress(tokenSell)}:${normalizeAddress(tokenBuy)}:spot-price`,
+  );
+  const cached = getCached<PoolSpotPrice | null>(cacheKey);
+  if (cached !== undefined && cached !== null) {
+    return cached;
+  }
+
+  try {
+    const provider = getReadOnlyProvider(chainId);
+    const amm = new ethers.Contract(network.ammAddress, LiquidityPoolAMMABI, provider);
+    const pool = await amm.getPool(tokenSell, tokenBuy);
+
+    const token0 = String(pool.token0 ?? pool[0] ?? '');
+    const _token1 = String(pool.token1 ?? pool[1] ?? '');
+    const reserve0Raw = BigInt(pool.reserve0 ?? pool[2] ?? 0);
+    const reserve1Raw = BigInt(pool.reserve1 ?? pool[3] ?? 0);
+
+    if (reserve0Raw === 0n || reserve1Raw === 0n) {
+      return null;
+    }
+
+    const reserve0 = Number(ethers.formatUnits(reserve0Raw, 18));
+    const reserve1 = Number(ethers.formatUnits(reserve1Raw, 18));
+
+    if (!Number.isFinite(reserve0) || reserve0 <= 0 || !Number.isFinite(reserve1) || reserve1 <= 0) {
+      return null;
+    }
+
+    // Price = how much of tokenSell per tokenBuy
+    let price: number;
+    let reserveSell: number;
+    let reserveBuy: number;
+
+    if (normalizeAddress(token0) === normalizeAddress(tokenSell)) {
+      price = reserve0 / reserve1;
+      reserveSell = reserve0;
+      reserveBuy = reserve1;
+    } else {
+      price = reserve1 / reserve0;
+      reserveSell = reserve1;
+      reserveBuy = reserve0;
+    }
+
+    if (!Number.isFinite(price) || price <= 0) {
+      return null;
+    }
+
+    const result: PoolSpotPrice = {
+      price,
+      reserveSell,
+      reserveBuy,
+      timestampMs: Date.now(),
+    };
+
+    setCache(cacheKey, result, PAIR_TRADE_CACHE_TTL_MS);
+    return result;
+  } catch (error) {
+    console.warn('[marketData] Failed to fetch pool spot price:', error);
+    return null;
+  }
 }

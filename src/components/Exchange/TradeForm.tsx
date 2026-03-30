@@ -420,7 +420,7 @@ export default function TradeForm({
       }
       setTxStatus('idle');
     }
-  }, [contractService, sellToken, parsedSellAmount, txStatus, sellIsETH, chainId]);
+  }, [contractService, sellToken, parsedSellAmount, txStatus, sellIsETH, chainId, txHash]);
 
   const handleCreateOrder = useCallback(async () => {
     if (

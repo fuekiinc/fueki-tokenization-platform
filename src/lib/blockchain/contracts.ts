@@ -105,6 +105,8 @@ export interface Order {
   filledSell: bigint;
   filledBuy: bigint;
   cancelled: boolean;
+  /** Unix timestamp (seconds) after which the order can no longer be filled. 0 = no expiry. */
+  deadline: bigint;
 }
 
 /** Details of an ERC-1404 security token from the SecurityTokenFactory. */
@@ -2045,8 +2047,10 @@ export class ContractService {
     this.validateAddress(tokenBuy, 'tokenBuy');
     const signer = await this.getSigner();
     const exchange = this.getAssetBackedExchangeContract(signer);
+    // Default deadline: 30 days from now. Pass 0 for no expiry.
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60);
     const tx = await this.executeWrite(exchange, 'createOrder', [
-      tokenSell, tokenBuy, amountSell, amountBuy,
+      tokenSell, tokenBuy, amountSell, amountBuy, deadline,
     ]);
     this.invalidateAssetCache(tokenSell);
     this.invalidateAssetCache(tokenBuy);
@@ -2064,7 +2068,9 @@ export class ContractService {
     this.validateAddress(tokenBuy, 'tokenBuy');
     const signer = await this.getSigner();
     const exchange = this.getAssetBackedExchangeContract(signer);
-    const tx = await this.executeWrite(exchange, 'createOrderSellETH', [tokenBuy, amountBuy], {
+    // Default deadline: 30 days from now. Pass 0 for no expiry.
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60);
+    const tx = await this.executeWrite(exchange, 'createOrderSellETH', [tokenBuy, amountBuy, deadline], {
       value: ethAmount,
     });
     this.invalidateAssetCache(tokenBuy);
@@ -3171,7 +3177,7 @@ export class ContractService {
    *
    * The Solidity Order struct fields are:
    *   id, maker, tokenSell, tokenBuy, amountSell, amountBuy,
-   *   filledSell, filledBuy, cancelled
+   *   filledSell, filledBuy, cancelled, deadline
    */
   private parseOrder(raw: Record<string, unknown>): Order {
     try {
@@ -3185,6 +3191,7 @@ export class ContractService {
         filledSell: BigInt(raw.filledSell as string | number | bigint),
         filledBuy: BigInt(raw.filledBuy as string | number | bigint),
         cancelled: Boolean(raw.cancelled),
+        deadline: BigInt(raw.deadline as string | number | bigint ?? 0),
       };
     } catch (_err: unknown) {
       throw new Error(

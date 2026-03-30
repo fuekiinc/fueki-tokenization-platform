@@ -466,6 +466,7 @@ export default function LiquidityPanel({
     txStatus,
     onLiquidityChanged,
     fetchPools,
+    chainId,
   ]);
 
   // ---- Remove liquidity -----------------------------------------------------
