@@ -36,7 +36,7 @@
     "preview": "node scripts/run-supported-node.mjs 22.12.0 node_modules/vite/bin/vite.js preview",
     "frontend:update": "./scripts/deploy-frontend-cloudrun.sh",
     "backend:migrate": "cd backend && npx prisma migrate deploy",
-    "backend:update": "cd backend && npm run build && cd .. && gcloud run deploy fueki-backend --source backend --region us-central1 --port 8080 --env-vars-file backend/cloudrun.env.yaml --add-cloudsql-instances extreme-lodge-463919-d9:us-central1:fueki-db",
+    "backend:update": "./scripts/deploy-backend-cloudrun.sh",
     "contracts:build": "npx hardhat compile && npx tsx scripts/extract-template-artifacts.ts",
     "proxy:connect": "cloud-sql-proxy extreme-lodge-463919-d9:us-central1:fueki-db --port 5459",
     "symphony:setup": "bash scripts/symphony/setup.sh",

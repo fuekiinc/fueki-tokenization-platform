@@ -145,7 +145,7 @@ export default function OrderBook({
       Boolean(tokenSell) &&
       Boolean(tokenBuy) &&
       tokenSell.toLowerCase() !== tokenBuy.toLowerCase(),
-    refetchInterval: 10_000,
+    refetchInterval: fillingId === null ? 10_000 : false,
     queryFn: async () => {
       if (!contractService || !tokenSell || !tokenBuy) {
         return [];
@@ -265,24 +265,17 @@ export default function OrderBook({
       // Prevent double-click while a fill is already in flight
       if (fillingId !== null) return;
 
-      // Prevent filling your own order (the contract would revert, but give a
-      // clear error message before spending gas on the approval tx).
       try {
         const signer = await contractService.getSigner();
         const userAddr = await signer.getAddress();
+
+        // Prevent filling your own order (the contract would revert, but give a
+        // clear error message before spending gas on the approval tx).
         if (userAddr.toLowerCase() === order.maker.toLowerCase()) {
           toast.error('You cannot fill your own order. Try filling an order from another trader.');
           return;
         }
-      } catch {
-        // If we cannot resolve the signer, let the tx itself fail with a
-        // proper revert message rather than blocking here.
-      }
 
-      setFillingId(order.id);
-      setFillTxHash(null);
-
-      try {
         // Compute the remaining unfilled buy-side amount.
         const fillAmountBuy = remainingBuy(order);
         if (fillAmountBuy <= 0n) {
@@ -290,11 +283,27 @@ export default function OrderBook({
           return;
         }
 
+        setFillingId(order.id);
+        setFillTxHash(null);
+
         // Determine if the filler needs to provide ETH or ERC-20.
         const fillTokenAddress = order.tokenBuy;
         const fillWithETH = isETH(fillTokenAddress);
+        const exchangeAddress = chainId
+          ? (getNetworkConfig(chainId)?.assetBackedExchangeAddress ?? null)
+          : null;
 
         if (fillWithETH) {
+          const provider = signer.provider;
+          const nativeBalance = provider
+            ? await provider.getBalance(userAddr)
+            : 0n;
+
+          if (nativeBalance < fillAmountBuy) {
+            toast.error('You do not have enough ETH to fill this order and cover gas.');
+            return;
+          }
+
           // Fill with native ETH -- no approval needed, send msg.value
           toast.loading('Filling order with ETH...', { id: 'fill-order' });
           const fillTx = await contractService.fillExchangeOrderWithETH(
@@ -304,14 +313,31 @@ export default function OrderBook({
           setFillTxHash(fillTx.hash);
           await contractService.waitForTransaction(fillTx);
         } else {
-          // ERC-20 fill: approve then fill
-          toast.loading('Approving token for fill...', { id: 'fill-approve' });
-          const approveTx = await contractService.approveAssetBackedExchange(
-            fillTokenAddress,
-            fillAmountBuy,
-          );
-          await contractService.waitForTransaction(approveTx);
-          toast.success('Token approved', { id: 'fill-approve' });
+          const [fillBalance, currentAllowance] = await Promise.all([
+            contractService.getAssetBalance(fillTokenAddress, userAddr),
+            exchangeAddress
+              ? contractService.getAssetAllowance(fillTokenAddress, userAddr, exchangeAddress)
+              : Promise.resolve(0n),
+          ]);
+
+          if (fillBalance < fillAmountBuy) {
+            toast.error('You do not have enough balance to fill this order.');
+            return;
+          }
+
+          if (!exchangeAddress) {
+            throw new Error('Asset-backed exchange is not available on the active network.');
+          }
+
+          if (currentAllowance < fillAmountBuy) {
+            toast.loading('Approving token for fill...', { id: 'fill-approve' });
+            const approveTx = await contractService.approveAssetBackedExchange(
+              fillTokenAddress,
+              fillAmountBuy,
+            );
+            await contractService.waitForTransaction(approveTx);
+            toast.success('Token approved', { id: 'fill-approve' });
+          }
 
           toast.loading('Filling order...', { id: 'fill-order' });
           const fillTx = await contractService.fillExchangeOrder(

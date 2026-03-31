@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import {
   ArrowRightLeft,
@@ -11,6 +11,7 @@ import {
 import { ethers } from 'ethers';
 import logger from '../lib/logger';
 import { classifyError, showError } from '../lib/errorUtils';
+import { mergeTradeHistoryEntries } from '../lib/dashboardActivity';
 import { useWalletStore } from '../store/walletStore.ts';
 import { getAssetFetchGeneration, nextAssetFetchGeneration, useAssetStore } from '../store/assetStore.ts';
 import { useTradeStore } from '../store/tradeStore.ts';
@@ -18,13 +19,16 @@ import { useExchangeStore } from '../store/exchangeStore.ts';
 import { useAuthStore } from '../store/authStore';
 import { useWallet } from '../hooks/useWallet';
 import { useContractService } from '../hooks/useContractService';
-import { getReadOnlyProvider } from '../lib/blockchain/contracts';
+import { ETH_SENTINEL, getReadOnlyProvider, isETH } from '../lib/blockchain/contracts';
 import { queryRecentLogsBestEffort } from '../lib/blockchain/logQuery';
+import { calculateCurrentPortfolioValue, calculatePortfolioChangePercent } from '../lib/dashboardMetrics';
 import { isRetryableRpcError } from '../lib/rpc/endpoints';
+import { createAdaptivePollingLoop } from '../lib/rpc/polling';
 import { retryAsync } from '../lib/utils/retry';
 import { copyToClipboard, formatAddress, parseTokenAmount } from '../lib/utils/helpers';
 import { SUPPORTED_NETWORKS } from '../contracts/addresses';
 import { OrbitalRouterABI } from '../contracts/abis/OrbitalRouter.ts';
+import { WrappedAssetABI } from '../contracts/abis/WrappedAsset.ts';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 // Dashboard sub-components
 import StatsGrid from '../components/Dashboard/StatsGrid';
@@ -114,6 +118,27 @@ export default function DashboardPage() {
   const chainId = useWalletStore((s) => s.wallet.chainId);
   const providerReady = useWalletStore((s) => s.wallet.providerReady);
   const { contractService } = useContractService();
+  const [securityHoldings, setSecurityHoldings] = useState<import('../types').WrappedAsset[]>([]);
+  const dashboardAssets = useMemo(() => {
+    const merged = new Map<string, import('../types').WrappedAsset>();
+    for (const asset of [...wrappedAssets, ...securityHoldings]) {
+      merged.set(asset.address.toLowerCase(), asset);
+    }
+    return Array.from(merged.values());
+  }, [securityHoldings, wrappedAssets]);
+  const currentPortfolioValue = useMemo(
+    () => calculateCurrentPortfolioValue(dashboardAssets),
+    [dashboardAssets],
+  );
+  const portfolioChange24h = useMemo(() => {
+    return calculatePortfolioChangePercent(
+      tradeHistory,
+      dashboardAssets,
+      currentPortfolioValue,
+      address ?? null,
+      24 * 60 * 60 * 1000,
+    );
+  }, [address, currentPortfolioValue, dashboardAssets, tradeHistory]);
 
   // Track whether the initial data fetch is still in progress
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -136,6 +161,10 @@ export default function DashboardPage() {
   useEffect(() => {
     wrappedAssetsRef.current = wrappedAssets;
   }, [wrappedAssets]);
+  const tradeHistoryRef = useRef(tradeHistory);
+  useEffect(() => {
+    tradeHistoryRef.current = tradeHistory;
+  }, [tradeHistory]);
 
   // Reset wallet-bound dashboard data whenever the active scope changes.
   // This prevents stale assets/trades from a previous chain or account from
@@ -164,15 +193,17 @@ export default function DashboardPage() {
     nextAssetFetchGeneration();
 
     setAssets([]);
+    setSecurityHoldings([]);
     setUserOrders([]);
+    setTrades([]);
     setLoadError(null);
 
     if (isConnected && chainId) {
       setIsInitialLoading(true);
     }
-  }, [address, chainId, isConnected, setAssets, setUserOrders]);
+  }, [address, chainId, isConnected, setAssets, setTrades, setUserOrders]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (assetRefreshMode: 'full' | 'incremental' = 'full') => {
     const fetchRunId = ++dashboardFetchRunRef.current;
     const scopedAddress = address?.toLowerCase() ?? null;
     const scopedChainId = chainId;
@@ -213,81 +244,103 @@ export default function DashboardPage() {
       return;
     }
 
+    const knownTokenMetadata = new Map<string, { name: string; symbol: string; decimals: number }>();
+    const securityTokenAddresses = new Set<string>();
+    for (const trade of tradeHistoryRef.current) {
+      if (!trade.assetAddress) continue;
+      knownTokenMetadata.set(trade.assetAddress.toLowerCase(), {
+        name: trade.asset,
+        symbol: trade.assetSymbol,
+        decimals: 18,
+      });
+      if (trade.type === 'security-mint') {
+        securityTokenAddresses.add(trade.assetAddress.toLowerCase());
+      }
+    }
+
     // Fetch assets — gather addresses from three sources:
     //   1. Assets the user created (factory.getUserAssets)
     //   2. ALL platform assets (factory.getAssetAtIndex) so we catch assets
     //      the user holds but didn't create (received via transfer/exchange)
     //   3. Previously known addresses still in the store (continuity)
     const gen = nextAssetFetchGeneration();
-    setLoadingAssets(true);
+    const showAssetLoading = assetRefreshMode === 'full' || wrappedAssetsRef.current.length === 0;
+    if (showAssetLoading) {
+      setLoadingAssets(true);
+    }
     try {
-      const totalAssetCount = await retryAsync(
-        () => contractService.getTotalAssets(),
-        {
-          maxAttempts: 3,
-          baseDelayMs: 800,
-          label: 'dashboard:getTotalAssets',
-          isRetryable: isRetryableRpcError,
-        },
-      );
+      // Source 1: assets the connected wallet created
+      let userAssetAddresses: string[] = [];
+      try {
+        userAssetAddresses = await retryAsync(
+          () => contractService.getUserAssets(address),
+          {
+            maxAttempts: 3,
+            baseDelayMs: 800,
+            label: 'dashboard:getUserAssets',
+            isRetryable: isRetryableRpcError,
+          },
+        );
+      } catch (error) {
+        logger.warn('Unable to fetch user-created asset list:', error);
+      }
       if (isStaleFetch()) return;
-      if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
-      if (totalAssetCount === 0n) {
-        if (!isStaleFetch()) {
-          setAssets([]);
-        }
-      } else {
-        // Source 1: assets the connected wallet created
-        let userAssetAddresses: string[] = [];
+      if (gen !== getAssetFetchGeneration()) return;
+
+      const knownAddresses = new Set<string>([
+        ...userAssetAddresses,
+        ...wrappedAssetsRef.current.map((asset) => asset.address),
+      ]);
+
+      const shouldEnumeratePlatformAssets =
+        assetRefreshMode === 'full' || knownAddresses.size === 0;
+
+      if (shouldEnumeratePlatformAssets) {
         try {
-          userAssetAddresses = await retryAsync(
-            () => contractService.getUserAssets(address),
+          const totalAssetCount = await retryAsync(
+            () => contractService.getTotalAssets(),
             {
               maxAttempts: 3,
               baseDelayMs: 800,
-              label: 'dashboard:getUserAssets',
+              label: 'dashboard:getTotalAssets',
               isRetryable: isRetryableRpcError,
             },
           );
-        } catch (error) {
-          logger.warn('Unable to fetch user-created asset list:', error);
-        }
-        if (isStaleFetch()) return;
-        if (gen !== getAssetFetchGeneration()) return;
+          if (isStaleFetch()) return;
+          if (gen !== getAssetFetchGeneration()) return;
 
-        // Source 2: all platform assets (iterate factory index)
-        // Fetch in small sequential batches to avoid RPC rate limiting.
-        const allPlatformAddresses: string[] = [];
-        try {
           const count = Number(totalAssetCount);
           const maxScan = Math.min(count, 500);
           const startIndex = Math.max(0, count - maxScan);
-          const BATCH_SIZE = 5;
-          for (let start = startIndex; start < count; start += BATCH_SIZE) {
+          const batchSize = 5;
+          for (let start = startIndex; start < count; start += batchSize) {
+            if (isStaleFetch()) return;
             if (gen !== getAssetFetchGeneration()) return;
-            const end = Math.min(start + BATCH_SIZE, count);
+            const end = Math.min(start + batchSize, count);
             const batch = [];
             for (let i = start; i < end; i++) {
               batch.push(contractService.getAssetAtIndex(i).catch(() => null));
             }
             const results = await Promise.all(batch);
-            for (const r of results) {
-              if (r) allPlatformAddresses.push(r);
+            for (const result of results) {
+              if (result) {
+                knownAddresses.add(result);
+              }
             }
           }
         } catch (error) {
           logger.warn('Unable to enumerate platform assets:', error);
         }
-        if (isStaleFetch()) return;
-        if (gen !== getAssetFetchGeneration()) return;
+      }
 
-        // Merge all address sources and deduplicate
-        const knownAddresses = new Set<string>([
-          ...userAssetAddresses,
-          ...allPlatformAddresses,
-          ...wrappedAssetsRef.current.map((a) => a.address),
-        ]);
+      if (isStaleFetch()) return;
+      if (gen !== getAssetFetchGeneration()) return;
 
+      if (knownAddresses.size === 0) {
+        if (!isStaleFetch()) {
+          setAssets([]);
+        }
+      } else {
         const assetList = (await contractService.getUserAssetSnapshots(
           Array.from(knownAddresses),
           address,
@@ -301,6 +354,13 @@ export default function DashboardPage() {
           documentType: snapshot.documentType,
           originalValue: snapshot.originalValue.toString(),
         } satisfies import('../types').WrappedAsset));
+        for (const asset of assetList) {
+          knownTokenMetadata.set(asset.address.toLowerCase(), {
+            name: asset.name,
+            symbol: asset.symbol,
+            decimals: 18,
+          });
+        }
         // Wallet-scoped dashboard view:
         // 1) Prefer assets where this wallet holds a positive balance.
         // 2) If none, fall back to assets created by this wallet.
@@ -316,8 +376,66 @@ export default function DashboardPage() {
         const resolvedAssets =
           walletScopedAssets.length > 0 ? walletScopedAssets : userCreatedAssets;
         if (isStaleFetch()) return;
-        if (gen !== getAssetFetchGeneration()) return; // stale fetch, discard
+        if (gen !== getAssetFetchGeneration()) return;
         setAssets(resolvedAssets);
+      }
+
+      try {
+        const createdSecurityTokenAddresses = await retryAsync(
+          () => contractService.getUserSecurityTokens(address),
+          {
+            maxAttempts: 3,
+            baseDelayMs: 800,
+            label: 'dashboard:getUserSecurityTokens',
+            isRetryable: isRetryableRpcError,
+          },
+        );
+
+        if (isStaleFetch()) return;
+
+        if (createdSecurityTokenAddresses.length === 0) {
+          setSecurityHoldings([]);
+        } else {
+          const holdings = await Promise.all(
+            createdSecurityTokenAddresses.map(async (tokenAddress) => {
+              const [details, balance] = await Promise.all([
+                contractService.getSecurityTokenDetails(tokenAddress),
+                contractService.getSecurityTokenBalance(tokenAddress, address),
+              ]);
+
+              return {
+                address: details.tokenAddress,
+                name: details.name,
+                symbol: details.symbol,
+                totalSupply: details.totalSupply.toString(),
+                balance: balance.toString(),
+                documentHash: details.documentHash,
+                documentType: details.documentType,
+                originalValue: details.originalValue.toString(),
+              } satisfies import('../types').WrappedAsset;
+            }),
+          );
+
+          if (isStaleFetch()) return;
+
+          for (const asset of holdings) {
+            knownTokenMetadata.set(asset.address.toLowerCase(), {
+              name: asset.name,
+              symbol: asset.symbol,
+              decimals: 18,
+            });
+            securityTokenAddresses.add(asset.address.toLowerCase());
+          }
+
+          setSecurityHoldings(
+            holdings.filter((asset) => parseTokenAmount(asset.balance || '0') > 0),
+          );
+        }
+      } catch (error) {
+        logger.warn('Unable to load security token holdings:', error);
+        if (!isStaleFetch()) {
+          setSecurityHoldings([]);
+        }
       }
     } catch (error) {
       const classified = classifyError(error);
@@ -339,7 +457,7 @@ export default function DashboardPage() {
         }
       }
     } finally {
-      if (!isStaleFetch()) {
+      if (!isStaleFetch() && showAssetLoading) {
         setLoadingAssets(false);
       }
     }
@@ -402,6 +520,8 @@ export default function DashboardPage() {
     try {
       const trades: import('../types').TradeHistory[] = [];
       const seenTx = new Set<string>();
+      const mintCreationTxHashes = new Set<string>();
+      const securityMintCreationTxHashes = new Set<string>();
       const addr = address.toLowerCase();
 
       // Query events from a chain-scoped read-only provider rather than the
@@ -416,12 +536,15 @@ export default function DashboardPage() {
         ) => Promise<Array<ethers.Log | ethers.EventLog>>,
         lookbackBlocks: number,
         label: string,
-        maxEvents = 16,
+        maxEvents = assetRefreshMode === 'full' ? 500 : 96,
       ): Promise<Array<ethers.Log | ethers.EventLog>> =>
         queryRecentLogsBestEffort(readProvider, runQuery, {
           chainId,
           label,
           maxLookbackBlocks: lookbackBlocks,
+          initialChunkSize: assetRefreshMode === 'full' ? 250_000 : 125_000,
+          minChunkSize: 5_000,
+          maxRequests: assetRefreshMode === 'full' ? 24 : 8,
           maxEvents,
         });
       const blockTimestampCache = new Map<number, number>();
@@ -468,12 +591,12 @@ export default function DashboardPage() {
           const txKey = `mint-${log.transactionHash}-${log.index}`;
           if (seenTx.has(txKey)) continue;
           seenTx.add(txKey);
+          mintCreationTxHashes.add(log.transactionHash.toLowerCase());
 
           const assetAddr = log.args[1] as string;
-          // Try to resolve asset name from already-loaded assets
-          const knownAsset = wrappedAssetsRef.current.find(
-            (a) => a.address.toLowerCase() === assetAddr.toLowerCase(),
-          );
+          const knownAsset = knownTokenMetadata.get(assetAddr.toLowerCase());
+          const mintedAmount = log.args[7] as bigint;
+          const recipient = String(log.args[8] ?? address);
 
           const timestampMs = await resolveEventTimestampMs(log);
 
@@ -481,14 +604,13 @@ export default function DashboardPage() {
             id: txKey,
             type: 'mint',
             asset: knownAsset?.name ?? assetAddr.slice(0, 10),
+            assetAddress: assetAddr,
             assetSymbol: knownAsset?.symbol ?? 'TOKEN',
-            amount: knownAsset?.totalSupply
-              ? ethers.formatUnits(knownAsset.totalSupply, 18)
-              : '0',
+            amount: ethers.formatUnits(mintedAmount ?? 0n, knownAsset?.decimals ?? 18),
             txHash: log.transactionHash,
             timestamp: timestampMs,
             from: ethers.ZeroAddress,
-            to: address,
+            to: recipient,
             status: 'confirmed',
           });
         }
@@ -513,20 +635,23 @@ export default function DashboardPage() {
 
         for (const evt of securityMintEvents) {
           const log = evt as ethers.EventLog;
-          const txKey = `security-mint-${log.transactionHash}`;
+          const txKey = `security-mint-${log.transactionHash}-${log.index}`;
           if (seenTx.has(txKey)) continue;
           seenTx.add(txKey);
+          securityMintCreationTxHashes.add(log.transactionHash.toLowerCase());
 
           const timestampMs = await resolveEventTimestampMs(log);
 
           const name = String(log.args[3] ?? 'Security Token');
           const symbol = String(log.args[4] ?? 'ST');
+          const tokenAddress = String(log.args[1] ?? '');
           const totalSupply = log.args[5] as bigint;
 
           trades.push({
             id: txKey,
             type: 'security-mint',
             asset: name,
+            assetAddress: tokenAddress,
             assetSymbol: symbol,
             amount: ethers.formatUnits(totalSupply, 18),
             txHash: log.transactionHash,
@@ -538,6 +663,86 @@ export default function DashboardPage() {
         }
       } catch (error) {
         logger.warn('Unable to load security-token mint history:', error);
+      }
+
+      if (assetRefreshMode === 'full' && knownTokenMetadata.size > 0) {
+        try {
+          for (const [tokenAddress, metadata] of knownTokenMetadata.entries()) {
+            const tokenContract = new ethers.Contract(tokenAddress, WrappedAssetABI, readProvider);
+            const [incomingEvents, outgoingEvents] = await Promise.all([
+              queryFilterBestEffort(
+                (provider, fromBlock, toBlock) => {
+                  const contract = new ethers.Contract(tokenAddress, WrappedAssetABI, provider);
+                  return contract.queryFilter(contract.filters.Transfer(null, address), fromBlock, toBlock);
+                },
+                5_000_000,
+                `token Transfer incoming ${tokenAddress}`,
+                200,
+              ),
+              queryFilterBestEffort(
+                (provider, fromBlock, toBlock) => {
+                  const contract = new ethers.Contract(tokenAddress, WrappedAssetABI, provider);
+                  return contract.queryFilter(contract.filters.Transfer(address, null), fromBlock, toBlock);
+                },
+                5_000_000,
+                `token Transfer outgoing ${tokenAddress}`,
+                200,
+              ),
+            ]);
+
+            for (const evt of [...incomingEvents, ...outgoingEvents]) {
+              const log = evt as ethers.EventLog;
+              const txKey = `token-move-${tokenAddress}-${log.transactionHash}-${log.index}`;
+              if (seenTx.has(txKey)) continue;
+
+              const from = String(log.args[0] ?? '');
+              const to = String(log.args[1] ?? '');
+              const amount = log.args[2] as bigint;
+              const normalizedFrom = from.toLowerCase();
+              const normalizedTo = to.toLowerCase();
+
+              if (normalizedFrom !== addr && normalizedTo !== addr) continue;
+              if (amount <= 0n) continue;
+
+              let type: import('../types').TradeHistory['type'];
+              const normalizedTxHash = log.transactionHash.toLowerCase();
+              if (normalizedFrom === ethers.ZeroAddress.toLowerCase()) {
+                if (
+                  mintCreationTxHashes.has(normalizedTxHash) ||
+                  securityMintCreationTxHashes.has(normalizedTxHash)
+                ) {
+                  continue;
+                }
+                type = securityTokenAddresses.has(tokenAddress) ? 'security-mint' : 'mint';
+              } else if (normalizedTo === ethers.ZeroAddress.toLowerCase()) {
+                type = 'burn';
+              } else {
+                type = 'transfer';
+              }
+
+              seenTx.add(txKey);
+
+              const timestampMs = await resolveEventTimestampMs(log);
+              trades.push({
+                id: txKey,
+                type,
+                asset: metadata.name,
+                assetAddress: tokenAddress,
+                assetSymbol: metadata.symbol,
+                amount: ethers.formatUnits(amount, metadata.decimals),
+                txHash: log.transactionHash,
+                timestamp: timestampMs,
+                from,
+                to,
+                status: 'confirmed',
+              });
+            }
+
+            tokenContract.removeAllListeners();
+          }
+        } catch (error) {
+          logger.warn('Unable to load token transfer history:', error);
+        }
       }
 
       // 3, 4 & 5. Exchange history:
@@ -574,7 +779,7 @@ export default function DashboardPage() {
           trades.push({
             id: txKey,
             type: 'exchange',
-            asset: `Order #${orderId.toString()}`,
+            asset: `Order #${orderId.toString()} Created`,
             assetSymbol: 'ORDER',
             amount: ethers.formatUnits(amountSell, 18),
             txHash: log.transactionHash,
@@ -634,7 +839,7 @@ export default function DashboardPage() {
           trades.push({
             id: `fill-${txKey}`,
             type: 'exchange',
-            asset: `Order #${orderId.toString()}`,
+            asset: `Order #${orderId.toString()} Filled`,
             assetSymbol: isTaker ? 'FILL' : 'SOLD',
             amount: ethers.formatUnits(isTaker ? fillBuy : fillSell, 18),
             txHash: log.transactionHash,
@@ -643,6 +848,45 @@ export default function DashboardPage() {
             to: isTaker ? addr : taker,
             status: 'confirmed',
           });
+        }
+
+        if (assetRefreshMode === 'full') {
+          const orderCancelledEvents = await queryFilterBestEffort(
+            (provider, fromBlock, toBlock) => {
+              const exchange = contractService.getAssetBackedExchangeContract(provider);
+              return exchange.queryFilter(
+                exchange.filters.OrderCancelled(null, address),
+                fromBlock,
+                toBlock,
+              );
+            },
+            5_000_000,
+            'exchange OrderCancelled',
+            200,
+          );
+
+          for (const evt of orderCancelledEvents) {
+            const log = evt as ethers.EventLog;
+            const txKey = `cancel-${log.transactionHash}-${log.index}`;
+            if (seenTx.has(txKey)) continue;
+            seenTx.add(txKey);
+
+            const orderId = log.args[0] as bigint;
+            const timestampMs = await resolveEventTimestampMs(log);
+
+            trades.push({
+              id: txKey,
+              type: 'exchange',
+              asset: `Order #${orderId.toString()} Cancelled`,
+              assetSymbol: 'CANCEL',
+              amount: '0',
+              txHash: log.transactionHash,
+              timestamp: timestampMs,
+              from: address,
+              to: ETH_SENTINEL,
+              status: 'confirmed',
+            });
+          }
         }
       } catch (error) {
         logger.warn('Unable to load exchange trade history:', error);
@@ -767,22 +1011,19 @@ export default function DashboardPage() {
             const tokenIn = String(log.args[2] ?? '');
             const tokenOut = String(log.args[3] ?? '');
             const amountOut = log.args[5] as bigint;
-
-            const tokenInAsset = wrappedAssetsRef.current.find(
-              (a) => a.address.toLowerCase() === tokenIn.toLowerCase(),
-            );
-            const tokenOutAsset = wrappedAssetsRef.current.find(
-              (a) => a.address.toLowerCase() === tokenOut.toLowerCase(),
-            );
+            const tokenInAsset = knownTokenMetadata.get(tokenIn.toLowerCase());
+            const tokenOutAsset = knownTokenMetadata.get(tokenOut.toLowerCase());
+            const swapType = isETH(tokenIn) || isETH(tokenOut) ? 'swap-eth' : 'swap-erc20';
 
             const timestampMs = await resolveEventTimestampMs(log);
 
             trades.push({
               id: txKey,
-              type: 'exchange',
-              asset: `Orbital ${tokenInAsset?.symbol ?? 'IN'}->${tokenOutAsset?.symbol ?? 'OUT'}`,
+              type: swapType,
+              asset: `Orbital ${tokenInAsset?.symbol ?? 'IN'} -> ${tokenOutAsset?.symbol ?? 'OUT'}`,
+              assetAddress: tokenOut,
               assetSymbol: tokenOutAsset?.symbol ?? 'SWAP',
-              amount: ethers.formatUnits(amountOut, 18),
+              amount: ethers.formatUnits(amountOut, tokenOutAsset?.decimals ?? 18),
               txHash: log.transactionHash,
               timestamp: timestampMs,
               from: tokenIn,
@@ -817,22 +1058,19 @@ export default function DashboardPage() {
             const tokenIn = String(log.args[1] ?? '');
             const tokenOut = String(log.args[2] ?? '');
             const amountOut = log.args[4] as bigint;
-
-            const tokenInAsset = wrappedAssetsRef.current.find(
-              (a) => a.address.toLowerCase() === tokenIn.toLowerCase(),
-            );
-            const tokenOutAsset = wrappedAssetsRef.current.find(
-              (a) => a.address.toLowerCase() === tokenOut.toLowerCase(),
-            );
+            const tokenInAsset = knownTokenMetadata.get(tokenIn.toLowerCase());
+            const tokenOutAsset = knownTokenMetadata.get(tokenOut.toLowerCase());
+            const swapType = isETH(tokenIn) || isETH(tokenOut) ? 'swap-eth' : 'swap-erc20';
 
             const timestampMs = await resolveEventTimestampMs(log);
 
             trades.push({
               id: txKey,
-              type: 'exchange',
-              asset: `Orbital Multi-hop ${tokenInAsset?.symbol ?? 'IN'}->${tokenOutAsset?.symbol ?? 'OUT'}`,
+              type: swapType,
+              asset: `Orbital Multi-hop ${tokenInAsset?.symbol ?? 'IN'} -> ${tokenOutAsset?.symbol ?? 'OUT'}`,
+              assetAddress: tokenOut,
               assetSymbol: tokenOutAsset?.symbol ?? 'SWAP',
-              amount: ethers.formatUnits(amountOut, 18),
+              amount: ethers.formatUnits(amountOut, tokenOutAsset?.decimals ?? 18),
               txHash: log.transactionHash,
               timestamp: timestampMs,
               from: tokenIn,
@@ -847,9 +1085,7 @@ export default function DashboardPage() {
 
       trades.sort((a, b) => b.timestamp - a.timestamp);
       if (isStaleFetch()) return;
-      if (trades.length > 0) {
-        setTrades(trades);
-      }
+      setTrades(mergeTradeHistoryEntries(tradeHistoryRef.current, trades));
     } catch (error) {
       logger.warn('Unable to load trade history:', error);
     }
@@ -871,15 +1107,48 @@ export default function DashboardPage() {
   ]);
 
   useEffect(() => {
-    void fetchData();
+    void fetchData('full');
   }, [fetchData]);
+
+  useEffect(() => {
+    if (
+      !contractService ||
+      !isConnected ||
+      !address ||
+      !chainId ||
+      !providerReady ||
+      isSwitchingNetwork
+    ) {
+      return undefined;
+    }
+
+    const refreshPoller = createAdaptivePollingLoop({
+      tier: 'medium',
+      poll: async () => {
+        await fetchData('incremental');
+      },
+      immediate: false,
+    });
+
+    return () => {
+      refreshPoller.cancel();
+    };
+  }, [
+    contractService,
+    isConnected,
+    address,
+    chainId,
+    providerReady,
+    isSwitchingNetwork,
+    fetchData,
+  ]);
 
   // In demo mode, re-trigger data fetch once the demo wallet is ready.
   // The initial fetchData call may have short-circuited because the demo
   // wallet hadn't finished async setup yet.
   useEffect(() => {
     if (isDemoActive && demoWalletReady && isConnected && providerReady) {
-      void fetchData();
+      void fetchData('full');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDemoActive, demoWalletReady]);
@@ -1072,12 +1341,12 @@ export default function DashboardPage() {
 
   // ---- Error state (data failed to load) -----------------------------------
 
-  if (loadError && wrappedAssets.length === 0) {
+  if (loadError && dashboardAssets.length === 0) {
     return (
       <div className="w-full pt-12">
         <ErrorState
           message={loadError}
-          onRetry={() => void fetchData()}
+          onRetry={() => void fetchData('full')}
         />
       </div>
     );
@@ -1176,9 +1445,11 @@ export default function DashboardPage() {
       {/* ================================================================== */}
       <ComponentErrorBoundary name="StatsGrid">
         <StatsGrid
-          wrappedAssets={wrappedAssets}
+          wrappedAssets={dashboardAssets}
           userOrders={userOrders}
           tradeHistory={tradeHistory}
+          currentPortfolioValue={currentPortfolioValue}
+          portfolioChange24h={portfolioChange24h}
         />
       </ComponentErrorBoundary>
 
@@ -1188,20 +1459,18 @@ export default function DashboardPage() {
       <div className="mt-8 grid grid-cols-1 gap-6 sm:mt-10 sm:gap-8 lg:grid-cols-2">
         <ComponentErrorBoundary name="PnLTracker">
           <PnLTracker
+            assets={dashboardAssets}
             tradeHistory={tradeHistory}
-            currentPortfolioValue={wrappedAssets.reduce(
-              (sum, asset) => sum + parseTokenAmount(asset.originalValue || '0'),
-              0,
-            )}
+            currentPortfolioValue={currentPortfolioValue}
+            walletAddress={address}
           />
         </ComponentErrorBoundary>
         <ComponentErrorBoundary name="ValueChart">
           <ValueChart
+            assets={dashboardAssets}
             tradeHistory={tradeHistory}
-            currentPortfolioValue={wrappedAssets.reduce(
-              (sum, asset) => sum + parseTokenAmount(asset.originalValue || '0'),
-              0,
-            )}
+            currentPortfolioValue={currentPortfolioValue}
+            walletAddress={address}
           />
         </ComponentErrorBoundary>
       </div>
@@ -1211,7 +1480,7 @@ export default function DashboardPage() {
       {/* ================================================================== */}
       <div className="mt-8 sm:mt-10">
         <ComponentErrorBoundary name="ActivityFeed">
-          <RecentActivity trades={tradeHistory} chainId={chainId} />
+          <RecentActivity trades={tradeHistory} maxItems={tradeHistory.length || undefined} chainId={chainId} />
         </ComponentErrorBoundary>
       </div>
 

@@ -8,6 +8,7 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import SwapInterface from '../../../src/components/OrbitalAMM/SwapInterface';
+import { createQueryClientWrapper } from '../testQueryClient';
 
 vi.mock('react-hot-toast', () => ({
   default: {
@@ -56,6 +57,7 @@ function buildService() {
 describe('SwapInterface', () => {
   it('loads pools and renders swap details after amount input', async () => {
     const service = buildService();
+    const { wrapper: QueryWrapper } = createQueryClientWrapper();
 
     render(
       <MemoryRouter>
@@ -64,6 +66,7 @@ describe('SwapInterface', () => {
           userAddress="0x00000000000000000000000000000000000000A1"
         />
       </MemoryRouter>,
+      { wrapper: QueryWrapper },
     );
 
     await waitFor(() => {
@@ -87,6 +90,7 @@ describe('SwapInterface', () => {
 
   it('allows confirming a high-impact swap after review', async () => {
     const service = buildService();
+    const { wrapper: QueryWrapper } = createQueryClientWrapper();
 
     render(
       <MemoryRouter>
@@ -95,6 +99,7 @@ describe('SwapInterface', () => {
           userAddress="0x00000000000000000000000000000000000000A1"
         />
       </MemoryRouter>,
+      { wrapper: QueryWrapper },
     );
 
     await waitFor(() => {

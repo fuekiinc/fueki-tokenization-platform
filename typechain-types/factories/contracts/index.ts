@@ -8,6 +8,7 @@ export * as securityToken from "./security-token";
 export * as templates from "./templates";
 export * as test from "./test";
 export { AssetExchange__factory } from "./AssetExchange__factory";
+export { NAVOracle__factory } from "./NAVOracle__factory";
 export { TestWBTC__factory } from "./TestWBTC__factory";
 export { WrappedAsset__factory } from "./WrappedAsset__factory";
 export { WrappedAssetFactory__factory } from "./WrappedAssetFactory__factory";

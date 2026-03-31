@@ -8,6 +8,7 @@ const apiClientGetMock = vi.fn();
 const fetchPairTradePointsMock = vi.fn<
   (chainId: number, tokenSell: string, tokenBuy: string) => Promise<PairTradePoint[]>
 >();
+const fetchPoolSpotPriceMock = vi.fn();
 
 vi.mock('../../../src/lib/api/client', () => ({
   default: {
@@ -18,6 +19,7 @@ vi.mock('../../../src/lib/api/client', () => ({
 vi.mock('../../../src/lib/blockchain/marketData', () => ({
   fetchPairTradePoints: (...args: [number, string, string]) =>
     fetchPairTradePointsMock(...args),
+  fetchPoolSpotPrice: (...args: unknown[]) => fetchPoolSpotPriceMock(...args),
 }));
 
 vi.mock('../../../src/store/walletStore', () => ({
@@ -30,6 +32,7 @@ describe('usePriceHistory', () => {
     vi.clearAllMocks();
     apiClientGetMock.mockResolvedValue({ data: { candles: [], source: 'rpc' } });
     fetchPairTradePointsMock.mockResolvedValue([]);
+    fetchPoolSpotPriceMock.mockResolvedValue(null);
   });
 
   it('returns an empty state instead of synthetic candles when no real market data exists', async () => {

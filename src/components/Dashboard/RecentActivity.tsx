@@ -20,6 +20,6 @@ interface RecentActivityProps {
 // section to be independently lazy-loaded or skeleton-gated in the future.
 // ---------------------------------------------------------------------------
 
-export default function RecentActivity({ trades, maxItems = 8, chainId }: RecentActivityProps) {
+export default function RecentActivity({ trades, maxItems, chainId }: RecentActivityProps) {
   return <ActivityFeed trades={trades} maxItems={maxItems} chainId={chainId} />;
 }

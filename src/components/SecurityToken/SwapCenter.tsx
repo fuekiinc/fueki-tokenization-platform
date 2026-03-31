@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -41,6 +42,9 @@ import {
 } from '../../lib/blockchain/txExecution';
 import { getExplorerTxUrl } from '../../contracts/addresses';
 import { formatAddress, formatBalance } from '../../lib/utils/helpers';
+import { getCurrentNav } from '../../lib/api/nav';
+import { calculateQuotedNavAmount, computePremiumDiscount, isUsdStableSymbol } from '../../lib/navUtils';
+import { queryKeys } from '../../lib/queryClient';
 import Card from '../Common/Card';
 import Badge from '../Common/Badge';
 import Spinner from '../Common/Spinner';
@@ -158,6 +162,7 @@ async function getTokenMeta(
 export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
   const { wallet } = useWalletStore();
   const connectedAddress = wallet.address;
+  const chainId = wallet.chainId;
 
   // ---- Tab state ----------------------------------------------------------
   const [activeTab, setActiveTab] = useState<ActiveTab>('active');
@@ -209,6 +214,19 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
   const [swapEvents, setSwapEvents] = useState<SwapEvent[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const eventListenerRef = useRef<ethers.Contract | null>(null);
+
+  const navQuery = useQuery({
+    queryKey: queryKeys.navCurrent(tokenAddress, chainId),
+    enabled: Boolean(chainId),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      if (!chainId) {
+        return null;
+      }
+      return getCurrentNav(tokenAddress, chainId);
+    },
+  });
 
   // ---- Helper: get contract -----------------------------------------------
 
@@ -969,6 +987,46 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
     return swaps.filter((s) => s.status === statusFilter);
   }, [swaps, statusFilter]);
 
+  const sellNavPremiumDiscount = useMemo(() => {
+    if (
+      !navQuery.data ||
+      !sellAmount ||
+      !sellQuoteAmount ||
+      !sellQuoteTokenMeta ||
+      !isUsdStableSymbol(sellQuoteTokenMeta.symbol)
+    ) {
+      return null;
+    }
+
+    const tokenAmount = Number.parseFloat(sellAmount);
+    const quoteAmount = Number.parseFloat(sellQuoteAmount);
+    if (!Number.isFinite(tokenAmount) || tokenAmount <= 0 || !Number.isFinite(quoteAmount) || quoteAmount <= 0) {
+      return null;
+    }
+
+    return computePremiumDiscount(navQuery.data.navPerToken, quoteAmount / tokenAmount);
+  }, [navQuery.data, sellAmount, sellQuoteAmount, sellQuoteTokenMeta]);
+
+  const buyNavPremiumDiscount = useMemo(() => {
+    if (
+      !navQuery.data ||
+      !buyAmount ||
+      !buyQuoteAmount ||
+      !buyQuoteTokenMeta ||
+      !isUsdStableSymbol(buyQuoteTokenMeta.symbol)
+    ) {
+      return null;
+    }
+
+    const tokenAmount = Number.parseFloat(buyAmount);
+    const quoteAmount = Number.parseFloat(buyQuoteAmount);
+    if (!Number.isFinite(tokenAmount) || tokenAmount <= 0 || !Number.isFinite(quoteAmount) || quoteAmount <= 0) {
+      return null;
+    }
+
+    return computePremiumDiscount(navQuery.data.navPerToken, quoteAmount / tokenAmount);
+  }, [buyAmount, buyQuoteAmount, buyQuoteTokenMeta, navQuery.data]);
+
   // ---- Balance check for sell form ----------------------------------------
 
   const sellBalanceInsufficient = useMemo(() => {
@@ -1098,6 +1156,52 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
               />
             </div>
 
+            {navQuery.data && (
+              <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 p-3 text-xs text-indigo-100">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold text-indigo-200">
+                      NAV reference: {tokenSymbol} is currently valued at ${Number.parseFloat(navQuery.data.navPerToken).toFixed(2)} per token
+                    </p>
+                    <p className="mt-1 text-indigo-100/70">
+                      Effective {formatTimestamp(Math.floor(new Date(navQuery.data.effectiveDate).getTime() / 1000))}
+                    </p>
+                  </div>
+                  {sellQuoteTokenMeta && isUsdStableSymbol(sellQuoteTokenMeta.symbol) && sellAmount && (
+                    <button
+                      type="button"
+                      className="rounded-lg border border-indigo-400/20 bg-indigo-500/15 px-3 py-2 font-medium text-indigo-100 transition-colors hover:bg-indigo-500/25"
+                      onClick={() =>
+                        setSellQuoteAmount(
+                          calculateQuotedNavAmount(
+                            sellAmount,
+                            navQuery.data?.navPerToken ?? '',
+                          ),
+                        )
+                      }
+                    >
+                      Use NAV Reference
+                    </button>
+                  )}
+                </div>
+                {sellQuoteTokenMeta && !isUsdStableSymbol(sellQuoteTokenMeta.symbol) && (
+                  <p className="mt-2 text-indigo-100/70">
+                    Premium/discount guidance appears when the quote token is USD-pegged.
+                  </p>
+                )}
+                {sellNavPremiumDiscount && (
+                  <p className="mt-2 font-medium">
+                    Listing is {Math.abs(sellNavPremiumDiscount.percent).toFixed(2)}%{' '}
+                    {sellNavPremiumDiscount.direction === 'at-nav'
+                      ? 'at NAV'
+                      : sellNavPremiumDiscount.direction === 'premium'
+                        ? 'premium to NAV'
+                        : 'discount to NAV'}
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Quote token amount */}
             <div>
               <label className="block text-xs text-gray-500 mb-1.5">
@@ -1216,6 +1320,52 @@ export default function SwapCenter({ tokenAddress }: SwapCenterProps) {
                 </p>
               )}
             </div>
+
+            {navQuery.data && (
+              <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 p-3 text-xs text-indigo-100">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold text-indigo-200">
+                      NAV reference: {tokenSymbol} is currently valued at ${Number.parseFloat(navQuery.data.navPerToken).toFixed(2)} per token
+                    </p>
+                    <p className="mt-1 text-indigo-100/70">
+                      Use this as a fair-value reference before accepting an OTC quote.
+                    </p>
+                  </div>
+                  {buyQuoteTokenMeta && isUsdStableSymbol(buyQuoteTokenMeta.symbol) && buyAmount && (
+                    <button
+                      type="button"
+                      className="rounded-lg border border-indigo-400/20 bg-indigo-500/15 px-3 py-2 font-medium text-indigo-100 transition-colors hover:bg-indigo-500/25"
+                      onClick={() =>
+                        setBuyQuoteAmount(
+                          calculateQuotedNavAmount(
+                            buyAmount,
+                            navQuery.data?.navPerToken ?? '',
+                          ),
+                        )
+                      }
+                    >
+                      Use NAV Reference
+                    </button>
+                  )}
+                </div>
+                {buyQuoteTokenMeta && !isUsdStableSymbol(buyQuoteTokenMeta.symbol) && (
+                  <p className="mt-2 text-indigo-100/70">
+                    Premium/discount guidance appears when the quote token is USD-pegged.
+                  </p>
+                )}
+                {buyNavPremiumDiscount && (
+                  <p className="mt-2 font-medium">
+                    Quote is {Math.abs(buyNavPremiumDiscount.percent).toFixed(2)}%{' '}
+                    {buyNavPremiumDiscount.direction === 'at-nav'
+                      ? 'at NAV'
+                      : buyNavPremiumDiscount.direction === 'premium'
+                        ? 'premium to NAV'
+                        : 'discount to NAV'}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Quote token amount */}
             <div>

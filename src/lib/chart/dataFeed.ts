@@ -97,15 +97,25 @@ function aggregateCandles(
   candles: ChartCandle[],
   interval: ChartInterval,
 ): ChartCandle[] {
+  const sanitizedCandles = sanitizeCandles(candles);
   if (interval !== '1w') {
-    return sanitizeCandles(candles);
+    return sanitizedCandles;
+  }
+
+  if (sanitizedCandles.length === 0) {
+    return [];
   }
 
   const weeklyBuckets = new Map<number, ChartCandle[]>();
   const intervalSeconds = INTERVAL_SECONDS[interval];
+  const latestTime = sanitizedCandles[sanitizedCandles.length - 1].time;
 
-  for (const candle of sanitizeCandles(candles)) {
-    const bucketTime = Math.floor(candle.time / intervalSeconds) * intervalSeconds;
+  for (const candle of sanitizedCandles) {
+    // Group backend daily candles into rolling 7-day windows instead of
+    // calendar-week buckets so the last week's price action stays intact even
+    // when the current series crosses a Sunday/Monday boundary.
+    const bucketOffset = Math.floor(Math.max(0, latestTime - candle.time) / intervalSeconds);
+    const bucketTime = latestTime - bucketOffset * intervalSeconds;
     const bucket = weeklyBuckets.get(bucketTime);
     if (bucket) {
       bucket.push(candle);

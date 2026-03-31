@@ -249,3 +249,121 @@ model DeployedContract {
   @@index([walletAddress])
   @@index([walletAddress, chainId])
 }
+
+model NavOracleRegistration {
+  id                            String   @id @default(uuid())
+  tokenAddress                  String   @db.VarChar(42)
+  chainId                       Int
+  oracleAddress                 String   @db.VarChar(42)
+  baseCurrency                  String   @default("USD") @db.VarChar(10)
+  stalenessWarningDays          Int      @default(90)
+  stalenessCriticalDays         Int      @default(180)
+  minAttestationIntervalSeconds Int      @default(86400)
+  maxNavChangeBps               Int      @default(5000)
+  lastIndexedBlock              BigInt?
+  createdBy                     String
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
+
+  attestations        NavAttestation[]
+  publisherAssignments NavPublisherAssignment[]
+
+  @@unique([tokenAddress, chainId])
+  @@unique([oracleAddress, chainId])
+  @@index([chainId])
+}
+
+model NavAttestation {
+  id               String               @id @default(uuid())
+  tokenAddress     String               @db.VarChar(42)
+  chainId          Int
+  oracleAddress    String               @db.VarChar(42)
+  navPerToken      Decimal              @db.Decimal(36, 6)
+  totalNAV         Decimal              @db.Decimal(36, 6)
+  totalTokenSupply Decimal              @db.Decimal(36, 0)
+  baseCurrency     String               @default("USD") @db.VarChar(10)
+  effectiveDate    DateTime
+  publishedAt      DateTime?
+  createdAt        DateTime             @default(now())
+  publisherAddress String               @db.VarChar(42)
+  publisherName    String?
+  reportHash       String               @db.VarChar(66)
+  reportURI        String
+  txHash           String?              @db.VarChar(66)
+  attestationIndex Int?
+  indexedBlockNumber BigInt?
+  status           NavAttestationStatus @default(PUBLISHED)
+
+  oracleRegistration NavOracleRegistration @relation(fields: [tokenAddress, chainId], references: [tokenAddress, chainId], onDelete: Cascade)
+  assetSnapshots      NavAssetSnapshot[]
+
+  @@unique([tokenAddress, chainId, attestationIndex])
+  @@index([tokenAddress, chainId, effectiveDate(sort: Desc)])
+  @@index([publisherAddress])
+  @@index([txHash])
+}
+
+model NavAssetSnapshot {
+  id                  String   @id @default(uuid())
+  attestationId       String
+  assetName           String
+  assetType           String
+  grossAssetValue     Decimal  @db.Decimal(36, 6)
+  liabilities         Decimal  @db.Decimal(36, 6) @default(0)
+  netAssetValue       Decimal  @db.Decimal(36, 6)
+  provenReservesOz    Decimal? @db.Decimal(36, 6)
+  probableReservesOz  Decimal? @db.Decimal(36, 6)
+  spotPricePerOz      Decimal? @db.Decimal(36, 6)
+  productionRateTpd   Decimal? @db.Decimal(36, 6)
+  notes               String?  @db.Text
+  createdAt           DateTime @default(now())
+
+  attestation NavAttestation @relation(fields: [attestationId], references: [id], onDelete: Cascade)
+
+  @@index([attestationId])
+}
+
+model NavPublisher {
+  id            String   @id @default(uuid())
+  walletAddress String   @unique @db.VarChar(42)
+  name          String
+  licenseNumber String?
+  licenseType   String?
+  contactEmail  String?
+  isActive      Boolean  @default(true)
+  addedBy       String
+  addedAt       DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  assignments NavPublisherAssignment[]
+
+  @@index([isActive])
+}
+
+model NavPublisherAssignment {
+  id            String   @id @default(uuid())
+  tokenAddress   String   @db.VarChar(42)
+  chainId        Int
+  walletAddress  String   @db.VarChar(42)
+  isActive       Boolean  @default(true)
+  addedBy        String
+  addedAt        DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  revokedAt      DateTime?
+  revokedBy      String?
+
+  oracleRegistration NavOracleRegistration @relation(fields: [tokenAddress, chainId], references: [tokenAddress, chainId], onDelete: Cascade)
+  publisher          NavPublisher          @relation(fields: [walletAddress], references: [walletAddress], onDelete: Cascade)
+
+  @@unique([tokenAddress, chainId, walletAddress])
+  @@index([walletAddress])
+  @@index([tokenAddress, chainId, isActive])
+}
+
+enum NavAttestationStatus {
+  DRAFT
+  PENDING_TX
+  PUBLISHED
+  SUPERSEDED
+  DISPUTED
+}

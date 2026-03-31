@@ -30,7 +30,7 @@ describe('RecentActivity', () => {
       {
         id: 'trade-1',
         type: 'exchange',
-        asset: '0xTokenA',
+        asset: 'Order #42 Filled',
         assetSymbol: 'TOKA',
         amount: '100',
         txHash: '0xabc',
@@ -46,5 +46,26 @@ describe('RecentActivity', () => {
     expect(screen.getByText(/Exchange/i)).toBeInTheDocument();
     expect(screen.getByText(/confirmed/i)).toBeInTheDocument();
     expect(screen.getByText(/TOKA/i)).toBeInTheDocument();
+    expect(screen.getByText(/Order #42 Filled/i)).toBeInTheDocument();
+  });
+
+  it('shows the full activity list when no maxItems limit is provided', () => {
+    const trades: TradeHistory[] = Array.from({ length: 12 }, (_, index) => ({
+      id: `trade-${index}`,
+      type: 'exchange',
+      asset: `Order #${index} Filled`,
+      assetSymbol: 'ORD',
+      amount: String(index + 1),
+      txHash: `0xabc${index}`,
+      timestamp: Date.now() - index * 1000,
+      from: '0xfrom',
+      to: '0xto',
+      status: 'confirmed',
+    }));
+
+    renderWithRouter(<RecentActivity trades={trades} chainId={1} />);
+
+    expect(screen.getByText(/Showing all 12 activities/i)).toBeInTheDocument();
+    expect(screen.getByText(/Order #11 Filled/i)).toBeInTheDocument();
   });
 });

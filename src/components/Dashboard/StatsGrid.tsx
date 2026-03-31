@@ -9,7 +9,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { ExchangeOrder, TradeHistory, WrappedAsset } from '../../types';
-import { formatCurrency, parseTokenAmount } from '../../lib/utils/helpers';
+import { formatCurrency } from '../../lib/utils/helpers';
 import { formatPercent } from '../../lib/formatters';
 import { CARD_CLASSES, GRID_CLASSES } from '../../lib/designTokens';
 
@@ -21,6 +21,8 @@ interface StatsGridProps {
   wrappedAssets: WrappedAsset[];
   userOrders: ExchangeOrder[];
   tradeHistory: TradeHistory[];
+  currentPortfolioValue?: number;
+  portfolioChange24h?: number | null;
 }
 
 interface StatCardProps {
@@ -34,49 +36,6 @@ interface StatCardProps {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Calculate the 24h portfolio change by comparing the sum of trade amounts
- * in the last 24 hours to the total value locked.
- */
-function compute24hChange(
-  tradeHistory: TradeHistory[],
-  totalValue: number,
-): { value: number; period: string } | undefined {
-  if (totalValue === 0 || tradeHistory.length === 0) return undefined;
-
-  const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-  let netChange = 0;
-
-  for (const trade of tradeHistory) {
-    if (trade.timestamp < oneDayAgo) continue;
-    if (trade.status !== 'confirmed') continue;
-
-    const rawAmount = parseFloat(trade.amount);
-    const amount = Number.isNaN(rawAmount) ? 0 : Math.abs(rawAmount);
-
-    if (
-      trade.type === 'mint' ||
-      trade.type === 'security-mint' ||
-      trade.type === 'exchange' ||
-      trade.type === 'swap-eth' ||
-      trade.type === 'swap-erc20'
-    ) {
-      netChange += amount;
-    } else if (trade.type === 'burn') {
-      netChange -= amount;
-    }
-  }
-
-  if (netChange === 0) return undefined;
-
-  // Express as percentage of total value
-  const previousValue = totalValue - netChange;
-  if (previousValue <= 0) return undefined;
-
-  const pctChange = (netChange / previousValue) * 100;
-  return { value: pctChange, period: 'vs 24h ago' };
-}
 
 // ---------------------------------------------------------------------------
 // StatCard
@@ -155,23 +114,22 @@ export default function StatsGrid({
   wrappedAssets,
   userOrders,
   tradeHistory,
+  currentPortfolioValue = 0,
+  portfolioChange24h = null,
 }: StatsGridProps) {
   const totalAssets = wrappedAssets.length;
 
-  const totalValueLocked = wrappedAssets.reduce((sum, asset) => {
-    return sum + parseTokenAmount(asset.originalValue || '0');
-  }, 0);
-
   const totalTrades = tradeHistory.length;
   const activeOrders = userOrders.filter((o) => !o.cancelled).length;
-
-  const portfolioChange = compute24hChange(tradeHistory, totalValueLocked);
+  const portfolioChange = portfolioChange24h === null || portfolioChange24h === 0
+    ? undefined
+    : { value: portfolioChange24h, period: 'vs 24h ago' };
 
   return (
     <div className={GRID_CLASSES.stats}>
       <StatCard
         label="Portfolio Value"
-        value={formatCurrency(totalValueLocked)}
+        value={formatCurrency(currentPortfolioValue)}
         change={portfolioChange}
         icon={<Wallet className="h-4 w-4 text-indigo-400" />}
         accentColor="#6366F1"

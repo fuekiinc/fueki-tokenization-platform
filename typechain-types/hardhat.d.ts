@@ -162,6 +162,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.LiquidityPoolAMM__factory>;
     getContractFactory(
+      name: "NAVOracle",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.NAVOracle__factory>;
+    getContractFactory(
       name: "OrbitalFactory",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.OrbitalFactory__factory>;
@@ -568,6 +572,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.LiquidityPoolAMM>;
     getContractAt(
+      name: "NAVOracle",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.NAVOracle>;
+    getContractAt(
       name: "OrbitalFactory",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -992,6 +1001,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.LiquidityPoolAMM>;
     deployContract(
+      name: "NAVOracle",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.NAVOracle>;
+    deployContract(
       name: "OrbitalFactory",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.OrbitalFactory>;
@@ -1397,6 +1410,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.LiquidityPoolAMM>;
+    deployContract(
+      name: "NAVOracle",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.NAVOracle>;
     deployContract(
       name: "OrbitalFactory",
       args: any[],

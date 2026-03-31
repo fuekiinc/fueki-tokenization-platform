@@ -76,6 +76,8 @@ export type { AssetExchange } from "./contracts/AssetExchange";
 export { AssetExchange__factory } from "./factories/contracts/AssetExchange__factory";
 export type { LiquidityPoolAMM } from "./contracts/LiquidityPoolAMM.sol/LiquidityPoolAMM";
 export { LiquidityPoolAMM__factory } from "./factories/contracts/LiquidityPoolAMM.sol/LiquidityPoolAMM__factory";
+export type { NAVOracle } from "./contracts/NAVOracle";
+export { NAVOracle__factory } from "./factories/contracts/NAVOracle__factory";
 export type { OrbitalFactory } from "./contracts/orbital/OrbitalFactory";
 export { OrbitalFactory__factory } from "./factories/contracts/orbital/OrbitalFactory__factory";
 export type { OrbitalMath } from "./contracts/orbital/OrbitalMath";

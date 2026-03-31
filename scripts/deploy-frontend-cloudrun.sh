@@ -13,6 +13,9 @@ export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 #   PROJECT_ID=... REGION=us-central1 SERVICE=fueki-frontend ./scripts/deploy-frontend-cloudrun.sh
 #   DRY_RUN=1 ./scripts/deploy-frontend-cloudrun.sh
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/cloudrun-deploy-helpers.sh"
+
 if ! command -v gcloud >/dev/null 2>&1; then
   echo "gcloud CLI is required but not found in PATH."
   exit 1
@@ -181,6 +184,11 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   exit 0
 fi
 
+PREVIOUS_CREATED_REVISION="$(
+  cloudrun_service_value "$SERVICE" "$PROJECT_ID" "$REGION" "status.latestCreatedRevisionName" \
+    2>/dev/null || true
+)"
+
 gcloud run deploy "$SERVICE" \
   --project "$PROJECT_ID" \
   --region "$REGION" \
@@ -189,24 +197,16 @@ gcloud run deploy "$SERVICE" \
   --quiet
 
 if [ "$PROMOTE_TRAFFIC" = "1" ]; then
-  LATEST_READY_REVISION="$(
-    gcloud run services describe "$SERVICE" \
-      --project "$PROJECT_ID" \
-      --region "$REGION" \
-      --format='value(status.latestReadyRevisionName)'
+  NEW_REVISION="$(
+    wait_for_new_revision "$SERVICE" "$PROJECT_ID" "$REGION" "$PREVIOUS_CREATED_REVISION"
   )"
 
-  if [ -z "$LATEST_READY_REVISION" ]; then
-    echo "Deploy completed, but no ready frontend revision was found to promote."
-    exit 1
-  fi
+  echo "Waiting for revision $NEW_REVISION to become ready."
+  wait_for_revision_ready "$NEW_REVISION" "$PROJECT_ID" "$REGION"
 
-  echo "Promoting revision $LATEST_READY_REVISION to 100% traffic."
-  gcloud run services update-traffic "$SERVICE" \
-    --project "$PROJECT_ID" \
-    --region "$REGION" \
-    --to-revisions "${LATEST_READY_REVISION}=100" \
-    --quiet
+  echo "Promoting revision $NEW_REVISION to 100% traffic."
+  promote_revision_to_full_traffic "$SERVICE" "$NEW_REVISION" "$PROJECT_ID" "$REGION"
+  verify_full_traffic_revision "$SERVICE" "$NEW_REVISION" "$PROJECT_ID" "$REGION"
 
   echo "Current traffic:"
   gcloud run services describe "$SERVICE" \

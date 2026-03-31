@@ -16,6 +16,7 @@ import mintRequestRoutes from './routes/mintRequests';
 import securityTokenRequestRoutes from './routes/securityTokenRequests';
 import deploymentRoutes from './routes/deployments';
 import marketDataRoutes from './routes/marketData';
+import navRoutes from './routes/nav';
 
 const app = express();
 
@@ -87,6 +88,7 @@ app.use('/api/security-token-requests', securityTokenRequestRoutes);
 app.use('/api/deployments', deploymentRoutes);
 app.use('/api/v1/contracts/deployments', deploymentRoutes);
 app.use('/api/market-data', marketDataRoutes);
+app.use('/api/v1/nav', navRoutes);
 
 // Global error handler
 app.use(errorHandler);

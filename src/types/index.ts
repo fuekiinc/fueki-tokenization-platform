@@ -173,6 +173,8 @@ export interface TradeHistory {
   id: string;
   type: 'mint' | 'burn' | 'transfer' | 'exchange' | 'security-mint' | 'swap-eth' | 'swap-erc20';
   asset: string;
+  /** Optional contract address for the primary asset involved in the trade. */
+  assetAddress?: string;
   assetSymbol: string;
   amount: string;
   txHash: string;

@@ -47,6 +47,41 @@ export const queryKeys = {
     chainId ?? 'unknown',
     interval,
   ] as const,
+  orbitalPoolHistory: (
+    poolAddress: string | null | undefined,
+    tokenInIndex: number | null | undefined,
+    tokenOutIndex: number | null | undefined,
+    chainId: number | null | undefined,
+    interval: string,
+  ) => [
+    'orbitalPoolHistory',
+    normalizeAddress(poolAddress, 'none'),
+    tokenInIndex ?? 'none',
+    tokenOutIndex ?? 'none',
+    chainId ?? 'unknown',
+    interval,
+  ] as const,
+  navRegistration: (tokenAddress: string | null | undefined, chainId: number | null | undefined) =>
+    ['navRegistration', normalizeAddress(tokenAddress, 'none'), chainId ?? 'unknown'] as const,
+  navCurrent: (tokenAddress: string | null | undefined, chainId: number | null | undefined) =>
+    ['navCurrent', normalizeAddress(tokenAddress, 'none'), chainId ?? 'unknown'] as const,
+  navHistory: (
+    tokenAddress: string | null | undefined,
+    chainId: number | null | undefined,
+    range: string,
+  ) => ['navHistory', normalizeAddress(tokenAddress, 'none'), chainId ?? 'unknown', range] as const,
+  navHolderValue: (
+    tokenAddress: string | null | undefined,
+    holderAddress: string | null | undefined,
+    chainId: number | null | undefined,
+  ) => [
+    'navHolderValue',
+    normalizeAddress(tokenAddress, 'none'),
+    normalizeAddress(holderAddress, 'anonymous'),
+    chainId ?? 'unknown',
+  ] as const,
+  navPublishers: (tokenAddress: string | null | undefined, chainId: number | null | undefined) =>
+    ['navPublishers', normalizeAddress(tokenAddress, 'none'), chainId ?? 'unknown'] as const,
 };
 
 export const queryClient = new QueryClient({
@@ -65,6 +100,7 @@ export function invalidateQueriesForTopics(topics: RpcRefetchTopic[]): void {
     switch (topic) {
       case 'balances':
         void queryClient.invalidateQueries({ queryKey: ['balance'] });
+        void queryClient.invalidateQueries({ queryKey: ['navHolderValue'] });
         break;
       case 'orders':
         void queryClient.invalidateQueries({ queryKey: ['orderBook'] });
@@ -72,15 +108,21 @@ export function invalidateQueriesForTopics(topics: RpcRefetchTopic[]): void {
         break;
       case 'pool':
         void queryClient.invalidateQueries({ queryKey: ['poolStats'] });
+        void queryClient.invalidateQueries({ queryKey: ['orbitalPoolHistory'] });
         break;
       case 'pending-transactions':
         void queryClient.invalidateQueries({ queryKey: ['pendingTxs'] });
         break;
       case 'market-data':
+        void queryClient.invalidateQueries({ queryKey: ['navCurrent'] });
+        void queryClient.invalidateQueries({ queryKey: ['navHistory'] });
         void queryClient.invalidateQueries({ queryKey: ['priceHistory'] });
+        void queryClient.invalidateQueries({ queryKey: ['orbitalPoolHistory'] });
         break;
       case 'allowances':
       case 'history':
+        void queryClient.invalidateQueries({ queryKey: ['navHistory'] });
+        break;
       case 'gas':
       default:
         break;

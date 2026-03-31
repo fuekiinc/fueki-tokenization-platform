@@ -16,6 +16,7 @@ import {
   BarChart3,
   CalendarClock,
   LayoutDashboard,
+  LineChart,
   Pause,
   Settings,
   Shield,
@@ -48,6 +49,7 @@ import SwapCenter from '../components/SecurityToken/SwapCenter';
 import ComplianceMonitor from '../components/SecurityToken/ComplianceMonitor';
 import TokenAnalytics from '../components/SecurityToken/TokenAnalytics';
 import HolderPortfolio from '../components/SecurityToken/HolderPortfolio';
+import ValuationDashboard from '../components/SecurityToken/ValuationDashboard';
 
 // ---------------------------------------------------------------------------
 // Tab definitions
@@ -66,6 +68,7 @@ const TABS: TabDef[] = [
   { id: 'vesting', label: 'Vesting', icon: CalendarClock },
   { id: 'dividends', label: 'Dividends', icon: Banknote },
   { id: 'swaps', label: 'Swaps', icon: ArrowRightLeft },
+  { id: 'valuation', label: 'Valuation', icon: LineChart },
   { id: 'compliance', label: 'Compliance', icon: ShieldAlert },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'portfolio', label: 'My Portfolio', icon: Wallet },
@@ -228,6 +231,8 @@ export default function SecurityTokenPage() {
         return <DividendManager tokenAddress={selectedToken} />;
       case 'swaps':
         return <SwapCenter tokenAddress={selectedToken} />;
+      case 'valuation':
+        return <ValuationDashboard tokenAddress={selectedToken} />;
       case 'compliance':
         return <ComplianceMonitor tokenAddress={selectedToken} />;
       case 'analytics':

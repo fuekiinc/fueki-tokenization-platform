@@ -10,7 +10,8 @@ import {
 } from 'recharts';
 import clsx from 'clsx';
 import { BarChart3, TrendingUp } from 'lucide-react';
-import type { TradeHistory } from '../../types/index';
+import type { TradeHistory, WrappedAsset } from '../../types/index';
+import { buildPortfolioValueSeries } from '../../lib/dashboardMetrics';
 import { formatCurrency } from '../../lib/utils/helpers';
 import { formatCompact, formatPercent } from '../../lib/formatters';
 import {
@@ -27,8 +28,10 @@ import {
 // ---------------------------------------------------------------------------
 
 interface ValueChartProps {
+  assets: WrappedAsset[];
   tradeHistory: TradeHistory[];
   currentPortfolioValue?: number;
+  walletAddress?: string | null;
 }
 
 type TimeRange = '7D' | '30D' | '90D' | 'ALL';
@@ -45,62 +48,11 @@ interface DataPoint {
 
 const TIME_RANGES: TimeRange[] = ['7D', '30D', '90D', 'ALL'];
 
-const RANGE_MS: Record<TimeRange, number> = {
+const RANGE_MS: Record<Exclude<TimeRange, 'ALL'>, number> = {
   '7D': 7 * 24 * 60 * 60 * 1000,
   '30D': 30 * 24 * 60 * 60 * 1000,
   '90D': 90 * 24 * 60 * 60 * 1000,
-  ALL: Infinity,
 };
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function buildDataPoints(
-  trades: TradeHistory[],
-  range: TimeRange,
-): DataPoint[] {
-  if (trades.length === 0) return [];
-
-  const now = Date.now();
-  const cutoff = range === 'ALL' ? 0 : now - RANGE_MS[range];
-
-  // Filter trades within the selected range
-  const filtered = trades
-    .filter((t) => t.timestamp >= cutoff && t.status === 'confirmed')
-    .sort((a, b) => a.timestamp - b.timestamp);
-
-  if (filtered.length === 0) return [];
-
-  // Accumulate a running total from trade amounts.
-  // Mints/transfers-in add value; burns subtract.
-  let runningValue = 0;
-  const points: DataPoint[] = [];
-
-  for (const trade of filtered) {
-    const rawAmount = parseFloat(trade.amount);
-    const amount = Number.isNaN(rawAmount) ? 0 : Math.abs(rawAmount);
-
-    if (trade.type === 'mint' || trade.type === 'security-mint' || trade.type === 'exchange' || trade.type === 'swap-eth' || trade.type === 'swap-erc20') {
-      runningValue += amount;
-    } else if (trade.type === 'burn') {
-      runningValue = Math.max(0, runningValue - amount);
-    }
-    // transfer keeps the same total (zero-sum within wallet)
-
-    const d = new Date(trade.timestamp);
-    const dateLabel = Number.isNaN(d.getTime())
-      ? 'Unknown'
-      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    points.push({
-      date: dateLabel,
-      timestamp: trade.timestamp,
-      value: runningValue,
-    });
-  }
-
-  return points;
-}
 
 function buildHoldingsFallback(range: TimeRange, currentPortfolioValue: number): DataPoint[] {
   if (!Number.isFinite(currentPortfolioValue) || currentPortfolioValue <= 0) {
@@ -174,27 +126,45 @@ function ActiveDot(props: Record<string, unknown>) {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function ValueChart({ tradeHistory, currentPortfolioValue = 0 }: ValueChartProps) {
+export default function ValueChart({
+  assets,
+  tradeHistory,
+  currentPortfolioValue = 0,
+  walletAddress = null,
+}: ValueChartProps) {
   const [range, setRange] = useState<TimeRange>('30D');
 
+  const valueSeries = useMemo(() => {
+    return buildPortfolioValueSeries({
+      trades: tradeHistory,
+      assets,
+      currentPortfolioValue,
+      walletAddress,
+      range,
+    });
+  }, [assets, currentPortfolioValue, range, tradeHistory, walletAddress]);
+
   const dataPoints = useMemo(() => {
-    const fromTrades = buildDataPoints(tradeHistory, range);
-    if (fromTrades.length > 0) return fromTrades;
+    if (valueSeries.points.length > 0) {
+      return valueSeries.points.map((point) => ({
+        date: point.date,
+        timestamp: point.timestamp,
+        value: point.value,
+      }));
+    }
     return buildHoldingsFallback(range, currentPortfolioValue);
-  }, [tradeHistory, range, currentPortfolioValue]);
+  }, [valueSeries.points, range, currentPortfolioValue]);
 
   // Calculate change for the period — capped to ±9999% to avoid absurd
-  // display when the first data point is near-zero (e.g. a tiny swap
-  // followed by a large mint).
+  // display when the starting value is near-zero.
   const periodChange = useMemo(() => {
-    if (dataPoints.length < 2) return null;
-    const first = dataPoints[0]!.value;
-    const last = dataPoints[dataPoints.length - 1]!.value;
-    if (first === 0) return null;
-    const raw = ((last - first) / first) * 100;
+    if (valueSeries.points.length === 0 || valueSeries.startValue <= 0) {
+      return null;
+    }
+    const raw = ((valueSeries.endValue - valueSeries.startValue) / valueSeries.startValue) * 100;
     if (!Number.isFinite(raw)) return null;
     return Math.max(-9999, Math.min(9999, raw));
-  }, [dataPoints]);
+  }, [valueSeries]);
 
   return (
     <div className={clsx(CARD_CLASSES.base, CARD_CLASSES.wrapper, CARD_CLASSES.shadow, 'p-8 sm:p-11')}>
@@ -227,7 +197,7 @@ export default function ValueChart({ tradeHistory, currentPortfolioValue = 0 }: 
               )}
             </div>
             <p className={CHART_HEADER_CLASSES.subtitle}>
-              Cumulative value over time
+              Holdings-based value over time
             </p>
           </div>
         </div>

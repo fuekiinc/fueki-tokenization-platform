@@ -10,6 +10,7 @@
 
 import { create } from 'zustand';
 import type { TradeHistory } from '../types/index.ts';
+import { mergeTradeHistoryEntries } from '../lib/dashboardActivity';
 import { withStoreMiddleware } from './storeMiddleware';
 
 // ---------------------------------------------------------------------------
@@ -29,9 +30,6 @@ const MIN_SLIPPAGE_BPS = 1;
 
 /** Maximum slippage tolerance (50%). */
 const MAX_SLIPPAGE_BPS = 5000;
-
-/** Maximum number of recent trades to keep in memory. */
-const MAX_RECENT_TRADES = 100;
 
 /** Maximum number of pending transactions to track. */
 const MAX_PENDING_TXS = 20;
@@ -111,10 +109,7 @@ function makeTradeHistoryScopeKey(address: string | null, chainId: number | null
 }
 
 function normalizeTradeHistory(trades: TradeHistory[]): TradeHistory[] {
-  return trades
-    .filter(isValidTradeHistoryEntry)
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, MAX_RECENT_TRADES);
+  return mergeTradeHistoryEntries(trades.filter(isValidTradeHistoryEntry));
 }
 
 function loadTradeHistory(scopeKey: string | null): TradeHistory[] {
@@ -225,7 +220,7 @@ export const useTradeStore = create<TradeStore>()(withStoreMiddleware('trade', (
 
   addTrade: (trade) =>
     set((state) => {
-      const trimmed = normalizeTradeHistory([trade, ...state.tradeHistory]);
+      const trimmed = mergeTradeHistoryEntries([trade], state.tradeHistory);
       saveTradeHistory(state.activeScopeKey, trimmed);
       return {
         tradeHistory: trimmed,

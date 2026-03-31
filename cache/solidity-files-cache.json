@@ -3646,6 +3646,48 @@
       "artifacts": [
         "EasyAccessControl"
       ]
+    },
+    "/Users/apple/Documents/GitHub/fueki-tokenization-platform/contracts/NAVOracle.sol": {
+      "lastModificationDate": 1774913371153,
+      "contentHash": "532954c0d57733deaf413877eee02fc9",
+      "sourceName": "contracts/NAVOracle.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "viaIR": true,
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/access/AccessControl.sol",
+        "@openzeppelin/contracts/security/Pausable.sol",
+        "@openzeppelin/contracts/token/ERC20/IERC20.sol",
+        "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "NAVOracle"
+      ]
     }
   }
 }

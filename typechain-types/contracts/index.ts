@@ -14,6 +14,7 @@ export type { templates };
 import type * as test from "./test";
 export type { test };
 export type { AssetExchange } from "./AssetExchange";
+export type { NAVOracle } from "./NAVOracle";
 export type { TestWBTC } from "./TestWBTC";
 export type { WrappedAsset } from "./WrappedAsset";
 export type { WrappedAssetFactory } from "./WrappedAssetFactory";

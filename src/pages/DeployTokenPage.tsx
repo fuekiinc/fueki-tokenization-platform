@@ -1145,6 +1145,7 @@ export default function DeployTokenPage() {
         id: `security-mint-${receipt.hash}`,
         type: 'security-mint',
         asset: form.name.trim(),
+        assetAddress: tokenAddress || undefined,
         assetSymbol: form.symbol.trim().toUpperCase(),
         amount: form.totalSupply || '0',
         txHash: receipt.hash,

@@ -13,7 +13,9 @@ import {
 } from 'recharts';
 import clsx from 'clsx';
 import { ArrowUpRight, Sparkles, TrendingUp } from 'lucide-react';
-import type { TradeHistory } from '../../types/index';
+import type { TradeHistory, WrappedAsset } from '../../types/index';
+import { buildPortfolioValueSeries } from '../../lib/dashboardMetrics';
+import { calculatePortfolioSummary } from '../../lib/portfolioMetrics';
 import { formatCurrency } from '../../lib/utils/helpers';
 import { formatCompact, formatPercent } from '../../lib/formatters';
 import {
@@ -30,8 +32,10 @@ import {
 // ---------------------------------------------------------------------------
 
 interface PnLTrackerProps {
+  assets: WrappedAsset[];
   tradeHistory: TradeHistory[];
   currentPortfolioValue?: number;
+  walletAddress?: string | null;
 }
 
 type TimeRange = '7D' | '30D' | '90D' | 'ALL';
@@ -47,11 +51,11 @@ interface PnLDataPoint {
 
 interface PerformanceSummary {
   portfolioValue: number;
-  totalInvested: number;
-  totalReturns: number;
-  roi: number;
+  rangeChange: number;
+  totalPnL: number | null;
+  roi: number | null;
   totalTrades: number;
-  successfulTrades: number;
+  assetsWithCostData: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,151 +63,6 @@ interface PerformanceSummary {
 // ---------------------------------------------------------------------------
 
 const TIME_RANGES: TimeRange[] = ['7D', '30D', '90D', 'ALL'];
-
-const RANGE_MS: Record<TimeRange, number> = {
-  '7D': 7 * 24 * 60 * 60 * 1000,
-  '30D': 30 * 24 * 60 * 60 * 1000,
-  '90D': 90 * 24 * 60 * 60 * 1000,
-  ALL: Infinity,
-};
-
-// ---------------------------------------------------------------------------
-// Helpers — portfolio-positive framing
-// ---------------------------------------------------------------------------
-
-/** Every trade is a portfolio-building event; value always trends upward. */
-function classifyTradeValue(trade: TradeHistory): number {
-  const rawAmount = parseFloat(trade.amount);
-  const amount = Number.isNaN(rawAmount) ? 0 : Math.abs(rawAmount);
-
-  switch (trade.type) {
-    case 'mint':
-    case 'security-mint':
-      // Minting = you're growing your portfolio — positive activity
-      return amount;
-    case 'burn':
-      // Burning = you realized value — show the gain portion
-      return amount * 0.15; // ~15% realized return on redemption
-    case 'exchange':
-    case 'swap-eth':
-    case 'swap-erc20':
-      // Swaps = active trading generating returns
-      return amount * 0.05; // ~5% avg gain per swap
-    case 'transfer':
-      // Transfers = portfolio movement, slight value from liquidity
-      return amount * 0.01;
-    default:
-      return 0;
-  }
-}
-
-function buildPnLData(
-  trades: TradeHistory[],
-  range: TimeRange,
-): PnLDataPoint[] {
-  if (trades.length === 0) return [];
-
-  const now = Date.now();
-  const cutoff = range === 'ALL' ? 0 : now - RANGE_MS[range];
-
-  const filtered = trades
-    .filter((t) => t.timestamp >= cutoff && t.status === 'confirmed')
-    .sort((a, b) => a.timestamp - b.timestamp);
-
-  if (filtered.length === 0) return [];
-
-  // Group by day
-  const dailyMap = new Map<string, { pnl: number; timestamp: number }>();
-
-  for (const trade of filtered) {
-    const d = new Date(trade.timestamp);
-    const dateKey = Number.isNaN(d.getTime())
-      ? 'unknown'
-      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-    const existing = dailyMap.get(dateKey);
-    const tradePnL = classifyTradeValue(trade);
-
-    if (existing) {
-      existing.pnl += tradePnL;
-    } else {
-      dailyMap.set(dateKey, { pnl: tradePnL, timestamp: trade.timestamp });
-    }
-  }
-
-  let cumulativePnl = 0;
-  const points: PnLDataPoint[] = [];
-
-  for (const [dateKey, { pnl, timestamp }] of dailyMap) {
-    cumulativePnl += pnl;
-    const d = new Date(timestamp);
-    const dateLabel = Number.isNaN(d.getTime())
-      ? 'Unknown'
-      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-    points.push({
-      date: dateLabel,
-      dateKey,
-      timestamp,
-      pnl,
-      cumulativePnl,
-    });
-  }
-
-  return points;
-}
-
-function computeSummary(
-  trades: TradeHistory[],
-  currentPortfolioValue: number,
-): PerformanceSummary {
-  const confirmed = trades.filter((t) => t.status === 'confirmed');
-
-  let totalInvested = 0;
-  let totalReturns = 0;
-  let successfulTrades = 0;
-
-  for (const trade of confirmed) {
-    const rawAmount = parseFloat(trade.amount);
-    const amount = Number.isNaN(rawAmount) ? 0 : Math.abs(rawAmount);
-
-    if (trade.type === 'mint' || trade.type === 'security-mint') {
-      totalInvested += amount;
-      successfulTrades++; // Every successful mint is a win
-    } else if (trade.type === 'burn') {
-      totalReturns += amount;
-      successfulTrades++;
-    } else if (
-      trade.type === 'exchange' ||
-      trade.type === 'swap-eth' ||
-      trade.type === 'swap-erc20'
-    ) {
-      totalReturns += amount * 0.05;
-      successfulTrades++;
-    }
-  }
-
-  // Portfolio value = what they hold + what they've cashed out
-  const portfolioValue = currentPortfolioValue + totalReturns;
-
-  const totalTrades = confirmed.filter(
-    (t) => t.type !== 'transfer',
-  ).length;
-
-  // ROI: (current value - total invested) / total invested * 100
-  const roi = totalInvested > 0
-    ? ((portfolioValue - totalInvested) / totalInvested) * 100
-    : 0;
-
-  return {
-    portfolioValue: Number.isFinite(portfolioValue) ? Math.max(0, portfolioValue) : 0,
-    totalInvested: Number.isFinite(totalInvested) ? totalInvested : 0,
-    totalReturns: Number.isFinite(totalReturns) ? totalReturns : 0,
-    roi: Number.isFinite(roi) ? roi : 0,
-    totalTrades,
-    successfulTrades,
-  };
-}
 
 function formatYAxis(value: number): string {
   if (!Number.isFinite(value)) return '$0';
@@ -219,15 +78,22 @@ function StatCard({
   value,
   isPercentage = false,
   highlight = false,
+  signed = false,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   isPercentage?: boolean;
   highlight?: boolean;
+  signed?: boolean;
 }) {
-  const formatted = isPercentage
-    ? formatPercent(value)
-    : formatCurrency(Math.abs(value));
+  const formatted =
+    value === null
+      ? '--'
+      : isPercentage
+        ? formatPercent(value)
+        : signed
+          ? `${value >= 0 ? '+' : '-'}${formatCurrency(Math.abs(value))}`
+          : formatCurrency(Math.abs(value));
 
   return (
     <div
@@ -271,6 +137,7 @@ function PnLTooltip({ active, payload, label, viewMode }: PnLTooltipProps) {
 
   const value = entry.value;
   const data = entry.payload;
+  const positive = value >= 0;
 
   return (
     <div style={CHART_TOOLTIP_STYLE}>
@@ -278,14 +145,16 @@ function PnLTooltip({ active, payload, label, viewMode }: PnLTooltipProps) {
         {label}
       </p>
       <div className="flex items-center gap-2">
-        <ArrowUpRight className="h-3.5 w-3.5 text-emerald-400" />
-        <p className="text-base font-bold text-emerald-400">
-          +{formatCurrency(Math.abs(value))}
+        <ArrowUpRight className={clsx('h-3.5 w-3.5', positive ? 'text-emerald-400' : 'text-red-400 rotate-90')} />
+        <p className={clsx('text-base font-bold', positive ? 'text-emerald-400' : 'text-red-400')}>
+          {positive ? '+' : '-'}
+          {formatCurrency(Math.abs(value))}
         </p>
       </div>
       {viewMode === 'daily' && data && (
         <p className="text-[10px] text-gray-500 mt-1">
-          Total growth: +{formatCurrency(Math.abs(data.cumulativePnl))}
+          Range change: {data.cumulativePnl >= 0 ? '+' : '-'}
+          {formatCurrency(Math.abs(data.cumulativePnl))}
         </p>
       )}
     </div>
@@ -297,27 +166,58 @@ function PnLTooltip({ active, payload, label, viewMode }: PnLTooltipProps) {
 // ---------------------------------------------------------------------------
 
 export default function PnLTracker({
+  assets,
   tradeHistory,
   currentPortfolioValue = 0,
+  walletAddress = null,
 }: PnLTrackerProps) {
   const [range, setRange] = useState<TimeRange>('30D');
   const [viewMode, setViewMode] = useState<ViewMode>('cumulative');
 
-  const dataPoints = useMemo(
-    () => buildPnLData(tradeHistory, range),
-    [tradeHistory, range],
+  const valueSeries = useMemo(() => {
+    return buildPortfolioValueSeries({
+      trades: tradeHistory,
+      assets,
+      currentPortfolioValue,
+      walletAddress,
+      range,
+    });
+  }, [assets, currentPortfolioValue, range, tradeHistory, walletAddress]);
+
+  const dataPoints = useMemo<PnLDataPoint[]>(() => {
+    return valueSeries.points.map((point) => ({
+      date: point.date,
+      dateKey: point.dateKey,
+      timestamp: point.timestamp,
+      pnl: point.dailyChange,
+      cumulativePnl: point.cumulativeChange,
+    }));
+  }, [valueSeries.points]);
+
+  const portfolioSummary = useMemo(
+    () => calculatePortfolioSummary(assets, tradeHistory),
+    [assets, tradeHistory],
   );
 
-  const summary = useMemo(
-    () => computeSummary(tradeHistory, currentPortfolioValue),
-    [tradeHistory, currentPortfolioValue],
-  );
+  const summary = useMemo<PerformanceSummary>(() => {
+    const hasCostData = portfolioSummary.assetsWithCostData > 0;
+    const confirmedTrades = tradeHistory.filter((trade) => trade.status === 'confirmed');
+    return {
+      portfolioValue: Number.isFinite(currentPortfolioValue) ? Math.max(0, currentPortfolioValue) : 0,
+      rangeChange: dataPoints.length > 0 ? dataPoints[dataPoints.length - 1]!.cumulativePnl : 0,
+      totalPnL: hasCostData ? portfolioSummary.totalPnL : null,
+      roi: hasCostData ? portfolioSummary.totalPercentageChange : null,
+      totalTrades: confirmedTrades.length,
+      assetsWithCostData: portfolioSummary.assetsWithCostData,
+    };
+  }, [currentPortfolioValue, dataPoints, portfolioSummary, tradeHistory]);
 
   const chartDataKey = viewMode === 'cumulative' ? 'cumulativePnl' : 'pnl';
 
   const totalGrowth = dataPoints.length > 0
     ? dataPoints[dataPoints.length - 1]!.cumulativePnl
     : 0;
+  const totalGrowthPositive = totalGrowth >= 0;
 
   return (
     <div className={clsx(CARD_CLASSES.base, CARD_CLASSES.wrapper, CARD_CLASSES.shadow, 'p-8 sm:p-11')}>
@@ -337,15 +237,21 @@ export default function PnLTracker({
               </h3>
               {dataPoints.length > 0 && (
                 <span
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg text-emerald-400 bg-emerald-500/10"
+                  className={clsx(
+                    'inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg',
+                    totalGrowthPositive
+                      ? 'text-emerald-400 bg-emerald-500/10'
+                      : 'text-red-400 bg-red-500/10',
+                  )}
                 >
-                  <ArrowUpRight className="h-3 w-3" />
-                  +{formatCurrency(totalGrowth)}
+                  <ArrowUpRight className={clsx('h-3 w-3', !totalGrowthPositive && 'rotate-90')} />
+                  {totalGrowthPositive ? '+' : '-'}
+                  {formatCurrency(Math.abs(totalGrowth))}
                 </span>
               )}
             </div>
             <p className={CHART_HEADER_CLASSES.subtitle}>
-              Your portfolio growth and activity
+              Holdings-based value change and cost-basis performance
             </p>
           </div>
         </div>
@@ -404,8 +310,8 @@ export default function PnLTracker({
       {/* Summary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-5">
         <StatCard label="Portfolio Value" value={summary.portfolioValue} highlight />
-        <StatCard label="Total Invested" value={summary.totalInvested} />
-        <StatCard label="Returns" value={summary.totalReturns} />
+        <StatCard label="Range Change" value={summary.rangeChange} signed />
+        <StatCard label="Lifetime P&L" value={summary.totalPnL} signed />
         <StatCard
           label="ROI"
           value={summary.roi}
@@ -420,10 +326,10 @@ export default function PnLTracker({
             <Sparkles className={EMPTY_STATE_CLASSES.icon} />
           </div>
           <p className={EMPTY_STATE_CLASSES.title}>
-            Ready to grow your portfolio
+            No performance data for this period
           </p>
           <p className={EMPTY_STATE_CLASSES.description}>
-            Start tokenizing assets to track your performance here
+            New confirmed activity will appear here as the dashboard refreshes
           </p>
         </div>
       ) : viewMode === 'cumulative' ? (
@@ -436,10 +342,20 @@ export default function PnLTracker({
                   <stop offset="50%" stopColor="#10B981" stopOpacity={0.1} />
                   <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
                 </linearGradient>
+                <linearGradient id="pnlGradientNeg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#F87171" stopOpacity={0.3} />
+                  <stop offset="50%" stopColor="#F87171" stopOpacity={0.1} />
+                  <stop offset="100%" stopColor="#F87171" stopOpacity={0} />
+                </linearGradient>
                 <linearGradient id="pnlLinePos" x1="0" y1="0" x2="1" y2="0">
                   <stop offset="0%" stopColor="#10B981" />
                   <stop offset="50%" stopColor="#34D399" />
                   <stop offset="100%" stopColor="#6EE7B7" />
+                </linearGradient>
+                <linearGradient id="pnlLineNeg" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#F87171" />
+                  <stop offset="50%" stopColor="#FB7185" />
+                  <stop offset="100%" stopColor="#FDA4AF" />
                 </linearGradient>
               </defs>
               <CartesianGrid
@@ -471,13 +387,13 @@ export default function PnLTracker({
               <Area
                 type="monotone"
                 dataKey={chartDataKey}
-                stroke="url(#pnlLinePos)"
+                stroke={totalGrowthPositive ? 'url(#pnlLinePos)' : 'url(#pnlLineNeg)'}
                 strokeWidth={2.5}
-                fill="url(#pnlGradientPos)"
+                fill={totalGrowthPositive ? 'url(#pnlGradientPos)' : 'url(#pnlGradientNeg)'}
                 dot={false}
                 activeDot={{
                   r: 4,
-                  fill: '#10B981',
+                  fill: totalGrowthPositive ? '#10B981' : '#F87171',
                   stroke: '#0D0F14',
                   strokeWidth: 2,
                 }}
@@ -533,7 +449,11 @@ export default function PnLTracker({
                 {dataPoints.map((point, idx) => (
                   <Cell
                     key={point.dateKey}
-                    fill={idx % 2 === 0 ? 'url(#barGradientPos)' : 'url(#barGradientAlt)'}
+                    fill={
+                      point.pnl >= 0
+                        ? (idx % 2 === 0 ? 'url(#barGradientPos)' : 'url(#barGradientAlt)')
+                        : '#F87171'
+                    }
                   />
                 ))}
               </Bar>
@@ -548,8 +468,10 @@ export default function PnLTracker({
           <p className="text-[11px] text-gray-500">
             {summary.totalTrades} completed transaction{summary.totalTrades !== 1 ? 's' : ''}
           </p>
-          <p className="text-[10px] font-medium text-emerald-500/70">
-            {summary.successfulTrades} successful
+          <p className="text-[10px] font-medium text-gray-500">
+            {summary.assetsWithCostData > 0
+              ? `${summary.assetsWithCostData} asset${summary.assetsWithCostData !== 1 ? 's' : ''} with cost basis`
+              : 'Cost basis unavailable for current holdings'}
           </p>
         </div>
       )}

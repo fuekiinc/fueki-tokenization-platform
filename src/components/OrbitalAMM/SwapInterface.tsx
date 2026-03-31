@@ -35,6 +35,7 @@ import {
   subscribeToVisibilityChange,
 } from '../../lib/rpc/polling';
 import { emitRpcRefetch } from '../../lib/rpc/refetchEvents';
+import PoolTradingChart from './PoolTradingChart';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +47,7 @@ interface TokenInfo {
   address: string;
   symbol: string;
   index: number;
+  decimals?: number;
 }
 
 interface PoolMeta {
@@ -207,10 +209,21 @@ export default function SwapInterface({
                 try {
                   const ti = await contractService.getTokenInfo(tokenAddr);
                   sym = ti.symbol;
+                  return {
+                    address: tokenAddr,
+                    symbol: sym,
+                    index: idx,
+                    decimals: ti.decimals,
+                  };
                 } catch {
                   sym = formatAddress(tokenAddr);
+                  return {
+                    address: tokenAddr,
+                    symbol: sym,
+                    index: idx,
+                    decimals: 18,
+                  };
                 }
-                return { address: tokenAddr, symbol: sym, index: idx };
               }),
             );
 
@@ -621,6 +634,15 @@ export default function SwapInterface({
 
       {selectedPool && (
         <>
+          <PoolTradingChart
+            poolAddress={selectedPool.address}
+            poolName={selectedPool.name}
+            concentration={selectedPool.concentration}
+            swapFeeBps={selectedPool.swapFeeBps}
+            tokenIn={tokenIn}
+            tokenOut={tokenOut}
+          />
+
           {/* Token In */}
           <div className="rounded-xl bg-[#0D0F14] border border-white/[0.06] p-4">
             <div className="flex items-center justify-between mb-2">

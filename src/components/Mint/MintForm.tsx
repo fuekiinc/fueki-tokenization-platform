@@ -810,6 +810,7 @@ export default function MintForm({
         id: generateId(),
         type: 'mint',
         asset: tokenName.trim(),
+        assetAddress,
         assetSymbol: tokenSymbol.trim(),
         amount: sanitizedMintAmount,
         txHash: receipt.hash,

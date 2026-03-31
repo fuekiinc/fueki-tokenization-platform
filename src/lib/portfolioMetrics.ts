@@ -76,6 +76,16 @@ function deriveTokenPrice(asset: WrappedAsset): number {
   return originalValue / totalSupply;
 }
 
+function matchesTradeToAsset(trade: TradeHistory, assetAddress: string): boolean {
+  const normalizedAddress = assetAddress.toLowerCase();
+  return (
+    trade.assetAddress?.toLowerCase() === normalizedAddress ||
+    trade.asset.toLowerCase() === normalizedAddress ||
+    trade.from.toLowerCase() === normalizedAddress ||
+    trade.to.toLowerCase() === normalizedAddress
+  );
+}
+
 /**
  * Identify trades that represent token acquisitions (buys) for a given asset.
  * A "buy" is a mint or an inbound transfer / exchange where the user received
@@ -83,15 +93,7 @@ function deriveTokenPrice(asset: WrappedAsset): number {
  */
 function isBuyTrade(trade: TradeHistory, assetAddress: string): boolean {
   if (trade.status !== 'confirmed') return false;
-  // Match on contract address (stored in `from` or `to`), asset name, or symbol.
-  // TradeHistory.asset may be a human-readable name (from MintForm) or an address,
-  // so check all fields that could contain the contract address.
-  const addr = assetAddress.toLowerCase();
-  const matchesAsset =
-    trade.asset.toLowerCase() === addr ||
-    (trade.from && trade.from.toLowerCase() === addr) ||
-    (trade.to && trade.to.toLowerCase() === addr);
-  if (!matchesAsset) return false;
+  if (!matchesTradeToAsset(trade, assetAddress)) return false;
   return trade.type === 'mint' || trade.type === 'security-mint';
 }
 
@@ -100,12 +102,7 @@ function isBuyTrade(trade: TradeHistory, assetAddress: string): boolean {
  */
 function isSellTrade(trade: TradeHistory, assetAddress: string): boolean {
   if (trade.status !== 'confirmed') return false;
-  const addr = assetAddress.toLowerCase();
-  const matchesAsset =
-    trade.asset.toLowerCase() === addr ||
-    (trade.from && trade.from.toLowerCase() === addr) ||
-    (trade.to && trade.to.toLowerCase() === addr);
-  if (!matchesAsset) return false;
+  if (!matchesTradeToAsset(trade, assetAddress)) return false;
   return trade.type === 'burn' || trade.type === 'transfer';
 }
 
@@ -129,7 +126,7 @@ export function calculateCostBasis(
   const relevantTrades = trades
     .filter(
       (t) =>
-        t.asset.toLowerCase() === assetAddress.toLowerCase() &&
+        matchesTradeToAsset(t, assetAddress) &&
         t.status === 'confirmed',
     )
     .sort((a, b) => a.timestamp - b.timestamp);
@@ -161,7 +158,7 @@ export function calculateCostBasis(
   // purchases with a cost.
   for (const trade of relevantTrades) {
     if (trade.type === 'exchange' || trade.type === 'swap-eth' || trade.type === 'swap-erc20') {
-      if (trade.asset.toLowerCase() === assetAddress.toLowerCase()) {
+      if (matchesTradeToAsset(trade, assetAddress)) {
         const amount = parseFloat(trade.amount || '0');
         totalBought += amount;
         // For exchange/swap trades, we approximate cost as the amount
@@ -203,7 +200,7 @@ export function calculateAssetPerformance(
   // Filter confirmed trades for this asset
   const assetTrades = trades.filter(
     (t) =>
-      t.asset.toLowerCase() === address.toLowerCase() &&
+      matchesTradeToAsset(t, address) &&
       t.status === 'confirmed',
   );
 

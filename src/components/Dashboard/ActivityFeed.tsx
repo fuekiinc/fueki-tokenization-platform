@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import {
   Activity,
@@ -158,6 +157,18 @@ function getConfig(type: TradeHistory['type']): TypeConfigEntry {
   return TYPE_CONFIG[type] ?? FALLBACK_CONFIG;
 }
 
+function looksLikeAddress(value: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/.test(value);
+}
+
+function getActivityDescription(trade: TradeHistory): string | null {
+  if (!trade.asset) return null;
+  if (looksLikeAddress(trade.asset)) {
+    return `${trade.assetSymbol} token`;
+  }
+  return trade.asset;
+}
+
 // ---------------------------------------------------------------------------
 // Status badge
 // ---------------------------------------------------------------------------
@@ -189,7 +200,7 @@ function StatusBadge({ status }: { status: TradeHistory['status'] }) {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function ActivityFeed({ trades, maxItems = 10, chainId }: ActivityFeedProps) {
+export default function ActivityFeed({ trades, maxItems, chainId }: ActivityFeedProps) {
   const [activeFilter, setActiveFilter] = useState<ActivityFilter>('all');
 
   const explorerUrl =
@@ -202,9 +213,8 @@ export default function ActivityFeed({ trades, maxItems = 10, chainId }: Activit
       ? trades.filter((t) => allowedTypes.includes(t.type))
       : trades;
 
-    return [...filtered]
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, maxItems);
+    const sorted = [...filtered].sort((a, b) => b.timestamp - a.timestamp);
+    return typeof maxItems === 'number' ? sorted.slice(0, maxItems) : sorted;
   }, [trades, activeFilter, maxItems]);
 
   // Compute counts per filter for the badges
@@ -303,12 +313,19 @@ export default function ActivityFeed({ trades, maxItems = 10, chainId }: Activit
         </div>
       ) : (
         <div>
+          <div className="mb-4 rounded-xl border border-white/[0.05] bg-white/[0.02] px-3 py-2 text-xs text-gray-500">
+            {typeof maxItems === 'number' && filteredItems.length < filterCounts[activeFilter]
+              ? `Showing ${filteredItems.length} of ${filterCounts[activeFilter]} ${activeFilter === 'all' ? 'activities' : FILTERS.find((f) => f.key === activeFilter)?.label.toLowerCase() ?? 'activities'}`
+              : `Showing all ${filteredItems.length} ${activeFilter === 'all' ? 'activities' : FILTERS.find((f) => f.key === activeFilter)?.label.toLowerCase() ?? 'activities'}`}
+          </div>
+
           {/* Feed items */}
           <ul>
             {filteredItems.map((trade, index) => {
               const config = getConfig(trade.type);
               const { Icon } = config;
               const isLast = index === filteredItems.length - 1;
+              const description = getActivityDescription(trade);
 
               return (
                 <li
@@ -347,6 +364,11 @@ export default function ActivityFeed({ trades, maxItems = 10, chainId }: Activit
                         {config.label}
                       </span>
                     </div>
+                    {description && (
+                      <p className="mt-1 truncate text-xs text-gray-500">
+                        {description}
+                      </p>
+                    )}
                     <div className="flex items-center gap-3 mt-1.5">
                       {/* Addresses */}
                       {trade.from && (
@@ -396,16 +418,6 @@ export default function ActivityFeed({ trades, maxItems = 10, chainId }: Activit
             })}
           </ul>
 
-          {/* View All link */}
-          <div className="mt-4 pt-4 flex justify-center border-t border-white/[0.04]">
-            <Link
-              to="/portfolio"
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-400 transition-colors hover:text-indigo-300 group"
-            >
-              View All Transactions
-              <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-            </Link>
-          </div>
         </div>
       )}
     </div>
