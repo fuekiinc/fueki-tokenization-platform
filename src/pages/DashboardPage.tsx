@@ -22,6 +22,11 @@ import { useContractService } from '../hooks/useContractService';
 import { ETH_SENTINEL, getReadOnlyProvider, isETH } from '../lib/blockchain/contracts';
 import { queryRecentLogsBestEffort } from '../lib/blockchain/logQuery';
 import { calculateCurrentPortfolioValue, calculatePortfolioChangePercent } from '../lib/dashboardMetrics';
+import {
+  type DashboardFetchMode,
+  getDashboardFetchPlan,
+  getRecentRegistryScanBounds,
+} from '../lib/dashboardFetchPlan';
 import { isRetryableRpcError } from '../lib/rpc/endpoints';
 import { createAdaptivePollingLoop } from '../lib/rpc/polling';
 import { retryAsync } from '../lib/utils/retry';
@@ -165,6 +170,10 @@ export default function DashboardPage() {
   useEffect(() => {
     tradeHistoryRef.current = tradeHistory;
   }, [tradeHistory]);
+  const securityHoldingsRef = useRef(securityHoldings);
+  useEffect(() => {
+    securityHoldingsRef.current = securityHoldings;
+  }, [securityHoldings]);
 
   // Reset wallet-bound dashboard data whenever the active scope changes.
   // This prevents stale assets/trades from a previous chain or account from
@@ -195,18 +204,18 @@ export default function DashboardPage() {
     setAssets([]);
     setSecurityHoldings([]);
     setUserOrders([]);
-    setTrades([]);
     setLoadError(null);
 
     if (isConnected && chainId) {
       setIsInitialLoading(true);
     }
-  }, [address, chainId, isConnected, setAssets, setTrades, setUserOrders]);
+  }, [address, chainId, isConnected, setAssets, setUserOrders]);
 
-  const fetchData = useCallback(async (assetRefreshMode: 'full' | 'incremental' = 'full') => {
+  const fetchData = useCallback(async (assetRefreshMode: DashboardFetchMode = 'full') => {
     const fetchRunId = ++dashboardFetchRunRef.current;
     const scopedAddress = address?.toLowerCase() ?? null;
     const scopedChainId = chainId;
+    const fetchPlan = getDashboardFetchPlan(assetRefreshMode);
     const isStaleFetch = () => {
       // FIX: read fresh from store to avoid stale closure.
       const currentWallet = useWalletStore.getState().wallet;
@@ -246,6 +255,13 @@ export default function DashboardPage() {
 
     const knownTokenMetadata = new Map<string, { name: string; symbol: string; decimals: number }>();
     const securityTokenAddresses = new Set<string>();
+    for (const asset of [...wrappedAssetsRef.current, ...securityHoldingsRef.current]) {
+      knownTokenMetadata.set(asset.address.toLowerCase(), {
+        name: asset.name,
+        symbol: asset.symbol,
+        decimals: 18,
+      });
+    }
     for (const trade of tradeHistoryRef.current) {
       if (!trade.assetAddress) continue;
       knownTokenMetadata.set(trade.assetAddress.toLowerCase(), {
@@ -264,7 +280,10 @@ export default function DashboardPage() {
     //      the user holds but didn't create (received via transfer/exchange)
     //   3. Previously known addresses still in the store (continuity)
     const gen = nextAssetFetchGeneration();
-    const showAssetLoading = assetRefreshMode === 'full' || wrappedAssetsRef.current.length === 0;
+    const showAssetLoading =
+      assetRefreshMode !== 'incremental' &&
+      wrappedAssetsRef.current.length === 0 &&
+      securityHoldingsRef.current.length === 0;
     if (showAssetLoading) {
       setLoadingAssets(true);
     }
@@ -292,10 +311,7 @@ export default function DashboardPage() {
         ...wrappedAssetsRef.current.map((asset) => asset.address),
       ]);
 
-      const shouldEnumeratePlatformAssets =
-        assetRefreshMode === 'full' || knownAddresses.size === 0;
-
-      if (shouldEnumeratePlatformAssets) {
+      if (fetchPlan.enumerateWrappedAssets) {
         try {
           const totalAssetCount = await retryAsync(
             () => contractService.getTotalAssets(),
@@ -310,13 +326,15 @@ export default function DashboardPage() {
           if (gen !== getAssetFetchGeneration()) return;
 
           const count = Number(totalAssetCount);
-          const maxScan = Math.min(count, 500);
-          const startIndex = Math.max(0, count - maxScan);
+          const { startIndex, endIndexExclusive } = getRecentRegistryScanBounds(
+            count,
+            fetchPlan.maxWrappedAssetScan,
+          );
           const batchSize = 5;
-          for (let start = startIndex; start < count; start += batchSize) {
+          for (let start = startIndex; start < endIndexExclusive; start += batchSize) {
             if (isStaleFetch()) return;
             if (gen !== getAssetFetchGeneration()) return;
-            const end = Math.min(start + batchSize, count);
+            const end = Math.min(start + batchSize, endIndexExclusive);
             const batch = [];
             for (let i = start; i < end; i++) {
               batch.push(contractService.getAssetAtIndex(i).catch(() => null));
@@ -381,6 +399,10 @@ export default function DashboardPage() {
       }
 
       try {
+        const candidateSecurityTokenAddresses = new Set<string>([
+          ...securityHoldingsRef.current.map((asset) => asset.address),
+          ...Array.from(securityTokenAddresses),
+        ]);
         const createdSecurityTokenAddresses = await retryAsync(
           () => contractService.getUserSecurityTokens(address),
           {
@@ -393,11 +415,64 @@ export default function DashboardPage() {
 
         if (isStaleFetch()) return;
 
-        if (createdSecurityTokenAddresses.length === 0) {
+        for (const tokenAddress of createdSecurityTokenAddresses) {
+          candidateSecurityTokenAddresses.add(tokenAddress);
+        }
+
+        if (fetchPlan.enumerateSecurityTokens) {
+          try {
+            const totalSecurityTokenCount = await retryAsync(
+              () => contractService.getTotalSecurityTokens(),
+              {
+                maxAttempts: 3,
+                baseDelayMs: 800,
+                label: 'dashboard:getTotalSecurityTokens',
+                isRetryable: isRetryableRpcError,
+              },
+            );
+
+            if (isStaleFetch()) return;
+
+            const { startIndex, endIndexExclusive } = getRecentRegistryScanBounds(
+              Number(totalSecurityTokenCount),
+              fetchPlan.maxSecurityTokenScan,
+            );
+            const batchSize = 5;
+            const securityFactory = contractService.getSecurityTokenFactoryContract(
+              getReadOnlyProvider(chainId),
+            );
+
+            for (let start = startIndex; start < endIndexExclusive; start += batchSize) {
+              if (isStaleFetch()) return;
+
+              const end = Math.min(start + batchSize, endIndexExclusive);
+              const batch = [];
+              for (let index = start; index < end; index += 1) {
+                batch.push(
+                  securityFactory.getTokenAtIndex(BigInt(index)).catch(() => null),
+                );
+              }
+              const results = await Promise.all(batch);
+              for (const result of results) {
+                const tokenAddress =
+                  result && typeof result === 'object' && 'tokenAddress' in result
+                    ? String(result.tokenAddress ?? '')
+                    : '';
+                if (tokenAddress && ethers.isAddress(tokenAddress)) {
+                  candidateSecurityTokenAddresses.add(tokenAddress);
+                }
+              }
+            }
+          } catch (error) {
+            logger.warn('Unable to enumerate security token registry:', error);
+          }
+        }
+
+        if (candidateSecurityTokenAddresses.size === 0) {
           setSecurityHoldings([]);
         } else {
           const holdings = await Promise.all(
-            createdSecurityTokenAddresses.map(async (tokenAddress) => {
+            Array.from(candidateSecurityTokenAddresses).map(async (tokenAddress) => {
               const [details, balance] = await Promise.all([
                 contractService.getSecurityTokenDetails(tokenAddress),
                 contractService.getSecurityTokenBalance(tokenAddress, address),
@@ -464,53 +539,6 @@ export default function DashboardPage() {
 
     if (isStaleFetch()) return;
 
-    // Fetch user orders from AssetBackedExchange (maker + taker)
-    try {
-      const [makerIds, takerIds] = await Promise.all([
-        contractService.getExchangeUserOrders(address),
-        contractService.getExchangeFilledOrderIds(address),
-      ]);
-
-      // Merge and deduplicate order IDs
-      const seen = new Set<string>();
-      const allIds: bigint[] = [];
-      for (const id of [...makerIds, ...takerIds]) {
-        const key = id.toString();
-        if (!seen.has(key)) {
-          seen.add(key);
-          allIds.push(id);
-        }
-      }
-
-      if (allIds.length > 0) {
-        const orderDetails = await contractService.getExchangeOrders(allIds);
-        if (isStaleFetch()) return;
-        const exchangeOrders: import('../types').ExchangeOrder[] = orderDetails
-          .map((o) => ({
-            id: o.id.toString(),
-            maker: o.maker,
-            tokenSell: o.tokenSell,
-            tokenBuy: o.tokenBuy,
-            amountSell: o.amountSell.toString(),
-            amountBuy: o.amountBuy.toString(),
-            filledSell: o.filledSell.toString(),
-            filledBuy: o.filledBuy.toString(),
-            cancelled: o.cancelled,
-            deadline: o.deadline.toString(),
-          }));
-        setUserOrders(exchangeOrders);
-      } else {
-        if (!isStaleFetch()) {
-          setUserOrders([]);
-        }
-      }
-    } catch (error) {
-      // Non-critical: exchange data is supplementary on the dashboard
-      logger.warn('Unable to load exchange orders:', error);
-    }
-
-    if (isStaleFetch()) return;
-
     // Fetch trade history from on-chain events
     // We query on-chain event sources across minting, exchange, and Orbital AMM:
     //   1. AssetCreated events from the factory (mint history)
@@ -536,15 +564,15 @@ export default function DashboardPage() {
         ) => Promise<Array<ethers.Log | ethers.EventLog>>,
         lookbackBlocks: number,
         label: string,
-        maxEvents = assetRefreshMode === 'full' ? 500 : 96,
+        maxEvents = fetchPlan.queryWindow.maxEvents,
       ): Promise<Array<ethers.Log | ethers.EventLog>> =>
         queryRecentLogsBestEffort(readProvider, runQuery, {
           chainId,
           label,
           maxLookbackBlocks: lookbackBlocks,
-          initialChunkSize: assetRefreshMode === 'full' ? 250_000 : 125_000,
+          initialChunkSize: fetchPlan.queryWindow.initialChunkSize,
           minChunkSize: 5_000,
-          maxRequests: assetRefreshMode === 'full' ? 24 : 8,
+          maxRequests: fetchPlan.queryWindow.maxRequests,
           maxEvents,
         });
       const blockTimestampCache = new Map<number, number>();
@@ -582,7 +610,7 @@ export default function DashboardPage() {
             const factory = contractService.getFactoryContract(provider);
             return factory.queryFilter(factory.filters.AssetCreated(address), fromBlock, toBlock);
           },
-          5_000_000,
+          fetchPlan.historyLookbackBlocks.mint,
           'factory AssetCreated',
         );
 
@@ -629,7 +657,7 @@ export default function DashboardPage() {
               toBlock,
             );
           },
-          5_000_000,
+          fetchPlan.historyLookbackBlocks.mint,
           'security factory SecurityTokenCreated',
         );
 
@@ -665,7 +693,7 @@ export default function DashboardPage() {
         logger.warn('Unable to load security-token mint history:', error);
       }
 
-      if (assetRefreshMode === 'full' && knownTokenMetadata.size > 0) {
+      if (fetchPlan.includeTransferHistory && knownTokenMetadata.size > 0) {
         try {
           for (const [tokenAddress, metadata] of knownTokenMetadata.entries()) {
             const tokenContract = new ethers.Contract(tokenAddress, WrappedAssetABI, readProvider);
@@ -675,7 +703,7 @@ export default function DashboardPage() {
                   const contract = new ethers.Contract(tokenAddress, WrappedAssetABI, provider);
                   return contract.queryFilter(contract.filters.Transfer(null, address), fromBlock, toBlock);
                 },
-                5_000_000,
+                fetchPlan.historyLookbackBlocks.mint,
                 `token Transfer incoming ${tokenAddress}`,
                 200,
               ),
@@ -684,7 +712,7 @@ export default function DashboardPage() {
                   const contract = new ethers.Contract(tokenAddress, WrappedAssetABI, provider);
                   return contract.queryFilter(contract.filters.Transfer(address, null), fromBlock, toBlock);
                 },
-                5_000_000,
+                fetchPlan.historyLookbackBlocks.mint,
                 `token Transfer outgoing ${tokenAddress}`,
                 200,
               ),
@@ -759,7 +787,7 @@ export default function DashboardPage() {
               toBlock,
             );
           },
-          2_000_000,
+          fetchPlan.historyLookbackBlocks.exchange,
           'exchange OrderCreated',
         );
 
@@ -799,7 +827,7 @@ export default function DashboardPage() {
               toBlock,
             );
           },
-          2_000_000,
+          fetchPlan.historyLookbackBlocks.exchange,
           'exchange OrderFilled (taker)',
         );
 
@@ -815,7 +843,7 @@ export default function DashboardPage() {
                   toBlock,
                 );
               },
-              5_000_000,
+              fetchPlan.historyLookbackBlocks.exchange,
               'exchange OrderFilled (maker)',
             );
           }),
@@ -850,7 +878,7 @@ export default function DashboardPage() {
           });
         }
 
-        if (assetRefreshMode === 'full') {
+        if (fetchPlan.includeTransferHistory) {
           const orderCancelledEvents = await queryFilterBestEffort(
             (provider, fromBlock, toBlock) => {
               const exchange = contractService.getAssetBackedExchangeContract(provider);
@@ -860,7 +888,7 @@ export default function DashboardPage() {
                 toBlock,
               );
             },
-            5_000_000,
+            fetchPlan.historyLookbackBlocks.exchange,
             'exchange OrderCancelled',
             200,
           );
@@ -914,7 +942,7 @@ export default function DashboardPage() {
                 toBlock,
               );
             },
-            2_000_000,
+            fetchPlan.historyLookbackBlocks.orbital,
             'orbital LiquidityAdded',
           );
 
@@ -956,7 +984,7 @@ export default function DashboardPage() {
                 toBlock,
               );
             },
-            2_000_000,
+            fetchPlan.historyLookbackBlocks.orbital,
             'orbital LiquidityRemoved',
           );
 
@@ -998,7 +1026,7 @@ export default function DashboardPage() {
                 toBlock,
               );
             },
-            2_000_000,
+            fetchPlan.historyLookbackBlocks.orbital,
             'orbital SwapExecuted',
           );
 
@@ -1045,7 +1073,7 @@ export default function DashboardPage() {
                 toBlock,
               );
             },
-            2_000_000,
+            fetchPlan.historyLookbackBlocks.orbital,
             'orbital MultiHopSwapExecuted',
           );
 
@@ -1090,6 +1118,50 @@ export default function DashboardPage() {
       logger.warn('Unable to load trade history:', error);
     }
 
+    if (isStaleFetch()) return;
+
+    // Fetch user orders from AssetBackedExchange (maker + taker)
+    try {
+      const [makerIds, takerIds] = await Promise.all([
+        contractService.getExchangeUserOrders(address),
+        contractService.getExchangeFilledOrderIds(address),
+      ]);
+
+      const seen = new Set<string>();
+      const allIds: bigint[] = [];
+      for (const id of [...makerIds, ...takerIds]) {
+        const key = id.toString();
+        if (!seen.has(key)) {
+          seen.add(key);
+          allIds.push(id);
+        }
+      }
+
+      if (allIds.length > 0) {
+        const orderDetails = await contractService.getExchangeOrders(allIds);
+        if (isStaleFetch()) return;
+        const exchangeOrders: import('../types').ExchangeOrder[] = orderDetails.map((o) => ({
+          id: o.id.toString(),
+          maker: o.maker,
+          tokenSell: o.tokenSell,
+          tokenBuy: o.tokenBuy,
+          amountSell: o.amountSell.toString(),
+          amountBuy: o.amountBuy.toString(),
+          filledSell: o.filledSell.toString(),
+          filledBuy: o.filledBuy.toString(),
+          cancelled: o.cancelled,
+          deadline: o.deadline.toString(),
+        }));
+        setUserOrders(exchangeOrders);
+      } else {
+        if (!isStaleFetch()) {
+          setUserOrders([]);
+        }
+      }
+    } catch (error) {
+      logger.warn('Unable to load exchange orders:', error);
+    }
+
     if (!isStaleFetch()) {
       setIsInitialLoading(false);
     }
@@ -1107,7 +1179,19 @@ export default function DashboardPage() {
   ]);
 
   useEffect(() => {
-    void fetchData('full');
+    let cancelled = false;
+
+    const loadDashboard = async () => {
+      await fetchData('bootstrap');
+      if (cancelled) return;
+      await fetchData('full');
+    };
+
+    void loadDashboard();
+
+    return () => {
+      cancelled = true;
+    };
   }, [fetchData]);
 
   useEffect(() => {
@@ -1123,7 +1207,7 @@ export default function DashboardPage() {
     }
 
     const refreshPoller = createAdaptivePollingLoop({
-      tier: 'medium',
+      tier: 'high',
       poll: async () => {
         await fetchData('incremental');
       },

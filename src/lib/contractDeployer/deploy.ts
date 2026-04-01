@@ -319,20 +319,23 @@ async function sendDeploymentViaFallback(
 // Deployment
 // ---------------------------------------------------------------------------
 
+interface DeployPreparedContractInput {
+  abi: ethers.InterfaceAbi;
+  bytecode: string;
+  constructorArgs?: readonly unknown[];
+  contractLabel?: string;
+}
+
 /**
- * Deploy a contract template to the connected chain.
- *
- * @param template - The contract template containing ABI, bytecode, and
- *   constructor parameter definitions.
- * @param constructorValues - String-form values from the deployment wizard,
- *   keyed by parameter name.
- * @returns The deployment transaction response from ethers.js.
- * @throws {Error} If no wallet is connected or the deployment transaction fails.
+ * Deploy a compiled contract artifact using the same wallet/RPC hardening as
+ * the template deployer.
  */
-export async function deployTemplate(
-  template: ContractTemplate,
-  constructorValues: Record<string, string>,
-): Promise<ethers.ContractTransactionResponse> {
+export async function deployPreparedContract({
+  abi,
+  bytecode,
+  constructorArgs = [],
+  contractLabel = 'contract',
+}: DeployPreparedContractInput): Promise<ethers.ContractTransactionResponse> {
   const signer = getSigner();
   if (!signer) {
     throw new Error('Wallet not connected');
@@ -347,20 +350,13 @@ export async function deployTemplate(
   // is down, this returns a direct JsonRpcProvider we can use for gas / nonce.
   const fallbackProvider = await ensureWalletRpcHealthy();
 
-  const args = encodeConstructorArgs(template, constructorValues);
+  const factory = new ethers.ContractFactory(abi, bytecode, signer);
 
-  const factory = new ethers.ContractFactory(
-    template.abi as ethers.InterfaceAbi,
-    template.bytecode,
-    signer,
+  logger.info(
+    `[deploy] Deploying ${contractLabel} with ${constructorArgs.length} args`,
   );
 
-  logger.info(`[deploy] Deploying ${template.name} with ${args.length} args`);
-
-  // Build the deployment transaction
-  const deployTx = await factory.getDeployTransaction(...args);
-
-  // --- Estimate gas (use fallback provider if wallet RPC is dead) -----------
+  const deployTx = await factory.getDeployTransaction(...constructorArgs);
   const estimationProvider: ethers.Provider =
     fallbackProvider ?? (signer.provider as ethers.Provider);
   const gasEstimate = await estimateGasWithRetry(estimationProvider, {
@@ -382,12 +378,9 @@ export async function deployTemplate(
     );
   }
 
-  // --- Deploy (with fallback pre-population when wallet RPC is down) -------
-
   if (!fallbackProvider) {
     try {
-      // Normal path: wallet RPC is healthy, deploy via ContractFactory.
-      const contract = await factory.deploy(...args, { gasLimit });
+      const contract = await factory.deploy(...constructorArgs, { gasLimit });
       const tx = contract.deploymentTransaction();
       if (!tx) throw new Error('Deployment transaction not available');
       logger.info(`[deploy] Transaction sent: ${tx.hash}`);
@@ -408,11 +401,46 @@ export async function deployTemplate(
       }
 
       const recoveryProvider = new ethers.JsonRpcProvider(healthyUrl, chainId);
-      return sendDeploymentViaFallback(signer, deployTx, gasLimit, chainId, recoveryProvider);
+      return sendDeploymentViaFallback(
+        signer,
+        deployTx,
+        gasLimit,
+        chainId,
+        recoveryProvider,
+      );
     }
   }
 
-  return sendDeploymentViaFallback(signer, deployTx, gasLimit, chainId, fallbackProvider);
+  return sendDeploymentViaFallback(
+    signer,
+    deployTx,
+    gasLimit,
+    chainId,
+    fallbackProvider,
+  );
+}
+
+/**
+ * Deploy a contract template to the connected chain.
+ *
+ * @param template - The contract template containing ABI, bytecode, and
+ *   constructor parameter definitions.
+ * @param constructorValues - String-form values from the deployment wizard,
+ *   keyed by parameter name.
+ * @returns The deployment transaction response from ethers.js.
+ * @throws {Error} If no wallet is connected or the deployment transaction fails.
+ */
+export async function deployTemplate(
+  template: ContractTemplate,
+  constructorValues: Record<string, string>,
+): Promise<ethers.ContractTransactionResponse> {
+  const args = encodeConstructorArgs(template, constructorValues);
+  return deployPreparedContract({
+    abi: template.abi as ethers.InterfaceAbi,
+    bytecode: template.bytecode,
+    constructorArgs: args,
+    contractLabel: template.name,
+  });
 }
 
 // ---------------------------------------------------------------------------

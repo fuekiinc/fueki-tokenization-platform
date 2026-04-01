@@ -11,6 +11,7 @@
  */
 
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import {
   AlertCircle,
@@ -45,6 +46,11 @@ import {
   SUPPORTED_NETWORKS,
 } from '../contracts/addresses.ts';
 import { encodeDocumentHash, parseContractError } from '../lib/blockchain/contracts.ts';
+import {
+  NAV_ORACLE_AUTOMATION_DEFAULTS,
+  type NavAutoSetupResult,
+  setupNavOracleForToken,
+} from '../lib/blockchain/navOracleSetup.ts';
 import HelpTooltip, { type TooltipId } from '../components/Common/HelpTooltip';
 import { useDemoWalletStore } from '../components/DemoMode/DemoWalletProvider';
 import PendingDeploymentsPanel from '../components/SecurityToken/PendingDeploymentsPanel.tsx';
@@ -57,6 +63,7 @@ import type {
   SecurityTokenApprovalStatus,
   SecurityTokenApprovalStatusQuery,
 } from '../types/securityTokenApproval';
+import type { User } from '../types/auth';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -147,7 +154,16 @@ interface DeploymentResult {
   tokenAddress: string;
   transferRulesAddress: string;
   chainId: number;
+  navSetup: NavAutoSetupResult;
 }
+
+interface NavAutomationFormState {
+  baseCurrency: string;
+}
+
+const initialNavAutomationState: NavAutomationFormState = {
+  baseCurrency: NAV_ORACLE_AUTOMATION_DEFAULTS.baseCurrency,
+};
 
 // ---------------------------------------------------------------------------
 // Step indicator
@@ -519,6 +535,31 @@ function prepareDeployValues(form: TokenFormState): PreparedDeployValues {
   };
 }
 
+function getPreferredNavPublisherName(user: User | null): string | null {
+  const fullName = [user?.firstName, user?.lastName]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .join(' ');
+
+  return fullName || null;
+}
+
+function buildNavSkippedResult(
+  status: Extract<NavAutoSetupResult['status'], 'skipped'>,
+  baseCurrency: string,
+  message: string,
+): NavAutoSetupResult {
+  return {
+    status,
+    baseCurrency,
+    oracleAddress: null,
+    deployTxHash: null,
+    publisherGrantTxHash: null,
+    message,
+    registration: null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -531,6 +572,9 @@ export default function DeployTokenPage() {
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState<DeploymentResult | null>(
     null,
+  );
+  const [navAutomation, setNavAutomation] = useState<NavAutomationFormState>(
+    initialNavAutomationState,
   );
   const [gasEstimate, setGasEstimate] = useState<string | null>(null);
   const [isEstimatingGas, setIsEstimatingGas] = useState(false);
@@ -552,6 +596,8 @@ export default function DeployTokenPage() {
   const [isSubmittingApproval, setIsSubmittingApproval] = useState(false);
 
   const wallet = useWalletStore((s) => s.wallet);
+  const user = useAuthStore((s) => s.user);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isDemoMode = useAuthStore((s) => s.user?.demoActive === true);
   const demoWalletSettingUp = useDemoWalletStore((s) => s.isSettingUp);
   const demoWalletError = useDemoWalletStore((s) => s.setupError);
@@ -580,6 +626,16 @@ export default function DeployTokenPage() {
   );
 
   const isOnCorrectChain = wallet.chainId === targetChainId;
+  const navBaseCurrency = useMemo(() => {
+    const trimmed = navAutomation.baseCurrency.trim().toUpperCase();
+    return trimmed || NAV_ORACLE_AUTOMATION_DEFAULTS.baseCurrency;
+  }, [navAutomation.baseCurrency]);
+  const isWalletLinkedToAccount = useMemo(() => {
+    if (!wallet.address || !user?.walletAddress) {
+      return false;
+    }
+    return wallet.address.toLowerCase() === user.walletAddress.toLowerCase();
+  }, [user?.walletAddress, wallet.address]);
 
   const approvalQuery = useMemo<SecurityTokenApprovalStatusQuery | null>(() => {
     if (!targetChainId || !wallet.address) return null;
@@ -1114,32 +1170,75 @@ export default function DeployTokenPage() {
         }
       }
 
-      if (!tokenAddress) {
-        // Fallback: the function returns (address tokenAddress, address rulesAddress)
-        // but we may not have the return value in the receipt. The event is the
-        // primary source.
-        toast.success('Token deployed, but could not parse event. Check the transaction on the explorer.', {
+      let resolvedNavSetup: NavAutoSetupResult | null = null;
+
+      if (!tokenAddress || !ethers.isAddress(tokenAddress)) {
+        resolvedNavSetup = buildNavSkippedResult(
+          'skipped',
+          navBaseCurrency,
+          'Security token deployed, but automatic NAV setup was skipped because the token address could not be parsed from the deployment receipt. Register the NAV oracle from the Valuation tab.',
+        );
+      } else if (!isAuthenticated) {
+        resolvedNavSetup = buildNavSkippedResult(
+          'skipped',
+          navBaseCurrency,
+          'Security token deployed, but automatic NAV setup requires an authenticated platform session.',
+        );
+      } else if (!isWalletLinkedToAccount) {
+        resolvedNavSetup = buildNavSkippedResult(
+          'skipped',
+          navBaseCurrency,
+          'Security token deployed, but automatic NAV setup requires the connected wallet to match the wallet saved on your platform account.',
+        );
+      }
+
+      if (resolvedNavSetup === null && wallet.address && tokenAddress) {
+        toast.loading('Security token deployed. Configuring NAV oracle...', {
           id: 'deploy-tx',
-          duration: 5000,
         });
-        setDeployResult({
-          txHash: receipt.hash,
-          tokenAddress: 'Unknown (check explorer)',
-          transferRulesAddress: 'Unknown (check explorer)',
-          chainId: targetChainId,
-        });
-      } else {
-        toast.success('Security token deployed successfully!', {
-          id: 'deploy-tx',
-          duration: 4000,
-        });
-        setDeployResult({
-          txHash: receipt.hash,
+
+        resolvedNavSetup = await setupNavOracleForToken({
           tokenAddress,
-          transferRulesAddress,
           chainId: targetChainId,
+          adminAddress: wallet.address,
+          baseCurrency: navBaseCurrency,
+          publisherName: getPreferredNavPublisherName(user),
         });
       }
+
+      const finalNavSetup = resolvedNavSetup ?? buildNavSkippedResult(
+        'skipped',
+        navBaseCurrency,
+        'Security token deployed, but NAV setup status could not be determined.',
+      );
+
+      if (!tokenAddress) {
+        toast.success(
+          'Token deployed, but the contract address could not be parsed automatically. Check the explorer details below.',
+          {
+            id: 'deploy-tx',
+            duration: 5_000,
+          },
+        );
+      } else if (finalNavSetup.status === 'configured') {
+        toast.success('Security token and NAV oracle deployed successfully!', {
+          id: 'deploy-tx',
+          duration: 4_000,
+        });
+      } else {
+        toast.success('Security token deployed. Review the NAV setup status below.', {
+          id: 'deploy-tx',
+          duration: 6_000,
+        });
+      }
+
+      setDeployResult({
+        txHash: receipt.hash,
+        tokenAddress: tokenAddress || 'Unknown (check explorer)',
+        transferRulesAddress: transferRulesAddress || 'Unknown (check explorer)',
+        chainId: targetChainId,
+        navSetup: finalNavSetup,
+      });
 
       addTrade({
         id: `security-mint-${receipt.hash}`,
@@ -1168,10 +1267,14 @@ export default function DeployTokenPage() {
     contractService,
     form,
     isOnCorrectChain,
+    isAuthenticated,
     isSwitchingNetwork,
+    isWalletLinkedToAccount,
+    navBaseCurrency,
     selectedApprovalRequest,
     targetChainId,
     targetNetwork,
+    user,
     wallet,
     addTrade,
   ]);
@@ -1210,8 +1313,17 @@ export default function DeployTokenPage() {
           : 'None',
         fullValue: form.documentHash,
       },
+      {
+        label: 'NAV Oracle Setup',
+        value: 'Provisioned automatically during deployment',
+      },
+      { label: 'NAV Base Currency', value: navBaseCurrency },
+      {
+        label: 'NAV Defaults',
+        value: `${NAV_ORACLE_AUTOMATION_DEFAULTS.minAttestationIntervalSeconds / SECONDS_PER_DAY} day min interval, ${NAV_ORACLE_AUTOMATION_DEFAULTS.maxNavChangeBps / 100}% max change, ${NAV_ORACLE_AUTOMATION_DEFAULTS.stalenessWarningDays}/${NAV_ORACLE_AUTOMATION_DEFAULTS.stalenessCriticalDays} day stale alerts`,
+      },
     ];
-  }, [form]);
+  }, [form, navBaseCurrency]);
 
   // -----------------------------------------------------------------------
   // Render
@@ -1770,6 +1882,73 @@ export default function DeployTokenPage() {
                 </div>
               </div>
 
+              <div className="rounded-xl border border-white/[0.06] bg-[#0D0F14] p-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-200">
+                      Managed NAV Setup
+                    </h3>
+                    <p className="mt-2 max-w-2xl text-xs text-gray-400">
+                      Every new security token deployment automatically provisions a dedicated NAV
+                      oracle, registers it with the platform, and authorizes the connected wallet
+                      as the first publisher when your platform session and wallet are eligible.
+                      This adds a separate oracle deployment plus a publisher-role transaction
+                      after the security token transaction confirms.
+                    </p>
+                  </div>
+
+                  <div className="inline-flex items-center justify-center rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-xs font-medium text-emerald-200">
+                    Included by default
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <FieldLabel htmlFor="navBaseCurrency">NAV Base Currency</FieldLabel>
+                    <input
+                      id="navBaseCurrency"
+                      type="text"
+                      maxLength={10}
+                      value={navAutomation.baseCurrency}
+                      onChange={(event) =>
+                        setNavAutomation((current) => ({
+                          ...current,
+                          baseCurrency: event.target.value.toUpperCase(),
+                        }))
+                      }
+                      className={inputClasses}
+                    />
+                    <FieldHint>
+                      Defaults to {NAV_ORACLE_AUTOMATION_DEFAULTS.baseCurrency}. On-chain defaults:
+                      {' '}
+                      {NAV_ORACLE_AUTOMATION_DEFAULTS.minAttestationIntervalSeconds / SECONDS_PER_DAY}
+                      -day minimum interval and a {NAV_ORACLE_AUTOMATION_DEFAULTS.maxNavChangeBps / 100}
+                      % NAV change circuit breaker.
+                    </FieldHint>
+                  </div>
+
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-4 text-xs text-gray-400">
+                    <p className="font-semibold text-gray-200">Registration requirements</p>
+                    <p className="mt-2">
+                      Automatic platform registration uses the signed-in account tied to your saved
+                      wallet address.
+                    </p>
+                    <p
+                      className={clsx(
+                        'mt-3 font-medium',
+                        isWalletLinkedToAccount
+                          ? 'text-emerald-300'
+                          : 'text-amber-300',
+                      )}
+                    >
+                      {isWalletLinkedToAccount
+                        ? 'Current wallet is linked to this account and ready for automatic registration.'
+                        : 'Current wallet does not match the wallet saved on this account, so NAV setup will stop after the token deploy.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {/* Network selector */}
               <div>
                 <FieldLabel htmlFor="targetChain">Deploy to Network</FieldLabel>
@@ -2078,6 +2257,72 @@ export default function DeployTokenPage() {
                   </div>
                 </div>
 
+                <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1.5">
+                        NAV Oracle Setup
+                      </p>
+                      <p
+                        className={clsx(
+                          'text-sm font-medium',
+                          deployResult.navSetup.status === 'configured'
+                            ? 'text-emerald-300'
+                            : 'text-amber-300',
+                        )}
+                      >
+                        {deployResult.navSetup.status === 'configured'
+                          ? 'Configured and publisher-ready'
+                          : 'Attention required'}
+                      </p>
+                    </div>
+                    <div
+                      className={clsx(
+                        'rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide',
+                        deployResult.navSetup.status === 'configured'
+                          ? 'bg-emerald-500/15 text-emerald-300'
+                          : 'bg-amber-500/15 text-amber-300',
+                      )}
+                    >
+                      {deployResult.navSetup.baseCurrency}
+                    </div>
+                  </div>
+
+                  {deployResult.navSetup.message && (
+                    <p className="mt-3 text-sm text-gray-400">
+                      {deployResult.navSetup.message}
+                    </p>
+                  )}
+
+                  {deployResult.navSetup.oracleAddress && (
+                    <div className="mt-4">
+                      <p className="text-xs text-gray-500 mb-1.5">
+                        NAV Oracle Address
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <code className="text-sm text-violet-300 font-mono break-all flex-1">
+                          {deployResult.navSetup.oracleAddress}
+                        </code>
+                        <CopyButton text={deployResult.navSetup.oracleAddress} />
+                        {SUPPORTED_NETWORKS[deployResult.chainId]?.blockExplorer && (
+                          <a
+                            href={getExplorerAddressUrl(
+                              deployResult.chainId,
+                              deployResult.navSetup.oracleAddress,
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] border border-white/[0.08] transition-colors"
+                            title="View on explorer"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5 text-gray-400" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Transaction hash */}
                 <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
                   <p className="text-xs text-gray-500 mb-1.5">
@@ -2107,11 +2352,20 @@ export default function DeployTokenPage() {
                 </div>
               </div>
 
+              <Link
+                to="/security-tokens"
+                className="w-full inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-6 py-3 font-medium transition-colors"
+              >
+                Open Security Token Center
+                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+              </Link>
+
               {/* Deploy another */}
               <button
                 type="button"
                 onClick={() => {
                   setForm({ ...initialFormState });
+                  setNavAutomation({ ...initialNavAutomationState });
                   setSelectedDocumentFile(null);
                   setSelectedApprovalRequest(null);
                   setApprovalError(null);
