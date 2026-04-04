@@ -9,7 +9,7 @@ const path = require("path");
 
 const HOLESKY_RPC =
   process.env.HOLESKY_RPC_URL ||
-  "https://flashy-crimson-borough.ethereum-holesky.quiknode.pro/f43097bbd32a1c3476c2f3f1ff1d4780361be827/";
+  "https://holesky.drpc.org";
 const PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || "REDACTED";
 
 async function main() {

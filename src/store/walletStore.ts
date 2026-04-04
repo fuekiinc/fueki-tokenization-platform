@@ -236,20 +236,18 @@ export const useWalletStore = create<WalletStore>()(withStoreMiddleware('wallet'
     }
     invalidateChainCache(targetChainId);
 
-    _provider = null;
-    _signer = null;
-
     set((state) => ({
       wallet: normalizeWalletState({
         ...state.wallet,
-        chainId: targetChainId,
-        isConnected: false,
+        // Preserve the active wallet session until the new chain is confirmed.
+        // This prevents transient switch events from looking like a full
+        // disconnect that forces the user to reconnect.
+        chainId: state.wallet.chainId,
+        isConnected: state.wallet.isConnected,
         isConnecting: true,
         connectionStatus: 'switching',
         switchTargetChainId: targetChainId,
         lastError: null,
-        ensName: null,
-        tokenBalances: {},
       }),
     }));
   },
@@ -266,14 +264,15 @@ export const useWalletStore = create<WalletStore>()(withStoreMiddleware('wallet'
     })),
 
   failChainSwitch: (error) => {
-    _provider = null;
-    _signer = null;
     set((state) => ({
       wallet: normalizeWalletState({
         ...state.wallet,
-        isConnected: false,
+        isConnected: state.wallet.isConnected,
         isConnecting: false,
-        connectionStatus: 'degraded',
+        connectionStatus:
+          state.wallet.isConnected && Boolean(state.wallet.address) && Boolean(_provider) && Boolean(_signer)
+            ? 'connected'
+            : 'degraded',
         switchTargetChainId: null,
         lastError: error,
       }),

@@ -46,53 +46,21 @@ const RPC_ENV_BY_CHAIN: Record<number, string> = {
 // Operator-provided endpoints (Alchemy, Infura, QuickNode) MUST be
 // injected via VITE_RPC_{chainId}_URLS env vars — never hardcode API keys.
 const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
-  1: [
-    'https://ethereum-rpc.publicnode.com',
-    'https://eth.drpc.org',
-  ],
-  137: [
-    'https://polygon-bor-rpc.publicnode.com',
-    'https://polygon.drpc.org',
-    'https://1rpc.io/matic',
-  ],
+  1: ['https://ethereum-rpc.publicnode.com'],
+  137: ['https://polygon-bor-rpc.publicnode.com'],
   31337: ['http://127.0.0.1:8545'],
-  17000: [
-    'https://holesky.drpc.org',
-  ],
-  42161: [
-    'https://arb1.arbitrum.io/rpc',
-    'https://arbitrum-one-rpc.publicnode.com',
-  ],
-  421614: [
-    'https://arbitrum-sepolia-rpc.publicnode.com',
-    'https://arbitrum-sepolia.drpc.org',
-    'https://sepolia-rollup.arbitrum.io/rpc',
-  ],
-  43114: [
-    'https://avalanche-c-chain-rpc.publicnode.com',
-    'https://avalanche.drpc.org',
-  ],
-  43113: [
-    'https://avalanche-fuji-c-chain-rpc.publicnode.com',
-    'https://avalanche-fuji.drpc.org',
-  ],
-  80002: [
-    'https://polygon-amoy-bor-rpc.publicnode.com',
-    'https://polygon-amoy.drpc.org',
-  ],
-  8453: [
-    'https://mainnet.base.org',
-    'https://base-rpc.publicnode.com',
-  ],
-  84532: [
-    'https://sepolia.base.org',
-    'https://base-sepolia-rpc.publicnode.com',
-  ],
-  11155111: [
-    'https://sepolia.drpc.org',
-    'https://ethereum-sepolia-rpc.publicnode.com',
-    'https://rpc2.sepolia.org',
-  ],
+  // PublicNode no longer serves Holesky (their current directory advertises
+  // Ethereum Hoodi instead), so retain the verified public fallback here until
+  // the platform migrates testnet support.
+  17000: ['https://holesky.drpc.org'],
+  42161: ['https://arbitrum-one-rpc.publicnode.com'],
+  421614: ['https://arbitrum-sepolia-rpc.publicnode.com'],
+  43114: ['https://avalanche-c-chain-rpc.publicnode.com'],
+  43113: ['https://avalanche-fuji-c-chain-rpc.publicnode.com'],
+  80002: ['https://polygon-amoy-bor-rpc.publicnode.com'],
+  8453: ['https://base-rpc.publicnode.com'],
+  84532: ['https://base-sepolia-rpc.publicnode.com'],
+  11155111: ['https://ethereum-sepolia-rpc.publicnode.com'],
 };
 
 function endpointKey(chainId: number, url: string): string {

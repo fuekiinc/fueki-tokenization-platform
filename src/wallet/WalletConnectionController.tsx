@@ -174,24 +174,39 @@ export function WalletConnectionController() {
       connectionStatus === 'connected' &&
       Boolean(activeWallet) &&
       Boolean(activeAccount?.address);
+    const isSwitching = wallet.connectionStatus === 'switching' || isSwitchInProgress();
 
     if (!isConnected || !activeWallet || !activeAccount?.address) {
       if (isStale()) return;
 
+      if (isSwitching) {
+        setWallet({
+          address: wallet.address,
+          chainId: wallet.chainId,
+          isConnected: wallet.isConnected,
+          isConnecting: true,
+          connectionStatus: 'switching',
+          providerReady: Boolean(getProvider()),
+          signerReady: wallet.signerReady,
+          switchTargetChainId: wallet.switchTargetChainId,
+          balance: wallet.balance,
+          lastSyncAt: Date.now(),
+        });
+        return;
+      }
+
       setProvider(null);
       setSigner(null);
 
-      const isSwitching = wallet.connectionStatus === 'switching';
-
       setWallet({
         address: null,
-        chainId: isSwitching ? wallet.switchTargetChainId : activeWalletChain?.id ?? null,
+        chainId: activeWalletChain?.id ?? null,
         isConnected: false,
-        isConnecting: isSwitching || isConnecting,
-        connectionStatus: isSwitching ? 'switching' : (isConnecting ? 'connecting' : 'disconnected'),
+        isConnecting: isConnecting,
+        connectionStatus: isConnecting ? 'connecting' : 'disconnected',
         providerReady: false,
         signerReady: false,
-        switchTargetChainId: isSwitching ? wallet.switchTargetChainId : null,
+        switchTargetChainId: null,
         balance: '0',
         lastSyncAt: Date.now(),
       });
@@ -200,7 +215,7 @@ export function WalletConnectionController() {
         setEnsName(null);
       }
 
-      if (!isConnecting && wallet.connectionStatus !== 'switching') {
+      if (!isConnecting) {
         setLastError(null);
       }
 
@@ -331,7 +346,12 @@ export function WalletConnectionController() {
     setSigner,
     setWallet,
     isDemoActive,
+    wallet.address,
+    wallet.balance,
+    wallet.chainId,
     wallet.connectionStatus,
+    wallet.isConnected,
+    wallet.signerReady,
     wallet.switchTargetChainId,
   ]);
 

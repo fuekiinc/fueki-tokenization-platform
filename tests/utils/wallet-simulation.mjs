@@ -46,7 +46,7 @@ const CHAIN_FIXTURES = [
     symbol: 'ETH',
     rpcEnv: 'ARBITRUM_RPC_URL',
     rpcEnvFallbacks: ['VITE_RPC_42161_URLS'],
-    defaultRpcUrls: ['https://arb1.arbitrum.io/rpc'],
+    defaultRpcUrls: ['https://arbitrum-one-rpc.publicnode.com'],
   },
   {
     chainId: 421614,
@@ -62,7 +62,7 @@ const CHAIN_FIXTURES = [
     symbol: 'ETH',
     rpcEnv: 'BASE_RPC_URL',
     rpcEnvFallbacks: ['VITE_RPC_8453_URLS'],
-    defaultRpcUrls: ['https://mainnet.base.org'],
+    defaultRpcUrls: ['https://base-rpc.publicnode.com'],
   },
   {
     chainId: 84532,
@@ -70,7 +70,7 @@ const CHAIN_FIXTURES = [
     symbol: 'ETH',
     rpcEnv: 'BASE_SEPOLIA_RPC_URL',
     rpcEnvFallbacks: ['VITE_RPC_84532_URLS'],
-    defaultRpcUrls: ['https://sepolia.base.org'],
+    defaultRpcUrls: ['https://base-sepolia-rpc.publicnode.com'],
   },
   {
     chainId: 43114,

@@ -633,6 +633,34 @@ export function useWallet() {
         }
 
         const chain = getThirdwebChainForSwitch(chainId, preferredRpc);
+        const injectedCandidates = getInjectedProviderCandidates(
+          activeWallet?.id,
+          activeAccount?.address,
+        );
+
+        const runInjectedFallbackSwitch = async (): Promise<void> => {
+          if (injectedCandidates.length === 0) {
+            throw new Error(
+              'Your wallet did not confirm the network switch. Reconnect your wallet and try again.',
+            );
+          }
+
+          await withTimeout(
+            attemptRawProviderChainSwitch(
+              chainId,
+              preferredRpc,
+              activeWallet,
+              activeAccount?.address,
+            ),
+            15_000,
+            'Fallback network switch',
+          );
+          if (!isCurrentWalletOperation(operationId)) {
+            return;
+          }
+          // Re-sync thirdweb after raw provider switch.
+          await switchActiveWalletChain(chain).catch(() => {});
+        };
 
         // Tier 1: Thirdweb's primary switch (works for all wallet types).
         // Single 30s timeout — if the wallet doesn't respond, fail fast.
@@ -653,27 +681,12 @@ export function useWallet() {
 
           // Tier 2: Raw injected-provider fallback (MetaMask, Rabby, etc.).
           // Skip entirely for WalletConnect / non-injected wallets.
-          const candidates = getInjectedProviderCandidates(
-            activeWallet?.id,
-            activeAccount?.address,
-          );
-          if (candidates.length > 0) {
+          if (injectedCandidates.length > 0) {
             try {
-              await withTimeout(
-                attemptRawProviderChainSwitch(
-                  chainId,
-                  preferredRpc,
-                  activeWallet,
-                  activeAccount?.address,
-                ),
-                15_000,
-                'Fallback network switch',
-              );
+              await runInjectedFallbackSwitch();
               if (!isCurrentWalletOperation(operationId)) {
                 return;
               }
-              // Re-sync thirdweb after raw provider switch.
-              await switchActiveWalletChain(chain).catch(() => {});
             } catch (fallbackError) {
               if (isUserRejectedError(fallbackError)) throw fallbackError;
               // Both tiers failed — throw the original error (more informative).
@@ -685,10 +698,42 @@ export function useWallet() {
           }
         }
 
-        // Brief wait for chain confirmation (3s max, non-blocking).
-        await waitForWalletChain(activeWallet, chainId, activeAccount?.address);
+        // Only treat the switch as successful once the wallet actually reports
+        // the target chain. Some wallets/providers resolve the switch request
+        // before they have really updated away from the previous network.
+        let switched = await waitForWalletChain(
+          activeWallet,
+          chainId,
+          activeAccount?.address,
+          5_000,
+        );
         if (!isCurrentWalletOperation(operationId)) {
           return;
+        }
+
+        if (!switched) {
+          logger.warn(
+            'Wallet did not report the target chain after switch request; attempting provider reconciliation',
+            {
+              walletId: activeWallet.id,
+              targetChainId: chainId,
+            },
+          );
+          await runInjectedFallbackSwitch();
+          if (!isCurrentWalletOperation(operationId)) {
+            return;
+          }
+          switched = await waitForWalletChain(
+            activeWallet,
+            chainId,
+            activeAccount?.address,
+            5_000,
+          );
+          if (!switched) {
+            throw new Error(
+              'The wallet stayed on the previous network after the switch request. Please approve the network change in your wallet and try again.',
+            );
+          }
         }
 
         clearWalletBoundStores();

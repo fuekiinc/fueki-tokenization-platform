@@ -10,17 +10,17 @@ const MAINNET_RPC_URL =
 const HOLESKY_RPC_URL =
   process.env.HOLESKY_RPC_URL || "https://holesky.drpc.org";
 const ARBITRUM_RPC_URL =
-  process.env.ARBITRUM_RPC_URL || "https://arb1.arbitrum.io/rpc";
+  process.env.ARBITRUM_RPC_URL || "https://arbitrum-one-rpc.publicnode.com";
 const ARBITRUM_SEPOLIA_RPC_URL =
-  process.env.ARBITRUM_SEPOLIA_RPC_URL || "https://sepolia-rollup.arbitrum.io/rpc";
+  process.env.ARBITRUM_SEPOLIA_RPC_URL || "https://arbitrum-sepolia-rpc.publicnode.com";
 const POLYGON_RPC_URL =
   process.env.POLYGON_RPC_URL || "https://polygon-bor-rpc.publicnode.com";
 const BASE_RPC_URL =
-  process.env.BASE_RPC_URL || "https://mainnet.base.org";
+  process.env.BASE_RPC_URL || "https://base-rpc.publicnode.com";
 const BASE_SEPOLIA_RPC_URL =
-  process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org";
+  process.env.BASE_SEPOLIA_RPC_URL || "https://base-sepolia-rpc.publicnode.com";
 const SEPOLIA_RPC_URL =
-  process.env.SEPOLIA_RPC_URL || "https://1rpc.io/sepolia";
+  process.env.SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com";
 const PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || "";
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "";
 const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY || "";

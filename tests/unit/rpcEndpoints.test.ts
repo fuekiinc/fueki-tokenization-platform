@@ -10,19 +10,19 @@ import {
   selectRpcEndpoint,
 } from '../../src/lib/rpc/endpoints';
 
-test('holesky defaults prioritize the stable dRPC endpoint first', () => {
-  const envName = 'VITE_RPC_17000_URLS';
+test('arbitrum one defaults prioritize the PublicNode endpoint first', () => {
+  const envName = 'VITE_RPC_42161_URLS';
   const previousValue = process.env[envName];
-  process.env[envName] = 'https://holesky.drpc.org';
+  process.env[envName] = 'https://arbitrum-one-rpc.publicnode.com';
 
   try {
-    const endpoints = getRpcEndpoints(17000);
+    const endpoints = getRpcEndpoints(42161);
     assert.ok(endpoints.length >= 1);
     assert.equal(
       endpoints[0],
-      'https://holesky.drpc.org',
+      'https://arbitrum-one-rpc.publicnode.com',
     );
-    assert.ok(endpoints.includes('https://holesky.drpc.org'));
+    assert.ok(endpoints.includes('https://arbitrum-one-rpc.publicnode.com'));
   } finally {
     if (previousValue === undefined) {
       delete process.env[envName];
@@ -33,20 +33,20 @@ test('holesky defaults prioritize the stable dRPC endpoint first', () => {
 });
 
 test('env configured RPC URLs take priority over hardcoded defaults', () => {
-  const envName = 'VITE_RPC_17000_URLS';
+  const envName = 'VITE_RPC_42161_URLS';
   const previousValue = process.env[envName];
   process.env[envName] =
-    'https://custom-rpc.example.org,https://holesky.drpc.org';
+    'https://custom-rpc.example.org,https://arbitrum-one-rpc.publicnode.com';
 
   try {
-    const endpoints = getRpcEndpoints(17000);
-    const walletSwitchEndpoints = getWalletSwitchRpcUrls(17000);
+    const endpoints = getRpcEndpoints(42161);
+    const walletSwitchEndpoints = getWalletSwitchRpcUrls(42161);
 
     // Env-configured endpoints come first
     assert.equal(endpoints[0], 'https://custom-rpc.example.org');
     assert.equal(walletSwitchEndpoints[0], 'https://custom-rpc.example.org');
-    // holesky.drpc.org is deduplicated (present in both env and defaults)
-    assert.ok(endpoints.includes('https://holesky.drpc.org'));
+    // PublicNode is deduplicated when present in both env and defaults.
+    assert.ok(endpoints.includes('https://arbitrum-one-rpc.publicnode.com'));
   } finally {
     if (previousValue === undefined) {
       delete process.env[envName];

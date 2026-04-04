@@ -127,3 +127,55 @@ test('beginChainSwitch invalidates previous and target chain cache namespaces', 
 
   resetWalletState();
 });
+
+test('beginChainSwitch preserves the active wallet session until the new chain is confirmed', () => {
+  resetWalletState();
+
+  const store = useWalletStore.getState();
+  store.setProvider({} as never);
+  store.setSigner({} as never);
+  store.setWallet({
+    address: '0x000000000000000000000000000000000000dEaD',
+    chainId: 1,
+    isConnected: true,
+    connectionStatus: 'connected',
+  });
+
+  store.beginChainSwitch(421614);
+
+  const wallet = useWalletStore.getState().wallet;
+  assert.equal(wallet.chainId, 1);
+  assert.equal(wallet.switchTargetChainId, 421614);
+  assert.equal(wallet.connectionStatus, 'switching');
+  assert.equal(wallet.isConnected, true);
+  assert.equal(wallet.providerReady, true);
+  assert.equal(wallet.signerReady, true);
+
+  resetWalletState();
+});
+
+test('failChainSwitch falls back to the existing connected session when the wallet is still attached', () => {
+  resetWalletState();
+
+  const store = useWalletStore.getState();
+  store.setProvider({} as never);
+  store.setSigner({} as never);
+  store.setWallet({
+    address: '0x000000000000000000000000000000000000dEaD',
+    chainId: 1,
+    isConnected: true,
+    connectionStatus: 'connected',
+  });
+
+  store.beginChainSwitch(421614);
+  store.failChainSwitch('Switch failed');
+
+  const wallet = useWalletStore.getState().wallet;
+  assert.equal(wallet.chainId, 1);
+  assert.equal(wallet.switchTargetChainId, null);
+  assert.equal(wallet.connectionStatus, 'connected');
+  assert.equal(wallet.isConnected, true);
+  assert.equal(wallet.lastError, 'Switch failed');
+
+  resetWalletState();
+});
