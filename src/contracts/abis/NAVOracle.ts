@@ -4,6 +4,7 @@
 export const NAVOracleABI = [
   'function NAV_PUBLISHER_ROLE() view returns (bytes32)',
   'function NAV_ADMIN_ROLE() view returns (bytes32)',
+  'function getRoleAdmin(bytes32 role) view returns (bytes32)',
   'function token() view returns (address)',
   'function baseCurrency() view returns (string)',
   'function NAV_DECIMALS() view returns (uint8)',

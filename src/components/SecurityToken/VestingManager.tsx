@@ -467,7 +467,7 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
       const contract = await getContract(true);
       const releaseCount = BigInt(newReleaseCount);
       const delay = BigInt(newDelay);
-      const initialBips = BigInt(newInitialBips);
+      const initialBips = BigInt(Math.floor(Number(newInitialBips)));
       const period = BigInt(newPeriod);
 
       if (releaseCount < 1n) {
@@ -1055,6 +1055,7 @@ export default function VestingManager({ tokenAddress }: VestingManagerProps) {
                   type="number"
                   min="0"
                   max="10000"
+                  step="1"
                   value={newInitialBips}
                   onChange={(e) => setNewInitialBips(e.target.value)}
                   placeholder="0 - 10000"

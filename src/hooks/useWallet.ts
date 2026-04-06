@@ -417,25 +417,10 @@ async function attemptRawProviderChainSwitch(
     rpcUrls: rpcUrlsForChainParams,
     ...(network?.blockExplorer ? { blockExplorerUrls: [network.blockExplorer] } : {}),
   };
-  const shouldRefreshChainConfig = targetChainId === 421614;
-
   let lastError: unknown = null;
 
   for (const provider of orderedProviders) {
     try {
-      if (shouldRefreshChainConfig) {
-        try {
-          await provider.request({
-            method: 'wallet_addEthereumChain',
-            params: [chainParams],
-          });
-        } catch (refreshError) {
-          if (isUserRejectedError(refreshError)) {
-            throw refreshError;
-          }
-        }
-      }
-
       try {
         await provider.request({
           method: 'wallet_switchEthereumChain',
@@ -661,6 +646,53 @@ export function useWallet() {
           // Re-sync thirdweb after raw provider switch.
           await switchActiveWalletChain(chain).catch(() => {});
         };
+
+        // Pre-switch: update the wallet's stored chain config (RPC URLs etc.)
+        // BEFORE the actual switch. Without this, wallets like MetaMask switch
+        // to the chain but keep using whatever (possibly dead) RPC was stored
+        // from a previous session, causing connection failures.
+        if (injectedCandidates.length > 0) {
+          const network = getNetworkMetadata(chainId);
+          const walletSwitchRpcUrls = getWalletSwitchRpcUrls(chainId);
+          const rpcUrls = dedupeUrls([
+            ...(preferredRpc ? [preferredRpc] : []),
+            ...walletSwitchRpcUrls,
+            ...(network?.rpcUrl ? [network.rpcUrl] : []),
+          ]).filter(isValidRpcUrl);
+
+          if (rpcUrls.length > 0) {
+            const addChainParams = {
+              chainId: ethers.toQuantity(chainId),
+              chainName: network?.name ?? `Chain ${chainId}`,
+              nativeCurrency: network?.nativeCurrency ?? {
+                name: 'Ether',
+                symbol: 'ETH',
+                decimals: 18,
+              },
+              rpcUrls,
+              ...(network?.blockExplorer
+                ? { blockExplorerUrls: [network.blockExplorer] }
+                : {}),
+            };
+
+            for (const provider of injectedCandidates) {
+              try {
+                await provider.request({
+                  method: 'wallet_addEthereumChain',
+                  params: [addChainParams],
+                });
+                break; // One provider succeeding is enough.
+              } catch (refreshErr) {
+                if (isUserRejectedError(refreshErr)) throw refreshErr;
+                // Non-fatal — continue to the switch attempt.
+              }
+            }
+          }
+
+          if (!isCurrentWalletOperation(operationId)) {
+            return;
+          }
+        }
 
         // Tier 1: Thirdweb's primary switch (works for all wallet types).
         // Single 30s timeout — if the wallet doesn't respond, fail fast.

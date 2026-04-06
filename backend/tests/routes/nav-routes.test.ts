@@ -1,7 +1,7 @@
 import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { isHttpError } from '../../src/lib/httpErrors';
+import { HttpError, isHttpError } from '../../src/lib/httpErrors';
 
 const mocks = vi.hoisted(() => ({
   createNavDraft: vi.fn(),
@@ -295,7 +295,11 @@ describe('NAV routes', () => {
 
   it('surfaces service-level registration errors for invalid oracle/token pairs', async () => {
     mocks.registerNavOracle.mockRejectedValue(
-      new Error('NAV oracle token does not match the selected security token.'),
+      new HttpError(
+        400,
+        'NAV_ORACLE_TOKEN_MISMATCH',
+        'The NAV oracle is configured for a different security token. Double-check that you entered the oracle deployed for this token.',
+      ),
     );
     mocks.isSecurityTokenContractAdmin.mockResolvedValue(true);
     mocks.isOracleAdmin.mockResolvedValue(false);
@@ -307,8 +311,10 @@ describe('NAV routes', () => {
         oracleAddress: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
         baseCurrency: 'USD',
       })
-      .expect(500);
+      .expect(400);
 
-    expect(response.body.error.message).toContain('NAV oracle token does not match');
+    expect(response.body.error).toMatchObject({
+      code: 'NAV_ORACLE_TOKEN_MISMATCH',
+    });
   });
 });

@@ -168,6 +168,7 @@ export async function setupNavOracleForToken(
       minAttestationIntervalSeconds:
         NAV_ORACLE_AUTOMATION_DEFAULTS.minAttestationIntervalSeconds,
       maxNavChangeBps: NAV_ORACLE_AUTOMATION_DEFAULTS.maxNavChangeBps,
+      walletAddress: input.adminAddress,
     });
   } catch (error) {
     return buildPartialResult(

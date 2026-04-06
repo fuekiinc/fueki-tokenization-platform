@@ -3,6 +3,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { ethers } from 'ethers';
+import { HttpError } from '../lib/httpErrors';
 import { prisma } from '../prisma';
 import { ERC20_METADATA_ABI, NAV_ADMIN_ROLE, NAV_ORACLE_ABI, NAV_PUBLISHER_ROLE, SECURITY_TOKEN_CONTRACT_ADMIN_ROLE, SECURITY_TOKEN_ROLE_ABI } from '../lib/navContracts';
 import { getRpcEndpoints, getSupportedChainId } from './rpcRegistry';
@@ -450,6 +451,27 @@ async function getOracleMetadata(
   };
 }
 
+function toNavOracleRegistrationError(error: unknown): HttpError {
+  if (error instanceof HttpError) {
+    return error;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  if (/NAV oracle token does not match the selected security token/i.test(message)) {
+    return new HttpError(
+      400,
+      'NAV_ORACLE_TOKEN_MISMATCH',
+      'The NAV oracle is configured for a different security token. Double-check that you entered the oracle deployed for this token.',
+    );
+  }
+
+  return new HttpError(
+    400,
+    'INVALID_NAV_ORACLE',
+    'Unable to read NAV oracle settings from this address on the selected network. Make sure the contract is a deployed NAVOracle for this token and network.',
+  );
+}
+
 async function upsertAttestationFromEvent(
   registration: {
     tokenAddress: string;
@@ -697,13 +719,22 @@ export async function registerNavOracle(
   ensureSupportedChainId(input.chainId);
   const normalizedTokenAddress = normalizeAddress(input.tokenAddress);
   const normalizedOracleAddress = normalizeAddress(input.oracleAddress);
-  const [oracleThresholds, oracleMetadata] = await Promise.all([
-    getOracleThresholds(normalizedOracleAddress, input.chainId),
-    getOracleMetadata(normalizedOracleAddress, input.chainId),
-  ]);
+  let oracleThresholds: Awaited<ReturnType<typeof getOracleThresholds>>;
+  let oracleMetadata: Awaited<ReturnType<typeof getOracleMetadata>>;
+
+  try {
+    [oracleThresholds, oracleMetadata] = await Promise.all([
+      getOracleThresholds(normalizedOracleAddress, input.chainId),
+      getOracleMetadata(normalizedOracleAddress, input.chainId),
+    ]);
+  } catch (error) {
+    throw toNavOracleRegistrationError(error);
+  }
 
   if (oracleMetadata.tokenAddress !== normalizedTokenAddress) {
-    throw new Error('NAV oracle token does not match the selected security token.');
+    throw toNavOracleRegistrationError(
+      new Error('NAV oracle token does not match the selected security token.'),
+    );
   }
 
   const registration = await prisma.navOracleRegistration.upsert({
@@ -736,7 +767,16 @@ export async function registerNavOracle(
     },
   });
 
-  await syncNavOracleHistory(registration.tokenAddress, registration.chainId);
+  try {
+    await syncNavOracleHistory(registration.tokenAddress, registration.chainId);
+  } catch (error) {
+    console.warn('NAV oracle registration saved without immediate history sync', {
+      tokenAddress: registration.tokenAddress,
+      chainId: registration.chainId,
+      oracleAddress: registration.oracleAddress,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   return mapRegistrationRecord(registration);
 }
 

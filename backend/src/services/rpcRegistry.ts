@@ -24,8 +24,8 @@ const RPC_ENV_BY_CHAIN: Record<SupportedChainId, string> = {
 const DEFAULT_RPC_BY_CHAIN: Record<SupportedChainId, string[]> = {
   1: ['https://ethereum-rpc.publicnode.com'],
   137: ['https://polygon-bor-rpc.publicnode.com'],
-  // PublicNode currently serves Ethereum Hoodi instead of Holesky, so keep the
-  // verified public Holesky fallback until chain 17000 support is migrated.
+  // PublicNode dropped Holesky; drpc.org free tier works for eth_call but
+  // blocks eth_getLogs over large ranges (code 35).
   17000: ['https://holesky.drpc.org'],
   42161: ['https://arbitrum-one-rpc.publicnode.com'],
   421614: ['https://arbitrum-sepolia-rpc.publicnode.com'],

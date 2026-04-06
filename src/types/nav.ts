@@ -132,6 +132,8 @@ export interface RegisterNavOracleInput {
   stalenessCriticalDays?: number;
   minAttestationIntervalSeconds?: number;
   maxNavChangeBps?: number;
+  /** Connected wallet address — used as fallback when the user record has no stored wallet. */
+  walletAddress?: string;
 }
 
 export interface UpsertNavPublisherInput {
@@ -150,6 +152,8 @@ export interface NavDraftInput {
   reportURI: string;
   publisherName?: string;
   assetBreakdown: NavAssetBreakdownInput[];
+  /** Connected wallet address — used as fallback when the user record has no stored wallet. */
+  walletAddress?: string;
 }
 
 export interface FinalizeNavAttestationInput extends NavDraftInput {

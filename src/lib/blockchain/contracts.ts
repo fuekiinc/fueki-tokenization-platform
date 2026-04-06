@@ -7,6 +7,7 @@
  * provider directly for lower overhead.
  */
 
+import axios from 'axios';
 import { ethers } from 'ethers';
 import { WrappedAssetABI } from '../../contracts/abis/WrappedAsset.ts';
 import { WrappedAssetFactoryABI } from '../../contracts/abis/WrappedAssetFactory.ts';
@@ -349,6 +350,23 @@ function dedupeRpcUrls(urls: string[]): string[] {
  * and maps common patterns to clear text.
  */
 export function parseContractError(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const apiMessage = err.response?.data?.error?.message;
+    if (typeof apiMessage === 'string' && apiMessage.trim().length > 0) {
+      return apiMessage.trim();
+    }
+
+    const validationErrors = err.response?.data?.error?.issues?.errors;
+    if (Array.isArray(validationErrors) && validationErrors.length > 0) {
+      const messages = validationErrors
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        .map((value) => value.trim());
+      if (messages.length > 0) {
+        return messages.join(' ');
+      }
+    }
+  }
+
   // 1. Try to extract the Solidity revert reason from ethers v6 error types.
   const revertReason =
     (err as { reason?: string })?.reason ??

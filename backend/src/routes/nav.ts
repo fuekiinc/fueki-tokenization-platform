@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { HttpError } from '../lib/httpErrors';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { authenticate } from '../middleware/auth';
-import { evmAddressSchema, positiveDecimalStringSchema, supportedChainIdSchema, txHashSchema } from '../lib/validation';
+import { evmAddressSchema, optionalDecimalStringSchema, positiveDecimalStringSchema, supportedChainIdSchema, txHashSchema } from '../lib/validation';
 import {
   createNavDraft,
   finalizePublishedNavAttestation,
@@ -44,12 +44,12 @@ const assetBreakdownSchema = z.object({
   assetName: z.string().trim().min(1).max(200),
   assetType: z.string().trim().min(1).max(120),
   grossAssetValue: positiveDecimalStringSchema,
-  liabilities: positiveDecimalStringSchema.or(z.literal('0')).default('0'),
+  liabilities: z.string().trim().transform((v) => (v === '' ? '0' : v)).pipe(positiveDecimalStringSchema.or(z.literal('0'))).default('0'),
   netAssetValue: positiveDecimalStringSchema,
-  provenReservesOz: positiveDecimalStringSchema.optional(),
-  probableReservesOz: positiveDecimalStringSchema.optional(),
-  spotPricePerOz: positiveDecimalStringSchema.optional(),
-  productionRateTpd: positiveDecimalStringSchema.optional(),
+  provenReservesOz: optionalDecimalStringSchema,
+  probableReservesOz: optionalDecimalStringSchema,
+  spotPricePerOz: optionalDecimalStringSchema,
+  productionRateTpd: optionalDecimalStringSchema,
   notes: z.string().trim().max(10_000).optional(),
 });
 
@@ -60,6 +60,7 @@ const registerOracleSchema = z.object({
   stalenessCriticalDays: z.coerce.number().int().min(1).max(3650).optional(),
   minAttestationIntervalSeconds: z.coerce.number().int().min(0).max(31_536_000).optional(),
   maxNavChangeBps: z.coerce.number().int().min(1).max(10_000).optional(),
+  walletAddress: evmAddressSchema.transform((value) => value.toLowerCase()).optional(),
 });
 
 const draftSchema = z.object({
@@ -70,6 +71,7 @@ const draftSchema = z.object({
   reportURI: z.string().trim().min(1).max(2048),
   publisherName: z.string().trim().max(200).optional(),
   assetBreakdown: z.array(assetBreakdownSchema).min(1),
+  walletAddress: evmAddressSchema.transform((value) => value.toLowerCase()).optional(),
 });
 
 const finalizeSchema = draftSchema.extend({
@@ -96,25 +98,31 @@ const statusSchema = z.object({
   status: z.enum(['DRAFT', 'PENDING_TX', 'PUBLISHED', 'SUPERSEDED', 'DISPUTED']),
 });
 
-async function requireAuthenticatedWallet(userId: string | undefined): Promise<string> {
+async function requireAuthenticatedWallet(
+  userId: string | undefined,
+  fallbackWalletAddress?: string | null,
+): Promise<string> {
   if (!userId) {
     throw new HttpError(401, 'AUTH_REQUIRED', 'Authentication required');
   }
 
   const walletAddress = await getUserWalletAddress(userId);
-  if (!walletAddress) {
-    throw new HttpError(400, 'WALLET_REQUIRED', 'Authenticated user does not have a wallet address on file');
-  }
+  if (walletAddress) return walletAddress;
 
-  return walletAddress;
+  // Allow the frontend to pass the connected wallet address when the user
+  // record does not yet have one stored (e.g. first-time oracle registration).
+  if (fallbackWalletAddress) return fallbackWalletAddress.toLowerCase();
+
+  throw new HttpError(400, 'WALLET_REQUIRED', 'Authenticated user does not have a wallet address on file. Connect your wallet and try again.');
 }
 
 async function requireNavWriteAccess(
   tokenAddress: string,
   chainId: number,
   userId: string | undefined,
+  fallbackWalletAddress?: string | null,
 ): Promise<{ walletAddress: string; oracleAddress: string }> {
-  const walletAddress = await requireAuthenticatedWallet(userId);
+  const walletAddress = await requireAuthenticatedWallet(userId, fallbackWalletAddress);
   const registration = await getNavOracleRegistration(tokenAddress, chainId);
 
   if (!registration) {
@@ -137,8 +145,9 @@ async function requireNavAdminAccess(
   tokenAddress: string,
   chainId: number,
   userId: string | undefined,
+  fallbackWalletAddress?: string | null,
 ): Promise<{ walletAddress: string; oracleAddress: string | null }> {
-  const walletAddress = await requireAuthenticatedWallet(userId);
+  const walletAddress = await requireAuthenticatedWallet(userId, fallbackWalletAddress);
   const registration = await getNavOracleRegistration(tokenAddress, chainId);
 
   const [tokenAdmin, oracleAdmin] = await Promise.all([
@@ -170,7 +179,7 @@ router.get('/:tokenAddress/:chainId/oracle', asyncHandler(async (req, res) => {
 router.post('/:tokenAddress/:chainId/oracle', authenticate, asyncHandler(async (req, res) => {
   const { tokenAddress, chainId } = paramsSchema.parse(req.params);
   const body = registerOracleSchema.parse(req.body);
-  await requireNavAdminAccess(tokenAddress, chainId, req.userId);
+  await requireNavAdminAccess(tokenAddress, chainId, req.userId, body.walletAddress);
 
   const registration = await registerNavOracle({
     tokenAddress,
@@ -236,7 +245,7 @@ router.get('/:tokenAddress/:chainId/publishers', asyncHandler(async (req, res) =
 router.post('/:tokenAddress/:chainId/publishers', authenticate, asyncHandler(async (req, res) => {
   const { tokenAddress, chainId } = paramsSchema.parse(req.params);
   const body = publisherSchema.parse(req.body);
-  await requireNavAdminAccess(tokenAddress, chainId, req.userId);
+  await requireNavAdminAccess(tokenAddress, chainId, req.userId, body.walletAddress);
 
   const publisher = await upsertNavPublisher({
     tokenAddress,
@@ -257,7 +266,7 @@ router.delete('/:tokenAddress/:chainId/publishers/:walletAddress', authenticate,
   const { walletAddress } = z.object({
     walletAddress: evmAddressSchema.transform((value) => value.toLowerCase()),
   }).parse(req.params);
-  await requireNavAdminAccess(tokenAddress, chainId, req.userId);
+  await requireNavAdminAccess(tokenAddress, chainId, req.userId, walletAddress);
   await removeNavPublisher(tokenAddress, chainId, walletAddress, req.userId!);
   res.json({ success: true });
 }));
@@ -265,7 +274,7 @@ router.delete('/:tokenAddress/:chainId/publishers/:walletAddress', authenticate,
 router.post('/:tokenAddress/:chainId/attestation/draft', authenticate, asyncHandler(async (req, res) => {
   const { tokenAddress, chainId } = paramsSchema.parse(req.params);
   const body = draftSchema.parse(req.body);
-  const { walletAddress } = await requireNavWriteAccess(tokenAddress, chainId, req.userId);
+  const { walletAddress } = await requireNavWriteAccess(tokenAddress, chainId, req.userId, body.walletAddress);
 
   const errors = await validateNavAttestationInput({
     tokenAddress,
@@ -303,7 +312,7 @@ router.post('/:tokenAddress/:chainId/attestation/draft', authenticate, asyncHand
 router.post('/:tokenAddress/:chainId/attestation', authenticate, asyncHandler(async (req, res) => {
   const { tokenAddress, chainId } = paramsSchema.parse(req.params);
   const body = finalizeSchema.parse(req.body);
-  const { walletAddress } = await requireNavWriteAccess(tokenAddress, chainId, req.userId);
+  const { walletAddress } = await requireNavWriteAccess(tokenAddress, chainId, req.userId, body.walletAddress);
 
   const errors = await validateNavAttestationInput({
     tokenAddress,

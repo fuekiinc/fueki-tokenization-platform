@@ -49,9 +49,8 @@ const DEFAULT_RPC_BY_CHAIN: Record<number, string[]> = {
   1: ['https://ethereum-rpc.publicnode.com'],
   137: ['https://polygon-bor-rpc.publicnode.com'],
   31337: ['http://127.0.0.1:8545'],
-  // PublicNode no longer serves Holesky (their current directory advertises
-  // Ethereum Hoodi instead), so retain the verified public fallback here until
-  // the platform migrates testnet support.
+  // PublicNode dropped Holesky; drpc.org free tier works for eth_call but
+  // blocks eth_getLogs over large ranges (code 35).
   17000: ['https://holesky.drpc.org'],
   42161: ['https://arbitrum-one-rpc.publicnode.com'],
   421614: ['https://arbitrum-sepolia-rpc.publicnode.com'],

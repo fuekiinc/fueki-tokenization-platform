@@ -92,6 +92,7 @@ const GROUP_PRESETS = [
   { label: 'Reg D', id: 1 },
   { label: 'Reg CF', id: 2 },
   { label: 'Reg S', id: 3 },
+  { label: 'Reg A+', id: 4 },
 ] as const;
 
 const ROLE_WALLETS_ADMIN = 4;

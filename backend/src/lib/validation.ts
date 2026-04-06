@@ -27,8 +27,12 @@ export const positiveDecimalStringSchema = z
   })
   .refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, {
     message: 'Amount must be greater than zero',
-  })
-  .refine((value) => Number(value) <= Number.MAX_SAFE_INTEGER, {
-    message: 'Amount exceeds the maximum supported numeric range',
   });
+
+/** Accepts a positive decimal string OR an empty/blank string (coerced to undefined). */
+export const optionalDecimalStringSchema = z
+  .string()
+  .trim()
+  .transform((value) => (value === '' ? undefined : value))
+  .pipe(positiveDecimalStringSchema.optional());
 

@@ -42,6 +42,7 @@ import {
   removeNavPublisher,
   upsertNavPublisher,
 } from '../../lib/api/nav';
+import { getNetworkMetadata } from '../../contracts/addresses';
 import { ROLE_CONTRACT_ADMIN, SecurityTokenABI } from '../../contracts/abis/SecurityToken';
 import { NAVOracleABI } from '../../contracts/abis/NAVOracle';
 import {
@@ -83,8 +84,10 @@ interface RoleState {
   isPublisher: boolean;
   isOracleAdmin: boolean;
   isTokenAdmin: boolean;
+  isPublisherRoleAdmin: boolean;
   canPublish: boolean;
   canManage: boolean;
+  canManagePublishers: boolean;
 }
 
 interface DividendMarker {
@@ -223,6 +226,42 @@ function getInitialPublishFormState(currentNav: NavAttestation | CurrentNav | nu
   };
 }
 
+interface DerivedRoleStateInput {
+  isPublisher: boolean;
+  isOracleAdmin: boolean;
+  isTokenAdmin: boolean;
+  isPublisherRoleAdmin: boolean;
+}
+
+export function deriveNavRoleState({
+  isPublisher,
+  isOracleAdmin,
+  isTokenAdmin,
+  isPublisherRoleAdmin,
+}: DerivedRoleStateInput): RoleState {
+  return {
+    isPublisher,
+    isOracleAdmin,
+    isTokenAdmin,
+    isPublisherRoleAdmin,
+    canPublish: isPublisher || isOracleAdmin,
+    canManage: isTokenAdmin || isOracleAdmin,
+    canManagePublishers: isPublisherRoleAdmin,
+  };
+}
+
+function getNetworkLabel(chainId: number | null): string {
+  if (!chainId) {
+    return 'the required network';
+  }
+  return getNetworkMetadata(chainId)?.name ?? `chain ${chainId}`;
+}
+
+function isMissingOraclePublisherAdminRole(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /AccessControl:\s+account\s+0x[a-fA-F0-9]{40}\s+is missing role\s+0x[a-fA-F0-9]{64}/i.test(message);
+}
+
 async function fetchRoleState(
   tokenAddress: string,
   chainId: number,
@@ -234,13 +273,12 @@ async function fetchRoleState(
   const isTokenAdmin = await tokenContract.hasRole(walletAddress, ROLE_CONTRACT_ADMIN) as boolean;
 
   if (!oracleAddress) {
-    return {
+    return deriveNavRoleState({
       isPublisher: false,
       isOracleAdmin: false,
       isTokenAdmin,
-      canPublish: false,
-      canManage: isTokenAdmin,
-    };
+      isPublisherRoleAdmin: false,
+    });
   }
 
   const oracleContract = new ethers.Contract(oracleAddress, NAVOracleABI, readProvider);
@@ -248,18 +286,19 @@ async function fetchRoleState(
     oracleContract.NAV_PUBLISHER_ROLE() as Promise<string>,
     oracleContract.NAV_ADMIN_ROLE() as Promise<string>,
   ]);
-  const [isPublisher, isOracleAdmin] = await Promise.all([
+  const publisherRoleAdmin = await oracleContract.getRoleAdmin(publisherRole) as string;
+  const [isPublisher, isOracleAdmin, isPublisherRoleAdmin] = await Promise.all([
     oracleContract.hasRole(publisherRole, walletAddress) as Promise<boolean>,
     oracleContract.hasRole(adminRole, walletAddress) as Promise<boolean>,
+    oracleContract.hasRole(publisherRoleAdmin, walletAddress) as Promise<boolean>,
   ]);
 
-  return {
+  return deriveNavRoleState({
     isPublisher,
     isOracleAdmin,
     isTokenAdmin,
-    canPublish: isPublisher || isOracleAdmin,
-    canManage: isTokenAdmin || isOracleAdmin,
-  };
+    isPublisherRoleAdmin,
+  });
 }
 
 async function fetchDividendMarkers(
@@ -609,6 +648,7 @@ function OracleRegistrationPanel({
   existingRegistration: NavOracleRegistration | null;
   onRegistered: (registration: NavOracleRegistration) => void;
 }) {
+  const connectedWallet = useWalletStore((state) => state.wallet.address);
   const [oracleAddress, setOracleAddress] = useState(existingRegistration?.oracleAddress ?? '');
   const [baseCurrency, setBaseCurrency] = useState(existingRegistration?.baseCurrency ?? 'USD');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -632,6 +672,7 @@ function OracleRegistrationPanel({
       const registration = await registerNavOracle(tokenAddress, chainId, {
         oracleAddress,
         baseCurrency,
+        ...(connectedWallet ? { walletAddress: connectedWallet } : {}),
       });
       onRegistered(registration);
       toast.success('NAV oracle registration updated.');
@@ -642,7 +683,7 @@ function OracleRegistrationPanel({
     } finally {
       setIsSubmitting(false);
     }
-  }, [baseCurrency, chainId, onRegistered, oracleAddress, tokenAddress]);
+  }, [baseCurrency, chainId, connectedWallet, onRegistered, oracleAddress, tokenAddress]);
 
   return (
     <Card
@@ -690,26 +731,38 @@ function PublisherManagementPanel({
   chainId,
   registration,
   publishers,
-  canManage,
+  canManagePublishers,
   onUpdated,
 }: {
   tokenAddress: string;
   chainId: number;
   registration: NavOracleRegistration;
   publishers: NavPublisher[];
-  canManage: boolean;
+  canManagePublishers: boolean;
   onUpdated: () => void;
 }) {
+  const connectedChainId = useWalletStore((state) => state.wallet.chainId);
   const [walletAddress, setWalletAddress] = useState('');
   const [name, setName] = useState('');
   const [licenseNumber, setLicenseNumber] = useState('');
   const [licenseType, setLicenseType] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const isOnExpectedChain = connectedChainId === chainId;
+  const publisherAccessMessage = !isOnExpectedChain
+    ? `Switch your wallet to ${getNetworkLabel(chainId)} before authorizing or revoking NAV publishers.`
+    : canManagePublishers
+      ? null
+      : 'This wallet can view publisher records, but it does not control publisher authorizations for the registered oracle. Connect the wallet that deployed the oracle or otherwise holds its admin role.';
 
   const authorizePublisher = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canManage || !walletAddress || !name) {
+    const normalizedName = name.trim();
+    if (!walletAddress || !normalizedName) {
+      return;
+    }
+    if (publisherAccessMessage) {
+      toast.error(publisherAccessMessage);
       return;
     }
 
@@ -719,20 +772,24 @@ function PublisherManagementPanel({
       if (!provider) {
         throw new Error('Wallet not connected');
       }
+      if (!isOnExpectedChain) {
+        throw new Error(`Switch your wallet to ${getNetworkLabel(chainId)} and try again.`);
+      }
 
       const signer = await provider.getSigner();
       const oracle = new ethers.Contract(registration.oracleAddress, NAVOracleABI, signer);
       const publisherRole = await oracle.NAV_PUBLISHER_ROLE() as string;
+      const normalizedWalletAddress = ethers.getAddress(walletAddress.trim());
 
       const tx = await sendTransactionWithRetry(
-        () => oracle.grantRole(publisherRole, walletAddress),
+        () => oracle.grantRole(publisherRole, normalizedWalletAddress),
         { label: 'ValuationDashboard.grantPublisherRole' },
       );
       await waitForTransactionReceipt(tx, { label: 'ValuationDashboard.grantPublisherRole' });
 
       await upsertNavPublisher(tokenAddress, chainId, {
-        walletAddress,
-        name,
+        walletAddress: normalizedWalletAddress,
+        name: normalizedName,
         licenseNumber: licenseNumber || undefined,
         licenseType: licenseType || undefined,
         contactEmail: contactEmail || undefined,
@@ -746,18 +803,30 @@ function PublisherManagementPanel({
       setContactEmail('');
       onUpdated();
     } catch (error) {
-      toast.error(parseContractError(error));
+      toast.error(
+        isMissingOraclePublisherAdminRole(error)
+          ? 'This wallet does not control publisher authorizations for the registered oracle. Connect the wallet that deployed the oracle or otherwise holds its admin role.'
+          : parseContractError(error),
+      );
     } finally {
       setBusyKey(null);
     }
-  }, [canManage, chainId, contactEmail, licenseNumber, licenseType, name, onUpdated, registration.oracleAddress, tokenAddress, walletAddress]);
+  }, [chainId, contactEmail, isOnExpectedChain, licenseNumber, licenseType, name, onUpdated, publisherAccessMessage, registration.oracleAddress, tokenAddress, walletAddress]);
 
   const revokePublisher = useCallback(async (publisher: NavPublisher) => {
+    if (publisherAccessMessage) {
+      toast.error(publisherAccessMessage);
+      return;
+    }
+
     setBusyKey(publisher.walletAddress);
     try {
       const provider = getProvider();
       if (!provider) {
         throw new Error('Wallet not connected');
+      }
+      if (!isOnExpectedChain) {
+        throw new Error(`Switch your wallet to ${getNetworkLabel(chainId)} and try again.`);
       }
 
       const signer = await provider.getSigner();
@@ -773,11 +842,15 @@ function PublisherManagementPanel({
       toast.success('Publisher revoked.');
       onUpdated();
     } catch (error) {
-      toast.error(parseContractError(error));
+      toast.error(
+        isMissingOraclePublisherAdminRole(error)
+          ? 'This wallet does not control publisher authorizations for the registered oracle. Connect the wallet that deployed the oracle or otherwise holds its admin role.'
+          : parseContractError(error),
+      );
     } finally {
       setBusyKey(null);
     }
-  }, [chainId, onUpdated, registration.oracleAddress, tokenAddress]);
+  }, [chainId, isOnExpectedChain, onUpdated, publisherAccessMessage, registration.oracleAddress, tokenAddress]);
 
   return (
     <Card title="Publisher Management" subtitle="Authorize or revoke NAV publishers for this oracle." compact>
@@ -802,7 +875,7 @@ function PublisherManagementPanel({
                   </div>
                   <p className="mt-1 text-xs font-mono text-gray-500">{publisher.walletAddress}</p>
                 </div>
-                {canManage && (
+                {canManagePublishers && (
                   <button
                     type="button"
                     onClick={() => void revokePublisher(publisher)}
@@ -822,7 +895,13 @@ function PublisherManagementPanel({
           </div>
         )}
 
-        {canManage && (
+        {publisherAccessMessage && (
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            {publisherAccessMessage}
+          </div>
+        )}
+
+        {canManagePublishers && (
           <form className="grid gap-3 sm:grid-cols-2" onSubmit={authorizePublisher}>
             <input
               type="text"
@@ -891,6 +970,7 @@ function PublishNavPanel({
   isAuthenticated: boolean;
   onPublished: () => void;
 }) {
+  const connectedWallet = useWalletStore((state) => state.wallet.address);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<PublishFormState>(() => getInitialPublishFormState(currentNav));
   const [busyState, setBusyState] = useState<'idle' | 'hashing' | 'draft' | 'publishing'>('idle');
@@ -977,6 +1057,7 @@ function PublishNavPanel({
         reportURI: form.reportURI,
         publisherName: form.publisherName || undefined,
         assetBreakdown: form.assetBreakdown,
+        walletAddress: connectedWallet || undefined,
       });
       setDraftId(draft.id);
       toast.success('NAV draft saved.');
@@ -1015,6 +1096,7 @@ function PublishNavPanel({
               reportURI: form.reportURI,
               publisherName: form.publisherName || undefined,
               assetBreakdown: form.assetBreakdown,
+              walletAddress: connectedWallet || undefined,
             });
 
       const provider = getProvider();
@@ -1055,6 +1137,7 @@ function PublishNavPanel({
             assetBreakdown: form.assetBreakdown,
             txHash: receipt.hash,
             draftId: draft.id,
+            walletAddress: connectedWallet || undefined,
           });
         } catch (error) {
           finalizeError = error;
@@ -1481,13 +1564,12 @@ export default function ValuationDashboard({ tokenAddress }: ValuationDashboardP
     staleTime: 60_000,
     queryFn: async () => {
       if (!chainId || !walletAddress) {
-        return {
+        return deriveNavRoleState({
           isPublisher: false,
           isOracleAdmin: false,
           isTokenAdmin: false,
-          canPublish: false,
-          canManage: false,
-        } satisfies RoleState;
+          isPublisherRoleAdmin: false,
+        });
       }
 
       return fetchRoleState(
@@ -1501,7 +1583,7 @@ export default function ValuationDashboard({ tokenAddress }: ValuationDashboardP
 
   const publishersQuery = useQuery({
     queryKey: queryKeys.navPublishers(tokenAddress, chainId),
-    enabled: Boolean(chainId && registrationQuery.data?.oracleAddress && roleQuery.data?.canManage),
+    enabled: Boolean(chainId && registrationQuery.data?.oracleAddress),
     staleTime: 60_000,
     queryFn: async () => {
       if (!chainId) {
@@ -2064,7 +2146,7 @@ export default function ValuationDashboard({ tokenAddress }: ValuationDashboardP
                         chainId={chainId}
                         registration={registrationQuery.data}
                         publishers={publishersQuery.data ?? []}
-                        canManage={roles.canManage}
+                        canManagePublishers={roles.canManagePublishers}
                         onUpdated={refreshNavQueries}
                       />
                     )}
