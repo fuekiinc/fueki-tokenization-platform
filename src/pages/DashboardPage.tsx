@@ -20,6 +20,7 @@ import { useAuthStore } from '../store/authStore';
 import { useWallet } from '../hooks/useWallet';
 import { useContractService } from '../hooks/useContractService';
 import { ETH_SENTINEL, getReadOnlyProvider, isETH } from '../lib/blockchain/contracts';
+import { getCurrentNav } from '../lib/api/nav';
 import { queryRecentLogsBestEffort } from '../lib/blockchain/logQuery';
 import { calculateCurrentPortfolioValue, calculatePortfolioChangePercent } from '../lib/dashboardMetrics';
 import {
@@ -473,10 +474,24 @@ export default function DashboardPage() {
         } else {
           const holdings = await Promise.all(
             Array.from(candidateSecurityTokenAddresses).map(async (tokenAddress) => {
-              const [details, balance] = await Promise.all([
+              const [details, balance, navData] = await Promise.all([
                 contractService.getSecurityTokenDetails(tokenAddress),
                 contractService.getSecurityTokenBalance(tokenAddress, address),
+                getCurrentNav(tokenAddress, chainId).catch(() => null),
               ]);
+
+              // If NAV oracle has published attestation data, derive the
+              // total fund value from (navPerToken × totalSupply) so that
+              // deriveTokenPrice in dashboardMetrics returns the NAV-based
+              // price instead of the static deployment-time originalValue.
+              let effectiveOriginalValue = details.originalValue.toString();
+              if (navData?.navPerToken) {
+                const navPerToken = Number(navData.navPerToken);
+                const totalSupplyHuman = parseTokenAmount(details.totalSupply.toString());
+                if (navPerToken > 0 && totalSupplyHuman > 0) {
+                  effectiveOriginalValue = String(navPerToken * totalSupplyHuman);
+                }
+              }
 
               return {
                 address: details.tokenAddress,
@@ -486,7 +501,7 @@ export default function DashboardPage() {
                 balance: balance.toString(),
                 documentHash: details.documentHash,
                 documentType: details.documentType,
-                originalValue: details.originalValue.toString(),
+                originalValue: effectiveOriginalValue,
               } satisfies import('../types').WrappedAsset;
             }),
           );

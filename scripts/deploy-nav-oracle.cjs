@@ -4,7 +4,7 @@ async function main() {
   const [deployer] = await hre.ethers.getSigners();
 
   // The security token address (already deployed on Holesky)
-  const TOKEN_ADDRESS = "0x4f5E4f6407420B999E814CBB9a9E254699844f87";
+  const TOKEN_ADDRESS = "0xB8BbD6038fBF8b87D4352a448C4679172b715457";
 
   const NAVOracle = await hre.ethers.getContractFactory("NAVOracle");
   const oracle = await NAVOracle.deploy(

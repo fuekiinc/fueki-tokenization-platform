@@ -29,7 +29,8 @@ import {
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ethers } from 'ethers';
-import { parseContractError } from '../lib/blockchain/contracts.ts';
+import { parseContractError, getReadOnlyProvider } from '../lib/blockchain/contracts.ts';
+import { getCurrentNav } from '../lib/api/nav.ts';
 import { useContractService } from '../hooks/useContractService.ts';
 import { useWallet } from '../hooks/useWallet.ts';
 import { getAssetFetchGeneration, nextAssetFetchGeneration, useAssetStore } from '../store/assetStore.ts';
@@ -121,10 +122,16 @@ function getDocBadgeClasses(docType: string): string {
 }
 
 function computePortfolioValue(assets: WrappedAsset[]): string {
-  const total = assets.reduce(
-    (sum, a) => sum + parseTokenAmount(a.originalValue || '0'),
-    0,
-  );
+  const total = assets.reduce((sum, a) => {
+    const balance = parseTokenAmount(a.balance || '0');
+    const totalSupply = parseTokenAmount(a.totalSupply || '0');
+    const originalValue = parseTokenAmount(a.originalValue || '0');
+    // Use balance × (originalValue / totalSupply) to get user's share value
+    if (totalSupply > 0 && balance > 0) {
+      return sum + balance * (originalValue / totalSupply);
+    }
+    return sum;
+  }, 0);
   return formatCurrency(total);
 }
 
@@ -519,6 +526,9 @@ export default function PortfolioPage() {
   const addTrade = useTradeStore((s) => s.addTrade);
   const tradeHistory = useTradeStore((s) => s.tradeHistory);
 
+  // ---- Security token holdings (with NAV enrichment) -----------------------
+  const [securityHoldings, setSecurityHoldings] = useState<WrappedAsset[]>([]);
+
   // ---- UI state ------------------------------------------------------------
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -658,6 +668,95 @@ export default function PortfolioPage() {
       if (isStaleScope(gen)) return;
 
       setAssets(assets);
+
+      // ---- Fetch security token holdings with NAV enrichment ----
+      try {
+        const securityTokenAddresses = new Set<string>();
+        // Discover security tokens the user created
+        try {
+          const userSecTokens = await contractService.getUserSecurityTokens(address);
+          for (const addr of userSecTokens) securityTokenAddresses.add(addr);
+        } catch {
+          logger.warn('Portfolio: unable to fetch user security tokens');
+        }
+        // Also scan the security token registry
+        try {
+          const totalSecTokens = Number(await contractService.getTotalSecurityTokens());
+          const maxScan = Math.min(totalSecTokens, 200);
+          const startIdx = Math.max(0, totalSecTokens - maxScan);
+          const secFactory = contractService.getSecurityTokenFactoryContract(
+            getReadOnlyProvider(chainId),
+          );
+          const BATCH = 5;
+          for (let s = startIdx; s < totalSecTokens; s += BATCH) {
+            if (isStaleScope(gen)) return;
+            const end = Math.min(s + BATCH, totalSecTokens);
+            const batch = [];
+            for (let i = s; i < end; i++) {
+              batch.push(secFactory.getTokenAtIndex(BigInt(i)).catch(() => null));
+            }
+            const results = await Promise.all(batch);
+            for (const result of results) {
+              const tokenAddr =
+                result && typeof result === 'object' && 'tokenAddress' in result
+                  ? String(result.tokenAddress ?? '')
+                  : '';
+              if (tokenAddr && ethers.isAddress(tokenAddr)) {
+                securityTokenAddresses.add(tokenAddr);
+              }
+            }
+          }
+        } catch {
+          logger.warn('Portfolio: unable to enumerate security token registry');
+        }
+
+        if (isStaleScope(gen)) return;
+
+        if (securityTokenAddresses.size > 0) {
+          const secHoldings = await Promise.all(
+            Array.from(securityTokenAddresses).map(async (tokenAddr) => {
+              const [details, balance, navData] = await Promise.all([
+                contractService.getSecurityTokenDetails(tokenAddr),
+                contractService.getSecurityTokenBalance(tokenAddr, address),
+                getCurrentNav(tokenAddr, chainId).catch(() => null),
+              ]);
+
+              // NAV-based valuation: use navPerToken × totalSupply so that
+              // computePortfolioValue derives the correct price per token
+              let effectiveOriginalValue = details.originalValue.toString();
+              if (navData?.navPerToken) {
+                const navPerToken = Number(navData.navPerToken);
+                const totalSupplyHuman = parseTokenAmount(details.totalSupply.toString());
+                if (navPerToken > 0 && totalSupplyHuman > 0) {
+                  effectiveOriginalValue = String(navPerToken * totalSupplyHuman);
+                }
+              }
+
+              return {
+                address: details.tokenAddress,
+                name: details.name,
+                symbol: details.symbol,
+                totalSupply: details.totalSupply.toString(),
+                balance: balance.toString(),
+                documentHash: details.documentHash,
+                documentType: details.documentType,
+                originalValue: effectiveOriginalValue,
+              } satisfies WrappedAsset;
+            }),
+          );
+
+          if (!isStaleScope(gen)) {
+            setSecurityHoldings(
+              secHoldings.filter((a) => parseTokenAmount(a.balance || '0') > 0),
+            );
+          }
+        } else {
+          if (!isStaleScope(gen)) setSecurityHoldings([]);
+        }
+      } catch (secErr) {
+        logger.warn('Portfolio: unable to load security token holdings:', secErr);
+        if (!isStaleScope(gen)) setSecurityHoldings([]);
+      }
     } catch (err) {
       if (isStaleScope(gen)) return;
       logger.warn('Failed to fetch portfolio assets:', err);
@@ -686,9 +785,18 @@ export default function PortfolioPage() {
 
   // ---- Derived data --------------------------------------------------------
 
+  // Merge wrapped assets and security holdings, deduplicating by address
+  const allAssets = useMemo(() => {
+    const merged = new Map<string, WrappedAsset>();
+    for (const asset of [...wrappedAssets, ...securityHoldings]) {
+      merged.set(asset.address.toLowerCase(), asset);
+    }
+    return Array.from(merged.values());
+  }, [wrappedAssets, securityHoldings]);
+
   const visibleWrappedAssets = useMemo(
-    () => wrappedAssets.filter(hasPositiveBalance),
-    [wrappedAssets],
+    () => allAssets.filter(hasPositiveBalance),
+    [allAssets],
   );
 
   const filteredAssets = useMemo(() => {

@@ -110,8 +110,8 @@ export type { SecurityTokenDeployer } from "./contracts/security-token/SecurityT
 export { SecurityTokenDeployer__factory } from "./factories/contracts/security-token/SecurityTokenDeployer__factory";
 export type { SecurityTokenFactory } from "./contracts/security-token/SecurityTokenFactory";
 export { SecurityTokenFactory__factory } from "./factories/contracts/security-token/SecurityTokenFactory__factory";
-export type { TransferRules } from "./contracts/security-token/TransferRules";
-export { TransferRules__factory } from "./factories/contracts/security-token/TransferRules__factory";
+export type { TransferRules } from "./contracts/security-token/TransferRules_flattened.sol/TransferRules";
+export { TransferRules__factory } from "./factories/contracts/security-token/TransferRules_flattened.sol/TransferRules__factory";
 export type { SimpleERC1155 } from "./contracts/templates/nfts/SimpleERC1155";
 export { SimpleERC1155__factory } from "./factories/contracts/templates/nfts/SimpleERC1155__factory";
 export type { SoulboundNFT } from "./contracts/templates/nfts/SoulboundNFT";

@@ -83,6 +83,16 @@ app.use('/api', limiter);
 app.use('/api/kyc', kycRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/support', supportLimiter, supportRoutes);
+// Mint action links (approve/reject from email) are single-use tokens that
+// don't carry Authorization headers.  Exempt them from the global rate limiter
+// so banker clicks aren't blocked by shared unauthenticated quota.
+app.use('/api/mint-requests/action', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { message: 'Too many action attempts, please try again later', code: 'RATE_LIMIT' } },
+}));
 app.use('/api/mint-requests', mintRequestRoutes);
 app.use('/api/security-token-requests', securityTokenRequestRoutes);
 app.use('/api/deployments', deploymentRoutes);

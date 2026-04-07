@@ -351,11 +351,8 @@ function dedupeRpcUrls(urls: string[]): string[] {
  */
 export function parseContractError(err: unknown): string {
   if (axios.isAxiosError(err)) {
-    const apiMessage = err.response?.data?.error?.message;
-    if (typeof apiMessage === 'string' && apiMessage.trim().length > 0) {
-      return apiMessage.trim();
-    }
-
+    // Check for detailed validation errors first — they're more useful than
+    // the generic top-level message (e.g. "NAV attestation validation failed").
     const validationErrors = err.response?.data?.error?.issues?.errors;
     if (Array.isArray(validationErrors) && validationErrors.length > 0) {
       const messages = validationErrors
@@ -364,6 +361,11 @@ export function parseContractError(err: unknown): string {
       if (messages.length > 0) {
         return messages.join(' ');
       }
+    }
+
+    const apiMessage = err.response?.data?.error?.message;
+    if (typeof apiMessage === 'string' && apiMessage.trim().length > 0) {
+      return apiMessage.trim();
     }
   }
 

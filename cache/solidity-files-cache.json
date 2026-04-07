@@ -3688,6 +3688,59 @@
       "artifacts": [
         "NAVOracle"
       ]
+    },
+    "/Users/apple/Documents/GitHub/fueki-tokenization-platform/contracts/security-token/TransferRules_flattened.sol": {
+      "lastModificationDate": 1775525617769,
+      "contentHash": "064f5f690e449bccb41773230b1c68aa",
+      "sourceName": "contracts/security-token/TransferRules_flattened.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "viaIR": true,
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.0"
+      ],
+      "artifacts": [
+        "Address",
+        "Arrays",
+        "Context",
+        "Counters",
+        "ERC20",
+        "ERC20Snapshot",
+        "EasyAccessControl",
+        "IERC20",
+        "IERC20Metadata",
+        "IERC20Permit",
+        "ITransferRules",
+        "Math",
+        "ReentrancyGuard",
+        "RestrictedLockupToken",
+        "SafeERC20",
+        "StorageSlot",
+        "TransferRules"
+      ]
     }
   }
 }

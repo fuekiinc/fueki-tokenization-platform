@@ -145,8 +145,8 @@ export const config = {
   // Local upload fallback (dev only, not used on Cloud Run)
   upload: {
     dir: process.env.UPLOAD_DIR || './uploads',
-    // Generic upload limit used for non-KYC uploads (mint requests, etc).
-    maxSize: 10 * 1024 * 1024,
+    // Generic upload limit used for non-KYC uploads (mint requests, security token submissions, etc).
+    maxSize: 25 * 1024 * 1024,
     // KYC capture payload can include a short live video clip, so allow a
     // higher file-size ceiling than generic document uploads.
     kycMaxSizeMb: kycUploadMaxSizeMb,
