@@ -17,6 +17,21 @@ import type {
 
 type AuthRequestConfig = AxiosRequestConfig & { skipAuthRefresh?: boolean };
 
+export interface WalletLinkSuccessResponse {
+  verificationRequired: false;
+  user: User;
+}
+
+export interface WalletLinkChallengeResponse {
+  verificationRequired: true;
+  challengeToken: string;
+  message: string;
+}
+
+export type LinkConnectedWalletResponse =
+  | WalletLinkSuccessResponse
+  | WalletLinkChallengeResponse;
+
 // ---------------------------------------------------------------------------
 // Authentication
 // ---------------------------------------------------------------------------
@@ -52,6 +67,18 @@ export async function logout(accessToken?: string): Promise<void> {
 
 export async function getProfile(): Promise<User> {
   const response = await apiClient.get<User>('/api/auth/me');
+  return response.data;
+}
+
+export async function linkConnectedWallet(data: {
+  walletAddress: string;
+  challengeToken?: string;
+  signature?: string;
+}): Promise<LinkConnectedWalletResponse> {
+  const response = await apiClient.post<LinkConnectedWalletResponse>(
+    '/api/auth/wallets/connect',
+    data,
+  );
   return response.data;
 }
 

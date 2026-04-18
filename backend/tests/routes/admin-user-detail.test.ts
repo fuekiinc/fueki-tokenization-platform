@@ -65,6 +65,20 @@ describe('GET /api/admin/users/:id', () => {
       email: 'kyc.user@example.com',
       role: 'user',
       walletAddress: '0x1234',
+      walletConnections: [
+        {
+          walletAddress: '0x1234',
+          firstConnectedAt: new Date('2026-03-01T12:00:00.000Z'),
+          lastConnectedAt: new Date('2026-03-08T12:00:00.000Z'),
+          connectionCount: 2,
+        },
+        {
+          walletAddress: '0xabcd',
+          firstConnectedAt: new Date('2026-03-02T12:00:00.000Z'),
+          lastConnectedAt: new Date('2026-03-05T12:00:00.000Z'),
+          connectionCount: 1,
+        },
+      ],
       kycStatus: 'pending',
       createdAt: new Date('2026-03-01T00:00:00.000Z'),
       updatedAt: new Date('2026-03-02T00:00:00.000Z'),
@@ -133,6 +147,19 @@ describe('GET /api/admin/users/:id', () => {
     expect((res.body as any).kyc.ssn).toBe('***-**-6789');
     expect((res.body as any).kyc.firstName).toBe('Avery');
     expect((res.body as any).kyc.documentOrigName).toBe('passport.pdf');
+    expect((res.body as any).user.walletConnectionCount).toBe(2);
+    expect((res.body as any).user.walletConnections).toEqual([
+      expect.objectContaining({
+        walletAddress: '0x1234',
+        connectionCount: 2,
+        isCurrent: true,
+      }),
+      expect.objectContaining({
+        walletAddress: '0xabcd',
+        connectionCount: 1,
+        isCurrent: false,
+      }),
+    ]);
   });
 
   it('returns degraded KYC details instead of 500 when one field cannot be decrypted', async () => {

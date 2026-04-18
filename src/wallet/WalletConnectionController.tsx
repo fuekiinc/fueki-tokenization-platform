@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ethers } from 'ethers';
+import toast from 'react-hot-toast';
 import {
   useActiveAccount,
   useActiveWallet,
@@ -10,7 +11,7 @@ import {
 import { EIP1193 } from 'thirdweb/wallets';
 
 import logger from '../lib/logger';
-import { getProvider, isSwitchInProgress, useWalletStore } from '../store/walletStore';
+import { getProvider, getSigner, isSwitchInProgress, useWalletStore } from '../store/walletStore';
 import {
   getThirdwebChain,
   isThirdwebConfigured,
@@ -22,6 +23,7 @@ import { findHealthyEndpoint } from '../lib/rpc/endpoints';
 import { getReadOnlyProvider } from '../lib/blockchain/contracts';
 import { useAuthStore } from '../store/authStore';
 import { queryKeys } from '../lib/queryClient';
+import { syncConnectedWalletAddress } from '../lib/auth/walletLinking';
 
 function parseConnectionError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
@@ -121,7 +123,9 @@ interface BalanceSnapshot {
  * Mount once near the app root so wallet sync side effects run exactly once.
  */
 export function WalletConnectionController() {
-  const isDemoActive = useAuthStore((s) => s.user?.demoActive === true);
+  const authUser = useAuthStore((s) => s.user);
+  const isDemoActive = authUser?.demoActive === true;
+  const setAuthUser = useAuthStore((s) => s.setUser);
   const wallet = useWalletStore((s) => s.wallet);
   const setWallet = useWalletStore((s) => s.setWallet);
   const setProvider = useWalletStore((s) => s.setProvider);
@@ -143,6 +147,8 @@ export function WalletConnectionController() {
   const balanceFailCountRef = useRef(0);
   /** Debounce timer for disconnect detection during chain switches. */
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** Avoid repeated wallet-link prompts while the same user/address remains active. */
+  const walletLinkAttemptKeyRef = useRef<string | null>(null);
 
   const resolveEnsName = useCallback(
     async (address: string, provider: ethers.BrowserProvider) => {
@@ -358,6 +364,72 @@ export function WalletConnectionController() {
   useEffect(() => {
     void syncWalletStore();
   }, [syncWalletStore]);
+
+  useEffect(() => {
+    if (!authUser?.id || !wallet.isConnected || !wallet.address) {
+      walletLinkAttemptKeyRef.current = null;
+      return;
+    }
+
+    if (
+      isDemoActive
+      || wallet.connectionStatus !== 'connected'
+      || !wallet.signerReady
+    ) {
+      return;
+    }
+
+    const signer = getSigner();
+    if (!signer) {
+      return;
+    }
+
+    const linkKey = `${authUser.id}:${wallet.address.toLowerCase()}`;
+    if (walletLinkAttemptKeyRef.current === linkKey) {
+      return;
+    }
+
+    walletLinkAttemptKeyRef.current = linkKey;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const updatedUser = await syncConnectedWalletAddress(wallet.address!, signer);
+        if (cancelled) {
+          return;
+        }
+        setAuthUser(updatedUser);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Wallet connected, but we could not link it to your Fueki account.';
+
+        logger.warn('Failed to sync wallet connection to authenticated user', {
+          error,
+          userId: authUser.id,
+          walletAddress: wallet.address,
+        });
+        toast.error(message);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authUser?.id,
+    isDemoActive,
+    setAuthUser,
+    wallet.address,
+    wallet.connectionStatus,
+    wallet.isConnected,
+    wallet.signerReady,
+  ]);
 
   useEffect(() => {
     if (isDemoActive) {

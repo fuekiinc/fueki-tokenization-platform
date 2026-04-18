@@ -22,8 +22,18 @@ export interface AdminUser {
   accessRevocationReason: string | null;
   kycStatus: string;
   walletAddress: string | null;
+  walletConnectionCount: number;
+  walletConnections: AdminWalletConnection[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AdminWalletConnection {
+  walletAddress: string;
+  firstConnectedAt: string;
+  lastConnectedAt: string;
+  connectionCount: number;
+  isCurrent: boolean;
 }
 
 export interface UserListResponse {
@@ -86,6 +96,38 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function normalizeAdminWalletConnection(
+  value: unknown,
+): AdminWalletConnection | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const walletAddress = value.walletAddress;
+  const firstConnectedAt = value.firstConnectedAt;
+  const lastConnectedAt = value.lastConnectedAt;
+  const connectionCount = value.connectionCount;
+  const isCurrent = value.isCurrent;
+
+  if (
+    typeof walletAddress !== 'string'
+    || typeof firstConnectedAt !== 'string'
+    || typeof lastConnectedAt !== 'string'
+    || !isFiniteNumber(connectionCount)
+    || typeof isCurrent !== 'boolean'
+  ) {
+    return null;
+  }
+
+  return {
+    walletAddress,
+    firstConnectedAt,
+    lastConnectedAt,
+    connectionCount,
+    isCurrent,
+  };
+}
+
 function normalizeAdminUser(value: unknown): AdminUser | null {
   if (!isRecord(value)) {
     return null;
@@ -98,6 +140,12 @@ function normalizeAdminUser(value: unknown): AdminUser | null {
   const accessRevocationReason = value.accessRevocationReason;
   const kycStatus = value.kycStatus;
   const walletAddress = value.walletAddress;
+  const walletConnectionCount = value.walletConnectionCount;
+  const walletConnections = Array.isArray(value.walletConnections)
+    ? value.walletConnections
+        .map((connection) => normalizeAdminWalletConnection(connection))
+        .filter((connection): connection is AdminWalletConnection => connection !== null)
+    : [];
   const createdAt = value.createdAt;
   const updatedAt = value.updatedAt;
 
@@ -121,6 +169,10 @@ function normalizeAdminUser(value: unknown): AdminUser | null {
       typeof accessRevocationReason === 'string' ? accessRevocationReason : null,
     kycStatus,
     walletAddress: typeof walletAddress === 'string' ? walletAddress : null,
+    walletConnectionCount: isFiniteNumber(walletConnectionCount)
+      ? walletConnectionCount
+      : walletConnections.length,
+    walletConnections,
     createdAt,
     updatedAt,
   };
@@ -308,6 +360,8 @@ export async function getKYCSubmissions(params: {
         accessRevocationReason: null,
         kycStatus,
         walletAddress: null,
+        walletConnectionCount: 0,
+        walletConnections: [],
         createdAt: typeof submittedAt === 'string' ? submittedAt : userCreatedAt,
         updatedAt:
           typeof reviewedAt === 'string'

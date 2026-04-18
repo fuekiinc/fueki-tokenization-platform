@@ -14,6 +14,7 @@ import { decrypt } from '../services/encryption';
 import { prisma } from '../prisma';
 import { buildTokenLookupCandidates } from '../services/tokenHash';
 import { readEncryptedDocument } from '../services/storage';
+import { toAdminWalletConnection } from '../services/userWallets';
 
 const router = Router();
 
@@ -169,6 +170,11 @@ router.get('/users', adminOnly, async (req: Request, res: Response) => {
           accessRevokedAt: true,
           accessRevocationReason: true,
           walletAddress: true,
+          _count: {
+            select: {
+              walletConnections: true,
+            },
+          },
           kycStatus: true,
           createdAt: true,
           updatedAt: true,
@@ -188,6 +194,7 @@ router.get('/users', adminOnly, async (req: Request, res: Response) => {
         accessRevokedAt: u.accessRevokedAt?.toISOString() ?? null,
         createdAt: u.createdAt.toISOString(),
         updatedAt: u.updatedAt.toISOString(),
+        walletConnectionCount: u._count.walletConnections,
       })),
       total,
       page: params.page,
@@ -215,6 +222,28 @@ router.get('/users/:id', adminOnly, async (req: Request, res: Response) => {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        accessRevokedAt: true,
+        accessRevocationReason: true,
+        walletAddress: true,
+        kycStatus: true,
+        createdAt: true,
+        updatedAt: true,
+        walletConnections: {
+          select: {
+            walletAddress: true,
+            firstConnectedAt: true,
+            lastConnectedAt: true,
+            connectionCount: true,
+          },
+          orderBy: {
+            lastConnectedAt: 'desc',
+          },
+        },
+      },
     });
 
     if (!user) {
@@ -319,6 +348,10 @@ router.get('/users/:id', adminOnly, async (req: Request, res: Response) => {
         accessRevokedAt: user.accessRevokedAt?.toISOString() ?? null,
         accessRevocationReason: user.accessRevocationReason ?? null,
         walletAddress: user.walletAddress,
+        walletConnectionCount: user.walletConnections.length,
+        walletConnections: user.walletConnections.map((connection) =>
+          toAdminWalletConnection(connection, user.walletAddress),
+        ),
         kycStatus: user.kycStatus,
         createdAt: user.createdAt.toISOString(),
         updatedAt: user.updatedAt.toISOString(),

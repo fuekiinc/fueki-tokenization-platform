@@ -68,6 +68,14 @@ function formatAddress(addr: string | null): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
+function formatWalletConnectionCount(count: number): string {
+  if (count <= 0) {
+    return 'No linked wallets';
+  }
+
+  return `${count} linked ${count === 1 ? 'wallet' : 'wallets'}`;
+}
+
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return date.toLocaleDateString('en-US', {
@@ -367,7 +375,7 @@ export default function AdminUserTable() {
                       KYC Status
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                      Wallet
+                      Wallets
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
                       Joined
@@ -406,8 +414,15 @@ export default function AdminUserTable() {
                           {user.kycStatus.replace('_', ' ')}
                         </Badge>
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4 font-mono text-xs text-gray-400">
-                        {formatAddress(user.walletAddress)}
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <div className="space-y-1">
+                          <div className="font-mono text-xs text-gray-400">
+                            {formatAddress(user.walletAddress)}
+                          </div>
+                          <div className="text-[11px] text-gray-500">
+                            {formatWalletConnectionCount(user.walletConnectionCount)}
+                          </div>
+                        </div>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-gray-400">
                         {formatDate(user.createdAt)}
