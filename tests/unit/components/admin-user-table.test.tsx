@@ -46,6 +46,8 @@ describe('AdminUserTable', () => {
           role: 'admin',
           kycStatus: 'approved',
           walletAddress: null,
+          walletConnectionCount: 0,
+          walletConnections: [],
           createdAt: '2026-03-18T00:00:00.000Z',
           updatedAt: '2026-03-18T01:00:00.000Z',
         },
@@ -68,5 +70,35 @@ describe('AdminUserTable', () => {
     });
 
     expect(screen.queryByText('broken@fueki-tech.com')).not.toBeInTheDocument();
+  });
+
+  it('shows linked wallet counts in the wallet column', async () => {
+    apiMocks.getUsers.mockResolvedValue({
+      users: [
+        {
+          id: 'user-1',
+          email: 'wallets@fueki-tech.com',
+          role: 'user',
+          kycStatus: 'approved',
+          walletAddress: '0x1111111111111111111111111111111111111111',
+          walletConnectionCount: 2,
+          walletConnections: [],
+          createdAt: '2026-03-18T00:00:00.000Z',
+          updatedAt: '2026-03-18T01:00:00.000Z',
+        },
+      ],
+      total: 1,
+      page: 1,
+      limit: 15,
+      totalPages: 1,
+    });
+
+    render(<AdminUserTable />);
+
+    await waitFor(() => {
+      expect(screen.getByText('wallets@fueki-tech.com')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('2 linked wallets')).toBeInTheDocument();
   });
 });

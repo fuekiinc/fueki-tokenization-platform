@@ -26,12 +26,28 @@ model User {
   kycData              KYCData?
   sessions             Session[]
   passwordResetTokens  PasswordResetToken[]
+  walletConnections    UserWalletConnection[]
   mintApprovalRequests MintApprovalRequest[]
   securityTokenApprovalRequests SecurityTokenApprovalRequest[]
   deployedContracts   DeployedContract[]
 
   @@index([email])
   @@index([walletAddress])
+}
+
+model UserWalletConnection {
+  id               String   @id @default(uuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletAddress    String   @db.VarChar(42)
+  firstConnectedAt DateTime @default(now())
+  lastConnectedAt  DateTime @default(now())
+  connectionCount  Int      @default(1)
+
+  @@unique([userId, walletAddress])
+  @@index([userId])
+  @@index([walletAddress])
+  @@index([userId, lastConnectedAt])
 }
 
 model KYCData {

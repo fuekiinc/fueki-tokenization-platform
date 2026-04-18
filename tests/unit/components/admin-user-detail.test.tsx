@@ -32,6 +32,23 @@ describe('AdminUserDetail', () => {
       accessRevokedAt: null,
       accessRevocationReason: null,
       walletAddress: '0x1234',
+      walletConnectionCount: 2,
+      walletConnections: [
+        {
+          walletAddress: '0x1234',
+          firstConnectedAt: '2026-03-01T00:00:00.000Z',
+          lastConnectedAt: '2026-03-03T00:00:00.000Z',
+          connectionCount: 2,
+          isCurrent: true,
+        },
+        {
+          walletAddress: '0xabcd',
+          firstConnectedAt: '2026-03-04T00:00:00.000Z',
+          lastConnectedAt: '2026-03-05T00:00:00.000Z',
+          connectionCount: 1,
+          isCurrent: false,
+        },
+      ],
       kycStatus: 'pending',
       createdAt: '2026-03-01T00:00:00.000Z',
       updatedAt: '2026-03-02T00:00:00.000Z',
@@ -75,6 +92,9 @@ describe('AdminUserDetail', () => {
     expect(screen.getByText('front.png')).toBeInTheDocument();
     expect(screen.getByText('back.png')).toBeInTheDocument();
     expect(screen.getByText('selfie.mov')).toBeInTheDocument();
+    expect(screen.getByText('0xabcd')).toBeInTheDocument();
+    expect(screen.getByText('2 connections')).toBeInTheDocument();
+    expect(screen.getByText('current')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Preview' })).toHaveLength(3);
     expect(screen.getAllByRole('button', { name: 'Download' })).toHaveLength(3);
   });

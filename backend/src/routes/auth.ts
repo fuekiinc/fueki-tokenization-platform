@@ -15,7 +15,16 @@ import { config } from '../config';
 import { sendPasswordResetEmail } from '../services/email';
 import { decrypt } from '../services/encryption';
 import { prisma } from '../prisma';
+import { evmAddressSchema } from '../lib/validation';
 import { buildTokenLookupCandidates, hashToken } from '../services/tokenHash';
+import {
+  createWalletChallenge,
+  hasLinkedWallet,
+  linkWalletToUser,
+  verifyWalletChallenge,
+  WalletChallengeError,
+  WalletVerificationError,
+} from '../services/userWallets';
 
 const router = Router();
 
@@ -92,6 +101,23 @@ const loginSchema = z.object({
 
 const updatePreferencesSchema = z.object({
   helpLevel: helpLevelSchema,
+});
+
+const connectWalletSchema = z.object({
+  walletAddress: evmAddressSchema.transform((value) => value.toLowerCase()),
+  challengeToken: z.string().trim().min(1).optional(),
+  signature: z.string().trim().min(1).optional(),
+}).superRefine((value, ctx) => {
+  const hasChallengeToken = typeof value.challengeToken === 'string';
+  const hasSignature = typeof value.signature === 'string';
+
+  if (hasChallengeToken !== hasSignature) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'challengeToken and signature must be provided together',
+      path: hasChallengeToken ? ['signature'] : ['challengeToken'],
+    });
+  }
 });
 
 function mapUserResponse(
@@ -400,6 +426,82 @@ router.put('/preferences', authenticate, async (req, res) => {
     }
     console.error('Update preferences error:', err);
     res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/wallets/connect
+// ---------------------------------------------------------------------------
+
+router.post('/wallets/connect', authenticate, async (req, res) => {
+  try {
+    const parsed = connectWalletSchema.parse(req.body);
+    const userId = req.userId as string;
+    const alreadyLinked = await hasLinkedWallet(userId, parsed.walletAddress);
+
+    if (!alreadyLinked) {
+      if (!parsed.challengeToken || !parsed.signature) {
+        res.status(202).json({
+          verificationRequired: true,
+          ...createWalletChallenge(userId, parsed.walletAddress),
+        });
+        return;
+      }
+
+      verifyWalletChallenge({
+        challengeToken: parsed.challengeToken,
+        signature: parsed.signature,
+        userId,
+        walletAddress: parsed.walletAddress,
+      });
+    }
+
+    const user = await linkWalletToUser(userId, parsed.walletAddress);
+
+    console.info(JSON.stringify({
+      audit: 'USER_WALLET_LINKED',
+      userId,
+      walletAddress: parsed.walletAddress,
+      verificationMethod: alreadyLinked ? 'existing-link' : 'signed-challenge',
+      timestamp: new Date().toISOString(),
+    }));
+
+    res.json({
+      verificationRequired: false,
+      user: mapUserResponse(user),
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({
+        error: { message: err.errors[0].message, code: 'VALIDATION_ERROR' },
+      });
+      return;
+    }
+    if (err instanceof WalletChallengeError) {
+      res.status(400).json({
+        error: { message: err.message, code: 'INVALID_WALLET_CHALLENGE' },
+      });
+      return;
+    }
+    if (err instanceof WalletVerificationError) {
+      res.status(401).json({
+        error: { message: err.message, code: 'WALLET_VERIFICATION_FAILED' },
+      });
+      return;
+    }
+    if (isPrismaUniqueConstraintError(err, 'walletAddress')) {
+      res.status(409).json({
+        error: {
+          message: 'This wallet is already linked to another account.',
+          code: 'WALLET_ADDRESS_IN_USE',
+        },
+      });
+      return;
+    }
+    console.error('Connect wallet error:', err);
+    res.status(500).json({
+      error: { message: 'Internal server error', code: 'INTERNAL_ERROR' },
+    });
   }
 });
 

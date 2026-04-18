@@ -14,7 +14,11 @@ vi.mock('../../src/lib/api/client', () => ({
   },
 }));
 
-import { logout, refreshToken } from '../../src/lib/api/auth';
+import {
+  linkConnectedWallet,
+  logout,
+  refreshToken,
+} from '../../src/lib/api/auth';
 
 describe('auth api logout', () => {
   beforeEach(() => {
@@ -63,5 +67,26 @@ describe('auth api logout', () => {
         skipAuthRefresh: true,
       }),
     );
+  });
+
+  it('posts wallet-link verification payloads through the auth client', async () => {
+    postMock.mockResolvedValue({
+      data: {
+        verificationRequired: false,
+        user: { id: 'user-1' },
+      },
+    });
+
+    await linkConnectedWallet({
+      walletAddress: '0x1111111111111111111111111111111111111111',
+      challengeToken: 'challenge-token',
+      signature: 'wallet-signature',
+    });
+
+    expect(postMock).toHaveBeenCalledWith('/api/auth/wallets/connect', {
+      walletAddress: '0x1111111111111111111111111111111111111111',
+      challengeToken: 'challenge-token',
+      signature: 'wallet-signature',
+    });
   });
 });
