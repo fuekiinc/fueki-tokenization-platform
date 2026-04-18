@@ -67,18 +67,11 @@ export async function submitKYC(input: KYCInput) {
     data: { kycStatus: 'pending' },
   });
 
-  // Send admin notification email (fire-and-forget)
+  // Send admin notification email (fire-and-forget). Per ADR-004, we only
+  // pass the fields actually rendered in the email body — no PII leaves this
+  // process via email.
   sendKYCReviewEmail({
     userId: input.userId,
-    userEmail: user.email,
-    firstName: input.firstName,
-    lastName: input.lastName,
-    dateOfBirth: input.dateOfBirth,
-    addressLine1: input.addressLine1,
-    city: input.city,
-    state: input.state,
-    zipCode: input.zipCode,
-    country: input.country,
     documentType: input.documentType,
     subscriptionPlan: input.subscriptionPlan,
     submittedAt: new Date().toISOString(),

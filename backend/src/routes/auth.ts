@@ -142,24 +142,28 @@ function mapUserResponse(
   };
 }
 
+// ADR-003: KYC status MUST use exact-match normalization. Substring matching
+// (e.g. `includes('verif')`) is a privilege-escalation vector because inputs
+// like "unverified", "incomplete", "inactive", or "unapproved" would have
+// normalized to "approved", bypassing KYC gating. Unknown values always
+// default to the most restrictive status.
+const KYC_STATUS_ALIASES: Record<string, 'not_submitted' | 'pending' | 'approved' | 'rejected'> = {
+  not_submitted: 'not_submitted',
+  not_started: 'not_submitted',
+  unsubmitted: 'not_submitted',
+  none: 'not_submitted',
+  pending: 'pending',
+  in_review: 'pending',
+  submitted: 'pending',
+  approved: 'approved',
+  verified: 'approved',
+  rejected: 'rejected',
+  denied: 'rejected',
+};
+
 function normalizeKycStatus(raw: string): 'not_submitted' | 'pending' | 'approved' | 'rejected' {
   const value = raw.trim().toLowerCase();
-  if (
-    value === 'not_submitted' ||
-    value === 'pending' ||
-    value === 'approved' ||
-    value === 'rejected'
-  ) {
-    return value;
-  }
-  if (value.includes('approve')) return 'approved';
-  if (value.includes('verif')) return 'approved';
-  if (value.includes('complete')) return 'approved';
-  if (value.includes('active')) return 'approved';
-  if (value.includes('reject')) return 'rejected';
-  if (value.includes('pend')) return 'pending';
-  if (value.includes('submit')) return 'not_submitted';
-  return 'not_submitted';
+  return KYC_STATUS_ALIASES[value] ?? 'not_submitted';
 }
 
 function isPrismaUniqueConstraintError(
