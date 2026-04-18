@@ -138,17 +138,12 @@ If you did not request a password reset, you can safely ignore this email.
 // KYC Review Notification Email
 // ---------------------------------------------------------------------------
 
+// ADR-004: Notification emails MUST NOT include PII. The admin receives a
+// user ID and a link to the admin panel where access is authenticated and
+// audit-logged. Keep this interface minimal to prevent accidental PII leakage
+// through future email template changes.
 interface KYCReviewEmailData {
   userId: string;
-  userEmail: string;
-  firstName: string;
-  lastName: string;
-  dateOfBirth: string;
-  addressLine1: string;
-  city: string;
-  state: string;
-  zipCode: string;
-  country: string;
   documentType: string;
   subscriptionPlan: string;
   submittedAt: string;

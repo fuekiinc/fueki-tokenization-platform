@@ -28,8 +28,10 @@ const DEFAULT_SLIPPAGE_BPS = 50;
 /** Minimum slippage tolerance (0.01%). */
 const MIN_SLIPPAGE_BPS = 1;
 
-/** Maximum slippage tolerance (50%). */
-const MAX_SLIPPAGE_BPS = 5000;
+/** Maximum slippage tolerance (5%). Higher tolerances materially increase
+ *  the risk of adverse-execution fund loss, especially for accidental clicks
+ *  or UI bugs. A 500 bps ceiling aligns with industry defaults (Uniswap/1inch). */
+const MAX_SLIPPAGE_BPS = 500;
 
 /** Maximum number of pending transactions to track. */
 const MAX_PENDING_TXS = 20;

@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ethers } from 'ethers';
-import { parseContractError, getReadOnlyProvider } from '../lib/blockchain/contracts.ts';
+import { getReadOnlyProvider, parseContractError } from '../lib/blockchain/contracts.ts';
 import { getCurrentNav } from '../lib/api/nav.ts';
 import { useContractService } from '../hooks/useContractService.ts';
 import { useWallet } from '../hooks/useWallet.ts';
